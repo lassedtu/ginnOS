@@ -1,5 +1,6 @@
 #include "keyboard.h"
 
+#include "shell.h"
 #include "vga.h"
 
 static unsigned char keyboard_read_scancode(void)
@@ -37,14 +38,8 @@ void keyboard_handle_irq(void)
 
     char character = keyboard_translate_scancode(scancode);
 
-    if (character == '\b')
-    {
-        vga_backspace();
-        return;
-    }
-
     if (character != 0)
     {
-        vga_write_char(character);
+        shell_handle_char(character);
     }
 }

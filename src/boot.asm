@@ -27,7 +27,7 @@ start:
     mov cl, 0x02            ; sector number (2 for the first sector of the kernel)
     mov ch, 0x00            ; cylinder number (0 for the first cylinder)
     mov ah, 0x02            ; BIOS function to read sectors from disk
-    mov al, 16              ; number of sectors to read (16 sectors = 8KB)
+    mov al, 18              ; number of sectors to read (18 sectors = 9KB)
     int 0x13                ; call BIOS interrupt to read sectors
     
     jc disk_read_error      ; jump to error handler if disk read fails

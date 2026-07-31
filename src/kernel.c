@@ -1,6 +1,8 @@
 #include "kernel.h"
 #include "idt.h"
 #include "pic.h"
+#include "printk.h"
+#include "shell.h"
 #include "vga.h"
 
 void kernel_main()
@@ -8,8 +10,8 @@ void kernel_main()
     idt_init();
     pic_init();
     vga_clear();
-    vga_write_line("Ginnung booted!");
-    vga_write_line("Type on the keyboard to echo characters.");
+    printk("That was the age when nothing was; / There was no sand, nor sea, nor cool waves, / No earth nor sky nor grass there, / Only Ginnungagap.\n");
+    shell_init();
 
     __asm__ volatile("sti");
 
