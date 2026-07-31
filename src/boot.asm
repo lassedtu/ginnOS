@@ -4,8 +4,12 @@
 CODE_OFFSET equ 0x8
 DATA_OFFSET equ 0x10
 
+KERNEL_LOAD_SEG equ 0x1000 ; segment where the kernel will be loaded
+KERNEL_START_ADDR equ 0x10000 ; physical address where the kernel will be loaded (64KB)
+
 ; bootloader entry point
 start:
+    ; set up the stack and segment registers
     cli             ; disable interrupts
     mov ax, 0x00    ; zero the segment register
     mov ds, ax      ; zero the data segment register
@@ -14,6 +18,19 @@ start:
     mov sp, 0x7c00  ; point stack to the boot sector
     sti             ; enable interrupts again
 
+    ; load kernel from disk into memory
+    mov ax, KERNEL_LOAD_SEG ; load segment where kernel will be loaded
+    mov es, ax              ; set the kernel load segment
+    xor bx, bx              ; load at offset 0 within that segment
+    mov dh, 0x00            ; head number (0 for first head)
+    mov dl, 0x80            ; drive number (0x80 for first hard disk)
+    mov cl, 0x02            ; sector number (2 for the first sector of the kernel)
+    mov ch, 0x00            ; cylinder number (0 for the first cylinder)
+    mov ah, 0x02            ; BIOS function to read sectors from disk
+    mov al, 16              ; number of sectors to read (16 sectors = 8KB)
+    int 0x13                ; call BIOS interrupt to read sectors
+    
+    jc disk_read_error      ; jump to error handler if disk read fails
 
 ; switch to protected mode
 load_pm:
@@ -24,6 +41,8 @@ load_pm:
     mov cr0, eax                ; write back to control register
     jmp CODE_OFFSET:PModeMain   ; jump to protected mode code
 
+disk_read_error:
+    hlt ; halt the CPU if disk read fails
 
 ; gdt implementation
 gdt_start:
@@ -54,20 +73,15 @@ gdt_descriptor:
 
 [BITS 32] ; 32-bit protected mode
 PModeMain:
-    mov ax, DATA_OFFSET ; load data segment selector
-    mov ds, ax          ; set data segment register
-    mov es, ax          ; set extra segment register
-    mov fs, ax          ; set fs segment register
-    mov ss, ax          ; set stack segment register
-    mov gs, ax          ; set gs segment register
-    mov esp, 0x9c00     ; set stack pointer to a safe location
-    mov esp, ebp        ; set stack pointer to the end of the bootloader code
+    mov ax, DATA_OFFSET                 ; load data segment selector
+    mov ds, ax                          ; set data segment register
+    mov es, ax                          ; set extra segment register
+    mov fs, ax                          ; set fs segment register
+    mov ss, ax                          ; set stack segment register
+    mov gs, ax                          ; set gs segment register
+    mov esp, 0x9c00                     ; set stack pointer to a safe location
 
-    in al, 0x92         ; read the current value of the port 0x92
-    or al, 2            ; set the second bit to enable A20 line
-    out 0x92, al        ; write the modified value back to port 0x92
-
-    jmp $               ; infinite loop to prevent the CPU from executing random instructions
+    jmp CODE_OFFSET:KERNEL_START_ADDR   ; jump to the kernel entry point in protected mode
 
 
 ; fill the rest of the boot sector with zeros so the total size is 510 bytes
