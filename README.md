@@ -1,5 +1,9 @@
 # Ginnung OS
 
+This is a small personal project I am building alongside my operating systems course at DTU.
+I am using it to learn more about operating systems development and therefore i don't really know what it will turn into.
+
+
 ## Prerequisites
 
 To build this project on macOS, install:
