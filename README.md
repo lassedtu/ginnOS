@@ -1,4 +1,4 @@
-# Ginnung Bootloader
+# Ginnung OS
 
 ## Prerequisites
 
