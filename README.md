@@ -94,6 +94,45 @@ make
 make run
 ```
 
+## ext2 Side-Disk Helper
+
+The ext2 helper now builds an image from a real folder tree.
+
+Default root folder:
+
+- [tools/ext2/rootfs](tools/ext2/rootfs)
+
+Generate an ext2 image using the default folder:
+
+```bash
+make ext2-image
+make run-ext2
+```
+
+Generate an ext2 image from any folder on your machine:
+
+```bash
+make ext2-image EXT2_SOURCE_DIR=/absolute/path/to/your/folder
+```
+
+Optionally force a custom image size (MiB):
+
+```bash
+make ext2-image EXT2_SOURCE_DIR=/absolute/path/to/your/folder EXT2_SIZE_MB=64
+```
+
+If omitted, the helper auto-sizes the image from folder contents.
+
+If you want the ext2 helper available on macOS, install:
+
+```bash
+brew install e2fsprogs
+```
+
+The helper tool is located at:
+
+- [tools/ext2/make_image.py](tools/ext2/make_image.py)
+
 ## Credits and Learning Resources
 
 - Nanobyte: https://www.youtube.com/@nanobyte-dev

@@ -1,28 +1,4 @@
 #include "stdio.h"
-#include "x86.h"
-
-void putc(char c)
-{
-    x86_Video_WriteCharTeletype(c, 0);
-}
-
-void puts(const char *str)
-{
-    while (*str)
-    {
-        putc(*str);
-        str++;
-    }
-}
-
-void puts_f(const char *str)
-{
-    while (*str)
-    {
-        putc(*str);
-        str++;
-    }
-}
 
 enum
 {
@@ -60,6 +36,27 @@ static void printf_context_reset(PrintfContext *ctx)
     ctx->sign = false;
 }
 
+static void div64_32(uint64_t dividend, uint32_t divisor, uint64_t *quotientOut, uint32_t *remainderOut)
+{
+    uint64_t quotient = 0;
+    uint64_t remainder = 0;
+    int bit;
+
+    for (bit = 63; bit >= 0; bit--)
+    {
+        remainder = (remainder << 1) | ((dividend >> bit) & 1ull);
+
+        if (remainder >= divisor)
+        {
+            remainder -= divisor;
+            quotient |= (1ull << bit);
+        }
+    }
+
+    *quotientOut = quotient;
+    *remainderOut = (uint32_t)remainder;
+}
+
 static int *printf_number(int *argp, int length, bool sign, int radix);
 
 static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
@@ -67,14 +64,14 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
     switch (spec)
     {
     case 'c':
-        putc((char)*argp);
+        puts_char((char)*argp);
         argp++;
         break;
 
     case 's':
         if (ctx->length == PRINTF_LENGTH_LONG || ctx->length == PRINTF_LENGTH_LONG_LONG)
         {
-            puts_f(*(const char **)argp);
+            puts(*(const char **)argp);
             argp += 2;
         }
         else
@@ -85,7 +82,7 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
         break;
 
     case '%':
-        putc('%');
+        puts_char('%');
         break;
 
     case 'd':
@@ -123,6 +120,15 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
     return argp;
 }
 
+void puts(const char *str)
+{
+    while (*str)
+    {
+        puts_char(*str);
+        str++;
+    }
+}
+
 void printf(const char *fmt, ...)
 {
     int *argp = (int *)&fmt;
@@ -146,7 +152,7 @@ void printf(const char *fmt, ...)
             }
             else
             {
-                putc(ch);
+                puts_char(ch);
             }
             break;
 
@@ -209,11 +215,10 @@ void printf(const char *fmt, ...)
 static int *printf_number(int *argp, int length, bool sign, int radix)
 {
     char buffer[32];
-    unsigned long long number;
+    unsigned long long number = 0;
     int number_sign = 1;
     int pos = 0;
 
-    // process length
     switch (length)
     {
     case PRINTF_LENGTH_SHORT_SHORT:
@@ -273,21 +278,18 @@ static int *printf_number(int *argp, int length, bool sign, int radix)
         break;
     }
 
-    // convert number to ASCII
     do
     {
         uint32_t rem;
-        x86_div64_32(number, radix, &number, &rem);
+        div64_32(number, (uint32_t)radix, &number, &rem);
         buffer[pos++] = g_HexChars[rem];
     } while (number > 0);
 
-    // add sign
     if (sign && number_sign < 0)
         buffer[pos++] = '-';
 
-    // print number in reverse order
     while (--pos >= 0)
-        putc(buffer[pos]);
+        puts_char(buffer[pos]);
 
     return argp;
 }
