@@ -97,8 +97,9 @@ static void print_file_contents(FS_MOUNT *mount, const char *path)
         return;
     }
 
-    printf("        > ");
+    printf("Contents: ");
 
+    printf("\"");
     while (true)
     {
         bytes_read = fs_read(
@@ -116,6 +117,7 @@ static void print_file_contents(FS_MOUNT *mount, const char *path)
             printf("%c", buffer[i]);
         }
     }
+    printf("\"\r\n");
 
     fs_close(&file);
 }
