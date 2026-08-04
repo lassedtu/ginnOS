@@ -78,11 +78,60 @@ static bool build_child_path(const char *parent, const char *name, char *out)
     return true;
 }
 
+static void print_file_contents(FS_MOUNT *mount, const char *path)
+{
+    FS_FILE file;
+    char buffer[64];
+    uint32_t bytes_read;
+    uint32_t i;
+
+    if (!fs_open(mount, path, &file))
+    {
+        printf("cannot open file: %s\r\n", path);
+        return;
+    }
+
+    if (fs_file_type(&file) != FS_TYPE_FILE)
+    {
+        fs_close(&file);
+        return;
+    }
+
+    printf("        > ");
+
+    while (true)
+    {
+        bytes_read = fs_read(
+            &file,
+            sizeof(buffer),
+            buffer);
+
+        if (bytes_read == 0)
+        {
+            break;
+        }
+
+        for (i = 0; i < bytes_read; i++)
+        {
+            printf("%c", buffer[i]);
+        }
+    }
+
+    fs_close(&file);
+}
+
 static void print_tree_recursive(FS_MOUNT *mount, const char *path, uint32_t depth)
 {
+#define MAX_CHILDREN 32u
+
     FS_FILE dir;
     FS_DIRENT dir_entry;
+
     char child_path[MAX_PATH_LENGTH];
+    char child_dirs[MAX_CHILDREN][MAX_PATH_LENGTH];
+
+    uint32_t child_count = 0;
+    uint32_t i;
 
     if (depth > MAX_TREE_DEPTH)
     {
@@ -111,37 +160,60 @@ static void print_tree_recursive(FS_MOUNT *mount, const char *path, uint32_t dep
             continue;
         }
 
-        if (is_dot_name(dir_entry.name) || is_dotdot_name(dir_entry.name))
+        if (is_dot_name(dir_entry.name) ||
+            is_dotdot_name(dir_entry.name))
         {
             continue;
         }
 
         if (!build_child_path(path, dir_entry.name, child_path))
         {
-            print_indent(depth + 1u);
-            printf("- path too long\r\n");
             continue;
         }
 
-        print_indent(depth + 1u);
-
         if (dir_entry.file_type == FS_TYPE_DIR)
         {
+            print_indent(depth + 1u);
             printf("- %s/\r\n", dir_entry.name);
-            print_tree_recursive(mount, child_path, depth + 1u);
+
+            if (child_count < MAX_CHILDREN)
+            {
+                memcpy(
+                    child_dirs[child_count],
+                    child_path,
+                    strlen(child_path) + 1u);
+
+                child_count++;
+            }
+
             continue;
         }
 
         if (dir_entry.file_type == FS_TYPE_FILE)
         {
+            print_indent(depth + 1u);
             printf("- %s\r\n", dir_entry.name);
+
+            print_file_contents(
+                mount,
+                child_path);
+
             continue;
         }
 
+        print_indent(depth + 1u);
         printf("- %s ?\r\n", dir_entry.name);
     }
 
     fs_close(&dir);
+
+    for (i = 0; i < child_count; i++)
+    {
+        print_tree_recursive(
+            mount,
+            child_dirs[i],
+            depth + 1u);
+    }
 }
 
 void kernel_main(void)
