@@ -1,45 +1,103 @@
-# Ginnung OS
+# GinnOS
+GinnOS (Ginn short for Ginnungagap, and OS short for Operating System) is a personal hobby operating system, which i'm developing alongside a course on operating systems i'm taking at DTU.
 
-This is a small personal project I am building alongside my operating systems course at DTU.
-I am using it to learn more about operating systems development and therefore i don't really know what it will turn into.
+I started this project because i wanted to understand how an operating system is really coded instead of just theory. I plan to keep building and improving it as i learn more.
 
+The name GinnOS is taken from Ginnungagap, the primordial void in Norse mythology from which the world was created.
 
-## Prerequisites
+> "That was the age when nothing was; / There was no sand, nor sea, nor cool waves, / No earth nor sky nor grass there, / Only Ginnungagap."
+> — Völuspá, Poetic Edda
 
-To build this project on macOS, install:
+## macOS Toolchain Setup (Manual)
 
-- Xcode Command Line Tools: `xcode-select --install`
-- Homebrew
-- Build dependencies for the OSDev cross-compiler guide:
-  - `gmp`
-  - `mpfr`
-  - `libmpc`
-  - `texinfo`
-- Tools used by this repository:
-  - `nasm`
-  - `qemu` or `qemu-system-i386`
+### Install host dependencies
 
-The cross-compiler is expected at `~/opt/cross/bin`, with `i686-elf-gcc` and `i686-elf-ld` available on your `PATH`.
+Only install what this two-stage build needs:
 
-## Build
-
-Run the build script from the repository root:
-
-```sh
-./build.sh
+```bash
+brew install gmp mpfr libmpc texinfo nasm qemu
 ```
 
-This creates `bin/os.bin`.
+### Build i686 cross compiler manually
 
-## Boot
+Create build directories:
 
-After building, start the OS with:
-
-```sh
-qemu-system-i386 -m 64M -no-reboot -drive format=raw,file=bin/os.bin
+```bash
+mkdir -p "$HOME/src/cross"
+mkdir -p "$HOME/opt/cross"
+cd "$HOME/src/cross"
 ```
 
-## Notes
+Build and install binutils:
 
-- If `./build.sh` cannot find `i686-elf-gcc`, make sure your cross-compiler is installed under `~/opt/cross` and that `~/opt/cross/bin` is on `PATH`.
-- If QEMU is installed under a different binary name on your system, use that executable instead.
+```bash
+curl -LO https://ftp.gnu.org/gnu/binutils/binutils-2.42.tar.xz
+tar -xf binutils-2.42.tar.xz
+mkdir -p build-binutils
+cd build-binutils
+
+../binutils-2.42/configure \
+  --target=i686-elf \
+  --prefix="$HOME/opt/cross" \
+  --with-sysroot \
+  --disable-nls \
+  --disable-werror
+
+make -j"$(sysctl -n hw.ncpu)"
+make install
+cd ..
+```
+
+Build and install GCC (C only):
+
+```bash
+curl -LO https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz
+tar -xf gcc-14.2.0.tar.xz
+mkdir -p build-gcc
+cd build-gcc
+
+../gcc-14.2.0/configure \
+  --target=i686-elf \
+  --prefix="$HOME/opt/cross" \
+  --disable-nls \
+  --enable-languages=c \
+  --without-headers
+
+make -j"$(sysctl -n hw.ncpu)" all-gcc all-target-libgcc
+make install-gcc install-target-libgcc
+cd ..
+```
+
+### Add cross toolchain to PATH
+
+```bash
+echo 'export PATH="$HOME/opt/cross/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### Verify required tools
+
+```bash
+i686-elf-gcc --version
+i686-elf-ld --version
+i686-elf-objcopy --version
+nasm -v
+qemu-system-i386 --version
+```
+
+## Build and Run
+
+From project root:
+
+```bash
+make
+make run
+```
+
+## Credits and Learning Resources
+
+- Nanobyte: https://www.youtube.com/@nanobyte-dev
+  Operating system tutorials that have been a big help.
+
+- OSDev Wiki: https://wiki.osdev.org/
+  The main reference used for low level concepts and implementation.
