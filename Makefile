@@ -1,3 +1,5 @@
+# Toolchain
+
 CROSS   ?= i686-elf-
 AS      := nasm
 CC      := $(CROSS)gcc
@@ -8,76 +10,97 @@ PYTHON  ?= python3
 
 BUILD_DIR := build
 
-STAGE1_SRC := src/bootloader/stage1/boot.asm
-STAGE2_SRC := src/bootloader/stage2/main.asm
-STAGE2_C_SRC := src/bootloader/stage2/main.c
-STAGE2_OUTPUT_SRC := src/bootloader/stage2/output.c
-COMMON_MEMORY_SRC := src/common/memory.c
-COMMON_STRING_SRC := src/common/string.c
-COMMON_STDIO_SRC := src/common/stdio.c
-DRIVER_BLOCK_SRC := src/drivers/disk/block_device.c
-DRIVER_PARTITION_SRC := src/drivers/disk/partition.c
-DRIVER_ATA_SRC := src/drivers/disk/ata.c
-FS_EXT2_SRC := src/fs/ext2/ext2.c
-KERNEL_FS_SRC := src/kernel/fs/fs.c
-EXT2_IMAGE_TOOL := tools/ext2/make_image.py
-EXT2_SOURCE_DIR ?= tools/ext2/rootfs
-EXT2_SIZE_MB ?=
-EXT2_MIN_SIZE_MB ?= 8
+#  Compiler / linker flags 
 
-STAGE1_BIN := $(BUILD_DIR)/boot/stage1.bin
-STAGE2_OBJ := $(BUILD_DIR)/boot/stage2.o
-STAGE2_C_OBJ := $(BUILD_DIR)/boot/stage2_main.o
-STAGE2_OUTPUT_OBJ := $(BUILD_DIR)/boot/stage2_output.o
-STAGE2_DRIVER_BLOCK_OBJ := $(BUILD_DIR)/boot/block_device.o
-STAGE2_DRIVER_PARTITION_OBJ := $(BUILD_DIR)/boot/partition.o
-STAGE2_DRIVER_ATA_OBJ := $(BUILD_DIR)/boot/ata.o
-STAGE2_FS_EXT2_OBJ := $(BUILD_DIR)/boot/ext2.o
-STAGE2_ELF := $(BUILD_DIR)/boot/stage2.elf
-STAGE2_BIN := $(BUILD_DIR)/boot/stage2.bin
-STAGE2_PAD := $(BUILD_DIR)/boot/stage2.padded.bin
+CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
+          -fno-pie -fno-jump-tables \
+          -MMD -MP
 
-COMMON_MEMORY_OBJ := $(BUILD_DIR)/common/memory.o
-COMMON_STRING_OBJ := $(BUILD_DIR)/common/string.o
-COMMON_STDIO_OBJ := $(BUILD_DIR)/common/stdio.o
-COMMON_OBJS := $(COMMON_MEMORY_OBJ) $(COMMON_STRING_OBJ) $(COMMON_STDIO_OBJ)
+STAGE2_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 \
+                 -fno-pic -fno-stack-protector \
+                 -fno-unwind-tables -fno-asynchronous-unwind-tables \
+                 -ffunction-sections -fdata-sections -fomit-frame-pointer \
+                 -MMD -MP
 
-KERNEL_MAIN_SRC      := src/kernel/main.asm
-KERNEL_C_SRC         := src/kernel/kernel.c
-KERNEL_OUTPUT_SRC    := src/kernel/output.c
-KERNEL_PANIC_SRC     := src/kernel/panic.c
-KERNEL_GDT_SRC       := src/arch/x86/cpu/gdt.c
-KERNEL_GDT_FLUSH_SRC := src/arch/x86/cpu/gdt_flush.asm
-KERNEL_MAIN_OBJ      := $(BUILD_DIR)/kernel/main.o
-KERNEL_C_OBJ         := $(BUILD_DIR)/kernel/kernel.o
-KERNEL_OUTPUT_OBJ    := $(BUILD_DIR)/kernel/output.o
-KERNEL_PANIC_OBJ     := $(BUILD_DIR)/kernel/panic.o
-KERNEL_GDT_OBJ       := $(BUILD_DIR)/kernel/gdt.o
-KERNEL_GDT_FLUSH_OBJ := $(BUILD_DIR)/kernel/gdt_flush.o
-DRIVER_BLOCK_OBJ  	 := $(BUILD_DIR)/kernel/block_device.o
-DRIVER_PARTITION_OBJ := $(BUILD_DIR)/kernel/partition.o
-DRIVER_ATA_OBJ    	 := $(BUILD_DIR)/kernel/ata.o
-FS_EXT2_OBJ       	 := $(BUILD_DIR)/kernel/ext2.o
-KERNEL_FS_OBJ     	 := $(BUILD_DIR)/kernel/fs.o
-KERNEL_ELF        	 := $(BUILD_DIR)/kernel.elf
-KERNEL_BIN        	 := $(BUILD_DIR)/kernel.bin
+COMMON_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 \
+                 -fno-pic -fno-stack-protector \
+                 -fno-unwind-tables -fno-asynchronous-unwind-tables \
+                 -ffunction-sections -fdata-sections -fomit-frame-pointer \
+                 -MMD -MP
 
-# Final bootable disk image
-DISK_IMAGE := $(BUILD_DIR)/ginnos.img
-
-# Intermediate filesystem image embedded into DISK_IMAGE
-ROOTFS_IMAGE := $(BUILD_DIR)/images/rootfs.ext2
-
-STAGE2_SECTORS := 62
-SECTOR_SIZE    := 512
-STAGE2_MAX_BYTES := $(shell echo $$(( $(STAGE2_SECTORS) * $(SECTOR_SIZE) )))
-
-CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32
-STAGE2_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -ffunction-sections -fdata-sections -fomit-frame-pointer
-COMMON_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 -fno-pic -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -ffunction-sections -fdata-sections -fomit-frame-pointer
-LDFLAGS := -T linker/kernel.ld -nostdlib
+LDFLAGS        := -T linker/kernel.ld -nostdlib
 STAGE2_LDFLAGS := -T linker/stage2.ld -nostdlib --gc-sections
 
+#  Source directory sets
+STAGE1_SRC := src/bootloader/stage1/boot.asm
+
+STAGE2_C_DIRS   := src/bootloader/stage2 src/drivers/disk src/fs/ext2
+STAGE2_ENTRY_ASM := src/bootloader/stage2/main.asm
+
+KERNEL_C_DIRS   := src/kernel src/arch src/drivers src/fs
+KERNEL_ASM_DIRS := src/kernel src/arch
+COMMON_C_DIR    := src/common
+
+#  ISR code generation
+ISR_GEN_SCRIPT := tools/generate_isrs.sh
+ISR_GEN_C      := src/arch/x86/cpu/isr_gen.c
+ISR_GEN_INC    := src/arch/x86/asm/isr_gen.inc
+
+#  Root filesystem / disk image
+EXT2_IMAGE_TOOL  := tools/ext2/make_image.py
+EXT2_SOURCE_DIR  ?= tools/ext2/rootfs
+EXT2_SIZE_MB     ?=
+EXT2_MIN_SIZE_MB ?= 8
+
+STAGE1_BIN   := $(BUILD_DIR)/boot/stage1.bin
+STAGE2_ELF   := $(BUILD_DIR)/boot/stage2.elf
+STAGE2_BIN   := $(BUILD_DIR)/boot/stage2.bin
+STAGE2_PAD   := $(BUILD_DIR)/boot/stage2.padded.bin
+KERNEL_ELF   := $(BUILD_DIR)/kernel.elf
+KERNEL_BIN   := $(BUILD_DIR)/kernel.bin
+DISK_IMAGE   := $(BUILD_DIR)/ginnos.img
+ROOTFS_IMAGE := $(BUILD_DIR)/images/rootfs.ext2
+
+STAGE2_SECTORS   := 62
+SECTOR_SIZE      := 512
+STAGE2_MAX_BYTES := $(shell echo $$(( $(STAGE2_SECTORS) * $(SECTOR_SIZE) )))
+
+#  Path mapping helpers 
+src_c_to_obj      = $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(1))
+src_asm_to_obj    = $(patsubst src/%.asm,$(BUILD_DIR)/%.o,$(1))
+src_c_to_stage2   = $(patsubst src/%.c,$(BUILD_DIR)/stage2/%.o,$(1))
+
+find_c_sources    = $(shell find $(1) -name '*.c' 2>/dev/null | sort)
+find_asm_sources  = $(shell find $(1) -name '*.asm' 2>/dev/null | sort)
+
+#  Automatic source discovery
+COMMON_C_SRCS := $(call find_c_sources,$(COMMON_C_DIR))
+COMMON_OBJS   := $(call src_c_to_obj,$(COMMON_C_SRCS))
+
+STAGE2_C_SRCS    := $(foreach d,$(STAGE2_C_DIRS),$(call find_c_sources,$(d)))
+STAGE2_C_OBJS    := $(call src_c_to_stage2,$(STAGE2_C_SRCS))
+STAGE2_ENTRY_OBJ := $(BUILD_DIR)/stage2/bootloader/stage2/entry.o
+
+# Generated ISR table
+KERNEL_C_SRCS := $(sort $(foreach d,$(KERNEL_C_DIRS),$(call find_c_sources,$(d))) \
+                         $(ISR_GEN_C))
+KERNEL_ASM_SRCS := $(foreach d,$(KERNEL_ASM_DIRS),$(call find_asm_sources,$(d)))
+
+KERNEL_C_OBJS   := $(call src_c_to_obj,$(KERNEL_C_SRCS))
+KERNEL_ASM_OBJS := $(call src_asm_to_obj,$(KERNEL_ASM_SRCS))
+KERNEL_ENTRY_OBJ := $(BUILD_DIR)/kernel/main.o
+
+# Link order
+KERNEL_LINK_OBJS := $(KERNEL_ENTRY_OBJ) \
+                    $(filter-out $(KERNEL_ENTRY_OBJ),$(sort $(KERNEL_ASM_OBJS) $(KERNEL_C_OBJS))) \
+                    $(COMMON_OBJS)
+
+STAGE2_LINK_OBJS := $(STAGE2_ENTRY_OBJ) $(sort $(STAGE2_C_OBJS)) $(COMMON_OBJS)
+
+# Dependency files (C compilations only)
+DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
+
+# Phony targets
 .PHONY: all run rootfs-image clean check-tools
 
 all: check-tools $(DISK_IMAGE)
@@ -90,132 +113,70 @@ check-tools:
 	@command -v $(QEMU) >/dev/null 2>&1 || { echo "Missing tool: $(QEMU)"; exit 1; }
 	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "Missing tool: $(PYTHON)"; exit 1; }
 
+# ISR generation
+$(ISR_GEN_C) $(ISR_GEN_INC): $(ISR_GEN_SCRIPT)
+	@mkdir -p $(dir $(ISR_GEN_C)) $(dir $(ISR_GEN_INC))
+	./$(ISR_GEN_SCRIPT) $(ISR_GEN_C) $(ISR_GEN_INC)
+
+# Stage 1 bootloader — flat binary, no C
 $(STAGE1_BIN): $(STAGE1_SRC)
-	mkdir -p $(dir $@)
+	@mkdir -p $(dir $@)
 	$(AS) -f bin $< -o $@
 	@test $$(wc -c < $@) -eq 512 || { echo "stage1 must be exactly 512 bytes"; exit 1; }
 
-$(STAGE2_DRIVER_BLOCK_OBJ): $(DRIVER_BLOCK_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(STAGE2_CFLAGS) -c $< -o $@
-
-$(STAGE2_DRIVER_PARTITION_OBJ): $(DRIVER_PARTITION_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(STAGE2_CFLAGS) -c $< -o $@
-
-$(STAGE2_DRIVER_ATA_OBJ): $(DRIVER_ATA_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(STAGE2_CFLAGS) -c $< -o $@
-
-$(STAGE2_FS_EXT2_OBJ): $(FS_EXT2_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(STAGE2_CFLAGS) -c $< -o $@
-
-$(STAGE2_BIN): $(STAGE2_SRC) $(STAGE2_C_SRC) $(STAGE2_OUTPUT_SRC) $(STAGE2_DRIVER_BLOCK_OBJ) $(STAGE2_DRIVER_PARTITION_OBJ) $(STAGE2_DRIVER_ATA_OBJ) $(STAGE2_FS_EXT2_OBJ) $(COMMON_OBJS) linker/stage2.ld
-	mkdir -p $(dir $@)
-	$(AS) -f elf32 $(STAGE2_SRC) -o $(STAGE2_OBJ)
-	$(CC) $(STAGE2_CFLAGS) -c $(STAGE2_C_SRC) -o $(STAGE2_C_OBJ)
-	$(CC) $(STAGE2_CFLAGS) -c $(STAGE2_OUTPUT_SRC) -o $(STAGE2_OUTPUT_OBJ)
-	$(LD) $(STAGE2_LDFLAGS) -o $(STAGE2_ELF) $(STAGE2_OBJ) $(STAGE2_C_OBJ) $(STAGE2_OUTPUT_OBJ) $(STAGE2_DRIVER_BLOCK_OBJ) $(STAGE2_DRIVER_PARTITION_OBJ) $(STAGE2_DRIVER_ATA_OBJ) $(STAGE2_FS_EXT2_OBJ) $(COMMON_OBJS)
-	$(OBJCOPY) -O binary $(STAGE2_ELF) $(STAGE2_BIN)
-	@test $$(wc -c < $(STAGE2_BIN)) -le $(STAGE2_MAX_BYTES) || { echo "stage2 exceeds $(STAGE2_MAX_BYTES) bytes"; exit 1; }
-
-$(COMMON_MEMORY_OBJ): $(COMMON_MEMORY_SRC)
-	mkdir -p $(dir $@)
+# Pattern rules — shared library code (compiled once, linked into stage2 + kernel)
+$(BUILD_DIR)/common/%.o: src/common/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(COMMON_CFLAGS) -c $< -o $@
 
-$(COMMON_STRING_OBJ): $(COMMON_STRING_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(COMMON_CFLAGS) -c $< -o $@
 
-$(COMMON_STDIO_OBJ): $(COMMON_STDIO_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(COMMON_CFLAGS) -c $< -o $@
+# Pattern rules — kernel (C + NASM elf32)
+$(BUILD_DIR)/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/%.o: src/%.asm
+	@mkdir -p $(dir $@)
+	$(AS) -f elf32 -I $(dir $<) $< -o $@
+
+# isr.asm %includes the generated stub table
+$(BUILD_DIR)/arch/x86/asm/isr.o: $(ISR_GEN_INC)
+
+
+# Pattern rules — stage2 (separate object tree, different C flags)
+$(BUILD_DIR)/stage2/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(STAGE2_CFLAGS) -c $< -o $@
+
+# main.asm is the stage2 entry point; main.c lives in the same directory,
+# so the entry object is named entry.o to avoid a basename collision.
+$(STAGE2_ENTRY_OBJ): $(STAGE2_ENTRY_ASM)
+	@mkdir -p $(dir $@)
+	$(AS) -f elf32 $< -o $@
+
+# Stage 2 link
+$(STAGE2_BIN): $(STAGE2_LINK_OBJS) linker/stage2.ld $(ISR_GEN_SCRIPT)
+	@mkdir -p $(dir $(STAGE2_ELF))
+	$(LD) $(STAGE2_LDFLAGS) -o $(STAGE2_ELF) $(STAGE2_LINK_OBJS)
+	$(OBJCOPY) -O binary $(STAGE2_ELF) $@
+	@test $$(wc -c < $@) -le $(STAGE2_MAX_BYTES) || \
+		{ echo "stage2 exceeds $(STAGE2_MAX_BYTES) bytes"; exit 1; }
 
 $(STAGE2_PAD): $(STAGE2_BIN)
 	cp $(STAGE2_BIN) $@
 	truncate -s $(STAGE2_MAX_BYTES) $@
 
-$(KERNEL_MAIN_OBJ): $(KERNEL_MAIN_SRC)
-	mkdir -p $(dir $@)
-	$(AS) -f elf32 $< -o $@
-
-$(KERNEL_C_OBJ): $(KERNEL_C_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(KERNEL_OUTPUT_OBJ): $(KERNEL_OUTPUT_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(KERNEL_PANIC_OBJ): $(KERNEL_PANIC_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(KERNEL_GDT_OBJ): $(KERNEL_GDT_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(KERNEL_GDT_FLUSH_OBJ): $(KERNEL_GDT_FLUSH_SRC)
-	mkdir -p $(dir $@)
-	$(AS) -f elf32 $< -o $@
-
-$(DRIVER_BLOCK_OBJ): $(DRIVER_BLOCK_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(DRIVER_PARTITION_OBJ): $(DRIVER_PARTITION_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(DRIVER_ATA_OBJ): $(DRIVER_ATA_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(FS_EXT2_OBJ): $(FS_EXT2_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(KERNEL_FS_OBJ): $(KERNEL_FS_SRC)
-	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(KERNEL_ELF): $(KERNEL_MAIN_OBJ) \
-               $(KERNEL_C_OBJ) \
-               $(KERNEL_OUTPUT_OBJ) \
-               $(KERNEL_PANIC_OBJ) \
-               $(KERNEL_GDT_OBJ) \
-               $(KERNEL_GDT_FLUSH_OBJ) \
-               $(DRIVER_BLOCK_OBJ) \
-               $(DRIVER_PARTITION_OBJ) \
-               $(DRIVER_ATA_OBJ) \
-               $(FS_EXT2_OBJ) \
-               $(KERNEL_FS_OBJ) \
-               $(COMMON_OBJS) \
-               linker/kernel.ld
-	$(LD) $(LDFLAGS) -o $@ \
-		$(KERNEL_MAIN_OBJ) \
-		$(KERNEL_C_OBJ) \
-		$(KERNEL_OUTPUT_OBJ) \
-		$(KERNEL_PANIC_OBJ) \
-		$(KERNEL_GDT_OBJ) \
-		$(KERNEL_GDT_FLUSH_OBJ) \
-		$(DRIVER_BLOCK_OBJ) \
-		$(DRIVER_PARTITION_OBJ) \
-		$(DRIVER_ATA_OBJ) \
-		$(FS_EXT2_OBJ) \
-		$(KERNEL_FS_OBJ) \
-		$(COMMON_OBJS)
+# Kernel link
+$(KERNEL_ELF): $(KERNEL_LINK_OBJS) linker/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
+	$(LD) $(LDFLAGS) -o $@ $(KERNEL_LINK_OBJS)
 
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
 
+# Root filesystem and disk image
 rootfs-image: $(KERNEL_BIN)
-	mkdir -p $(EXT2_SOURCE_DIR)/boot
-	mkdir -p $(dir $(ROOTFS_IMAGE))
-
+	@mkdir -p $(EXT2_SOURCE_DIR)/boot $(dir $(ROOTFS_IMAGE))
 	cp $(KERNEL_BIN) $(EXT2_SOURCE_DIR)/boot/kernel.bin
-
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(EXT2_SOURCE_DIR)" \
 		--output "$(ROOTFS_IMAGE)" \
@@ -236,3 +197,7 @@ run: check-tools $(DISK_IMAGE)
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(EXT2_SOURCE_DIR)/boot/kernel.bin
+	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
+
+# Automatic header dependencies
+-include $(DEP_FILES)

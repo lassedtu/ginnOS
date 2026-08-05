@@ -2,10 +2,11 @@
 #include "panic.h"
 #include "assert.h"
 #include "../common/stdio.h"
-#include "../arch/x86/cpu/gdt.h"
+#include "hal/hal.h"
 #include "../drivers/disk/ata.h"
 #include "../drivers/disk/partition.h"
 #include "fs/fs.h"
+#include "../arch/x86/cpu/io.h"
 
 void kernel_main(void)
 {
@@ -15,9 +16,11 @@ void kernel_main(void)
 
     printf("Kernel: entered 32-bit C main\r\n");
 
-    gdt_initialize();
+    hal_initialize();
 
-    printf("GDT initialized\r\n");
+    io_enable_interrupts();
+
+    printf("HAL initialized\r\n");
 
     if (!ATA_Initialize(&ata))
     {

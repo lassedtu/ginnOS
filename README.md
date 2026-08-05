@@ -8,7 +8,18 @@ The name GinnOS is taken from Ginnungagap, the primordial void in Norse mytholog
 > "That was the age when nothing was; / There was no sand, nor sea, nor cool waves, / No earth nor sky nor grass there, / Only Ginnungagap."
 > — Völuspá, Poetic Edda
 
+### Documentation
+
+I've recently started on writing documentation for this project in obsidian and hosting it using quartz, this can be read at: https://lassedtu.github.io/ginnOS-docs/
+
 ## macOS Toolchain Setup (Manual)
+
+### Clone the project
+
+```bash
+git clone https://github.com/lassedtu/ginnOS
+cd ginnOS
+```
 
 ### Install host dependencies
 
@@ -84,6 +95,140 @@ i686-elf-objcopy --version
 nasm -v
 qemu-system-i386 --version
 ```
+
+## Ubuntu / Debian Toolchain Setup (Manual)
+
+### Clone the project
+
+```bash
+git clone https://github.com/lassedtu/ginnOS
+cd ginnOS
+```
+
+### Install host dependencies
+
+Only install what this two-stage build needs:
+
+```bash
+sudo apt update
+sudo apt install build-essential curl nasm qemu-system-x86 \
+  libgmp-dev libmpfr-dev libmpc-dev texinfo bison flex \
+  python3 e2fsprogs
+```
+
+### Build i686 cross compiler manually
+
+Create build directories:
+
+```bash
+mkdir -p "$HOME/src/cross"
+mkdir -p "$HOME/opt/cross"
+cd "$HOME/src/cross"
+```
+
+Build and install binutils:
+
+```bash
+curl -LO https://ftp.gnu.org/gnu/binutils/binutils-2.42.tar.xz
+tar -xf binutils-2.42.tar.xz
+mkdir -p build-binutils
+cd build-binutils
+
+../binutils-2.42/configure \
+  --target=i686-elf \
+  --prefix="$HOME/opt/cross" \
+  --with-sysroot \
+  --disable-nls \
+  --disable-werror
+
+make -j"$(nproc)"
+make install
+cd ..
+```
+
+Build and install GCC (C only):
+
+```bash
+curl -LO https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz
+tar -xf gcc-14.2.0.tar.xz
+mkdir -p build-gcc
+cd build-gcc
+
+../gcc-14.2.0/configure \
+  --target=i686-elf \
+  --prefix="$HOME/opt/cross" \
+  --disable-nls \
+  --enable-languages=c \
+  --without-headers
+
+make -j"$(nproc)" all-gcc all-target-libgcc
+make install-gcc install-target-libgcc
+cd ..
+```
+
+### Add cross toolchain to PATH
+
+```bash
+echo 'export PATH="$HOME/opt/cross/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+If you use zsh instead of bash, append the same line to `~/.zshrc`.
+
+### Verify required tools
+
+```bash
+i686-elf-gcc --version
+i686-elf-ld --version
+i686-elf-objcopy --version
+nasm -v
+qemu-system-i386 --version
+```
+
+## Windows Toolchain Setup (WSL2)
+
+GinnOS uses `make`, a cross-compiler, NASM, and QEMU. On Windows, the simplest way to get all of that working is **WSL2** with Ubuntu — you get the same Linux toolchain as on a native install, without fighting MSYS or native Windows ports.
+
+### Install WSL2 and Ubuntu
+
+Open **PowerShell as Administrator** and run:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Restart if Windows asks you to. When you're back, Ubuntu will finish setup and prompt you to create a Linux user account.
+
+If WSL is already installed and you only need the distro:
+
+```powershell
+wsl --list --online
+wsl --install -d Ubuntu
+```
+
+### Clone the project inside WSL
+
+Open Ubuntu (Start menu, or type `wsl` in PowerShell) and work from the Linux filesystem — for example `~/projects/ginnOS`.
+
+Avoid building from `/mnt/c/...` if you can; file I/O across the Windows/Linux boundary is noticeably slower and can cause odd issues with tools like `make`.
+
+```bash
+mkdir -p ~/projects
+cd ~/projects
+git clone https://github.com/lassedtu/ginnOS
+cd ginnOS
+```
+
+### Install the toolchain
+
+Everything from here is the same as on native Ubuntu. In your WSL terminal, follow the **Ubuntu / Debian Toolchain Setup** section:
+
+1. Install host dependencies
+2. Build the i686 cross compiler manually
+3. Add the cross toolchain to `PATH`
+4. Verify required tools
+
+Once that is done, build from the project root — see **Build and Run** below. QEMU should open in its own window; on most Windows 11 + WSL2 setups this works without extra configuration.
 
 ## Build and Run
 
