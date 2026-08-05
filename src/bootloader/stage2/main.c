@@ -6,8 +6,6 @@
 
 #define KERNEL_ENTRY_ADDRESS 0x10000u
 
-void vga_clear_screen(void);
-
 void cstart_(uint16_t bootDrive)
 {
     typedef void (*KernelEntryFn)(void);

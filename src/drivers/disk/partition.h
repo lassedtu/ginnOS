@@ -2,6 +2,9 @@
 
 #include "block_device.h"
 
+/**
+ * partition device structure representing a partition on a block device.
+ */
 typedef struct
 {
     BLOCK_DEVICE block;   // partition block device wrapper.

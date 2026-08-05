@@ -67,18 +67,23 @@ def prepare_filtered_source(source_dir: Path, temp_root: Path) -> Path:
 
 
 def recommend_size_mb(source_dir: Path, min_size_mb: int) -> int:
-    """Estimate a practical ext2 image size for a directory tree.
-
-    Heuristic:
-    - include file bytes
-    - add 35% metadata/slack overhead
-    - add fixed 8 MiB headroom
-    - round up to full MiB
-    - enforce minimum size
     """
+    Estimate ext2 image size.
+
+    - 50% metadata/slack overhead
+    - 2 MiB growth space
+    - round up
+    """
+
     data_bytes = source_size_bytes(source_dir)
-    estimated_bytes = int(data_bytes * 1.35) + (8 * MIB)
-    estimated_mb = max(1, math.ceil(estimated_bytes / MIB))
+
+    estimated_bytes = int(data_bytes * 1.5) + (2 * MIB)
+
+    estimated_mb = max(
+        1,
+        math.ceil(estimated_bytes / MIB)
+    )
+
     return max(min_size_mb, estimated_mb)
 
 
@@ -105,8 +110,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-size-mb",
         type=int,
-        default=16,
-        help="Minimum size when auto-sizing is used (default: 16).",
+        default=4,
+        help="Minimum size when auto-sizing is used (default: 4).",
     )
     parser.add_argument(
         "--label",

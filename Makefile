@@ -23,6 +23,7 @@ KERNEL_FS_SRC := src/kernel/fs/fs.c
 EXT2_IMAGE_TOOL := tools/ext2/make_image.py
 EXT2_SOURCE_DIR ?= tools/ext2/rootfs
 EXT2_SIZE_MB ?=
+EXT2_MIN_SIZE_MB ?= 8
 
 STAGE1_BIN := $(BUILD_DIR)/boot/stage1.bin
 STAGE2_OBJ := $(BUILD_DIR)/boot/stage2.o
@@ -61,8 +62,11 @@ KERNEL_FS_OBJ     	 := $(BUILD_DIR)/kernel/fs.o
 KERNEL_ELF        	 := $(BUILD_DIR)/kernel.elf
 KERNEL_BIN        	 := $(BUILD_DIR)/kernel.bin
 
+# Final bootable disk image
 DISK_IMAGE := $(BUILD_DIR)/ginnos.img
-EXT2_IMAGE := $(BUILD_DIR)/ext2.img
+
+# Intermediate filesystem image embedded into DISK_IMAGE
+ROOTFS_IMAGE := $(BUILD_DIR)/images/rootfs.ext2
 
 STAGE2_SECTORS := 62
 SECTOR_SIZE    := 512
@@ -74,7 +78,7 @@ COMMON_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 -fno-pic -fno-
 LDFLAGS := -T linker/kernel.ld -nostdlib
 STAGE2_LDFLAGS := -T linker/stage2.ld -nostdlib --gc-sections
 
-.PHONY: all run ext2-image run-ext2 clean check-tools
+.PHONY: all run rootfs-image clean check-tools
 
 all: check-tools $(DISK_IMAGE)
 
@@ -206,23 +210,29 @@ $(KERNEL_ELF): $(KERNEL_MAIN_OBJ) \
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
 
-ext2-image: $(KERNEL_BIN)
+rootfs-image: $(KERNEL_BIN)
 	mkdir -p $(EXT2_SOURCE_DIR)/boot
-	cp $(KERNEL_BIN) $(EXT2_SOURCE_DIR)/boot/kernel.bin
-	$(PYTHON) $(EXT2_IMAGE_TOOL) --source "$(EXT2_SOURCE_DIR)" --output "$(EXT2_IMAGE)" $(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
+	mkdir -p $(dir $(ROOTFS_IMAGE))
 
-$(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) ext2-image
-	@EXT2_BYTES=$$(wc -c < $(EXT2_IMAGE)); \
+	cp $(KERNEL_BIN) $(EXT2_SOURCE_DIR)/boot/kernel.bin
+
+	$(PYTHON) $(EXT2_IMAGE_TOOL) \
+		--source "$(EXT2_SOURCE_DIR)" \
+		--output "$(ROOTFS_IMAGE)" \
+		--min-size-mb $(EXT2_MIN_SIZE_MB) \
+		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
+
+$(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) rootfs-image
+	@EXT2_BYTES=$$(wc -c < $(ROOTFS_IMAGE)); \
 	TOTAL_BYTES=$$(echo $$(( 63 * 512 + $$EXT2_BYTES ))); \
 	truncate -s $$TOTAL_BYTES $@
 	dd if=$(STAGE1_BIN) of=$@ bs=512 seek=0 conv=notrunc status=none
 	dd if=$(STAGE2_PAD) of=$@ bs=512 seek=1 conv=notrunc status=none
-	dd if=$(EXT2_IMAGE) of=$@ bs=512 seek=63 conv=notrunc status=none
+	dd if=$(ROOTFS_IMAGE) of=$@ bs=512 seek=63 conv=notrunc status=none
 
 run: check-tools $(DISK_IMAGE)
 	$(QEMU) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
-run-ext2: run
-
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -f $(EXT2_SOURCE_DIR)/boot/kernel.bin
