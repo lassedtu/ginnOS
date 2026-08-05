@@ -2,6 +2,7 @@
 #include "panic.h"
 #include "assert.h"
 #include "../common/stdio.h"
+#include "../arch/x86/cpu/gdt.h"
 #include "../drivers/disk/ata.h"
 #include "../drivers/disk/partition.h"
 #include "fs/fs.h"
@@ -13,6 +14,10 @@ void kernel_main(void)
     FS_MOUNT mount;
 
     printf("Kernel: entered 32-bit C main\r\n");
+
+    gdt_initialize();
+
+    printf("GDT initialized\r\n");
 
     if (!ATA_Initialize(&ata))
     {

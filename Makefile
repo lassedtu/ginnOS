@@ -41,21 +41,25 @@ COMMON_STRING_OBJ := $(BUILD_DIR)/common/string.o
 COMMON_STDIO_OBJ := $(BUILD_DIR)/common/stdio.o
 COMMON_OBJS := $(COMMON_MEMORY_OBJ) $(COMMON_STRING_OBJ) $(COMMON_STDIO_OBJ)
 
-KERNEL_MAIN_SRC   := src/kernel/main.asm
-KERNEL_C_SRC      := src/kernel/kernel.c
-KERNEL_OUTPUT_SRC := src/kernel/output.c
-KERNEL_PANIC_SRC  := src/kernel/panic.c
-KERNEL_MAIN_OBJ   := $(BUILD_DIR)/kernel/main.o
-KERNEL_C_OBJ      := $(BUILD_DIR)/kernel/kernel.o
-KERNEL_OUTPUT_OBJ := $(BUILD_DIR)/kernel/output.o
-KERNEL_PANIC_OBJ  := $(BUILD_DIR)/kernel/panic.o
-DRIVER_BLOCK_OBJ  := $(BUILD_DIR)/kernel/block_device.o
+KERNEL_MAIN_SRC      := src/kernel/main.asm
+KERNEL_C_SRC         := src/kernel/kernel.c
+KERNEL_OUTPUT_SRC    := src/kernel/output.c
+KERNEL_PANIC_SRC     := src/kernel/panic.c
+KERNEL_GDT_SRC       := src/arch/x86/cpu/gdt.c
+KERNEL_GDT_FLUSH_SRC := src/arch/x86/cpu/gdt_flush.asm
+KERNEL_MAIN_OBJ      := $(BUILD_DIR)/kernel/main.o
+KERNEL_C_OBJ         := $(BUILD_DIR)/kernel/kernel.o
+KERNEL_OUTPUT_OBJ    := $(BUILD_DIR)/kernel/output.o
+KERNEL_PANIC_OBJ     := $(BUILD_DIR)/kernel/panic.o
+KERNEL_GDT_OBJ       := $(BUILD_DIR)/kernel/gdt.o
+KERNEL_GDT_FLUSH_OBJ := $(BUILD_DIR)/kernel/gdt_flush.o
+DRIVER_BLOCK_OBJ  	 := $(BUILD_DIR)/kernel/block_device.o
 DRIVER_PARTITION_OBJ := $(BUILD_DIR)/kernel/partition.o
-DRIVER_ATA_OBJ    := $(BUILD_DIR)/kernel/ata.o
-FS_EXT2_OBJ       := $(BUILD_DIR)/kernel/ext2.o
-KERNEL_FS_OBJ     := $(BUILD_DIR)/kernel/fs.o
-KERNEL_ELF        := $(BUILD_DIR)/kernel.elf
-KERNEL_BIN        := $(BUILD_DIR)/kernel.bin
+DRIVER_ATA_OBJ    	 := $(BUILD_DIR)/kernel/ata.o
+FS_EXT2_OBJ       	 := $(BUILD_DIR)/kernel/ext2.o
+KERNEL_FS_OBJ     	 := $(BUILD_DIR)/kernel/fs.o
+KERNEL_ELF        	 := $(BUILD_DIR)/kernel.elf
+KERNEL_BIN        	 := $(BUILD_DIR)/kernel.bin
 
 DISK_IMAGE := $(BUILD_DIR)/ginnos.img
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
@@ -144,6 +148,14 @@ $(KERNEL_PANIC_OBJ): $(KERNEL_PANIC_SRC)
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(KERNEL_GDT_OBJ): $(KERNEL_GDT_SRC)
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(KERNEL_GDT_FLUSH_OBJ): $(KERNEL_GDT_FLUSH_SRC)
+	mkdir -p $(dir $@)
+	$(AS) -f elf32 $< -o $@
+
 $(DRIVER_BLOCK_OBJ): $(DRIVER_BLOCK_SRC)
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -164,8 +176,32 @@ $(KERNEL_FS_OBJ): $(KERNEL_FS_SRC)
 	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(KERNEL_ELF): $(KERNEL_MAIN_OBJ) $(KERNEL_C_OBJ) $(KERNEL_OUTPUT_OBJ) $(KERNEL_PANIC_OBJ) $(DRIVER_BLOCK_OBJ) $(DRIVER_PARTITION_OBJ) $(DRIVER_ATA_OBJ) $(FS_EXT2_OBJ) $(KERNEL_FS_OBJ) $(COMMON_OBJS) linker/kernel.ld
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_MAIN_OBJ) $(KERNEL_C_OBJ) $(KERNEL_OUTPUT_OBJ) $(KERNEL_PANIC_OBJ) $(DRIVER_BLOCK_OBJ) $(DRIVER_PARTITION_OBJ) $(DRIVER_ATA_OBJ) $(FS_EXT2_OBJ) $(KERNEL_FS_OBJ) $(COMMON_OBJS)
+$(KERNEL_ELF): $(KERNEL_MAIN_OBJ) \
+               $(KERNEL_C_OBJ) \
+               $(KERNEL_OUTPUT_OBJ) \
+               $(KERNEL_PANIC_OBJ) \
+               $(KERNEL_GDT_OBJ) \
+               $(KERNEL_GDT_FLUSH_OBJ) \
+               $(DRIVER_BLOCK_OBJ) \
+               $(DRIVER_PARTITION_OBJ) \
+               $(DRIVER_ATA_OBJ) \
+               $(FS_EXT2_OBJ) \
+               $(KERNEL_FS_OBJ) \
+               $(COMMON_OBJS) \
+               linker/kernel.ld
+	$(LD) $(LDFLAGS) -o $@ \
+		$(KERNEL_MAIN_OBJ) \
+		$(KERNEL_C_OBJ) \
+		$(KERNEL_OUTPUT_OBJ) \
+		$(KERNEL_PANIC_OBJ) \
+		$(KERNEL_GDT_OBJ) \
+		$(KERNEL_GDT_FLUSH_OBJ) \
+		$(DRIVER_BLOCK_OBJ) \
+		$(DRIVER_PARTITION_OBJ) \
+		$(DRIVER_ATA_OBJ) \
+		$(FS_EXT2_OBJ) \
+		$(KERNEL_FS_OBJ) \
+		$(COMMON_OBJS)
 
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
