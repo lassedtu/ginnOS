@@ -3,31 +3,31 @@
 #include "../../common/stdint.h"
 #include "../../drivers/disk/block_device.h"
 
-#define EXT2_SUPERBLOCK_OFFSET 1024u
-#define EXT2_SUPERBLOCK_MAGIC 0xEF53u
-#define EXT2_NDIR_BLOCKS 12u
+#define EXT2_SUPERBLOCK_OFFSET 1024u  // byte offset of superblock from start of partition
+#define EXT2_SUPERBLOCK_MAGIC 0xEF53u // magic number in superblock to identify ext2 filesystem
+#define EXT2_NDIR_BLOCKS 12u          // number of direct block pointers in an inode
 
-#define EXT2_INODE_ROOT 2u
+#define EXT2_INODE_ROOT 2u // inode number of the root directory
 
-#define EXT2_FT_REG_FILE 1u
-#define EXT2_FT_DIR 2u
+#define EXT2_FT_REG_FILE 1u // file type value for regular files in directory entries
+#define EXT2_FT_DIR 2u      // file type value for directories in directory entries
 
-#define EXT2_S_IFREG 0x8000u
-#define EXT2_S_IFDIR 0x4000u
-#define EXT2_S_IFMT 0xF000u
+#define EXT2_S_IFREG 0x8000u // file type value for regular files in inode mode field
+#define EXT2_S_IFDIR 0x4000u // file type value for directories in inode mode field
+#define EXT2_S_IFMT 0xF000u  // bitmask for extracting file type from inode mode field
 
-#define EXT2_FEATURE_INCOMPAT_COMPRESSION 0x0001u
-#define EXT2_FEATURE_INCOMPAT_FILETYPE 0x0002u
-#define EXT2_FEATURE_INCOMPAT_RECOVER 0x0004u
-#define EXT2_FEATURE_INCOMPAT_JOURNAL_DEV 0x0008u
-#define EXT2_FEATURE_INCOMPAT_META_BG 0x0010u
-#define EXT2_FEATURE_INCOMPAT_EXTENTS 0x0040u
-#define EXT2_FEATURE_INCOMPAT_64BIT 0x0080u
-#define EXT2_FEATURE_INCOMPAT_MMP 0x0100u
-#define EXT2_FEATURE_INCOMPAT_FLEX_BG 0x0200u
+#define EXT2_FEATURE_INCOMPAT_COMPRESSION 0x0001u // incompatible feature set flag for compression support
+#define EXT2_FEATURE_INCOMPAT_FILETYPE 0x0002u    // incompatible feature set flag for file type support
+#define EXT2_FEATURE_INCOMPAT_RECOVER 0x0004u     // incompatible feature set flag for journal recovery support
+#define EXT2_FEATURE_INCOMPAT_JOURNAL_DEV 0x0008u // incompatible feature set flag for journal device support
+#define EXT2_FEATURE_INCOMPAT_META_BG 0x0010u     // incompatible feature set flag for meta block group support
+#define EXT2_FEATURE_INCOMPAT_EXTENTS 0x0040u     // incompatible feature set flag for extent support
+#define EXT2_FEATURE_INCOMPAT_64BIT 0x0080u       // incompatible feature set flag for 64-bit support
+#define EXT2_FEATURE_INCOMPAT_MMP 0x0100u         // incompatible feature set flag for multiple mount protection support
+#define EXT2_FEATURE_INCOMPAT_FLEX_BG 0x0200u     // incompatible feature set flag for flexible block group support
 
-#define EXT2_MAX_BLOCK_SIZE 4096u
-#define EXT2_MAX_INODE_SIZE 256u
+#define EXT2_MAX_BLOCK_SIZE 4096u // maximum block size supported by ext2 filesystem (in bytes)
+#define EXT2_MAX_INODE_SIZE 256u  // maximum inode size supported by ext2 filesystem (in bytes)
 
 typedef struct __attribute__((packed))
 {

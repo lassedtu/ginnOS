@@ -4,32 +4,44 @@
 #include "../../drivers/disk/block_device.h"
 #include "../../fs/ext2/ext2.h"
 
+/**
+ * file system types
+ */
 enum
 {
-    FS_TYPE_UNKNOWN = 0,
-    FS_TYPE_FILE = 1,
-    FS_TYPE_DIR = 2,
+    FS_TYPE_UNKNOWN = 0, // unknown or unsupported file type
+    FS_TYPE_FILE = 1,    // regular file
+    FS_TYPE_DIR = 2,     // directory
 };
 
+/**
+ * directory entry structure for reading directory contents.
+ */
 typedef struct
 {
-    uint32_t inode;
-    uint8_t file_type;
-    uint32_t size;
-    char name[256];
+    uint32_t inode;    // inode number of the file or directory
+    uint8_t file_type; // type of the file
+    uint32_t size;     // size of the file in bytes
+    char name[256];    // null-terminated name of the file or directory (max 255 characters)
 } FS_DIRENT;
 
+/**
+ * filesystem mount structure representing a mounted filesystem.
+ */
 typedef struct
 {
-    EXT2_VOLUME ext2;
-    uint8_t is_mounted;
+    EXT2_VOLUME ext2;   // pointer to the EXT2_VOLUME structure representing the mounted filesystem
+    uint8_t is_mounted; // flag indicating whether the filesystem is successfully mounted (1 for mounted, 0 for not mounted)
 } FS_MOUNT;
 
+/**
+ * file handle structure representing an open file or directory.
+ */
 typedef struct
 {
-    EXT2_FILE ext2_file;
-    uint8_t file_type;
-    uint8_t is_open;
+    EXT2_FILE ext2_file; // pointer to the EXT2_FILE structure representing the open file or directory
+    uint8_t file_type;   // type of the file (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN)
+    uint8_t is_open;     // flag indicating whether the file is open (1 for open, 0 for closed)
 } FS_FILE;
 
 /**
