@@ -2,32 +2,38 @@
 
 enum
 {
-    PRINTF_STATE_NORMAL = 0,
-    PRINTF_STATE_LENGTH,
-    PRINTF_STATE_LENGTH_SHORT,
-    PRINTF_STATE_LENGTH_LONG,
-    PRINTF_STATE_SPEC,
+    PRINTF_STATE_NORMAL = 0,   // normal state, not parsing a format specifier
+    PRINTF_STATE_LENGTH,       // parsing length modifier (h, hh, l, ll)
+    PRINTF_STATE_LENGTH_SHORT, // parsing length modifier (h)
+    PRINTF_STATE_LENGTH_LONG,  // parsing length modifier (l)
+    PRINTF_STATE_SPEC,         // parsing format specifier (d, u, x, s, c, etc.)
 };
 
 enum
 {
-    PRINTF_LENGTH_DEFAULT = 0,
-    PRINTF_LENGTH_SHORT_SHORT,
-    PRINTF_LENGTH_SHORT,
-    PRINTF_LENGTH_LONG,
-    PRINTF_LENGTH_LONG_LONG,
+    PRINTF_LENGTH_DEFAULT = 0, // default length (int or pointer)
+    PRINTF_LENGTH_SHORT_SHORT, // short short length (char)
+    PRINTF_LENGTH_SHORT,       // short length (short)
+    PRINTF_LENGTH_LONG,        // long length (long)
+    PRINTF_LENGTH_LONG_LONG,   // long long length (long long)
 };
 
+/**
+ * context structure for printf state machine.
+ */
 typedef struct
 {
-    int state;
-    int length;
-    int radix;
-    bool sign;
+    int state;  // current state of the printf parser (one of PRINTF_STATE_*)
+    int length; // current length modifier (one of PRINTF_LENGTH_*)
+    int radix;  // current numeric base for number formatting (e.g., 10 for decimal, 16 for hexadecimal)
+    bool sign;  // flag indicating whether the number is signed (true for signed, false for unsigned)
 } PrintfContext;
 
-static const char g_HexChars[] = "0123456789abcdef";
+static const char g_HexChars[] = "0123456789abcdef"; // hexadecimal characters for number formatting
 
+/**
+ * reset the printf context to its default state.
+ */
 static void printf_context_reset(PrintfContext *ctx)
 {
     ctx->state = PRINTF_STATE_NORMAL;
@@ -36,6 +42,10 @@ static void printf_context_reset(PrintfContext *ctx)
     ctx->sign = false;
 }
 
+/**
+ * compute the quotient and remainder of a 64-bit unsigned integer divided by a 32-bit unsigned integer.
+ * (since standard library is not available this is implemented manually)
+ */
 static void div64_32(uint64_t dividend, uint32_t divisor, uint64_t *quotientOut, uint32_t *remainderOut)
 {
     uint64_t quotient = 0;
@@ -57,8 +67,14 @@ static void div64_32(uint64_t dividend, uint32_t divisor, uint64_t *quotientOut,
     *remainderOut = (uint32_t)remainder;
 }
 
+/**
+ * write a number to the output (VGA text buffer).
+ */
 static int *printf_number(int *argp, int length, bool sign, int radix);
 
+/**
+ * handle a format specifier in printf and write the corresponding output.
+ */
 static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
 {
     switch (spec)

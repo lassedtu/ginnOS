@@ -13,6 +13,9 @@ static uint32_t g_cursor_row = 0;
 static uint32_t g_cursor_col = 0;
 static uint8_t g_cursor_synced = 0;
 
+/**
+ * write a byte to an I/O port.
+ */
 static inline void io_outb(uint16_t port, uint8_t value)
 {
     __asm__ __volatile__(
@@ -21,6 +24,9 @@ static inline void io_outb(uint16_t port, uint8_t value)
         : "a"(value), "Nd"(port));
 }
 
+/**
+ * read a byte from an I/O port.
+ */
 static inline uint8_t io_inb(uint16_t port)
 {
     uint8_t value;
@@ -33,6 +39,9 @@ static inline uint8_t io_inb(uint16_t port)
     return value;
 }
 
+/**
+ * update the hardware cursor position to match the current cursor row and column.
+ */
 static void vga_update_hw_cursor(void)
 {
     uint16_t position;

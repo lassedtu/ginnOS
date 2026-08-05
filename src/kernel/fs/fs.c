@@ -1,6 +1,11 @@
 #include "fs.h"
 #include "../../common/memory.h"
 
+/**
+ * map EXT2 file type to FS file type.
+ * @param ext2_type EXT2 file type value.
+ * @return corresponding FS file type value.
+ */
 static uint8_t map_ext2_file_type(uint8_t ext2_type)
 {
     if (ext2_type == EXT2_FT_REG_FILE)
