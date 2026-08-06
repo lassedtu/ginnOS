@@ -12,6 +12,12 @@ static int echo_main(
     int argc,
     char **argv)
 {
+    if (argc < 2)
+    {
+        printf("usage: echo <text>\r\n");
+        return -1;
+    }
+
     for (int i = 1; i < argc; i++)
     {
         printf("%s", argv[i]);
@@ -29,9 +35,7 @@ static command_t echo_command =
     {
         .name = "echo",
         .description = "write arguments to the standard output",
+        .usage = "echo <text ...>",
         .main = echo_main};
 
-void echo_initialize(void)
-{
-    command_register(&echo_command);
-}
+COMMAND_REGISTER(echo_command);

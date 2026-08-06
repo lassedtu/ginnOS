@@ -2,7 +2,7 @@
 
 #include "panic.h"
 #include "assert.h"
-#include "builtin/builtin.h"
+#include "shell/command.h"
 #include "shell/shell.h"
 
 #include "fs/fs.h"
@@ -52,9 +52,7 @@ void kernel_main(void)
 
     printf("kernel: mounted EXT2 partition at LBA %u\r\n", part.start_lba);
 
-    builtin_initialize();
-
-    shell_initialize();
+    commands_initialize();
 
     shell_run();
 

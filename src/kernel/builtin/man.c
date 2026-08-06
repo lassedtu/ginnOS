@@ -33,6 +33,12 @@ static int man_main(
     printf("  %s\r\n",
            cmd->description);
 
+    if (cmd->usage)
+    {
+        printf("  usage: %s\r\n",
+               cmd->usage);
+    }
+
     return 0;
 }
 
@@ -40,9 +46,7 @@ static command_t man_command =
     {
         .name = "man",
         .description = "display command information",
+        .usage = "man <command>",
         .main = man_main};
 
-void man_initialize(void)
-{
-    command_register(&man_command);
-}
+COMMAND_REGISTER(man_command);

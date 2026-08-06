@@ -11,8 +11,7 @@ void executor_execute(token_list_t *tokens)
         return;
     }
 
-    command_t *cmd =
-        command_lookup(tokens->tokens[0]);
+    command_t *cmd = command_lookup(tokens->tokens[0]);
 
     if (!cmd)
     {

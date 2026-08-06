@@ -20,6 +20,13 @@ SECTIONS
         *(.rodata*)
     } :text
 
+    .shell_cmds :
+    {
+        __start_shell_cmds = .;
+        KEEP(*(.shell_cmds))
+        __stop_shell_cmds = .;
+    } :text
+
     .data :
     {
         *(.data*)

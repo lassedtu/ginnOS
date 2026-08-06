@@ -23,9 +23,18 @@ typedef struct
 
     const char *description;
 
+    const char *usage;
+
     command_main_t main;
 
 } command_t;
+
+/**
+ * place a command in the linker-discoverable command set.
+ */
+#define COMMAND_REGISTER(_cmd)                \
+    static command_t *const _cmd##_link_entry \
+        __attribute__((used, section(".shell_cmds"))) = &(_cmd)
 
 /**
  * register a command with the shell.
@@ -39,3 +48,9 @@ void command_register(command_t *command);
  * @return pointer to the command structure if found, or NULL if not found.
  */
 command_t *command_lookup(const char *name);
+
+/**
+ * initialize and register all statically linked commands.
+ * this function is the single entry point used by kernel startup.
+ */
+void commands_initialize(void);
