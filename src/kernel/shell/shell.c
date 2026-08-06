@@ -1,5 +1,6 @@
 #include "shell.h"
 
+#include "context.h"
 #include "lexer.h"
 #include "executor.h"
 
@@ -18,17 +19,18 @@ static char *shell_read_line(char *buffer, int size)
 
 void shell_initialize(void)
 {
-    printf(
-        "shell (skl): initialized\r\n");
+    printf("shell (skl): initialized\r\n");
 }
 
 void shell_run(void)
 {
     char buffer[128];
 
+    shell_context_t *ctx = shell_context_get();
+
     while (1)
     {
-        printf("skl $ ");
+        printf("skl:%s $ ", ctx->cwd);
 
         shell_read_line(buffer, sizeof(buffer));
 

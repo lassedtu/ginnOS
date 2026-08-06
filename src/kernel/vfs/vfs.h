@@ -30,6 +30,21 @@ bool vfs_open(
     VFS_FILE *file);
 
 /**
+ * resolve an input path against the current working directory.
+ * absolute paths are returned as-is, relative paths are prefixed with cwd.
+ * @param cwd current working directory.
+ * @param input user-provided path.
+ * @param output destination buffer for resolved absolute path.
+ * @param size size of destination buffer in bytes.
+ * @return true on success, false if inputs are invalid or output would overflow.
+ */
+bool vfs_resolve_path(
+    const char *cwd,
+    const char *input,
+    char *output,
+    uint32_t size);
+
+/**
  * read data from an open file in the virtual file system.
  * @param file pointer to the VFS_FILE structure representing the open file.
  * @param size number of bytes to read.
@@ -74,3 +89,10 @@ uint8_t vfs_type(
  */
 uint8_t vfs_file_type(
     VFS_FILE *file);
+
+/**
+ * check if a given path in the virtual file system is a directory.
+ * @param path absolute path to the file or directory.
+ * @return true if the path is a directory, false otherwise.
+ */
+bool vfs_is_directory(const char *path);

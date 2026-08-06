@@ -1,5 +1,7 @@
 #include "../../shell/command.h"
 
+#include "../../shell/context.h"
+
 #include "../../vfs/vfs.h"
 #include "../../../common/stdio.h"
 
@@ -11,15 +13,30 @@
  */
 static int cat_execute(int argc, char **argv)
 {
+    shell_context_t *ctx;
+    char resolved_path[SHELL_PATH_MAX];
+
     if (argc != 2)
     {
         printf("Usage: cat <file>\r\n");
         return -1;
     }
 
+    ctx = shell_context_get();
+
+    if (!vfs_resolve_path(
+            ctx->cwd,
+            argv[1],
+            resolved_path,
+            sizeof(resolved_path)))
+    {
+        printf("cat: invalid path '%s'\r\n", argv[1]);
+        return -1;
+    }
+
     VFS_FILE file;
 
-    if (!vfs_open(argv[1], &file))
+    if (!vfs_open(resolved_path, &file))
     {
         printf("cat: cannot open '%s'\r\n", argv[1]);
         return -1;
