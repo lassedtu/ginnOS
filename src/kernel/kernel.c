@@ -7,6 +7,7 @@
 
 #include "fs/fs.h"
 #include "hal/hal.h"
+#include "vfs/vfs.h"
 
 #include "../common/stdio.h"
 #include "../arch/x86/cpu/io.h"
@@ -48,6 +49,11 @@ void kernel_main(void)
     if (!fs_mount(&mount, &part.block))
     {
         kernel_panic("EXT2 mount failed");
+    }
+
+    if (!vfs_mount_root(&mount))
+    {
+        kernel_panic("VFS root mount failed");
     }
 
     printf("kernel: mounted EXT2 partition at LBA %u\r\n", part.start_lba);
