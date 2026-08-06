@@ -43,6 +43,13 @@ void kernel_main(void)
 
     printf("kernel: mounted EXT2 partition at LBA %u\r\n", part.start_lba);
 
+    volatile int x = 1;
+    volatile int y = 0;
+
+    x = x / y;
+
+    printf("Result: %d\r\n", x);
+
     // keyboard driver test
     printf("kernel: keyboard driver test: \r\n");
     while (1)

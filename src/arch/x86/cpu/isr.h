@@ -12,11 +12,11 @@
  */
 struct registers
 {
-    uint32_t ds;                                           // data segment selector.
+    uint32_t ds;                                          // data segment selector.
     uint32_t edi, esi, ebp, kern_esp, ebx, edx, ecx, eax; // general-purpose registers from pusha.
-    uint32_t interrupt;                                    // interrupt vector number.
-    uint32_t error;                                        // error code (or zero for interrupts without one).
-    uint32_t eip, cs, eflags, esp, ss;                     // pushed automatically by the CPU on interrupt.
+    uint32_t interrupt;                                   // interrupt vector number.
+    uint32_t error;                                       // error code (or zero for interrupts without one).
+    uint32_t eip, cs, eflags, esp, ss;                    // pushed automatically by the CPU on interrupt.
 } __attribute__((packed));
 
 /**
