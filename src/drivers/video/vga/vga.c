@@ -2,9 +2,6 @@
 
 #include "../../../arch/x86/cpu/io.h"
 
-static void vga_update_hw_cursor(void);
-static void vga_sync_cursor_from_hw(void);
-
 #define VGA_TEXT_BUFFER ((volatile uint16_t *)0xB8000)
 
 #define VGA_WIDTH 80u
@@ -36,16 +33,6 @@ static inline uint16_t vga_entry(char c)
 static void vga_update_hw_cursor(void)
 {
     uint16_t position;
-
-    if (g_cursor_row >= VGA_HEIGHT)
-    {
-        g_cursor_row = VGA_HEIGHT - 1u;
-    }
-
-    if (g_cursor_col >= VGA_WIDTH)
-    {
-        g_cursor_col = VGA_WIDTH - 1u;
-    }
 
     position = (uint16_t)(g_cursor_row * VGA_WIDTH + g_cursor_col);
 
@@ -82,7 +69,17 @@ static void vga_sync_cursor_from_hw(void)
     g_cursor_col = position % VGA_WIDTH;
 }
 
-static void vga_scroll(void)
+void vga_put_at(char c, uint8_t row, uint8_t col)
+{
+    if (row >= VGA_HEIGHT || col >= VGA_WIDTH)
+    {
+        return;
+    }
+
+    VGA_TEXT_BUFFER[row * VGA_WIDTH + col] = vga_entry(c);
+}
+
+void vga_scroll(void)
 {
     uint8_t row;
     uint8_t col;
@@ -91,26 +88,15 @@ static void vga_scroll(void)
     {
         for (col = 0; col < VGA_WIDTH; col++)
         {
-            VGA_TEXT_BUFFER[row * VGA_WIDTH + col] =
-                VGA_TEXT_BUFFER[(row + 1u) * VGA_WIDTH + col];
+            char ch = (char)(VGA_TEXT_BUFFER[(row + 1u) * VGA_WIDTH + col] & 0x00FFu);
+            vga_put_at(ch, row, col);
         }
     }
 
     for (col = 0; col < VGA_WIDTH; col++)
     {
-        VGA_TEXT_BUFFER[(VGA_HEIGHT - 1u) * VGA_WIDTH + col] =
-            vga_entry(' ');
+        vga_put_at(' ', VGA_HEIGHT - 1u, col);
     }
-}
-
-static void vga_scroll_if_needed(void)
-{
-    if (g_cursor_row < VGA_HEIGHT)
-    {
-        return;
-    }
-
-    vga_scroll();
 
     g_cursor_row = VGA_HEIGHT - 1u;
 }
@@ -126,8 +112,7 @@ void vga_clear(void)
     {
         for (uint8_t col = 0; col < VGA_WIDTH; col++)
         {
-            VGA_TEXT_BUFFER[row * VGA_WIDTH + col] =
-                vga_entry(' ');
+            vga_put_at(' ', row, col);
         }
     }
 
@@ -139,46 +124,20 @@ void vga_clear(void)
 
 void vga_putchar(char c)
 {
-    if (g_cursor_row >= VGA_HEIGHT)
-    {
-        vga_scroll();
-        g_cursor_row = VGA_HEIGHT - 1;
-    }
+    vga_put_at(c, g_cursor_row, g_cursor_col);
 
-    if (c == '\r')
-    {
-        g_cursor_col = 0;
-    }
-    else if (c == '\b')
-    {
-        if (g_cursor_col > 0)
-        {
-            g_cursor_col--;
-        }
+    g_cursor_col++;
 
-        VGA_TEXT_BUFFER[g_cursor_row * VGA_WIDTH + g_cursor_col] =
-            vga_entry(' ');
-    }
-    else if (c == '\n')
+    if (g_cursor_col >= VGA_WIDTH)
     {
         g_cursor_col = 0;
         g_cursor_row++;
     }
-    else
+
+    if (g_cursor_row >= VGA_HEIGHT)
     {
-        VGA_TEXT_BUFFER[g_cursor_row * VGA_WIDTH + g_cursor_col] =
-            vga_entry(c);
-
-        g_cursor_col++;
-
-        if (g_cursor_col >= VGA_WIDTH)
-        {
-            g_cursor_col = 0;
-            g_cursor_row++;
-        }
+        vga_scroll();
     }
-
-    vga_scroll_if_needed();
 
     vga_update_hw_cursor();
 }
@@ -199,4 +158,18 @@ void vga_initialize(void)
     vga_sync_cursor_from_hw();
 
     initialized = 1;
+}
+
+void vga_set_cursor(uint8_t row, uint8_t col)
+{
+    g_cursor_row = row;
+    g_cursor_col = col;
+
+    vga_update_hw_cursor();
+}
+
+void vga_get_cursor(uint8_t *row, uint8_t *col)
+{
+    *row = g_cursor_row;
+    *col = g_cursor_col;
 }
