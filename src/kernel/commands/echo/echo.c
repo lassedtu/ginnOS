@@ -1,6 +1,6 @@
-#include "../shell/command.h"
+#include "../../shell/command.h"
 
-#include "../../common/stdio.h"
+#include "../../../common/stdio.h"
 
 /**
  * main function of the echo command.
@@ -14,7 +14,7 @@ static int echo_main(
 {
     if (argc < 2)
     {
-        printf("usage: echo <text>\r\n");
+        printf("Usage: echo <text>\r\n");
         return -1;
     }
 
@@ -34,7 +34,7 @@ static int echo_main(
 static command_t echo_command =
     {
         .name = "echo",
-        .description = "write arguments to the standard output",
+        .description = "Write arguments to the standard output",
         .usage = "echo <text ...>",
         .main = echo_main};
 

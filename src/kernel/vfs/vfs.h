@@ -42,6 +42,16 @@ uint32_t vfs_read(
     void *buffer);
 
 /**
+ * read a directory entry from an open directory in the virtual file system.
+ * @param file pointer to the VFS_FILE structure representing the open directory.
+ * @param entryOut pointer to output directory entry.
+ * @return true on success, false on failure.
+ */
+bool vfs_read_entry(
+    VFS_FILE *file,
+    FS_DIRENT *entryOut);
+
+/**
  * close an open file in the virtual file system.
  * @param file pointer to the VFS_FILE structure representing the open file.
  * @return void

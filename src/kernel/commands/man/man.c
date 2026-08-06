@@ -1,6 +1,6 @@
-#include "../shell/command.h"
+#include "../../shell/command.h"
 
-#include "../../common/stdio.h"
+#include "../../../common/stdio.h"
 
 /**
  * main function of the man command.
@@ -14,7 +14,7 @@ static int man_main(
 {
     if (argc < 2)
     {
-        printf("usage: man <command>\r\n");
+        printf("Usage: man <command>\r\n");
         return -1;
     }
 
@@ -23,7 +23,7 @@ static int man_main(
 
     if (!cmd)
     {
-        printf("no manual entry for %s\r\n",
+        printf("No manual entry for %s\r\n",
                argv[1]);
 
         return -1;
@@ -35,7 +35,7 @@ static int man_main(
 
     if (cmd->usage)
     {
-        printf("  usage: %s\r\n",
+        printf("  Usage: %s\r\n",
                cmd->usage);
     }
 
@@ -45,7 +45,7 @@ static int man_main(
 static command_t man_command =
     {
         .name = "man",
-        .description = "display command information",
+        .description = "Display command information",
         .usage = "man <command>",
         .main = man_main};
 

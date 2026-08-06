@@ -22,9 +22,9 @@ bool vfs_open(
         return false;
 
     if (!fs_open(
-        root_mount,
-        path,
-        &file->file))
+            root_mount,
+            path,
+            &file->file))
     {
         file->mount = 0;
         return false;
@@ -48,6 +48,18 @@ uint32_t vfs_read(
         &file->file,
         size,
         buffer);
+}
+
+bool vfs_read_entry(
+    VFS_FILE *file,
+    FS_DIRENT *entryOut)
+{
+    if (!file || !file->mount || !entryOut)
+    {
+        return false;
+    }
+
+    return fs_read_entry(&file->file, entryOut);
 }
 
 void vfs_close(
