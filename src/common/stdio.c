@@ -1,5 +1,20 @@
 #include "stdio.h"
 
+static StdioPutCharFn g_stdio_putchar = (StdioPutCharFn)0;
+
+void stdio_set_putchar(StdioPutCharFn func)
+{
+    g_stdio_putchar = func;
+}
+
+void stdio_putchar(char c)
+{
+    if (g_stdio_putchar)
+    {
+        g_stdio_putchar(c);
+    }
+}
+
 enum
 {
     PRINTF_STATE_NORMAL = 0,   // normal state, not parsing a format specifier
@@ -80,7 +95,7 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
     switch (spec)
     {
     case 'c':
-        puts_char((char)*argp);
+        stdio_putchar((char)*argp);
         argp++;
         break;
 
@@ -98,7 +113,7 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
         break;
 
     case '%':
-        puts_char('%');
+        stdio_putchar('%');
         break;
 
     case 'd':
@@ -136,15 +151,6 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
     return argp;
 }
 
-void puts(const char *str)
-{
-    while (*str)
-    {
-        puts_char(*str);
-        str++;
-    }
-}
-
 void printf(const char *fmt, ...)
 {
     int *argp = (int *)&fmt;
@@ -168,7 +174,7 @@ void printf(const char *fmt, ...)
             }
             else
             {
-                puts_char(ch);
+                stdio_putchar(ch);
             }
             break;
 
@@ -305,7 +311,16 @@ static int *printf_number(int *argp, int length, bool sign, int radix)
         buffer[pos++] = '-';
 
     while (--pos >= 0)
-        puts_char(buffer[pos]);
+        stdio_putchar(buffer[pos]);
 
     return argp;
+}
+
+void puts(const char *str)
+{
+    while (*str)
+    {
+        stdio_putchar(*str);
+        str++;
+    }
 }

@@ -1,42 +1,33 @@
-#include "../common/stdint.h"
+#include "vga.h"
+
+#include "../../../arch/x86/cpu/io.h"
+
+static void vga_update_hw_cursor(void);
+static void vga_sync_cursor_from_hw(void);
 
 #define VGA_TEXT_BUFFER ((volatile uint16_t *)0xB8000)
 
 #define VGA_WIDTH 80u
 #define VGA_HEIGHT 25u
-#define VGA_ATTR 0x07u
+
+#define VGA_DEFAULT_FOREGROUND VGA_LIGHT_GREY
+#define VGA_DEFAULT_BACKGROUND VGA_BLACK
+
+static uint8_t vga_color =
+    VGA_DEFAULT_FOREGROUND |
+    (VGA_DEFAULT_BACKGROUND << 4);
 
 #define VGA_CRTC_INDEX_PORT 0x3D4u
 #define VGA_CRTC_DATA_PORT 0x3D5u
 
 static uint32_t g_cursor_row = 0;
 static uint32_t g_cursor_col = 0;
-static uint8_t g_cursor_synced = 0;
 
-/**
- * write a byte to an I/O port.
- */
-static inline void io_outb(uint16_t port, uint8_t value)
+static uint8_t initialized = 0;
+
+static inline uint16_t vga_entry(char c)
 {
-    __asm__ __volatile__(
-        "outb %0, %1"
-        :
-        : "a"(value), "Nd"(port));
-}
-
-/**
- * read a byte from an I/O port.
- */
-static inline uint8_t io_inb(uint16_t port)
-{
-    uint8_t value;
-
-    __asm__ __volatile__(
-        "inb %1, %0"
-        : "=a"(value)
-        : "Nd"(port));
-
-    return value;
+    return ((uint16_t)vga_color << 8) | (uint8_t)c;
 }
 
 /**
@@ -69,39 +60,32 @@ static void vga_update_hw_cursor(void)
         (uint8_t)(position & 0xFFu));
 }
 
-static void vga_sync_cursor_from_hw_once(void)
+/**
+ * synchronize software cursor coordinates from the VGA hardware cursor.
+ */
+static void vga_sync_cursor_from_hw(void)
 {
     uint16_t position;
 
-    if (g_cursor_synced)
-    {
-        return;
-    }
-
     io_outb(VGA_CRTC_INDEX_PORT, 0x0E);
-
-    position =
-        (uint16_t)io_inb(VGA_CRTC_DATA_PORT) << 8;
+    position = (uint16_t)io_inb(VGA_CRTC_DATA_PORT) << 8;
 
     io_outb(VGA_CRTC_INDEX_PORT, 0x0F);
+    position |= (uint16_t)io_inb(VGA_CRTC_DATA_PORT);
 
-    position |= io_inb(VGA_CRTC_DATA_PORT);
-
-    if (position >= VGA_WIDTH * VGA_HEIGHT)
+    if (position >= (VGA_WIDTH * VGA_HEIGHT))
     {
         position = 0;
     }
 
     g_cursor_row = position / VGA_WIDTH;
     g_cursor_col = position % VGA_WIDTH;
-
-    g_cursor_synced = 1;
 }
 
 static void vga_scroll(void)
 {
-    uint32_t row;
-    uint32_t col;
+    uint8_t row;
+    uint8_t col;
 
     for (row = 0; row < VGA_HEIGHT - 1u; row++)
     {
@@ -115,7 +99,7 @@ static void vga_scroll(void)
     for (col = 0; col < VGA_WIDTH; col++)
     {
         VGA_TEXT_BUFFER[(VGA_HEIGHT - 1u) * VGA_WIDTH + col] =
-            ((uint16_t)VGA_ATTR << 8) | ' ';
+            vga_entry(' ');
     }
 }
 
@@ -131,13 +115,49 @@ static void vga_scroll_if_needed(void)
     g_cursor_row = VGA_HEIGHT - 1u;
 }
 
-void puts_char(char c)
+void vga_set_color(uint8_t fg, uint8_t bg)
 {
-    vga_sync_cursor_from_hw_once();
+    vga_color = fg | (bg << 4);
+}
+
+void vga_clear(void)
+{
+    for (uint8_t row = 0; row < VGA_HEIGHT; row++)
+    {
+        for (uint8_t col = 0; col < VGA_WIDTH; col++)
+        {
+            VGA_TEXT_BUFFER[row * VGA_WIDTH + col] =
+                vga_entry(' ');
+        }
+    }
+
+    g_cursor_row = 0;
+    g_cursor_col = 0;
+
+    vga_update_hw_cursor();
+}
+
+void vga_putchar(char c)
+{
+    if (g_cursor_row >= VGA_HEIGHT)
+    {
+        vga_scroll();
+        g_cursor_row = VGA_HEIGHT - 1;
+    }
 
     if (c == '\r')
     {
         g_cursor_col = 0;
+    }
+    else if (c == '\b')
+    {
+        if (g_cursor_col > 0)
+        {
+            g_cursor_col--;
+        }
+
+        VGA_TEXT_BUFFER[g_cursor_row * VGA_WIDTH + g_cursor_col] =
+            vga_entry(' ');
     }
     else if (c == '\n')
     {
@@ -147,7 +167,7 @@ void puts_char(char c)
     else
     {
         VGA_TEXT_BUFFER[g_cursor_row * VGA_WIDTH + g_cursor_col] =
-            ((uint16_t)VGA_ATTR << 8) | (uint8_t)c;
+            vga_entry(c);
 
         g_cursor_col++;
 
@@ -161,4 +181,22 @@ void puts_char(char c)
     vga_scroll_if_needed();
 
     vga_update_hw_cursor();
+}
+
+void vga_write(const char *str)
+{
+    while (*str)
+    {
+        vga_putchar(*str++);
+    }
+}
+
+void vga_initialize(void)
+{
+    if (initialized)
+        return;
+
+    vga_sync_cursor_from_hw();
+
+    initialized = 1;
 }

@@ -1,4 +1,5 @@
 #include "kernel.h"
+
 #include "panic.h"
 #include "assert.h"
 
@@ -12,15 +13,20 @@
 #include "../drivers/disk/partition.h"
 #include "../drivers/keyboard/keyboard.h"
 
+#include "console/console.h"
+
 void kernel_main(void)
 {
     ATA_DEVICE ata;
     PARTITION_DEVICE part;
     FS_MOUNT mount;
 
-    printf("Kernel: entered 32-bit C main\r\n");
-
     hal_initialize();
+
+    console_initialize();
+    stdio_set_putchar(console_putchar);
+
+    printf("Kernel: entered 32-bit C main\r\n");
 
     io_enable_interrupts();
 
@@ -42,13 +48,6 @@ void kernel_main(void)
     }
 
     printf("kernel: mounted EXT2 partition at LBA %u\r\n", part.start_lba);
-
-    volatile int x = 1;
-    volatile int y = 0;
-
-    x = x / y;
-
-    printf("Result: %d\r\n", x);
 
     // keyboard driver test
     printf("kernel: keyboard driver test: \r\n");

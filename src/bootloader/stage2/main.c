@@ -6,6 +6,13 @@
 
 #define KERNEL_ENTRY_ADDRESS 0x10000u // address where the kernel binary will be loaded in memory (64KB mark)
 
+extern void puts_char(char c);
+
+static void stage2_putchar(char c)
+{
+    puts_char(c);
+}
+
 void cstart_(uint16_t bootDrive)
 {
     typedef void (*KernelEntryFn)(void);
@@ -18,6 +25,8 @@ void cstart_(uint16_t bootDrive)
     uint32_t bytes_read;
 
     (void)bootDrive;
+
+    stdio_set_putchar(stage2_putchar);
 
     printf("stage2: entered 32-bit bootloader\r\n");
 
