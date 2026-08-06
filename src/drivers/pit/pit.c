@@ -2,6 +2,7 @@
 
 #include "../../arch/x86/cpu/io.h"
 #include "../../arch/x86/cpu/irq.h"
+#include "../../arch/x86/cpu/pic.h"
 
 enum
 {
@@ -47,7 +48,11 @@ void pit_initialize(uint32_t frequency)
         raw_divisor = 0xFFFF;
     divisor = (uint16_t)raw_divisor;
 
+    // register IRQ0 handler
     irq_register_handler(0, pit_irq_handler);
+
+    // enable IRQ0 on PIC
+    pic_unmask(0);
 
     uint8_t command =
         PIT_COMMAND_CHANNEL0 |
