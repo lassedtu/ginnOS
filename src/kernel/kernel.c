@@ -1,12 +1,16 @@
 #include "kernel.h"
 #include "panic.h"
 #include "assert.h"
-#include "../common/stdio.h"
+
+#include "fs/fs.h"
 #include "hal/hal.h"
+
+#include "../common/stdio.h"
+#include "../arch/x86/cpu/io.h"
+
 #include "../drivers/disk/ata.h"
 #include "../drivers/disk/partition.h"
-#include "fs/fs.h"
-#include "../arch/x86/cpu/io.h"
+#include "../drivers/keyboard/keyboard.h"
 
 void kernel_main(void)
 {
@@ -38,6 +42,18 @@ void kernel_main(void)
     }
 
     printf("kernel: mounted EXT2 partition at LBA %u\r\n", part.start_lba);
+
+    // keyboard driver test
+    printf("kernel: keyboard driver test: \r\n");
+    while (1)
+    {
+        if (keyboard_available())
+        {
+            char c = keyboard_getchar();
+
+            printf("%c", c);
+        }
+    }
 
     for (;;)
         ;

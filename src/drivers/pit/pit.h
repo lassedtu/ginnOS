@@ -1,18 +1,17 @@
-#ifndef PIT_H
-#define PIT_H
+#pragma once
 
 #include "../../common/stdint.h"
 
 /**
- * initializes the PIT.
+ * initializes the PIT timer.
  *
- * @param frequency Desired interrupt frequency in Hz.
+ * @param frequency desired interrupt frequency in Hz.
  */
 void pit_initialize(uint32_t frequency);
 
 /**
  * returns the number of PIT interrupts since initialization.
+ *
+ * @return number of timer ticks since PIT initialization.
  */
 uint64_t pit_get_ticks(void);
-
-#endif
