@@ -9,7 +9,7 @@
  * @param argv array of argument strings
  * @return return code of the command
  */
-static int clear_execute(int argc, char **argv)
+static int clear_main(int argc, char **argv)
 {
     (void)argv;
 
@@ -29,6 +29,6 @@ static command_t clear_command =
         .name = "clear",
         .description = "Clear the terminal screen",
         .usage = "clear",
-        .main = clear_execute};
+        .main = clear_main};
 
 COMMAND_REGISTER(clear_command);

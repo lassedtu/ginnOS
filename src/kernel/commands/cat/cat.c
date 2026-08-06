@@ -11,7 +11,7 @@
  * @param argv array of argument strings.
  * @return return code of the command.
  */
-static int cat_execute(int argc, char **argv)
+static int cat_main(int argc, char **argv)
 {
     shell_context_t *ctx;
     char resolved_path[SHELL_PATH_MAX];
@@ -64,6 +64,6 @@ static command_t cat_command =
         .name = "cat",
         .description = "Print file contents",
         .usage = "cat <file>",
-        .main = cat_execute};
+        .main = cat_main};
 
 COMMAND_REGISTER(cat_command);
