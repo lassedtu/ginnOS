@@ -40,7 +40,7 @@ protected_mode_entry:
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    mov esp, stage2_stack_top
+    mov esp, 0x90000
     mov ebp, esp
 
     movzx eax, byte [boot_drive]
@@ -65,9 +65,3 @@ gdt_end:
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
-
-section .bss
-align 16
-stage2_stack:
-    resb 16384
-stage2_stack_top:

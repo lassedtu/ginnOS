@@ -26,10 +26,10 @@ void shell_run(void)
 {
     char buffer[128];
 
-    shell_context_t *ctx = shell_context_get();
-
     while (1)
     {
+        shell_context_t *ctx = shell_context_get();
+
         printf("skl:%s $ ", ctx->cwd);
 
         shell_read_line(buffer, sizeof(buffer));

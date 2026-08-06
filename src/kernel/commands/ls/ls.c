@@ -27,8 +27,8 @@ static int ls_main(int argc, char **argv)
     }
     else
     {
-        base_cwd = "/";
-        input_path = ctx->cwd;
+        base_cwd = ctx->cwd;
+        input_path = ".";
     }
 
     if (!vfs_resolve_path(
@@ -58,9 +58,28 @@ static int ls_main(int argc, char **argv)
 
     FS_DIRENT entry;
 
+    char entry_path[SHELL_PATH_MAX];
+
     while (vfs_read_entry(&dir, &entry))
     {
-        printf("%s\r\n", entry.name);
+        if (!vfs_join_path(
+                resolved_path,
+                entry.name,
+                entry_path,
+                sizeof(entry_path)))
+        {
+            printf("%s\r\n", entry.name);
+            continue;
+        }
+
+        if (vfs_is_directory(entry_path))
+        {
+            printf("%s/\r\n", entry.name);
+        }
+        else
+        {
+            printf("%s\r\n", entry.name);
+        }
     }
 
     vfs_close(&dir);

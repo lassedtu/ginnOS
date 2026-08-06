@@ -45,6 +45,21 @@ bool vfs_resolve_path(
     uint32_t size);
 
 /**
+ * join two path components into an output buffer.
+ * avoids duplicate separators when base already ends with '/'.
+ * @param base base path component.
+ * @param name child path component.
+ * @param out destination buffer.
+ * @param size destination buffer size in bytes.
+ * @return true on success, false on invalid input or insufficient output size.
+ */
+bool vfs_join_path(
+    const char *base,
+    const char *name,
+    char *out,
+    uint32_t size);
+
+/**
  * read data from an open file in the virtual file system.
  * @param file pointer to the VFS_FILE structure representing the open file.
  * @param size number of bytes to read.

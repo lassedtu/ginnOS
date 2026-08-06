@@ -155,7 +155,7 @@ static bool resolve_data_block(EXT2_VOLUME *volume, const EXT2_INODE *inode, uin
     if (logical_block_index < EXT2_NDIR_BLOCKS)
     {
         *physical_block_out = inode->i_block[logical_block_index];
-        return *physical_block_out != 0;
+        return true;
     }
 
     logical_block_index -= EXT2_NDIR_BLOCKS;
@@ -177,7 +177,7 @@ static bool resolve_data_block(EXT2_VOLUME *volume, const EXT2_INODE *inode, uin
 
         entries = (uint32_t *)g_block_buffer2;
         *physical_block_out = entries[logical_block_index];
-        return *physical_block_out != 0;
+        return true;
     }
 
     return false;
@@ -615,6 +615,17 @@ bool EXT2_ReadFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, 
         if (!resolve_data_block(volume, &inode, block_index, &phys_block))
         {
             return false;
+        }
+
+        if (phys_block == 0)
+        {
+            for (j = 0; j < take; j++)
+            {
+                out[copied + j] = 0;
+            }
+
+            copied += take;
+            continue;
         }
 
         if (!read_block(volume, phys_block, g_block_buffer))

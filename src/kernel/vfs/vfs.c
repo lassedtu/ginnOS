@@ -2,7 +2,119 @@
 
 #include "../../common/string.h"
 
-static FS_MOUNT *root_mount = 0;
+static FS_MOUNT *root_mount = 0; // pointer to the root filesystem mount structure, initialized during kernel startup
+
+/**
+ * normalize an absolute path by resolving '.' and '..' components.
+ * @param input absolute path to normalize.
+ * @param output destination buffer for normalized path.
+ * @param size size of destination buffer in bytes.
+ * @return true on success, false on invalid input or insufficient output size.
+ */
+static bool vfs_normalize_absolute_path(
+    const char *input,
+    char *output,
+    uint32_t size)
+{
+    uint32_t i;
+    uint32_t out_pos;
+    uint32_t depth;
+    uint32_t component_start[128];
+
+    if (!input || !output || size < 2)
+    {
+        return false;
+    }
+
+    if (input[0] != '/')
+    {
+        return false;
+    }
+
+    output[0] = '/';
+    output[1] = '\0';
+    out_pos = 1;
+    depth = 0;
+
+    i = 0;
+    while (input[i] != '\0')
+    {
+        uint32_t start;
+        uint32_t len;
+        uint32_t j;
+
+        while (input[i] == '/')
+        {
+            i++;
+        }
+
+        if (input[i] == '\0')
+        {
+            break;
+        }
+
+        start = i;
+        while (input[i] != '\0' && input[i] != '/')
+        {
+            i++;
+        }
+
+        len = i - start;
+
+        if (len == 1 && input[start] == '.')
+        {
+            continue;
+        }
+
+        if (len == 2 && input[start] == '.' && input[start + 1] == '.')
+        {
+            if (depth > 0)
+            {
+                out_pos = component_start[depth - 1];
+                if (out_pos > 1)
+                {
+                    out_pos--;
+                }
+
+                output[out_pos] = '\0';
+                depth--;
+            }
+
+            continue;
+        }
+
+        if (depth >= (uint32_t)(sizeof(component_start) / sizeof(component_start[0])))
+        {
+            return false;
+        }
+
+        if (out_pos > 1)
+        {
+            if (out_pos + 1 >= size)
+            {
+                return false;
+            }
+
+            output[out_pos++] = '/';
+        }
+
+        component_start[depth++] = out_pos;
+
+        if (out_pos + len + 1 > size)
+        {
+            return false;
+        }
+
+        for (j = 0; j < len; j++)
+        {
+            output[out_pos++] = input[start + j];
+        }
+
+        output[out_pos] = '\0';
+    }
+
+    return true;
+}
 
 bool vfs_mount_root(FS_MOUNT *mount)
 {
@@ -42,6 +154,8 @@ bool vfs_resolve_path(
     char *output,
     uint32_t size)
 {
+    char combined[512];
+    char normalized[512];
     uint32_t cwd_len;
     uint32_t cwd_start;
     uint32_t input_len;
@@ -59,16 +173,24 @@ bool vfs_resolve_path(
         return false;
     }
 
+    if (size > sizeof(normalized))
+    {
+        return false;
+    }
+
     if (input[0] == '/')
     {
-        input_len = strlen(input);
-
-        if (input_len + 1 > size)
+        if (!vfs_normalize_absolute_path(input, normalized, sizeof(normalized)))
         {
             return false;
         }
 
-        strcpy(output, input);
+        if (strlen(normalized) + 1 > size)
+        {
+            return false;
+        }
+
+        strcpy(output, normalized);
         return true;
     }
 
@@ -92,8 +214,77 @@ bool vfs_resolve_path(
     }
 
     needed = 1 + (cwd_len - cwd_start) + input_len + 1;
-
     if (cwd_len > cwd_start && cwd[cwd_len - 1] != '/')
+    {
+        needed++;
+    }
+
+    if (needed > sizeof(combined))
+    {
+        return false;
+    }
+
+    pos = 0;
+    combined[pos++] = '/';
+
+    for (i = cwd_start; i < cwd_len; i++)
+    {
+        combined[pos++] = cwd[i];
+    }
+
+    if (combined[pos - 1] != '/')
+    {
+        combined[pos++] = '/';
+    }
+
+    for (i = 0; i < input_len; i++)
+    {
+        combined[pos++] = input[i];
+    }
+
+    combined[pos] = '\0';
+
+    if (!vfs_normalize_absolute_path(combined, normalized, sizeof(normalized)))
+    {
+        return false;
+    }
+
+    if (strlen(normalized) + 1 > size)
+    {
+        return false;
+    }
+
+    strcpy(output, normalized);
+    return true;
+}
+
+bool vfs_join_path(
+    const char *base,
+    const char *name,
+    char *out,
+    uint32_t size)
+{
+    uint32_t base_len;
+    uint32_t name_len;
+    uint32_t i;
+    uint32_t pos;
+    uint32_t needed;
+
+    if (!base || !name || !out || size == 0)
+    {
+        return false;
+    }
+
+    if (base[0] == '\0' || name[0] == '\0')
+    {
+        return false;
+    }
+
+    base_len = strlen(base);
+    name_len = strlen(name);
+
+    needed = base_len + name_len + 1;
+    if (base[base_len - 1] != '/')
     {
         needed++;
     }
@@ -104,26 +295,22 @@ bool vfs_resolve_path(
     }
 
     pos = 0;
-
-    output[pos++] = '/';
-
-    for (i = cwd_start; i < cwd_len; i++)
+    for (i = 0; i < base_len; i++)
     {
-        output[pos++] = cwd[i];
+        out[pos++] = base[i];
     }
 
-    if (output[pos - 1] != '/')
+    if (out[pos - 1] != '/')
     {
-        output[pos++] = '/';
+        out[pos++] = '/';
     }
 
-    for (i = 0; i < input_len; i++)
+    for (i = 0; i < name_len; i++)
     {
-        output[pos++] = input[i];
+        out[pos++] = name[i];
     }
 
-    output[pos] = '\0';
-
+    out[pos] = '\0';
     return true;
 }
 
