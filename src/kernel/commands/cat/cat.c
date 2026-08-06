@@ -18,7 +18,7 @@ static int cat_main(int argc, char **argv)
 
     if (argc != 2)
     {
-        printf("Usage: cat <file>\r\n");
+        printf("cat: wrong number of arguments\r\n");
         return -1;
     }
 

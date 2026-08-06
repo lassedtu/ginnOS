@@ -15,7 +15,7 @@ static int clear_main(int argc, char **argv)
 
     if (argc != 1)
     {
-        printf("Usage: clear\r\n");
+        printf("clear: too many arguments\r\n");
         return -1;
     }
 

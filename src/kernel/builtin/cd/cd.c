@@ -12,7 +12,7 @@ static int cd_main(int argc, char **argv)
 
     if (argc != 2)
     {
-        printf("usage: cd <directory>\r\n");
+        printf("cd: wrong number of arguments\r\n");
         return 1;
     }
 

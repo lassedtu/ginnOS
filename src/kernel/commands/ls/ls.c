@@ -14,7 +14,7 @@ static int ls_main(int argc, char **argv)
 
     if (argc > 2)
     {
-        printf("Usage: ls [directory]\r\n");
+        printf("ls: too many arguments\r\n");
         return -1;
     }
 
