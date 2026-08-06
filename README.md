@@ -12,6 +12,25 @@ The name GinnOS is taken from Ginnungagap, the primordial void in Norse mytholog
 
 I've recently started on writing documentation for this project in obsidian and hosting it using quartz, this can be read at: https://lassedtu.github.io/ginnOS-docs/
 
+## NixOS / Nix Toolchain Setup
+
+A `shell.nix` is included at the project root. It pulls in the `i686-elf` cross-compiler, binutils, NASM, QEMU, and Python 3 — no manual toolchain build required.
+
+### Enter the dev shell
+
+```bash
+nix-shell
+```
+
+All required tools (`i686-elf-gcc`, `i686-elf-ld`, `i686-elf-objcopy`, `nasm`, `qemu-system-i386`, `python3`) will be on your `PATH` inside the shell.
+
+### Build and run
+
+```bash
+make
+make run
+```
+
 ## macOS Toolchain Setup (Manual)
 
 ### Clone the project
