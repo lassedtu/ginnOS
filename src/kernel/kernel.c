@@ -2,6 +2,8 @@
 
 #include "panic.h"
 #include "assert.h"
+#include "builtin/builtin.h"
+#include "shell/shell.h"
 
 #include "fs/fs.h"
 #include "hal/hal.h"
@@ -24,7 +26,8 @@ void kernel_main(void)
     hal_initialize();
 
     console_initialize();
-    stdio_set_putchar(console_putchar);
+
+    stdio_set_putchar(console_putchar); // set stdio output to console (sophisticated VGA text buffer)
 
     printf("Kernel: entered 32-bit C main\r\n");
 
@@ -49,17 +52,11 @@ void kernel_main(void)
 
     printf("kernel: mounted EXT2 partition at LBA %u\r\n", part.start_lba);
 
-    // keyboard driver test
-    printf("kernel: keyboard driver test: \r\n");
-    while (1)
-    {
-        if (keyboard_available())
-        {
-            char c = keyboard_getchar();
+    builtin_initialize();
 
-            printf("%c", c);
-        }
-    }
+    shell_initialize();
+
+    shell_run();
 
     for (;;)
         ;
