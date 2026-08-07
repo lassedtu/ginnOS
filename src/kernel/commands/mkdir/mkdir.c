@@ -64,7 +64,7 @@ static int mkdir_directory(const char *input_path)
 command_t mkdir_command =
     {
         .name = "mkdir",
-        .description = "create a directory",
+        .description = "Create a directory",
         .usage = "mkdir <directory>...",
         .main = mkdir_main,
 };
