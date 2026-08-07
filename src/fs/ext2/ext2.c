@@ -1578,7 +1578,22 @@ static bool read_directory_entry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut
             return false;
         }
 
+        if (entry->rec_len < header_size)
+        {
+            return false;
+        }
+
+        if ((uint32_t)entry->name_len > (entry->rec_len - header_size))
+        {
+            return false;
+        }
+
         file->cursor += entry->rec_len;
+
+        if (entry->inode == 0 || entry->name_len == 0)
+        {
+            continue;
+        }
 
         entryOut->inode = entry->inode;
         entryOut->file_type = entry->file_type;
