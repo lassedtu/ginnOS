@@ -6,7 +6,7 @@
 
 #include "../../../common/stdio.h"
 
-static int touch_file(const char *input_path);
+static int touch_create_file(const char *input_path);
 
 /**
  * main function of the touch command.
@@ -26,7 +26,7 @@ static int touch_main(int argc, char **argv)
 
     for (int i = 1; i < argc; i++)
     {
-        if (touch_file(argv[i]) != 0)
+        if (touch_create_file(argv[i]) != 0)
         {
             result = -1;
         }
@@ -35,7 +35,7 @@ static int touch_main(int argc, char **argv)
     return result;
 }
 
-static int touch_file(const char *input_path)
+static int touch_create_file(const char *input_path)
 {
     shell_context_t *ctx;
     VFS_STATUS stat_status;
