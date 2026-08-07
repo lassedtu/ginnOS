@@ -148,6 +148,66 @@ bool vfs_open(
     return true;
 }
 
+bool vfs_create(const char *path)
+{
+    if (!root_mount || !path)
+    {
+        return false;
+    }
+
+    return fs_create(root_mount, path);
+}
+
+bool vfs_mkdir(const char *path)
+{
+    if (!root_mount || !path)
+    {
+        return false;
+    }
+
+    return fs_mkdir(root_mount, path);
+}
+
+bool vfs_remove(const char *path)
+{
+    if (!root_mount || !path)
+    {
+        return false;
+    }
+
+    return fs_remove(root_mount, path);
+}
+
+bool vfs_rmdir(const char *path)
+{
+    if (!root_mount || !path)
+    {
+        return false;
+    }
+
+    return fs_rmdir(root_mount, path);
+}
+
+bool vfs_rename(const char *old_path, const char *new_path)
+{
+    if (!root_mount || !old_path || !new_path)
+    {
+        return false;
+    }
+
+    return fs_rename(root_mount, old_path, new_path);
+}
+
+bool vfs_stat(const char *path, VFS_STAT *stat_out)
+{
+    if (!root_mount || !path || !stat_out)
+    {
+        return false;
+    }
+
+    return fs_stat(root_mount, path, stat_out);
+}
+
 bool vfs_resolve_path(
     const char *cwd,
     const char *input,

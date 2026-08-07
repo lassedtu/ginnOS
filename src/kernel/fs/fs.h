@@ -35,6 +35,22 @@ typedef struct
 } FS_MOUNT;
 
 /**
+ * filesystem metadata structure returned by stat.
+ */
+typedef struct
+{
+    uint32_t inode;
+    uint8_t file_type;
+    uint16_t mode;
+    uint16_t links_count;
+    uint32_t size;
+    uint32_t blocks;
+    uint32_t atime;
+    uint32_t mtime;
+    uint32_t ctime;
+} FS_STAT;
+
+/**
  * file handle structure representing an open file or directory.
  */
 typedef struct
@@ -60,6 +76,56 @@ bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device);
  * @return true on success. false on failure.
  */
 bool fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file);
+
+/**
+ * create a regular file at an absolute path.
+ * @param mount initialized filesystem mount.
+ * @param path absolute path to the new file.
+ * @return true on success. false on failure.
+ */
+bool fs_create(FS_MOUNT *mount, const char *path);
+
+/**
+ * create a directory at an absolute path.
+ * @param mount initialized filesystem mount.
+ * @param path absolute path to the new directory.
+ * @return true on success. false on failure.
+ */
+bool fs_mkdir(FS_MOUNT *mount, const char *path);
+
+/**
+ * remove a file at an absolute path.
+ * @param mount initialized filesystem mount.
+ * @param path absolute path to the file to remove.
+ * @return true on success. false on failure.
+ */
+bool fs_remove(FS_MOUNT *mount, const char *path);
+
+/**
+ * remove a directory at an absolute path.
+ * @param mount initialized filesystem mount.
+ * @param path absolute path to the directory to remove.
+ * @return true on success. false on failure.
+ */
+bool fs_rmdir(FS_MOUNT *mount, const char *path);
+
+/**
+ * rename a file or directory.
+ * @param mount initialized filesystem mount.
+ * @param old_path absolute path to the existing file or directory.
+ * @param new_path absolute path to the new name for the file or directory.
+ * @return true on success. false on failure.
+ */
+bool fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path);
+
+/**
+ * stat a file or directory by absolute path.
+ * @param mount initialized filesystem mount.
+ * @param path absolute path to the file or directory.
+ * @param stat_out output stat structure.
+ * @return true on success. false on failure.
+ */
+bool fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out);
 
 /**
  * read bytes from an open file into a buffer.

@@ -5,15 +5,17 @@
 typedef struct BLOCK_DEVICE BLOCK_DEVICE;
 
 typedef bool (*BlockReadFn)(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, void *dest);
+typedef bool (*BlockWriteFn)(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, const void *src);
 
 /**
  * block device abstraction for reading blocks from a storage device.
  */
 struct BLOCK_DEVICE
 {
-    uint16_t bytes_per_block; // number of bytes in each block (sector) of the device.
-    void *context;            // pointer to device-specific context data (e.g., ATA device structure).
-    BlockReadFn read_blocks;  // function pointer to the block read function for the device.
+    uint16_t bytes_per_block;  // number of bytes in each block (sector) of the device.
+    void *context;             // pointer to device-specific context data (e.g., ATA device structure).
+    BlockReadFn read_blocks;   // function pointer to the block read function for the device.
+    BlockWriteFn write_blocks; // function pointer to the block write function for the device.
 };
 
 /**
@@ -25,3 +27,13 @@ struct BLOCK_DEVICE
  * @return true on success. false on failure.
  */
 bool block_device_read(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, void *dest);
+
+/**
+ * write blocks to a block device.
+ * @param device initialized block device backend.
+ * @param startBlock starting block number to write to.
+ * @param blockCount number of blocks to write.
+ * @param src source buffer containing the data to write.
+ * @return true on success. false on failure.
+ */
+bool block_device_write(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, const void *src);

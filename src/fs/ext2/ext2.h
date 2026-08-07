@@ -108,15 +108,19 @@ typedef struct __attribute__((packed))
 
 typedef struct
 {
-    BLOCK_DEVICE *disk;         // pointer to the block device used by this filesystem
-    uint32_t block_size;        // size of each block in bytes (calculated as 1024 << s_log_block_size)
-    uint32_t sectors_per_block; // number of sectors in each block (calculated as block_size / EXT2_SECTOR_SIZE)
-    uint32_t inode_size;        // size of each inode structure in bytes (from s_inode_size, defaulting to 128 if zero)
-    uint32_t first_data_block;  // block number of the first data block in the filesystem (from s_first_data_block)
-    uint32_t block_group_count; // total number of block groups in the filesystem (calculated from s_blocks_count and s_blocks_per_group)
-    uint32_t blocks_per_group;  // number of blocks in each block group (from s_blocks_per_group)
-    uint32_t inodes_per_group;  // number of inodes in each block group (from s_inodes_per_group)
-    uint32_t bgdt_start_block;  // block number of the starting block of the block group descriptor table (calculated as first_data_block + 1)
+    BLOCK_DEVICE *disk;                // pointer to the block device used by this filesystem
+    EXT2_SUPERBLOCK superblock;        // cached superblock for mutation helpers
+    uint32_t block_size;               // size of each block in bytes (calculated as 1024 << s_log_block_size)
+    uint32_t sectors_per_block;        // number of sectors in each block (calculated as block_size / EXT2_SECTOR_SIZE)
+    uint32_t inode_size;               // size of each inode structure in bytes (from s_inode_size, defaulting to 128 if zero)
+    uint32_t first_data_block;         // block number of the first data block in the filesystem (from s_first_data_block)
+    uint32_t block_count;              // total number of blocks in the filesystem
+    uint32_t inode_count;              // total number of inodes in the filesystem
+    uint32_t first_non_reserved_inode; // first non-reserved inode number
+    uint32_t block_group_count;        // total number of block groups in the filesystem (calculated from s_blocks_count and s_blocks_per_group)
+    uint32_t blocks_per_group;         // number of blocks in each block group (from s_blocks_per_group)
+    uint32_t inodes_per_group;         // number of inodes in each block group (from s_inodes_per_group)
+    uint32_t bgdt_start_block;         // block number of the starting block of the block group descriptor table (calculated as first_data_block + 1)
 } EXT2_VOLUME;
 
 typedef struct
@@ -173,6 +177,31 @@ bool EXT2_ListDirectory(EXT2_VOLUME *volume, uint32_t inode_number);
  * @return true on success. false on failure.
  */
 bool EXT2_ReadFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, void *buffer);
+
+/**
+ * create a regular file at an absolute path.
+ */
+bool EXT2_CreateFile(EXT2_VOLUME *volume, const char *path);
+
+/**
+ * create a directory at an absolute path.
+ */
+bool EXT2_CreateDir(EXT2_VOLUME *volume, const char *path);
+
+/**
+ * remove a regular file at an absolute path.
+ */
+bool EXT2_RemoveFile(EXT2_VOLUME *volume, const char *path);
+
+/**
+ * remove a directory at an absolute path.
+ */
+bool EXT2_RemoveDir(EXT2_VOLUME *volume, const char *path);
+
+/**
+ * rename a file or directory.
+ */
+bool EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_path);
 
 /**
  * resolve an absolute path to an inode.

@@ -22,6 +22,26 @@ static bool partition_block_read(BLOCK_DEVICE *device, uint32_t startBlock, uint
     return block_device_read(part->parent, part->start_lba + startBlock, blockCount, dest);
 }
 
+/**
+ * write blocks to a partition.
+ */
+static bool partition_block_write(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, const void *src)
+{
+    PARTITION_DEVICE *part;
+    if (!device || !device->context)
+    {
+        return false;
+    }
+
+    part = (PARTITION_DEVICE *)device->context;
+    if (!part->parent)
+    {
+        return false;
+    }
+
+    return block_device_write(part->parent, part->start_lba + startBlock, blockCount, src);
+}
+
 bool PARTITION_Initialize(PARTITION_DEVICE *part, BLOCK_DEVICE *parent, uint32_t start_lba)
 {
     if (!part || !parent)
@@ -34,6 +54,7 @@ bool PARTITION_Initialize(PARTITION_DEVICE *part, BLOCK_DEVICE *parent, uint32_t
     part->block.bytes_per_block = parent->bytes_per_block;
     part->block.context = part;
     part->block.read_blocks = partition_block_read;
+    part->block.write_blocks = partition_block_write;
     return true;
 }
 

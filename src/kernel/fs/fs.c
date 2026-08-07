@@ -21,6 +21,21 @@ static uint8_t map_ext2_file_type(uint8_t ext2_type)
     return FS_TYPE_UNKNOWN;
 }
 
+static uint8_t map_inode_type(uint16_t mode)
+{
+    if ((mode & EXT2_S_IFMT) == EXT2_S_IFREG)
+    {
+        return FS_TYPE_FILE;
+    }
+
+    if ((mode & EXT2_S_IFMT) == EXT2_S_IFDIR)
+    {
+        return FS_TYPE_DIR;
+    }
+
+    return FS_TYPE_UNKNOWN;
+}
+
 bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device)
 {
     if (!mount || !device)
@@ -51,6 +66,88 @@ bool fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file)
 
     file->file_type = map_ext2_file_type(file->ext2_file.file_type);
     file->is_open = 1;
+    return true;
+}
+
+bool fs_create(FS_MOUNT *mount, const char *path)
+{
+    if (!mount || !path || !mount->is_mounted)
+    {
+        return false;
+    }
+
+    return EXT2_CreateFile(&mount->ext2, path);
+}
+
+bool fs_mkdir(FS_MOUNT *mount, const char *path)
+{
+    if (!mount || !path || !mount->is_mounted)
+    {
+        return false;
+    }
+
+    return EXT2_CreateDir(&mount->ext2, path);
+}
+
+bool fs_remove(FS_MOUNT *mount, const char *path)
+{
+    if (!mount || !path || !mount->is_mounted)
+    {
+        return false;
+    }
+
+    return EXT2_RemoveFile(&mount->ext2, path);
+}
+
+bool fs_rmdir(FS_MOUNT *mount, const char *path)
+{
+    if (!mount || !path || !mount->is_mounted)
+    {
+        return false;
+    }
+
+    return EXT2_RemoveDir(&mount->ext2, path);
+}
+
+bool fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path)
+{
+    if (!mount || !old_path || !new_path || !mount->is_mounted)
+    {
+        return false;
+    }
+
+    return EXT2_Rename(&mount->ext2, old_path, new_path);
+}
+
+bool fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out)
+{
+    uint32_t inode_number;
+    EXT2_INODE inode;
+
+    if (!mount || !path || !stat_out || !mount->is_mounted)
+    {
+        return false;
+    }
+
+    if (!EXT2_LookupPath(&mount->ext2, path, &inode_number))
+    {
+        return false;
+    }
+
+    if (!EXT2_ReadInode(&mount->ext2, inode_number, &inode))
+    {
+        return false;
+    }
+
+    stat_out->inode = inode_number;
+    stat_out->file_type = map_inode_type(inode.i_mode);
+    stat_out->mode = inode.i_mode;
+    stat_out->links_count = inode.i_links_count;
+    stat_out->size = inode.i_size;
+    stat_out->blocks = inode.i_blocks;
+    stat_out->atime = inode.i_atime;
+    stat_out->mtime = inode.i_mtime;
+    stat_out->ctime = inode.i_ctime;
     return true;
 }
 

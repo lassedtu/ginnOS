@@ -11,7 +11,7 @@ typedef struct
 } ATA_DEVICE;
 
 /**
- * initialize an ATA device for reading blocks.
+ * initialize an ATA device for reading and writing blocks.
  * @param device ATA device object to initialize.
  * @return true on success, false on failure.
  */
