@@ -13,6 +13,8 @@ static int pwd_main(
     int argc,
     char **argv)
 {
+    (void)argv; // unused parameter
+
     if (argc != 1)
     {
         // Process IDs not yet implemented
