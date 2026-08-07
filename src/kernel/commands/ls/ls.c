@@ -45,7 +45,7 @@ static int ls_main(int argc, char **argv)
 
     if (!vfs_open(resolved_path, &dir))
     {
-        printf("ls: cannot open %s\r\n", input_path);
+        printf("ls: directory not found %s\r\n", input_path);
         return -1;
     }
 

@@ -38,7 +38,7 @@ static int cat_main(int argc, char **argv)
 
     if (!vfs_open(resolved_path, &file))
     {
-        printf("cat: cannot open '%s'\r\n", argv[1]);
+        printf("cat: file not found '%s'\r\n", argv[1]);
         return -1;
     }
 
