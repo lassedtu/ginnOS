@@ -15,6 +15,17 @@ enum
 };
 
 /**
+ * filesystem operation status codes.
+ */
+typedef enum
+{
+    FS_OK = 0,                // operation completed successfully
+    FS_NOT_FOUND = 1,         // file or directory not found
+    FS_PERMISSION_DENIED = 2, // permission denied for the operation
+    FS_IO_ERROR = 3,          // I/O error occurred during the operation
+} FS_STATUS;
+
+/**
  * directory entry structure for reading directory contents.
  */
 typedef struct
@@ -123,9 +134,9 @@ bool fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path);
  * @param mount initialized filesystem mount.
  * @param path absolute path to the file or directory.
  * @param stat_out output stat structure.
- * @return true on success. false on failure.
+ * @return FS_OK on success, or an error code on failure.
  */
-bool fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out);
+FS_STATUS fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out);
 
 /**
  * read bytes from an open file into a buffer.

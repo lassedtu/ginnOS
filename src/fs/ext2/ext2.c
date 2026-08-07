@@ -1123,7 +1123,7 @@ static bool lookup_parent_and_name(EXT2_VOLUME *volume, const char *path, uint32
         return false;
     }
 
-    if (!EXT2_LookupPath(volume, parent_path, &parent_inode))
+    if (EXT2_LookupPath(volume, parent_path, &parent_inode) != EXT2_OK)
     {
         return false;
     }
@@ -1217,7 +1217,7 @@ static uint8_t inode_to_file_type(const EXT2_INODE *inode)
     return 0;
 }
 
-static bool find_in_directory(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len, uint32_t *inode_out)
+static EXT2_STATUS find_in_directory(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len, uint32_t *inode_out)
 {
     EXT2_INODE dir_inode;
     uint32_t block_index;
@@ -1225,12 +1225,12 @@ static bool find_in_directory(EXT2_VOLUME *volume, uint32_t dir_inode_number, co
 
     if (!inode_out)
     {
-        return false;
+        return EXT2_IO_ERROR;
     }
 
     if (!EXT2_ReadInode(volume, dir_inode_number, &dir_inode) || !inode_is_dir(&dir_inode))
     {
-        return false;
+        return EXT2_IO_ERROR;
     }
 
     for (block_index = 0; block_index < EXT2_NDIR_BLOCKS; block_index++)
@@ -1245,7 +1245,7 @@ static bool find_in_directory(EXT2_VOLUME *volume, uint32_t dir_inode_number, co
 
         if (!read_block(volume, data_block, g_block_buffer))
         {
-            return false;
+            return EXT2_IO_ERROR;
         }
 
         while (offset + header_size <= volume->block_size)
@@ -1256,21 +1256,21 @@ static bool find_in_directory(EXT2_VOLUME *volume, uint32_t dir_inode_number, co
 
             if (entry->rec_len < min_size || entry->rec_len == 0 || offset + entry->rec_len > volume->block_size)
             {
-                return false;
+                return EXT2_IO_ERROR;
             }
 
             entry_name = (const char *)(g_block_buffer + offset + header_size);
             if (entry->inode != 0 && name_len == entry->name_len && memcmp(name, entry_name, name_len) == 0)
             {
                 *inode_out = entry->inode;
-                return true;
+                return EXT2_OK;
             }
 
             offset += entry->rec_len;
         }
     }
 
-    return false;
+    return EXT2_NOT_FOUND;
 }
 
 static bool resolve_data_block(EXT2_VOLUME *volume, const EXT2_INODE *inode, uint32_t logical_block_index, uint32_t *physical_block_out)
@@ -1470,19 +1470,19 @@ bool EXT2_ListDirectory(EXT2_VOLUME *volume, uint32_t inode_number)
     return true;
 }
 
-bool EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out)
+EXT2_STATUS EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out)
 {
     uint32_t current = EXT2_INODE_ROOT;
     uint32_t i = 0;
 
     if (!volume || !path || !inode_out)
     {
-        return false;
+        return EXT2_IO_ERROR;
     }
 
     if (path[0] == 0)
     {
-        return false;
+        return EXT2_NOT_FOUND;
     }
 
     while (path[i] == '/')
@@ -1493,7 +1493,7 @@ bool EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out)
     if (path[i] == 0)
     {
         *inode_out = EXT2_INODE_ROOT;
-        return true;
+        return EXT2_OK;
     }
 
     while (path[i] != 0)
@@ -1517,9 +1517,12 @@ bool EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out)
             continue;
         }
 
-        if (!find_in_directory(volume, current, &path[start], len, &next_inode))
         {
-            return false;
+            EXT2_STATUS status = find_in_directory(volume, current, &path[start], len, &next_inode);
+            if (status != EXT2_OK)
+            {
+                return status;
+            }
         }
 
         current = next_inode;
@@ -1531,7 +1534,7 @@ bool EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out)
     }
 
     *inode_out = current;
-    return true;
+    return EXT2_OK;
 }
 
 static bool read_directory_entry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut)
@@ -1599,7 +1602,7 @@ bool EXT2_Open(EXT2_VOLUME *volume, const char *path, EXT2_FILE *file)
         return false;
     }
 
-    if (!EXT2_LookupPath(volume, path, &inode_number))
+    if (EXT2_LookupPath(volume, path, &inode_number) != EXT2_OK)
     {
         return false;
     }

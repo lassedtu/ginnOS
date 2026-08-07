@@ -198,14 +198,14 @@ bool vfs_rename(const char *old_path, const char *new_path)
     return fs_rename(root_mount, old_path, new_path);
 }
 
-bool vfs_stat(const char *path, VFS_STAT *stat_out)
+VFS_STATUS vfs_stat(const char *path, VFS_STAT *stat_out)
 {
     if (!root_mount || !path || !stat_out)
     {
-        return false;
+        return VFS_IO_ERROR;
     }
 
-    return fs_stat(root_mount, path, stat_out);
+    return (VFS_STATUS)fs_stat(root_mount, path, stat_out);
 }
 
 bool vfs_resolve_path(

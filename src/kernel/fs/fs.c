@@ -36,6 +36,21 @@ static uint8_t map_inode_type(uint16_t mode)
     return FS_TYPE_UNKNOWN;
 }
 
+static FS_STATUS map_ext2_status(EXT2_STATUS status)
+{
+    switch (status)
+    {
+    case EXT2_OK:
+        return FS_OK;
+    case EXT2_NOT_FOUND:
+        return FS_NOT_FOUND;
+    case EXT2_PERMISSION_DENIED:
+        return FS_PERMISSION_DENIED;
+    default:
+        return FS_IO_ERROR;
+    }
+}
+
 bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device)
 {
     if (!mount || !device)
@@ -119,24 +134,26 @@ bool fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path)
     return EXT2_Rename(&mount->ext2, old_path, new_path);
 }
 
-bool fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out)
+FS_STATUS fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out)
 {
     uint32_t inode_number;
     EXT2_INODE inode;
+    EXT2_STATUS lookup_status;
 
     if (!mount || !path || !stat_out || !mount->is_mounted)
     {
-        return false;
+        return FS_IO_ERROR;
     }
 
-    if (!EXT2_LookupPath(&mount->ext2, path, &inode_number))
+    lookup_status = EXT2_LookupPath(&mount->ext2, path, &inode_number);
+    if (lookup_status != EXT2_OK)
     {
-        return false;
+        return map_ext2_status(lookup_status);
     }
 
     if (!EXT2_ReadInode(&mount->ext2, inode_number, &inode))
     {
-        return false;
+        return FS_IO_ERROR;
     }
 
     stat_out->inode = inode_number;
@@ -148,7 +165,7 @@ bool fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out)
     stat_out->atime = inode.i_atime;
     stat_out->mtime = inode.i_mtime;
     stat_out->ctime = inode.i_ctime;
-    return true;
+    return FS_OK;
 }
 
 uint32_t fs_read(FS_FILE *file, uint32_t byteCount, void *dataOut)

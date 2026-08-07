@@ -29,6 +29,14 @@
 #define EXT2_MAX_BLOCK_SIZE 4096u // maximum block size supported by ext2 filesystem (in bytes)
 #define EXT2_MAX_INODE_SIZE 256u  // maximum inode size supported by ext2 filesystem (in bytes)
 
+typedef enum
+{
+    EXT2_OK = 0,                // operation completed successfully
+    EXT2_NOT_FOUND = 1,         // file or directory not found
+    EXT2_PERMISSION_DENIED = 2, // permission denied for the operation
+    EXT2_IO_ERROR = 3,          // I/O error occurred during the operation
+} EXT2_STATUS;
+
 typedef struct __attribute__((packed))
 {
     uint32_t s_inodes_count;      // total number of inodes in file system
@@ -208,9 +216,9 @@ bool EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_path
  * @param volume initialized ext2 volume.
  * @param path absolute path.
  * @param inode_out resolved inode.
- * @return true on success. false on failure.
+ * @return EXT2_OK on success, or an error code on failure.
  */
-bool EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out);
+EXT2_STATUS EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out);
 
 /**
  * open a file or directory by absolute path.

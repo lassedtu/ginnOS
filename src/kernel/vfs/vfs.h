@@ -5,6 +5,17 @@
 typedef FS_STAT VFS_STAT;
 
 /**
+ * virtual file system operation status codes.
+ */
+typedef enum
+{
+    VFS_OK = FS_OK,                               // operation completed successfully
+    VFS_NOT_FOUND = FS_NOT_FOUND,                 // file or directory not found
+    VFS_PERMISSION_DENIED = FS_PERMISSION_DENIED, // permission denied for the operation
+    VFS_IO_ERROR = FS_IO_ERROR,                   // I/O error occurred during the operation
+} VFS_STATUS;
+
+/**
  * virtual file system file handle structure representing an open file or directory.
  * this structure is used to abstract the underlying filesystem implementation.
  */
@@ -71,9 +82,9 @@ bool vfs_rename(const char *old_path, const char *new_path);
  * stat a file or directory by absolute path.
  * @param path absolute path to the file or directory.
  * @param stat_out pointer to a VFS_STAT structure that will be filled with the file's metadata.
- * @return true on success, false on failure.
+ * @return VFS_OK on success, or an error code on failure.
  */
-bool vfs_stat(const char *path, VFS_STAT *stat_out);
+VFS_STATUS vfs_stat(const char *path, VFS_STAT *stat_out);
 
 /**
  * resolve an input path against the current working directory.
