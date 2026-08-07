@@ -17,6 +17,10 @@
 #include "../drivers/keyboard/keyboard.h"
 
 #include "console/console.h"
+#include "memory/kernel_layout.h"
+#include "memory/reservations.h"
+
+void memory_print_map(boot_info_t *boot);
 
 void cstart(boot_info_t *boot)
 {
@@ -41,7 +45,22 @@ void kernel_main(boot_info_t *boot)
     stdio_set_putchar(console_putchar); // set stdio output to console (sophisticated VGA text buffer)
 
     printf("Kernel: entered 32-bit C main\r\n");
+    printf("Kernel layout: start=0x%x end=0x%x\r\n",
+           kernel_start_address(),
+           kernel_end_address());
+    printf("kernel size: %u bytes\r\n", kernel_size());
+
+    if (kernel_end_address() <= kernel_start_address())
+    {
+        kernel_panic("invalid kernel layout");
+    }
+
+    memory_reserve_stage2();
+
     printf("Boot drive: %u\r\n", boot->boot_drive);
+    printf("E820 regions: %u\r\n", boot->memory_map.count);
+
+    memory_print_map(boot);
 
     io_enable_interrupts();
 

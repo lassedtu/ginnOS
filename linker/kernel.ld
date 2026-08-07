@@ -9,6 +9,7 @@ PHDRS
 SECTIONS
 {
     . = 0x10000;
+    kernel_start = .;
 
     .text :
     {
@@ -37,4 +38,6 @@ SECTIONS
         *(.bss*)
         *(COMMON)
     } :data
+
+    kernel_end = .;
 }
