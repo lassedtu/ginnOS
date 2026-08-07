@@ -5,11 +5,13 @@ BITS 32
 
 section .text
 global _start
-extern kernel_main
+extern cstart
 
 _start:
+    mov eax, [esp + 4]
     mov esp, stack_top
-    call kernel_main
+    push eax
+    call cstart
 
 .hang:
     cli

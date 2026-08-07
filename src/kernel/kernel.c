@@ -18,11 +18,23 @@
 
 #include "console/console.h"
 
-void kernel_main(void)
+void cstart(boot_info_t *boot)
+{
+    if (!boot)
+    {
+        kernel_panic("missing boot_info_t");
+    }
+
+    kernel_main(boot);
+}
+
+void kernel_main(boot_info_t *boot)
 {
     ATA_DEVICE ata;
     PARTITION_DEVICE part;
     FS_MOUNT mount;
+
+    (void)boot->boot_drive;
 
     hal_initialize();
 
@@ -31,6 +43,7 @@ void kernel_main(void)
     stdio_set_putchar(console_putchar); // set stdio output to console (sophisticated VGA text buffer)
 
     printf("Kernel: entered 32-bit C main\r\n");
+    printf("Boot drive: %u\r\n", boot->boot_drive);
 
     io_enable_interrupts();
 

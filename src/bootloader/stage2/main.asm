@@ -1,6 +1,7 @@
 ; Stage2 loader:
 ;   set up segments & stack
 ;   switch to 32-bit protected mode
+;   populate boot_info_t
 ;   call cstart_() in C to load kernel from EXT2 filesystem and execute it
 
 BITS 16
@@ -22,7 +23,7 @@ _start:
     mov esp, eax
     mov ebp, eax
 
-    mov [boot_drive], dl
+    mov [boot_info], dl
 
     ; Switch to 32-bit protected mode
     cli
@@ -43,8 +44,7 @@ protected_mode_entry:
     mov esp, 0x90000
     mov ebp, esp
 
-    movzx eax, byte [boot_drive]
-    push eax
+    push dword boot_info
     call cstart_
     add esp, 4
 
@@ -53,7 +53,7 @@ realmode_hang:
     hlt
     jmp realmode_hang
 
-boot_drive: db 0
+boot_info: db 0
 
 align 8
 gdt_start:

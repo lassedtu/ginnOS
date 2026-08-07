@@ -1,5 +1,6 @@
 #include "../../common/stdint.h"
 #include "../../common/stdio.h"
+#include "../../common/boot/boot_info.h"
 #include "../../drivers/disk/ata.h"
 #include "../../drivers/disk/partition.h"
 #include "../../fs/ext2/ext2.h"
@@ -13,9 +14,9 @@ static void stage2_putchar(char c)
     puts_char(c);
 }
 
-void cstart_(uint16_t bootDrive)
+void cstart_(boot_info_t *boot)
 {
-    typedef void (*KernelEntryFn)(void);
+    typedef void (*KernelEntryFn)(boot_info_t *);
     KernelEntryFn kernel_entry;
 
     ATA_DEVICE ata;
@@ -24,7 +25,14 @@ void cstart_(uint16_t bootDrive)
     EXT2_FILE file;
     uint32_t bytes_read;
 
-    (void)bootDrive;
+    if (!boot)
+    {
+        printf("stage2: error - missing boot_info_t\r\n");
+        for (;;)
+            ;
+    }
+
+    (void)boot->boot_drive;
 
     stdio_set_putchar(stage2_putchar);
 
@@ -76,7 +84,7 @@ void cstart_(uint16_t bootDrive)
     printf("stage2: jumping to kernel at 0x%x\r\n", KERNEL_ENTRY_ADDRESS);
 
     kernel_entry = (KernelEntryFn)KERNEL_ENTRY_ADDRESS;
-    kernel_entry();
+    kernel_entry(boot);
 
     printf("stage2: kernel returned unexpectedly\r\n");
 
