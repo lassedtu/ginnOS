@@ -151,13 +151,5 @@ void vfs_close(
  * @param file pointer to the VFS_FILE structure representing the open file.
  * @return file type (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN).
  */
-uint8_t vfs_type(
-    VFS_FILE *file);
-
-/**
- * get the type of an open file in the virtual file system.
- * @param file pointer to the VFS_FILE structure representing the open file.
- * @return file type (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN).
- */
 uint8_t vfs_file_type(
     VFS_FILE *file);
