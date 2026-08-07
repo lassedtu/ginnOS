@@ -1,9 +1,9 @@
-# GinnOS
-GinnOS (Ginn short for Ginnungagap, and OS short for Operating System) is a unix-like hobby operating system, written from scratch in c and assembly, which i'm developing alongside a course on operating systems i'm taking at DTU.
+# ginnOS
+ginnOS (Ginn short for Ginnungagap, and OS short for Operating System) is a unix-like hobby operating system, written from scratch in c and assembly, which i'm developing alongside a course on operating systems i'm taking at DTU.
 
 I started this project because i wanted to understand how an operating system is really coded instead of just theory. I plan to keep building and improving it as i learn more.
 
-The name GinnOS is taken from Ginnungagap, the primordial void in Norse mythology from which the world was created.
+The name ginnOS is taken from Ginnungagap, the primordial void in Norse mythology from which the world was created.
 
 > "That was the age when nothing was; / There was no sand, nor sea, nor cool waves, / No earth nor sky nor grass there, / Only Ginnungagap."
 > — Völuspá, Poetic Edda
@@ -206,7 +206,7 @@ qemu-system-i386 --version
 
 ## Windows Toolchain Setup (WSL2)
 
-GinnOS uses `make`, a cross-compiler, NASM, and QEMU. On Windows, the simplest way to get all of that working is **WSL2** with Ubuntu — you get the same Linux toolchain as on a native install, without fighting MSYS or native Windows ports.
+ginnOS uses `make`, a cross-compiler, NASM, and QEMU. On Windows, the simplest way to get all of that working is **WSL2** with Ubuntu — you get the same Linux toolchain as on a native install, without fighting MSYS or native Windows ports.
 
 ### Install WSL2 and Ubuntu
 
