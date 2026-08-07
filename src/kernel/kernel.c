@@ -34,8 +34,6 @@ void kernel_main(boot_info_t *boot)
     PARTITION_DEVICE part;
     FS_MOUNT mount;
 
-    (void)boot->boot_drive;
-
     hal_initialize();
 
     console_initialize();
