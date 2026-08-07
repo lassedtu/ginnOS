@@ -3,6 +3,7 @@
 #include "command.h"
 
 #include "../../common/stdio.h"
+#include "../../common/string.h"
 
 void executor_execute(token_list_t *tokens)
 {
@@ -10,6 +11,8 @@ void executor_execute(token_list_t *tokens)
     {
         return;
     }
+
+    string_to_lower(tokens->tokens[0]);
 
     command_t *cmd = command_lookup(tokens->tokens[0]);
 

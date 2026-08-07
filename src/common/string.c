@@ -70,3 +70,16 @@ char *strncpy(char *dest, const char *src, uint32_t count)
 
     return out;
 }
+
+void string_to_lower(char *str)
+{
+    while (*str)
+    {
+        if (*str >= 'A' && *str <= 'Z')
+        {
+            *str = *str + ('a' - 'A');
+        }
+
+        str++;
+    }
+}

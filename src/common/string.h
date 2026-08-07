@@ -42,3 +42,9 @@ char *strcpy(char *dest, const char *src);
  * @return pointer to the destination buffer.
  */
 char *strncpy(char *dest, const char *src, uint32_t count);
+
+/**
+ * convert a null terminated string to lowercase in place.
+ * @param str null terminated string to convert.
+ */
+void string_to_lower(char *str);
