@@ -370,20 +370,3 @@ uint8_t vfs_type(
 {
     return vfs_file_type(file);
 }
-
-bool vfs_is_directory(const char *path)
-{
-    VFS_FILE file;
-
-    if (!vfs_open(path, &file))
-    {
-        return false;
-    }
-
-    bool result =
-        vfs_file_type(&file) == FS_TYPE_DIR;
-
-    vfs_close(&file);
-
-    return result;
-}

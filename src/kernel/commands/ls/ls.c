@@ -59,6 +59,7 @@ static int ls_main(int argc, char **argv)
     FS_DIRENT entry;
 
     char entry_path[SHELL_PATH_MAX];
+    VFS_FILE entry_file;
 
     while (vfs_read_entry(&dir, &entry))
     {
@@ -72,7 +73,13 @@ static int ls_main(int argc, char **argv)
             continue;
         }
 
-        if (vfs_is_directory(entry_path))
+        if (!vfs_open(entry_path, &entry_file))
+        {
+            printf("%s\r\n", entry.name);
+            continue;
+        }
+
+        if (vfs_file_type(&entry_file) == FS_TYPE_DIR)
         {
             printf("%s/\r\n", entry.name);
         }
@@ -80,6 +87,8 @@ static int ls_main(int argc, char **argv)
         {
             printf("%s\r\n", entry.name);
         }
+
+        vfs_close(&entry_file);
     }
 
     vfs_close(&dir);

@@ -104,10 +104,3 @@ uint8_t vfs_type(
  */
 uint8_t vfs_file_type(
     VFS_FILE *file);
-
-/**
- * check if a given path in the virtual file system is a directory.
- * @param path absolute path to the file or directory.
- * @return true if the path is a directory, false otherwise.
- */
-bool vfs_is_directory(const char *path);

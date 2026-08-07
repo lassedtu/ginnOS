@@ -28,11 +28,22 @@ static int cd_main(int argc, char **argv)
         return 1;
     }
 
-    if (!vfs_is_directory(resolved_path))
+    VFS_FILE dir;
+
+    if (!vfs_open(resolved_path, &dir))
     {
-        printf("cd: not a directory: %s\r\n", argv[1]);
+        printf("cd: cannot open: %s\r\n", argv[1]);
         return 1;
     }
+
+    if (vfs_file_type(&dir) != FS_TYPE_DIR)
+    {
+        printf("cd: not a directory: %s\r\n", argv[1]);
+        vfs_close(&dir);
+        return 1;
+    }
+
+    vfs_close(&dir);
 
     strcpy(ctx->cwd, resolved_path);
 
