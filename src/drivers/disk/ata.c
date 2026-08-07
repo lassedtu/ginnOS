@@ -16,7 +16,9 @@
 #define ATA_STATUS_DRQ 0x08u // data request (ready to transfer data)
 #define ATA_STATUS_BSY 0x80u // busy (device is processing a command and cannot accept new commands)
 
-#define ATA_COMMAND_READ_SECTORS 0x20u // command to read sectors from the disk
+#define ATA_COMMAND_READ_SECTORS 0x20u  // command to read sectors from the disk
+#define ATA_COMMAND_WRITE_SECTORS 0x30u // command to write sectors to the disk
+#define ATA_COMMAND_CACHE_FLUSH 0xE7u   // command to flush the drive cache
 
 /**
  * write a byte to an I/O port.
@@ -42,6 +44,14 @@ static inline uint8_t io_inb(uint16_t port)
 static inline void io_insw(uint16_t port, void *buffer, uint32_t word_count)
 {
     __asm__ __volatile__("cld; rep insw" : "+D"(buffer), "+c"(word_count) : "d"(port) : "memory");
+}
+
+/**
+ * write words (2 bytes each) to an I/O port from a buffer.
+ */
+static inline void io_outsw(uint16_t port, const void *buffer, uint32_t word_count)
+{
+    __asm__ __volatile__("cld; rep outsw" : "+S"(buffer), "+c"(word_count) : "d"(port) : "memory");
 }
 
 /**
@@ -153,12 +163,79 @@ static bool ata_read_lba28(uint32_t lba, uint8_t sector_count, void *dest)
 }
 
 /**
+ * write sectors to an ATA device using 28-bit LBA addressing.
+ */
+static bool ata_write_lba28(uint32_t lba, uint8_t sector_count, const void *src)
+{
+    const uint8_t *in;
+    uint32_t sector_index;
+
+    if (!src || sector_count == 0)
+    {
+        return false;
+    }
+
+    if (lba > 0x0FFFFFFFu)
+    {
+        return false;
+    }
+
+    if (!ata_wait_not_busy())
+    {
+        return false;
+    }
+
+    io_outb(ATA_IO_DRIVE_HEAD, (uint8_t)(0xE0u | ((lba >> 24u) & 0x0Fu)));
+    ata_400ns_delay();
+
+    io_outb(ATA_IO_SECTOR_COUNT, sector_count);
+    io_outb(ATA_IO_LBA_LOW, (uint8_t)(lba & 0xFFu));
+    io_outb(ATA_IO_LBA_MID, (uint8_t)((lba >> 8u) & 0xFFu));
+    io_outb(ATA_IO_LBA_HIGH, (uint8_t)((lba >> 16u) & 0xFFu));
+    io_outb(ATA_IO_STATUS_COMMAND, ATA_COMMAND_WRITE_SECTORS);
+
+    in = (const uint8_t *)src;
+    for (sector_index = 0; sector_index < sector_count; sector_index++)
+    {
+        if (!ata_wait_data_request())
+        {
+            return false;
+        }
+
+        io_outsw(ATA_IO_DATA, in, 256u);
+        in += 512u;
+    }
+
+    if (!ata_wait_not_busy())
+    {
+        return false;
+    }
+
+    io_outb(ATA_IO_STATUS_COMMAND, ATA_COMMAND_CACHE_FLUSH);
+    if (!ata_wait_not_busy())
+    {
+        return false;
+    }
+
+    return true;
+}
+
+/**
  * read blocks from an ATA device.
  */
 static bool ata_block_read(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, void *dest)
 {
     (void)device;
     return ata_read_lba28(startBlock, blockCount, dest);
+}
+
+/**
+ * write blocks to an ATA device.
+ */
+static bool ata_block_write(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, const void *src)
+{
+    (void)device;
+    return ata_write_lba28(startBlock, blockCount, src);
 }
 
 bool ATA_Initialize(ATA_DEVICE *device)
@@ -171,5 +248,6 @@ bool ATA_Initialize(ATA_DEVICE *device)
     device->block.bytes_per_block = 512;
     device->block.context = device;
     device->block.read_blocks = ata_block_read;
+    device->block.write_blocks = ata_block_write;
     return true;
 }

@@ -2,6 +2,8 @@
 
 #include "../fs/fs.h"
 
+typedef FS_STAT VFS_STAT;
+
 /**
  * virtual file system file handle structure representing an open file or directory.
  * this structure is used to abstract the underlying filesystem implementation.
@@ -28,6 +30,50 @@ bool vfs_mount_root(FS_MOUNT *mount);
 bool vfs_open(
     const char *path,
     VFS_FILE *file);
+
+/**
+ * create a regular file by absolute path.
+ * @param path absolute path to the new file.
+ * @return true on success, false on failure.
+ */
+bool vfs_create(const char *path);
+
+/**
+ * create a directory by absolute path.
+ * @param path absolute path to the new directory.
+ * @return true on success, false on failure.
+ */
+bool vfs_mkdir(const char *path);
+
+/**
+ * remove a file by absolute path.
+ * @param path absolute path to the file to remove.
+ * @return true on success, false on failure.
+ */
+bool vfs_remove(const char *path);
+
+/**
+ * remove a directory by absolute path.
+ * @param path absolute path to the directory to remove.
+ * @return true on success, false on failure.
+ */
+bool vfs_rmdir(const char *path);
+
+/**
+ * rename a file or directory by absolute paths.
+ * @param old_path absolute path to the existing file or directory.
+ * @param new_path absolute path to the new name for the file or directory.
+ * @return true on success, false on failure.
+ */
+bool vfs_rename(const char *old_path, const char *new_path);
+
+/**
+ * stat a file or directory by absolute path.
+ * @param path absolute path to the file or directory.
+ * @param stat_out pointer to a VFS_STAT structure that will be filled with the file's metadata.
+ * @return true on success, false on failure.
+ */
+bool vfs_stat(const char *path, VFS_STAT *stat_out);
 
 /**
  * resolve an input path against the current working directory.
