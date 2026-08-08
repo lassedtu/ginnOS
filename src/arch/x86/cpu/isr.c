@@ -18,15 +18,15 @@ extern void isr_init_gates(void);
 
 /**
  * Initialize the interrupt system.
+ *
+ * Installs all 256 ISR stubs into the IDT without marking any gate present.
+ * A gate becomes present only when a handler is registered via
+ * isr_register_handler(), making the present-bit meaningful rather than
+ * a blanket "everything is active" flag.
  */
 void isr_initialize(void)
 {
     isr_init_gates();
-
-    for (int i = 0; i < 256; i++)
-    {
-        idt_enable_gate(i);
-    }
 }
 
 /**
