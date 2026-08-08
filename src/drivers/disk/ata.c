@@ -40,7 +40,15 @@
 
 /* drive-select byte for LBA mode: bit6=LBA, bit5=1 (obsolete), bit7=1 (obsolete) */
 #define ATA_DRIVE_SELECT_MASTER 0xE0u // 1110 0000
-#define ATA_DRIVE_SELECT_SLAVE 0xF0u  // 1111 0000
+#define ATA_DRIVE_SELECT_SLAVE  0xF0u // 1111 0000
+
+/*
+ * device control register (written to control_base).
+ * nIEN (bit 1): when set, disables the drive's IRQ line so the controller
+ * will not assert IRQ 14/15 after a command completes. safe for pure PIO
+ * use — all status polling goes through the status register directly.
+ */
+#define ATA_DCR_NIEN 0x02u // disable interrupts from this device
 
 /**
  * wait 400ns by reading the control port four times.
@@ -408,6 +416,12 @@ bool ATA_Initialize(ATA_DEVICE *device, ATA_CHANNEL channel, ATA_DRIVE drive)
                                : ATA_DRIVE_SELECT_SLAVE;
 
     device->sector_count = 0;
+
+    // disable IRQ generation on this channel before issuing any command.
+    // the driver is PIO-only — all completion detection is done via polling
+    // the status register, so the ATA interrupt line (IRQ 14 on primary,
+    // IRQ 15 on secondary) is never needed and would fire unhandled otherwise.
+    io_outb(device->control_base, ATA_DCR_NIEN);
 
     if (!ata_identify(device))
         return false;
