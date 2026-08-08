@@ -3,6 +3,7 @@
 #include "idt.h"
 #include "../../../common/stdint.h"
 #include "../../../common/stdio.h"
+#include "../../../kernel/assert.h"
 
 /**
  * Interrupt handler table.
@@ -53,6 +54,8 @@ void isr_register_handler(
     int vector,
     isr_handler_t handler)
 {
+    ASSERT(vector >= 0 && vector <= 255);
+
     handlers[vector] = handler;
 
     idt_enable_gate(vector);

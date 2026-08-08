@@ -3,6 +3,7 @@
 #include "io.h"
 #include "isr.h"
 #include "../../../common/stdio.h"
+#include "../../../kernel/assert.h"
 
 /** PIC remap offset. IRQ 0 maps to IDT vector 0x20 (32). */
 #define PIC_REMAP_OFFSET 0x20
@@ -53,5 +54,7 @@ void irq_initialize(void)
 
 void irq_register_handler(int irq, irq_handler_t handler)
 {
+    ASSERT(irq >= 0 && irq <= 15);
+
     irq_handlers[irq] = handler;
 }
