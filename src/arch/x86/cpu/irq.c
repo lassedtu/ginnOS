@@ -5,9 +5,6 @@
 #include "../../../common/stdio.h"
 #include "../../../kernel/assert.h"
 
-/** PIC remap offset. IRQ 0 maps to IDT vector 0x20 (32). */
-#define PIC_REMAP_OFFSET 0x20
-
 /** handler table for the 16 hardware IRQ lines (IRQ 0–15). */
 static irq_handler_t irq_handlers[16];
 
