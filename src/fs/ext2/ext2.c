@@ -9,7 +9,9 @@
 
 static uint8_t g_sector_buffer[EXT2_SECTOR_SIZE];
 static uint8_t g_block_buffer[EXT2_MAX_BLOCK_SIZE];
-static uint8_t g_block_buffer2[EXT2_MAX_BLOCK_SIZE];
+static uint8_t g_block_buffer2[EXT2_MAX_BLOCK_SIZE]; // scratch for single-indirect block
+static uint8_t g_block_buffer3[EXT2_MAX_BLOCK_SIZE]; // scratch for double-indirect block (first level)
+static uint8_t g_block_buffer4[EXT2_MAX_BLOCK_SIZE]; // scratch for triple-indirect block (first level)
 static uint8_t g_inode_buffer[EXT2_MAX_INODE_SIZE];
 static uint8_t g_bitmap_buffer[EXT2_MAX_BLOCK_SIZE];
 
@@ -17,6 +19,14 @@ static bool inode_is_dir(const EXT2_INODE *inode);
 static bool inode_is_regular(const EXT2_INODE *inode);
 static bool inode_is_directory(const EXT2_INODE *inode);
 
+/**
+ * reads bytes from the disk at the specified absolute byte offset and size into the provided output buffer.
+ * @param disk pointer to the block device representing the disk.
+ * @param byte_offset the absolute byte offset on the disk to start reading from.
+ * @param size the number of bytes to read.
+ * @param out pointer to the output buffer where the read bytes will be stored.
+ * @return true if the read operation was successful, false otherwise.
+ */
 static bool read_abs_bytes(BLOCK_DEVICE *disk, uint32_t byte_offset, uint32_t size, void *out)
 {
     uint8_t *dst = (uint8_t *)out;
@@ -41,7 +51,13 @@ static bool read_abs_bytes(BLOCK_DEVICE *disk, uint32_t byte_offset, uint32_t si
 
     return true;
 }
-
+/**
+ * reads a block from the EXT2 volume into the provided output buffer.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param block the block number to read from the volume.
+ * @param out pointer to the output buffer where the read block will be stored.
+ * @return true if the read operation was successful, false otherwise.
+ */
 static bool read_block(EXT2_VOLUME *volume, uint32_t block, void *out)
 {
     uint32_t lba;
@@ -54,6 +70,13 @@ static bool read_block(EXT2_VOLUME *volume, uint32_t block, void *out)
     return block_device_read(volume->disk, lba, (uint8_t)volume->sectors_per_block, out);
 }
 
+/**
+ * reads the block group descriptor for the specified group from the EXT2 volume into the provided output structure.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param group the block group number to read the descriptor for.
+ * @param out_desc pointer to the EXT2_BLOCK_GROUP_DESC structure where the read descriptor will be stored.
+ * @return true if the read operation was successful, false otherwise.
+ */
 static bool read_group_desc(EXT2_VOLUME *volume, uint32_t group, EXT2_BLOCK_GROUP_DESC *out_desc)
 {
     uint32_t bgdt_byte;
@@ -69,16 +92,34 @@ static bool read_group_desc(EXT2_VOLUME *volume, uint32_t group, EXT2_BLOCK_GROU
     return read_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(EXT2_BLOCK_GROUP_DESC), out_desc);
 }
 
+/**
+ * aligns the given value to the next multiple of 4.
+ * @param value the value to align.
+ * @return the aligned value, which is the smallest multiple of 4 that is greater than or equal to the input value.
+ */
 static uint32_t ext2_align4(uint32_t value)
 {
     return (value + 3u) & ~3u;
 }
 
+/**
+ * calculates the size of a directory entry based on the length of the name.
+ * @param name_len the length of the name field in bytes.
+ * @return the size of the directory entry in bytes, aligned to a 4-byte boundary.
+ */
 static uint32_t ext2_dir_entry_size(uint32_t name_len)
 {
     return ext2_align4(OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1u + name_len);
 }
 
+/**
+ * writes bytes to the disk at the specified absolute byte offset and size from the provided input buffer.
+ * @param disk pointer to the block device representing the disk.
+ * @param byte_offset the absolute byte offset on the disk to start writing to.
+ * @param size the number of bytes to write.
+ * @param in pointer to the input buffer containing the bytes to be written.
+ * @return true if the write operation was successful, false otherwise.
+ */
 static bool write_abs_bytes(BLOCK_DEVICE *disk, uint32_t byte_offset, uint32_t size, const void *in)
 {
     const uint8_t *src = (const uint8_t *)in;
@@ -124,6 +165,13 @@ static bool write_abs_bytes(BLOCK_DEVICE *disk, uint32_t byte_offset, uint32_t s
     return true;
 }
 
+/**
+ * writes a block to the EXT2 volume from the provided input buffer.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param block the block number to write to the volume.
+ * @param in pointer to the input buffer containing the block data to be written.
+ * @return true if the write operation was successful, false otherwise.
+ */
 static bool write_block(EXT2_VOLUME *volume, uint32_t block, const void *in)
 {
     if (!volume || !volume->disk || !in || volume->sectors_per_block == 0)
@@ -134,6 +182,13 @@ static bool write_block(EXT2_VOLUME *volume, uint32_t block, const void *in)
     return block_device_write(volume->disk, block * volume->sectors_per_block, (uint8_t)volume->sectors_per_block, in);
 }
 
+/**
+ * writes the block group descriptor for the specified group to the EXT2 volume from the provided input structure.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param group the block group number to write the descriptor for.
+ * @param desc pointer to the EXT2_BLOCK_GROUP_DESC structure containing the descriptor data to be written.
+ * @return true if the write operation was successful, false otherwise.
+ */
 static bool write_group_desc(EXT2_VOLUME *volume, uint32_t group, const EXT2_BLOCK_GROUP_DESC *desc)
 {
     uint32_t bgdt_byte;
@@ -149,6 +204,11 @@ static bool write_group_desc(EXT2_VOLUME *volume, uint32_t group, const EXT2_BLO
     return write_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(EXT2_BLOCK_GROUP_DESC), desc);
 }
 
+/**
+ * writes the superblock to the EXT2 volume.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @return true if the write operation was successful, false otherwise.
+ */
 static bool write_superblock(EXT2_VOLUME *volume)
 {
     if (!volume)
@@ -159,6 +219,13 @@ static bool write_superblock(EXT2_VOLUME *volume)
     return write_abs_bytes(volume->disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(EXT2_SUPERBLOCK), &volume->superblock);
 }
 
+/**
+ * reads the inode bitmap for the specified block group from the EXT2 volume into the provided output buffer.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param group the block group number to read the inode bitmap for.
+ * @param bitmap pointer to the output buffer where the read inode bitmap will be stored.
+ * @return true if the read operation was successful, false otherwise.
+ */
 static bool read_inode_bitmap(EXT2_VOLUME *volume, uint32_t group, uint8_t *bitmap)
 {
     EXT2_BLOCK_GROUP_DESC desc;
@@ -176,6 +243,13 @@ static bool read_inode_bitmap(EXT2_VOLUME *volume, uint32_t group, uint8_t *bitm
     return read_block(volume, desc.bg_inode_bitmap, bitmap);
 }
 
+/**
+ * writes the inode bitmap for the specified block group to the EXT2 volume from the provided input buffer.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param group the block group number to write the inode bitmap for.
+ * @param bitmap pointer to the input buffer containing the inode bitmap data to be written.
+ * @return true if the write operation was successful, false otherwise.
+ */
 static bool write_inode_bitmap(EXT2_VOLUME *volume, uint32_t group, const uint8_t *bitmap)
 {
     EXT2_BLOCK_GROUP_DESC desc;
@@ -193,6 +267,13 @@ static bool write_inode_bitmap(EXT2_VOLUME *volume, uint32_t group, const uint8_
     return write_block(volume, desc.bg_inode_bitmap, bitmap);
 }
 
+/**
+ * reads the block bitmap for the specified block group from the EXT2 volume into the provided output buffer.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param group the block group number to read the block bitmap for.
+ * @param bitmap pointer to the output buffer where the read block bitmap will be stored.
+ * @return true if the read operation was successful, false otherwise.
+ */
 static bool read_block_bitmap(EXT2_VOLUME *volume, uint32_t group, uint8_t *bitmap)
 {
     EXT2_BLOCK_GROUP_DESC desc;
@@ -209,7 +290,13 @@ static bool read_block_bitmap(EXT2_VOLUME *volume, uint32_t group, uint8_t *bitm
 
     return read_block(volume, desc.bg_block_bitmap, bitmap);
 }
-
+/**
+ * writes the block bitmap for the specified block group to the EXT2 volume from the provided input buffer.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param group the block group number to write the block bitmap for.
+ * @param bitmap pointer to the input buffer containing the block bitmap data to be written.
+ * @return true if the write operation was successful, false otherwise.
+ */
 static bool write_block_bitmap(EXT2_VOLUME *volume, uint32_t group, const uint8_t *bitmap)
 {
     EXT2_BLOCK_GROUP_DESC desc;
@@ -227,11 +314,23 @@ static bool write_block_bitmap(EXT2_VOLUME *volume, uint32_t group, const uint8_
     return write_block(volume, desc.bg_block_bitmap, bitmap);
 }
 
+/**
+ * tests whether a specific bit in the bitmap is set (1) or not (0).
+ * @param bitmap pointer to the bitmap array.
+ * @param index the index of the bit to test.
+ * @return true if the bit is set (1), false if it is not set (0).
+ */
 static bool bitmap_test(const uint8_t *bitmap, uint32_t index)
 {
     return (bitmap[index / 8u] & (uint8_t)(1u << (index % 8u))) != 0;
 }
 
+/**
+ * sets or clears a specific bit in the bitmap based on the provided value.
+ * @param bitmap pointer to the bitmap array.
+ * @param index the index of the bit to set or clear.
+ * @param value true to set the bit (1), false to clear the bit (0).
+ */
 static void bitmap_set(uint8_t *bitmap, uint32_t index, bool value)
 {
     uint8_t mask = (uint8_t)(1u << (index % 8u));
@@ -246,6 +345,14 @@ static void bitmap_set(uint8_t *bitmap, uint32_t index, bool value)
     }
 }
 
+/**
+ * finds the first free (unset) bit in the bitmap starting from a specified index.
+ * @param bitmap pointer to the bitmap array.
+ * @param bit_count the total number of bits in the bitmap to consider.
+ * @param start_bit the index to start searching for a free bit.
+ * @param bit_out pointer to a variable where the index of the found free bit will be stored.
+ * @return true if a free bit was found and its index is stored in bit_out, false if no free bit was found.
+ */
 static bool bitmap_find_free(const uint8_t *bitmap, uint32_t bit_count, uint32_t start_bit, uint32_t *bit_out)
 {
     uint32_t i;
@@ -267,6 +374,15 @@ static bool bitmap_find_free(const uint8_t *bitmap, uint32_t bit_count, uint32_t
     return false;
 }
 
+/**
+ * determines the location of a specific inode within the EXT2 volume, including its block group descriptor and byte offset.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode_number the inode number to locate (1-based index).
+ * @param desc_out pointer to an EXT2_BLOCK_GROUP_DESC structure where the block group descriptor will be stored.
+ * @param inode_byte_offset_out pointer to a variable where the byte offset of the inode within the volume will be stored.
+ * @param group_out optional pointer to a variable where the block group number will be stored (can be NULL if not needed).
+ * @return true if the inode location was successfully determined, false otherwise.
+ */
 static bool inode_location(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_BLOCK_GROUP_DESC *desc_out, uint32_t *inode_byte_offset_out, uint32_t *group_out)
 {
     uint32_t zero_based;
@@ -304,6 +420,13 @@ static bool inode_location(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_BLOC
     return true;
 }
 
+/**
+ * writes an inode to the EXT2 volume at the specified inode number.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode_number the inode number to write to (1-based index).
+ * @param inode pointer to the EXT2_INODE structure containing the inode data to be written.
+ * @return true if the write operation was successful, false otherwise.
+ */
 static bool write_inode(EXT2_VOLUME *volume, uint32_t inode_number, const EXT2_INODE *inode)
 {
     EXT2_BLOCK_GROUP_DESC desc;
@@ -325,6 +448,15 @@ static bool write_inode(EXT2_VOLUME *volume, uint32_t inode_number, const EXT2_I
     return write_abs_bytes(volume->disk, inode_byte_offset, volume->inode_size, inode_buffer);
 }
 
+/**
+ * updates the free block count, free inode count, and used directory count in both the block group descriptor and the superblock for the specified block group.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param group the block group number to update.
+ * @param free_blocks_delta the change in the number of free blocks (positive to increase, negative to decrease).
+ * @param free_inodes_delta the change in the number of free inodes (positive to increase, negative to decrease).
+ * @param used_dirs_delta the change in the number of used directories (positive to increase, negative to decrease).
+ * @return true if the update operation was successful, false otherwise.
+ */
 static bool update_group_and_super_counts(EXT2_VOLUME *volume, uint32_t group, int32_t free_blocks_delta, int32_t free_inodes_delta, int32_t used_dirs_delta)
 {
     EXT2_BLOCK_GROUP_DESC desc;
@@ -386,6 +518,12 @@ static bool update_group_and_super_counts(EXT2_VOLUME *volume, uint32_t group, i
     return write_superblock(volume);
 }
 
+/**
+ * allocates a free inode from the EXT2 volume and returns its inode number.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode_number_out pointer to a variable where the allocated inode number will be stored (1-based index).
+ * @return true if an inode was successfully allocated and its number is stored in inode_number_out, false if no free inode was available or an error occurred.
+ */
 static bool alloc_inode(EXT2_VOLUME *volume, uint32_t *inode_number_out)
 {
     uint32_t group;
@@ -455,6 +593,12 @@ static bool alloc_inode(EXT2_VOLUME *volume, uint32_t *inode_number_out)
     return false;
 }
 
+/**
+ * frees an allocated inode in the EXT2 volume, marking it as available for future use.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode_number the inode number to free (1-based index).
+ * @return true if the inode was successfully freed, false if the inode number was invalid or an error occurred during the operation.
+ */
 static bool free_inode(EXT2_VOLUME *volume, uint32_t inode_number)
 {
     EXT2_BLOCK_GROUP_DESC desc;
@@ -495,6 +639,12 @@ static bool free_inode(EXT2_VOLUME *volume, uint32_t inode_number)
     return update_group_and_super_counts(volume, group, 0, 1, 0);
 }
 
+/**
+ * allocates a free block from the EXT2 volume and returns its block number.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param block_number_out pointer to a variable where the allocated block number will be stored.
+ * @return true if a block was successfully allocated and its number is stored in block_number_out, false if no free block was available or an error occurred.
+ */
 static bool alloc_block(EXT2_VOLUME *volume, uint32_t *block_number_out)
 {
     uint32_t group;
@@ -561,6 +711,12 @@ static bool alloc_block(EXT2_VOLUME *volume, uint32_t *block_number_out)
     return false;
 }
 
+/**
+ * frees an allocated block in the EXT2 volume, marking it as available for future use.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param block_number the block number to free.
+ * @return true if the block was successfully freed, false if the block number was invalid or an error occurred during the operation.
+ */
 static bool free_block(EXT2_VOLUME *volume, uint32_t block_number)
 {
     EXT2_BLOCK_GROUP_DESC desc;
@@ -603,62 +759,160 @@ static bool free_block(EXT2_VOLUME *volume, uint32_t block_number)
     return update_group_and_super_counts(volume, group, 1, 0, 0);
 }
 
+/**
+ * frees all blocks associated with an inode, including direct, single indirect, double indirect, and triple indirect blocks.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode pointer to the EXT2_INODE structure representing the inode whose blocks are to be freed.
+ * @return true if all blocks were successfully freed, false if an error occurred during the operation or if the volume or inode pointers were invalid.
+ */
 static bool free_inode_block_chain(EXT2_VOLUME *volume, EXT2_INODE *inode)
 {
     uint32_t i;
+    uint32_t ptrs_per_block;
 
     if (!volume || !inode)
-    {
         return false;
-    }
 
+    ptrs_per_block = volume->block_size / 4u;
+
+    // free direct blocks
     for (i = 0; i < EXT2_NDIR_BLOCKS; i++)
     {
         if (inode->i_block[i] != 0)
         {
             if (!free_block(volume, inode->i_block[i]))
-            {
                 return false;
-            }
 
             inode->i_block[i] = 0;
         }
     }
 
+    // free single indirect: i_block[12] -> block of pointers -> data blocks
     if (inode->i_block[12] != 0)
     {
         uint32_t *entries;
-        uint32_t entry_count;
+        uint32_t j;
 
         if (!read_block(volume, inode->i_block[12], g_block_buffer))
-        {
             return false;
-        }
 
         entries = (uint32_t *)g_block_buffer;
-        entry_count = volume->block_size / 4u;
-        for (i = 0; i < entry_count; i++)
+        for (j = 0; j < ptrs_per_block; j++)
         {
-            if (entries[i] != 0)
-            {
-                if (!free_block(volume, entries[i]))
-                {
-                    return false;
-                }
-            }
+            if (entries[j] != 0 && !free_block(volume, entries[j]))
+                return false;
         }
 
         if (!free_block(volume, inode->i_block[12]))
-        {
             return false;
-        }
 
         inode->i_block[12] = 0;
+    }
+
+    // free double indirect: i_block[13] -> L1 block -> L2 blocks -> data blocks
+    if (inode->i_block[13] != 0)
+    {
+        uint32_t l1;
+        uint32_t *l1_entries;
+
+        if (!read_block(volume, inode->i_block[13], g_block_buffer3))
+            return false;
+
+        l1_entries = (uint32_t *)g_block_buffer3;
+        for (l1 = 0; l1 < ptrs_per_block; l1++)
+        {
+            if (l1_entries[l1] != 0)
+            {
+                uint32_t *l2_entries;
+                uint32_t l2;
+
+                if (!read_block(volume, l1_entries[l1], g_block_buffer))
+                    return false;
+
+                l2_entries = (uint32_t *)g_block_buffer;
+                for (l2 = 0; l2 < ptrs_per_block; l2++)
+                {
+                    if (l2_entries[l2] != 0 && !free_block(volume, l2_entries[l2]))
+                        return false;
+                }
+
+                if (!free_block(volume, l1_entries[l1]))
+                    return false;
+            }
+        }
+
+        if (!free_block(volume, inode->i_block[13]))
+            return false;
+
+        inode->i_block[13] = 0;
+    }
+
+    // free triple indirect: i_block[14] -> L1 block -> L2 blocks -> L3 blocks -> data blocks
+    if (inode->i_block[14] != 0)
+    {
+        uint32_t *l1_entries;
+        uint32_t l1;
+
+        if (!read_block(volume, inode->i_block[14], g_block_buffer4))
+            return false;
+
+        l1_entries = (uint32_t *)g_block_buffer4;
+        for (l1 = 0; l1 < ptrs_per_block; l1++)
+        {
+            if (l1_entries[l1] != 0)
+            {
+                uint32_t *l2_entries;
+                uint32_t l2;
+
+                if (!read_block(volume, l1_entries[l1], g_block_buffer3))
+                    return false;
+
+                l2_entries = (uint32_t *)g_block_buffer3;
+                for (l2 = 0; l2 < ptrs_per_block; l2++)
+                {
+                    if (l2_entries[l2] != 0)
+                    {
+                        uint32_t *l3_entries;
+                        uint32_t l3;
+
+                        if (!read_block(volume, l2_entries[l2], g_block_buffer))
+                            return false;
+
+                        l3_entries = (uint32_t *)g_block_buffer;
+                        for (l3 = 0; l3 < ptrs_per_block; l3++)
+                        {
+                            if (l3_entries[l3] != 0 && !free_block(volume, l3_entries[l3]))
+                                return false;
+                        }
+
+                        if (!free_block(volume, l2_entries[l2]))
+                            return false;
+                    }
+                }
+
+                if (!free_block(volume, l1_entries[l1]))
+                    return false;
+            }
+        }
+
+        if (!free_block(volume, inode->i_block[14]))
+            return false;
+
+        inode->i_block[14] = 0;
     }
 
     return true;
 }
 
+/**
+ * splits a given path into its parent directory and the name of the final component (file or directory).
+ * @param path the input path string to be split (must start with '/').
+ * @param parent buffer to store the parent directory path.
+ * @param parent_size the size of the parent buffer in bytes.
+ * @param name buffer to store the name of the final component.
+ * @param name_size the size of the name buffer in bytes.
+ * @return true if the path was successfully split into parent and name, false if the path was invalid or the buffers were too small to hold the results.
+ */
 static bool split_path(const char *path, char *parent, uint32_t parent_size, char *name, uint32_t name_size)
 {
     uint32_t len;
@@ -732,6 +986,17 @@ static bool split_path(const char *path, char *parent, uint32_t parent_size, cha
     return true;
 }
 
+/**
+ * searches for a directory entry with a specific name within a given directory inode, returning the block index, offset, and entry details if found.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param dir_inode_number the inode number of the directory to search within.
+ * @param name the name of the directory entry to search for.
+ * @param name_len the length of the name to search for.
+ * @param block_index_out pointer to a variable where the block index of the found entry will be stored.
+ * @param offset_out pointer to a variable where the byte offset of the found entry within the block will be stored.
+ * @param entry_out pointer to an EXT2_DIR_ENTRY structure where the details of the found entry will be stored.
+ * @return true if the directory entry was found and its details are stored in the output parameters, false if the entry was not found or an error occurred during the search.
+ */
 static bool find_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len, uint32_t *block_index_out, uint32_t *offset_out, EXT2_DIR_ENTRY *entry_out)
 {
     EXT2_INODE dir_inode;
@@ -790,6 +1055,17 @@ static bool find_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_number,
     return false;
 }
 
+/**
+ * appends a new directory entry to a parent directory inode or replaces an existing entry with the same name, ensuring proper space allocation and alignment within the directory's data blocks.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param parent_inode_number the inode number of the parent directory where the entry will be added or replaced.
+ * @param parent_inode pointer to the EXT2_INODE structure representing the parent directory inode.
+ * @param name the name of the directory entry to add or replace.
+ * @param name_len the length of the name of the directory entry.
+ * @param child_inode_number the inode number of the child entry to be added or replaced.
+ * @param file_type the type of the file (e.g., regular file, directory) for the new directory entry.
+ * @return true if the directory entry was successfully appended or replaced,
+ */
 static bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inode_number, EXT2_INODE *parent_inode, const char *name, uint32_t name_len, uint32_t child_inode_number, uint8_t file_type)
 {
     uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
@@ -891,6 +1167,16 @@ static bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t pare
     return false;
 }
 
+/**
+ * updates the name of an existing directory entry within a specified directory inode, ensuring that the new name fits within the allocated space for the entry.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param dir_inode_number the inode number of the directory containing the entry to be renamed.
+ * @param old_name the current name of the directory entry to be renamed.
+ * @param old_name_len the length of the current name of the directory entry.
+ * @param new_name the new name to assign to the directory entry.
+ * @param new_name_len the length of the new name to assign to the directory entry.
+ * @return true if the directory entry name was successfully updated, false if the entry was not found, the new name does not fit, or an error occurred during the operation.
+ */
 static bool update_directory_entry_name(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *old_name, uint32_t old_name_len, const char *new_name, uint32_t new_name_len)
 {
     EXT2_INODE dir_inode;
@@ -931,6 +1217,12 @@ static bool update_directory_entry_name(EXT2_VOLUME *volume, uint32_t dir_inode_
     return write_block(volume, dir_inode.i_block[block_index], g_block_buffer);
 }
 
+/**
+ * checks if a directory represented by a given inode number is empty, meaning it contains no entries other than the standard '.' and '..' entries.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode_number the inode number of the directory to check.
+ * @return true if the directory is empty (only contains '.' and '..'), false if it contains other entries or if an error occurred during the check.
+ */
 static bool directory_is_empty(EXT2_VOLUME *volume, uint32_t inode_number)
 {
     EXT2_INODE dir_inode;
@@ -984,6 +1276,13 @@ static bool directory_is_empty(EXT2_VOLUME *volume, uint32_t inode_number)
     return true;
 }
 
+/**
+ * updates the '..' entry in a directory to point to a new parent inode number, effectively changing the parent directory reference for that directory.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param dir_inode_number the inode number of the directory whose parent link is to be updated.
+ * @param parent_inode_number the inode number of the new parent directory to which the '..' entry should point.
+ * @return true if the parent link was successfully updated, false if the directory inode could not be read, the directory is invalid, or an error occurred during the update process.
+ */
 static bool update_directory_parent_link(EXT2_VOLUME *volume, uint32_t dir_inode_number, uint32_t parent_inode_number)
 {
     EXT2_INODE dir_inode;
@@ -1020,6 +1319,14 @@ static bool update_directory_parent_link(EXT2_VOLUME *volume, uint32_t dir_inode
     return write_block(volume, dir_inode.i_block[0], g_block_buffer);
 }
 
+/**
+ * removes a directory entry with a specific name from a given directory inode, effectively deleting the entry from the directory's data blocks.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param dir_inode_number the inode number of the directory from which the entry will be removed.
+ * @param name the name of the directory entry to be removed.
+ * @param name_len the length of the name of the directory entry to be removed.
+ * @return true if the directory entry was successfully removed, false if the entry was not found, the directory inode could not be read, or an error occurred during the removal process.
+ */
 static bool remove_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len)
 {
     EXT2_INODE dir_inode;
@@ -1050,6 +1357,11 @@ static bool remove_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_numbe
     return write_block(volume, dir_inode.i_block[block_index], g_block_buffer);
 }
 
+/**
+ * initializes a new inode structure for a regular file, setting its mode, link count, and clearing other fields to prepare it for use in the filesystem.
+ * @param inode pointer to the EXT2_INODE structure to be initialized.
+ * @return true if the inode was successfully initialized, false if the inode pointer was null.
+ */
 static bool setup_new_file_inode(EXT2_INODE *inode)
 {
     if (!inode)
@@ -1063,6 +1375,12 @@ static bool setup_new_file_inode(EXT2_INODE *inode)
     return true;
 }
 
+/**
+ * initializes a new inode structure for a directory, setting its mode, link count, size, and block count to prepare it for use in the filesystem.
+ * @param inode pointer to the EXT2_INODE structure to be initialized.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume, used to determine the block size and sectors per block for the directory inode.
+ * @return true if the inode was successfully initialized, false if either the inode or volume pointers were null.
+ */
 static bool setup_new_dir_inode(EXT2_INODE *inode, EXT2_VOLUME *volume)
 {
     if (!inode || !volume)
@@ -1078,6 +1396,14 @@ static bool setup_new_dir_inode(EXT2_INODE *inode, EXT2_VOLUME *volume)
     return true;
 }
 
+/**
+ * initializes a new directory block with the standard '.' and '..' entries, setting their inode numbers and ensuring proper formatting for the directory structure.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode_number the inode number of the directory being initialized (for the '.' entry).
+ * @param parent_inode_number the inode number of the parent directory (for the '..' entry).
+ * @param block_number the block number where the new directory block will be written.
+ * @return true if the directory block was successfully initialized and written to the specified block number, false if an error occurred during the initialization or writing process, or if the volume pointer was null or the block size was insufficient to hold the directory entries.
+ */
 static bool initialize_directory_block(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t parent_inode_number, uint32_t block_number)
 {
     EXT2_DIR_ENTRY *dot;
@@ -1108,6 +1434,17 @@ static bool initialize_directory_block(EXT2_VOLUME *volume, uint32_t inode_numbe
     return write_block(volume, block_number, g_block_buffer);
 }
 
+/**
+ * looks up the parent directory inode and the name of the final component in a given path, splitting the path into its parent and child components and verifying that the parent is a valid directory.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param path the input path string to be looked up (must start with '/').
+ * @param parent_inode_out pointer to a variable where the inode number of the parent directory will be stored.
+ * @param name_out buffer to store the name of the final component (file or directory) in the path.
+ * @param name_out_size the size of the name_out buffer in bytes.
+ * @param parent_path buffer to store the parent directory path.
+ * @param parent_path_size the size of the parent_path buffer in bytes.
+ * @return true if the parent inode and name were successfully looked up and stored in the output parameters, false if the path was invalid, the parent directory could not be found, or the parent inode is not a valid directory.
+ */
 static bool lookup_parent_and_name(EXT2_VOLUME *volume, const char *path, uint32_t *parent_inode_out, char *name_out, uint32_t name_out_size, char *parent_path, uint32_t parent_path_size)
 {
     uint32_t parent_inode;
@@ -1137,6 +1474,16 @@ static bool lookup_parent_and_name(EXT2_VOLUME *volume, const char *path, uint32
     return true;
 }
 
+/**
+ * looks up a child directory entry by name within a specified parent directory inode, returning the child's inode number and file type if found.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param parent_inode_number the inode number of the parent directory to search within.
+ * @param name the name of the child directory entry to look up.
+ * @param name_len the length of the name of the child directory entry.
+ * @param child_inode_out pointer to a variable where the inode number of the found child entry will be stored.
+ * @param child_type_out pointer to a variable where the file type of the found child entry will be stored.
+ * @return true if the child directory entry was found and its details are stored in the output parameters, false if the entry was not found or an error occurred during the lookup process.
+ */
 static bool lookup_child_type(EXT2_VOLUME *volume, uint32_t parent_inode_number, const char *name, uint32_t name_len, uint32_t *child_inode_out, uint8_t *child_type_out)
 {
     uint32_t block_index;
@@ -1161,6 +1508,13 @@ static bool lookup_child_type(EXT2_VOLUME *volume, uint32_t parent_inode_number,
     return true;
 }
 
+/**
+ * frees the blocks associated with a given inode and then frees the inode itself, effectively removing the file or directory represented by that inode from the filesystem.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode_number the inode number of the file or directory to be freed.
+ * @param inode pointer to the EXT2_INODE structure representing the inode to be freed. If null, the function will read the inode from the filesystem.
+ * @return true if the blocks and inode were successfully freed, false if an error occurred during the process or if the volume pointer was null.
+ */
 static bool free_inode_and_blocks(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_INODE *inode)
 {
     EXT2_INODE cache;
@@ -1187,21 +1541,41 @@ static bool free_inode_and_blocks(EXT2_VOLUME *volume, uint32_t inode_number, EX
     return free_inode(volume, inode_number);
 }
 
+/**
+ * determines if a given inode represents a directory by checking its mode against the directory file type constant.
+ * @param inode pointer to the EXT2_INODE structure to be checked.
+ * @return true if the inode represents a directory, false otherwise.
+ */
 static bool inode_is_dir(const EXT2_INODE *inode)
 {
     return (inode->i_mode & EXT2_S_IFMT) == EXT2_S_IFDIR;
 }
 
+/**
+ * determines if a given inode represents a regular file by checking its mode against the regular file type constant.
+ * @param inode pointer to the EXT2_INODE structure to be checked.
+ * @return true if the inode represents a regular file, false otherwise.
+ */
 static bool inode_is_regular(const EXT2_INODE *inode)
 {
     return (inode->i_mode & EXT2_S_IFMT) == EXT2_S_IFREG;
 }
 
+/**
+ * determines if a given inode represents a directory by checking its mode against the directory file type constant.
+ * @param inode pointer to the EXT2_INODE structure to be checked.
+ * @return true if the inode represents a directory, false otherwise.
+ */
 static bool inode_is_directory(const EXT2_INODE *inode)
 {
     return (inode->i_mode & EXT2_S_IFMT) == EXT2_S_IFDIR;
 }
 
+/**
+ * maps an inode's mode to the corresponding EXT2 file type constant, returning the appropriate value for directory or regular file types, or 0 for unsupported types.
+ * @param inode pointer to the EXT2_INODE structure whose file type is to be determined.
+ * @return the EXT2 file type constant corresponding to the inode's mode, or 0 if the inode does not represent a directory or regular file.
+ */
 static uint8_t inode_to_file_type(const EXT2_INODE *inode)
 {
     if (inode_is_directory(inode))
@@ -1217,6 +1591,15 @@ static uint8_t inode_to_file_type(const EXT2_INODE *inode)
     return 0;
 }
 
+/**
+ * searches for a directory entry with a specific name within a given directory inode, returning the inode number of the found entry if it exists.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param dir_inode_number the inode number of the directory to search within.
+ * @param name the name of the directory entry to search for.
+ * @param name_len the length of the name to search for.
+ * @param inode_out pointer to a variable where the inode number of the found entry will be stored if the entry is found.
+ * @return EXT2_OK if the entry was found and its inode number is stored in inode_out, EXT2_NOT_FOUND if the entry does not exist, or EXT2_IO_ERROR if an error occurred during the search or if the directory inode could not be read.
+ */
 static EXT2_STATUS find_in_directory(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len, uint32_t *inode_out)
 {
     EXT2_INODE dir_inode;
@@ -1273,8 +1656,19 @@ static EXT2_STATUS find_in_directory(EXT2_VOLUME *volume, uint32_t dir_inode_num
     return EXT2_NOT_FOUND;
 }
 
+/**
+ * resolves a logical block index within an inode to its corresponding physical block number on disk, handling direct, single indirect, double indirect, and triple indirect block addressing as defined by the EXT2 filesystem structure.
+ * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param inode pointer to the EXT2_INODE structure representing the inode whose block is being resolved.
+ * @param logical_block_index the logical block index to resolve (0-based).
+ * @param physical_block_out pointer to a variable where the resolved physical block number will be stored.
+ * @return true if the logical block index was successfully resolved to a physical block number, false if an error occurred during the resolution process or if the logical block index is out of range for the given inode.
+ */
 static bool resolve_data_block(EXT2_VOLUME *volume, const EXT2_INODE *inode, uint32_t logical_block_index, uint32_t *physical_block_out)
 {
+    uint32_t ptrs_per_block = volume->block_size / 4u;
+
+    // direct blocks: i_block[0..11]
     if (logical_block_index < EXT2_NDIR_BLOCKS)
     {
         *physical_block_out = inode->i_block[logical_block_index];
@@ -1283,27 +1677,103 @@ static bool resolve_data_block(EXT2_VOLUME *volume, const EXT2_INODE *inode, uin
 
     logical_block_index -= EXT2_NDIR_BLOCKS;
 
-    if (logical_block_index < (volume->block_size / 4u))
+    // single indirect: i_block[12] -> block of pointers -> data block
+    if (logical_block_index < ptrs_per_block)
     {
-        uint32_t *entries;
         uint32_t indirect = inode->i_block[12];
 
         if (indirect == 0)
         {
-            return false;
+            *physical_block_out = 0;
+            return true;
         }
 
         if (!read_block(volume, indirect, g_block_buffer2))
-        {
             return false;
-        }
 
-        entries = (uint32_t *)g_block_buffer2;
-        *physical_block_out = entries[logical_block_index];
+        *physical_block_out = ((uint32_t *)g_block_buffer2)[logical_block_index];
         return true;
     }
 
-    return false;
+    logical_block_index -= ptrs_per_block;
+
+    // double indirect: i_block[13] -> L1 block of pointers -> L2 block of pointers -> data block
+    if (logical_block_index < ptrs_per_block * ptrs_per_block)
+    {
+        uint32_t l1_index = logical_block_index / ptrs_per_block;
+        uint32_t l2_index = logical_block_index % ptrs_per_block;
+        uint32_t l1_block;
+        uint32_t l2_block;
+
+        if (inode->i_block[13] == 0)
+        {
+            *physical_block_out = 0;
+            return true;
+        }
+
+        if (!read_block(volume, inode->i_block[13], g_block_buffer3))
+            return false;
+
+        l1_block = ((uint32_t *)g_block_buffer3)[l1_index];
+        if (l1_block == 0)
+        {
+            *physical_block_out = 0;
+            return true;
+        }
+
+        if (!read_block(volume, l1_block, g_block_buffer2))
+            return false;
+
+        l2_block = ((uint32_t *)g_block_buffer2)[l2_index];
+        *physical_block_out = l2_block;
+        return true;
+    }
+
+    logical_block_index -= ptrs_per_block * ptrs_per_block;
+
+    // triple indirect: i_block[14] -> L1 block -> L2 block -> L3 block -> data block
+    {
+        uint32_t l1_index = logical_block_index / (ptrs_per_block * ptrs_per_block);
+        uint32_t remainder = logical_block_index % (ptrs_per_block * ptrs_per_block);
+        uint32_t l2_index = remainder / ptrs_per_block;
+        uint32_t l3_index = remainder % ptrs_per_block;
+        uint32_t l1_block;
+        uint32_t l2_block;
+        uint32_t l3_block;
+
+        if (inode->i_block[14] == 0)
+        {
+            *physical_block_out = 0;
+            return true;
+        }
+
+        if (!read_block(volume, inode->i_block[14], g_block_buffer4))
+            return false;
+
+        l1_block = ((uint32_t *)g_block_buffer4)[l1_index];
+        if (l1_block == 0)
+        {
+            *physical_block_out = 0;
+            return true;
+        }
+
+        if (!read_block(volume, l1_block, g_block_buffer3))
+            return false;
+
+        l2_block = ((uint32_t *)g_block_buffer3)[l2_index];
+        if (l2_block == 0)
+        {
+            *physical_block_out = 0;
+            return true;
+        }
+
+        if (!read_block(volume, l2_block, g_block_buffer2))
+            return false;
+
+        l3_block = ((uint32_t *)g_block_buffer2)[l3_index];
+        *physical_block_out = l3_block;
+        return true;
+    }
 }
 
 bool EXT2_Initialize(EXT2_VOLUME *volume, BLOCK_DEVICE *disk)
@@ -1537,6 +2007,12 @@ EXT2_STATUS EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *ino
     return EXT2_OK;
 }
 
+/**
+ * reads the next directory entry from an open directory file, populating the provided EXT2_DIRECTORY_ENTRY structure with the entry's details if successful.
+ * @param file pointer to the EXT2_FILE structure representing the open directory file.
+ * @param entryOut pointer to the EXT2_DIRECTORY_ENTRY structure where the read entry's details will be stored.
+ * @return true if a directory entry was successfully read and stored in entryOut, false if the end of the directory was reached, the file is not a directory, or an error occurred during the read operation.
+ */
 static bool read_directory_entry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut)
 {
     uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
