@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "../../../common/stdint.h"
+#include "../../../kernel/assert.h"
 
 /**
  * IDT entry structure.
@@ -34,6 +35,8 @@ static struct idt_ptr ip;
 
 void idt_set_gate(int vector, void *base, uint16_t segment, uint8_t flags)
 {
+    ASSERT(vector >= 0 && vector <= 255);
+
     idt[vector].base_low =
         ((uint32_t)base) & 0xFFFF;
 

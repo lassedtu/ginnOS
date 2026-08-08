@@ -80,7 +80,15 @@ FUNC_OPEN
 
 i=0
 while [ "$i" -le 255 ]; do
-    echo "    idt_set_gate($i, isr_stub_${i}, GDT_CODE_SEGMENT, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_INT | IDT_FLAG_PRESENT);" >> "$ISR_GEN_C"
+    # vectors 0-31: CPU exceptions — use trap gates so IF is not cleared on entry.
+    # vectors 32+: hardware IRQs and user-defined — use interrupt gates to prevent
+    # re-entrant IRQ dispatch while a handler is running.
+    if [ "$i" -le 31 ]; then
+        gate_type="IDT_FLAG_GATE_32BIT_TRAP"
+    else
+        gate_type="IDT_FLAG_GATE_32BIT_INT"
+    fi
+    echo "    idt_set_gate($i, isr_stub_${i}, GDT_CODE_SEGMENT, IDT_FLAG_RING0 | ${gate_type});" >> "$ISR_GEN_C"
     i=$((i + 1))
 done
 

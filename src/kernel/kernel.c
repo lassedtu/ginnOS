@@ -62,11 +62,16 @@ void kernel_main(boot_info_t *boot)
 
     memory_print_map(boot);
 
+    // enable hardware interrupts (STI).
+    // hal_initialize() has fully installed all exception handlers (vectors 0–31),
+    // IRQ handlers (vectors 32–47), and device driver handlers. Every gate that
+    // can fire is now present and backed by a registered handler. No interrupt
+    // can arrive before this point because the CPU holds IF=0 from boot.
     io_enable_interrupts();
 
     printf("HAL initialized\r\n");
 
-    if (!ATA_Initialize(&ata))
+    if (!ATA_Initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
     {
         kernel_panic("ATA initialization failed");
     }

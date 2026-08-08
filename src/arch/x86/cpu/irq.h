@@ -3,6 +3,14 @@
 #include "isr.h"
 
 /**
+ * IDT vector at which IRQ 0 is mapped.
+ * IRQs 0–15 occupy vectors PIC_REMAP_OFFSET through PIC_REMAP_OFFSET+15.
+ * Must stay above the CPU exception range (0–31) and must match the value
+ * passed to pic_configure() in irq_initialize().
+ */
+#define PIC_REMAP_OFFSET 0x20
+
+/**
  * IRQ handler function type.
  * @param regs pointer to the saved register state at the time of the interrupt.
  */
