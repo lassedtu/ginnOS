@@ -38,7 +38,7 @@ void cstart_(boot_info_t *boot)
 
     printf("stage2: entered 32-bit bootloader\r\n");
 
-    if (!ATA_Initialize(&ata))
+    if (!ATA_Initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
     {
         printf("stage2: error - ATA initialize failed\r\n");
         for (;;)

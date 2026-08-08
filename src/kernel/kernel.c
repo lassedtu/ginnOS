@@ -71,7 +71,7 @@ void kernel_main(boot_info_t *boot)
 
     printf("HAL initialized\r\n");
 
-    if (!ATA_Initialize(&ata))
+    if (!ATA_Initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
     {
         kernel_panic("ATA initialization failed");
     }
