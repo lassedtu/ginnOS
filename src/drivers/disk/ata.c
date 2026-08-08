@@ -16,9 +16,10 @@
 #define ATA_STATUS_DRQ 0x08u // data request (ready to transfer data)
 #define ATA_STATUS_BSY 0x80u // busy (device is processing a command and cannot accept new commands)
 
-#define ATA_COMMAND_READ_SECTORS 0x20u  // command to read sectors from the disk
-#define ATA_COMMAND_WRITE_SECTORS 0x30u // command to write sectors to the disk
-#define ATA_COMMAND_CACHE_FLUSH 0xE7u   // command to flush the drive cache
+#define ATA_COMMAND_READ_SECTORS  0x20u  // command to read sectors from the disk
+#define ATA_COMMAND_WRITE_SECTORS 0x30u  // command to write sectors to the disk
+#define ATA_COMMAND_IDENTIFY      0xECu  // command to identify the ATA device
+#define ATA_COMMAND_CACHE_FLUSH   0xE7u  // command to flush the drive cache
 
 /**
  * write a byte to an I/O port.
@@ -238,9 +239,74 @@ static bool ata_block_write(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t b
     return ata_write_lba28(startBlock, blockCount, src);
 }
 
+/**
+ * issue an IDENTIFY DEVICE command to confirm a drive is present and is an
+ * ATA (not ATAPI) device. reads the 512-byte identify data but discards it
+ * for now; a future caller could extract the reported sector count for LBA48.
+ *
+ * @return true if a responding ATA drive was found, false if no drive is
+ *         present or the device is ATAPI / unrecognised.
+ */
+static bool ata_identify(void)
+{
+    uint8_t status;
+    uint16_t identify_data[256];
+
+    // select master drive on the primary channel
+    io_outb(ATA_IO_DRIVE_HEAD, 0xE0u);
+    ata_400ns_delay();
+
+    // zero the sector count and LBA registers before IDENTIFY (required by spec)
+    io_outb(ATA_IO_SECTOR_COUNT, 0);
+    io_outb(ATA_IO_LBA_LOW,      0);
+    io_outb(ATA_IO_LBA_MID,      0);
+    io_outb(ATA_IO_LBA_HIGH,     0);
+
+    io_outb(ATA_IO_STATUS_COMMAND, ATA_COMMAND_IDENTIFY);
+
+    // if status reads back as 0x00 immediately the bus is floating — no drive
+    status = io_inb(ATA_IO_STATUS_COMMAND);
+    if (status == 0x00u)
+    {
+        return false;
+    }
+
+    // wait for BSY to clear
+    if (!ata_wait_not_busy())
+    {
+        return false;
+    }
+
+    // an ATAPI device sets LBA_MID and LBA_HIGH to non-zero magic values
+    // (0x14 / 0xEB) after IDENTIFY — reject it, we only handle ATA
+    if (io_inb(ATA_IO_LBA_MID) != 0 || io_inb(ATA_IO_LBA_HIGH) != 0)
+    {
+        return false;
+    }
+
+    // wait for DRQ — the identify data is ready to be read
+    if (!ata_wait_data_request())
+    {
+        return false;
+    }
+
+    // consume the 256-word identify buffer so the drive releases DRQ
+    io_insw(ATA_IO_DATA, identify_data, 256u);
+
+    return true;
+}
+
 bool ATA_Initialize(ATA_DEVICE *device)
 {
     if (!device)
+    {
+        return false;
+    }
+
+    // confirm a drive is present and responding before wiring up the block
+    // device — without this check every subsequent read would spin through the
+    // full busy-wait timeout with no earlier signal of what's missing
+    if (!ata_identify())
     {
         return false;
     }

@@ -6,22 +6,36 @@
 #include "../../../kernel/assert.h"
 
 /**
- * Interrupt handler table.
+ * interrupt handler table.
  *
- * Each interrupt vector (0-255) can have a registered handler.
+ * live vector ranges (vectors become present only when a handler is registered
+ * via isr_register_handler):
+ *
+ *   0–31   CPU exceptions — registered by exception_initialize()
+ *  32–47   Hardware IRQs  — registered by irq_initialize() via PIC_REMAP_OFFSET
+ *  48–255  Unassigned     — any new subsystem claiming a vector in this range
+ *          MUST call isr_register_handler() before that vector can fire.
+ *          Record the claim here: (none yet)
  */
 static isr_handler_t handlers[256];
 
 /**
- * Generated assembly function that installs all ISR gates.
+ * one-bit-per-vector "already warned" table.
+ * prevents a single unhandled vector from spamming the console on every
+ * occurrence; each distinct unhandled vector is reported exactly once per boot.
+ */
+static uint32_t warned_vectors[256 / 32];
+
+/**
+ * generated assembly function that installs all ISR gates.
  */
 extern void isr_init_gates(void);
 
 /**
- * Initialize the interrupt system.
+ * initialize the interrupt system.
  *
- * Installs all 256 ISR stubs into the IDT without marking any gate present.
- * A gate becomes present only when a handler is registered via
+ * installs all 256 ISR stubs into the IDT without marking any gate present.
+ * a gate becomes present only when a handler is registered via
  * isr_register_handler(), making the present-bit meaningful rather than
  * a blanket "everything is active" flag.
  */
@@ -31,9 +45,9 @@ void isr_initialize(void)
 }
 
 /**
- * Common C interrupt dispatcher.
+ * common C interrupt dispatcher.
  *
- * Called from the assembly ISR stubs.
+ * called from the assembly ISR stubs.
  */
 void __attribute__((cdecl)) isr_handler(struct registers *regs)
 {
@@ -41,16 +55,22 @@ void __attribute__((cdecl)) isr_handler(struct registers *regs)
     {
         handlers[regs->interrupt](regs);
     }
-#ifdef DEBUG_UNHANDLED_IRQS
     else
     {
-        printf("Unhandled interrupt %u\r\n", regs->interrupt);
+        uint32_t vec = regs->interrupt;
+        uint32_t word = vec / 32;
+        uint32_t bit = 1u << (vec % 32);
+
+        if (!(warned_vectors[word] & bit))
+        {
+            warned_vectors[word] |= bit;
+            printf("Unhandled interrupt %u\r\n", vec);
+        }
     }
-#endif
 }
 
 /**
- * Register a handler for an interrupt vector.
+ * register a handler for an interrupt vector.
  */
 void isr_register_handler(
     int vector,

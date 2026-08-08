@@ -38,3 +38,11 @@ char keyboard_getchar(void);
  * @return the next character from the keyboard buffer.
  */
 char keyboard_read(void);
+
+/**
+ * return the number of characters dropped due to a full buffer since boot.
+ * the buffer still drops the newest keystroke when full; this counter lets
+ * a caller detect and report overflow rather than silently losing input.
+ * @return total number of dropped characters.
+ */
+uint32_t keyboard_dropped_count(void);

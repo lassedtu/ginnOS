@@ -9,7 +9,13 @@
 static irq_handler_t irq_handlers[16];
 
 /**
- * ISR-level handler for hardware IRQs.
+ * one-bit-per-IRQ "already warned" mask.
+ * each unhandled IRQ line is reported exactly once per boot.
+ */
+static uint16_t irq_warned_mask;
+
+/**
+ * isr-level handler for hardware IRQs.
  * translates the interrupt vector back to an IRQ number, dispatches
  * to a registered handler if one exists, and sends EOI to the PIC.
  * @param regs pointer to the saved register state.
@@ -56,12 +62,15 @@ static void irq_handler(struct registers *regs)
     {
         irq_handlers[irq](regs);
     }
-#ifdef DEBUG_UNHANDLED_IRQS
     else
     {
-        printf("Unhandled IRQ %d\r\n", irq);
+        uint16_t bit = (uint16_t)(1u << irq);
+        if (!(irq_warned_mask & bit))
+        {
+            irq_warned_mask |= bit;
+            printf("Unhandled IRQ %d\r\n", irq);
+        }
     }
-#endif
 
     // acknowledge the interrupt to the PIC
     pic_send_eoi(irq);

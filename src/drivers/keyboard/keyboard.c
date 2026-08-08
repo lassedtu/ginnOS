@@ -75,17 +75,20 @@ static const char keyboard_shift_map[128] = {
     0, 0, /* 87-88: F11 - F12 */
     [127] = 0};
 
+static uint32_t dropped_count = 0; // number of characters dropped due to a full buffer
+
 /**
  * push a character to the keyboard buffer.
- * if the buffer is full, the character will be dropped.
+ * if the buffer is full, the character is dropped and dropped_count is incremented.
  */
 static void keyboard_buffer_push(char c)
 {
-    uint8_t next = (buffer_write + 1) % KEYBOARD_BUFFER_SIZE;
+    uint16_t next = (uint16_t)((buffer_write + 1) % KEYBOARD_BUFFER_SIZE);
 
-    // buffer full
+    // buffer full — drop the character and record it
     if (next == buffer_read)
     {
+        dropped_count++;
         return;
     }
 
@@ -198,6 +201,11 @@ char keyboard_read(void)
     }
 
     return keyboard_getchar();
+}
+
+uint32_t keyboard_dropped_count(void)
+{
+    return dropped_count;
 }
 
 void keyboard_initialize(void)
