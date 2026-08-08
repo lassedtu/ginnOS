@@ -21,9 +21,12 @@ static void irq_handler(struct registers *regs)
 {
     int irq = regs->interrupt - PIC_REMAP_OFFSET;
 
-    // if the IRQ number is out of range, ignore it so we don't access invalid memory in the irq_handlers array
+    // if the IRQ number is out of range, send EOI anyway so the PIC line is
+    // released, then bail — skipping EOI here would permanently freeze all
+    // lower-priority interrupts since the PIC would never see the line cleared.
     if (irq < 0 || irq >= 16)
     {
+        pic_send_eoi(regs->interrupt - PIC_REMAP_OFFSET);
         return;
     }
 
@@ -56,10 +59,12 @@ static void irq_handler(struct registers *regs)
     {
         irq_handlers[irq](regs);
     }
-    // else
-    // {
-    //     printf("Unhandled IRQ %d\r\n", irq);
-    // }
+#ifdef DEBUG_UNHANDLED_IRQS
+    else
+    {
+        printf("Unhandled IRQ %d\r\n", irq);
+    }
+#endif
 
     // acknowledge the interrupt to the PIC
     pic_send_eoi(irq);

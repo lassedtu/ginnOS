@@ -41,10 +41,12 @@ void __attribute__((cdecl)) isr_handler(struct registers *regs)
     {
         handlers[regs->interrupt](regs);
     }
+#ifdef DEBUG_UNHANDLED_IRQS
     else
     {
         printf("Unhandled interrupt %u\r\n", regs->interrupt);
     }
+#endif
 }
 
 /**
