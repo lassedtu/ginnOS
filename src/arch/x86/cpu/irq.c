@@ -27,6 +27,31 @@ static void irq_handler(struct registers *regs)
         return;
     }
 
+    // spurious IRQ check for IRQ 7 (master PIC).
+    // the 8259A can raise IRQ 7 without a real request; check the ISR to confirm.
+    // if bit 7 of the master ISR is clear, this is spurious — do not send EOI.
+    if (irq == 7)
+    {
+        uint16_t isr = pic_read_isr();
+        if (!(isr & (1 << 7)))
+        {
+            return;
+        }
+    }
+
+    // spurious IRQ check for IRQ 15 (slave PIC).
+    // if bit 7 of the slave ISR is clear, this is spurious.
+    // the master still needs EOI because it saw a real cascade signal on IRQ 2.
+    if (irq == 15)
+    {
+        uint16_t isr = pic_read_isr();
+        if (!(isr & (1 << 15)))
+        {
+            pic_send_eoi(2); // EOI to master only for the cascade line
+            return;
+        }
+    }
+
     if (irq_handlers[irq] != 0)
     {
         irq_handlers[irq](regs);
