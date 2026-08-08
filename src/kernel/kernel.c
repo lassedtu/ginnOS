@@ -62,9 +62,11 @@ void kernel_main(boot_info_t *boot)
 
     memory_print_map(boot);
 
-    // Enable hardware interrupts. Must come after hal_initialize() has fully
-    // installed all exception and IRQ handlers, so no vector fires into an
-    // unregistered (not-present) gate before its handler is in place.
+    // enable hardware interrupts (STI).
+    // hal_initialize() has fully installed all exception handlers (vectors 0–31),
+    // IRQ handlers (vectors 32–47), and device driver handlers. Every gate that
+    // can fire is now present and backed by a registered handler. No interrupt
+    // can arrive before this point because the CPU holds IF=0 from boot.
     io_enable_interrupts();
 
     printf("HAL initialized\r\n");
