@@ -424,9 +424,3 @@ uint8_t vfs_file_type(
 
     return fs_file_type(&file->file);
 }
-
-uint8_t vfs_type(
-    VFS_FILE *file)
-{
-    return vfs_file_type(file);
-}
