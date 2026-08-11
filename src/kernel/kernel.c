@@ -18,6 +18,7 @@
 
 #include "console/console.h"
 #include "memory/kernel_layout.h"
+#include "memory/pmm_layout.h"
 #include "memory/region.h"
 #include "memory/reservations.h"
 
@@ -58,6 +59,10 @@ void kernel_main(boot_info_t *boot)
 
     memory_reserve_kernel();
     memory_reserve_stage2();
+
+    pmm_layout_init(boot);
+    memory_reserve_pmm_bitmap(pmm_bitmap_start(), pmm_bitmap_end());
+
     region_print_all();
 
     printf("Boot drive: %u\r\n", boot->boot_drive);
