@@ -118,19 +118,19 @@ $(ISR_GEN_C) $(ISR_GEN_INC): $(ISR_GEN_SCRIPT)
 	@mkdir -p $(dir $(ISR_GEN_C)) $(dir $(ISR_GEN_INC))
 	./$(ISR_GEN_SCRIPT) $(ISR_GEN_C) $(ISR_GEN_INC)
 
-# Stage 1 bootloader — flat binary, no C
+# Stage 1 bootloader flat binary, no C
 $(STAGE1_BIN): $(STAGE1_SRC)
 	@mkdir -p $(dir $@)
 	$(AS) -f bin $< -o $@
 	@test $$(wc -c < $@) -eq 512 || { echo "stage1 must be exactly 512 bytes"; exit 1; }
 
-# Pattern rules — shared library code (compiled once, linked into stage2 + kernel)
+# Pattern rules shared library code (compiled once, linked into stage2 + kernel)
 $(BUILD_DIR)/common/%.o: src/common/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(COMMON_CFLAGS) -c $< -o $@
 
 
-# Pattern rules — kernel (C + NASM elf32)
+# Pattern rules kernel (C + NASM elf32)
 $(BUILD_DIR)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -143,7 +143,7 @@ $(BUILD_DIR)/%.o: src/%.asm
 $(BUILD_DIR)/arch/x86/asm/isr.o: $(ISR_GEN_INC)
 
 
-# Pattern rules — stage2 (separate object tree, different C flags)
+# Pattern rules stage2 (separate object tree, different C flags)
 $(BUILD_DIR)/stage2/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(STAGE2_CFLAGS) -c $< -o $@

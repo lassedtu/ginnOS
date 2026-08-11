@@ -6,7 +6,7 @@ I started this project because i wanted to understand how an operating system is
 The name ginnOS is taken from Ginnungagap, the primordial void in Norse mythology from which the world was created.
 
 > "That was the age when nothing was; / There was no sand, nor sea, nor cool waves, / No earth nor sky nor grass there, / Only Ginnungagap."
-> — Völuspá, Poetic Edda
+> - Völuspá, Poetic Edda
 
 ### Documentation
 
@@ -98,7 +98,7 @@ qemu-system-i386 --version
 
 ## NixOS / Nix Toolchain Setup
 
-A `shell.nix` is included at the project root. It pulls in the `i686-elf` cross-compiler, binutils, NASM, QEMU, and Python 3 — no manual toolchain build required.
+A `shell.nix` is included at the project root. It pulls in the `i686-elf` cross-compiler, binutils, NASM, QEMU, and Python 3, no manual toolchain build required.
 
 ### Enter the dev shell
 
@@ -206,7 +206,7 @@ qemu-system-i386 --version
 
 ## Windows Toolchain Setup (WSL2)
 
-ginnOS uses `make`, a cross-compiler, NASM, and QEMU. On Windows, the simplest way to get all of that working is **WSL2** with Ubuntu — you get the same Linux toolchain as on a native install, without fighting MSYS or native Windows ports.
+ginnOS uses `make`, a cross-compiler, NASM, and QEMU. On Windows, the simplest way to get all of that working is **WSL2** with Ubuntu, you get the same Linux toolchain as on a native install, without fighting MSYS or native Windows ports.
 
 ### Install WSL2 and Ubuntu
 
@@ -227,7 +227,7 @@ wsl --install -d Ubuntu
 
 ### Clone the project inside WSL
 
-Open Ubuntu (Start menu, or type `wsl` in PowerShell) and work from the Linux filesystem — for example `~/projects/ginnOS`.
+Open Ubuntu (Start menu, or type `wsl` in PowerShell) and work from the Linux filesystem, for example `~/projects/ginnOS`.
 
 Avoid building from `/mnt/c/...` if you can; file I/O across the Windows/Linux boundary is noticeably slower and can cause odd issues with tools like `make`.
 
@@ -247,7 +247,7 @@ Everything from here is the same as on native Ubuntu. In your WSL terminal, foll
 3. Add the cross toolchain to `PATH`
 4. Verify required tools
 
-Once that is done, build from the project root — see **Build and Run** below. QEMU should open in its own window; on most Windows 11 + WSL2 setups this works without extra configuration.
+Once that is done, build from the project root, see **Build and Run** below. QEMU should open in its own window; on most Windows 11 + WSL2 setups this works without extra configuration.
 
 ## Build and Run
 

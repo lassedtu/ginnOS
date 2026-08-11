@@ -25,7 +25,7 @@ static void irq_handler(struct registers *regs)
     int irq = regs->interrupt - PIC_REMAP_OFFSET;
 
     // if the IRQ number is out of range, send EOI anyway so the PIC line is
-    // released, then bail — skipping EOI here would permanently freeze all
+    // released, then bail, skipping EOI here would permanently freeze all
     // lower-priority interrupts since the PIC would never see the line cleared.
     if (irq < 0 || irq >= 16)
     {
@@ -35,7 +35,7 @@ static void irq_handler(struct registers *regs)
 
     // spurious IRQ check for IRQ 7 (master PIC).
     // the 8259A can raise IRQ 7 without a real request; check the ISR to confirm.
-    // if bit 7 of the master ISR is clear, this is spurious — do not send EOI.
+    // if bit 7 of the master ISR is clear, this is spurious, do not send EOI.
     if (irq == 7)
     {
         uint16_t isr = pic_read_isr();

@@ -25,7 +25,7 @@ static int caps_lock_enabled = 0; // caps lock toggle state
 static int extended_prefix_pending = 0;
 
 /**
- * PS/2 scan code set 1 — standard US QWERTY layout.
+ * PS/2 scan code set 1, standard US QWERTY layout.
  * index is the scan code (0x00–0x7F); value is the ASCII character, or 0 for
  * keys that don't produce a printable character.
  */
@@ -66,7 +66,7 @@ static const char keyboard_map[128] = {
     [127] = 0};
 
 /**
- * PS/2 scan code set 1 — standard US QWERTY layout with shift held.
+ * PS/2 scan code set 1, standard US QWERTY layout with shift held.
  */
 static const char keyboard_shift_map[128] = {
     0, 27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
@@ -116,7 +116,7 @@ static void keyboard_buffer_push(keyboard_event_t event)
 
     if (next == buffer_read)
     {
-        // buffer full — drop and record
+        // buffer full, drop and record
         dropped_count++;
         return;
     }
@@ -140,7 +140,7 @@ static void keyboard_irq_handler(struct registers *regs)
 
     uint8_t scancode = io_inb(0x60);
 
-    // a 0xE0 byte introduces a two-byte extended sequence — record and wait
+    // a 0xE0 byte introduces a two-byte extended sequence, record and wait
     // for the next IRQ to deliver the actual scan code
     if (scancode == SCANCODE_EXTENDED_PREFIX)
     {
@@ -170,7 +170,7 @@ static void keyboard_irq_handler(struct registers *regs)
         return;
     }
 
-    // handle modifier keys — they update state but do not produce events
+    // handle modifier keys, they update state but do not produce events
     switch (key)
     {
     case SCANCODE_LEFT_SHIFT:

@@ -18,7 +18,11 @@
 
 #include "console/console.h"
 #include "memory/kernel_layout.h"
+#include "memory/pmm.h"
+#include "memory/pmm_layout.h"
+#include "memory/region.h"
 #include "memory/reservations.h"
+#include "memory/heap.h"
 
 void memory_print_map(boot_info_t *boot);
 
@@ -55,7 +59,17 @@ void kernel_main(boot_info_t *boot)
         kernel_panic("invalid kernel layout");
     }
 
+    memory_reserve_kernel();
     memory_reserve_stage2();
+
+    pmm_layout_init(boot);
+    memory_reserve_pmm_bitmap(pmm_bitmap_start(), pmm_bitmap_end());
+
+    region_print_all();
+
+    pmm_init(boot);
+
+    heap_init();
 
     printf("Boot drive: %u\r\n", boot->boot_drive);
     printf("E820 regions: %u\r\n", boot->memory_map.count);
