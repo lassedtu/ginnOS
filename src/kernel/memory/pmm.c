@@ -176,3 +176,19 @@ uint32_t pmm_total_count(void)
 {
     return total_pages;
 }
+
+void pmm_mark_region_used(uint32_t start, uint32_t end)
+{
+    uint32_t page_start = start / PAGE_SIZE;
+    uint32_t page_end = end / PAGE_SIZE;
+    uint32_t page;
+
+    for (page = page_start; page < page_end && page < total_pages; page++)
+    {
+        if (bitmap_test(page))
+        {
+            bitmap_clear(page);
+            free_pages--;
+        }
+    }
+}

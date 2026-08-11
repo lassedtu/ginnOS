@@ -18,3 +18,8 @@ void memory_reserve_pmm_bitmap(uint32_t start, uint32_t end)
 {
     region_reserve(start, end, "pmm_bitmap");
 }
+
+void memory_reserve_heap(uint32_t start, uint32_t end)
+{
+    region_reserve(start, end, "kernel_heap");
+}

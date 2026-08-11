@@ -34,3 +34,11 @@ uint32_t pmm_free_count(void);
  * @returns the total number of page frames.
  */
 uint32_t pmm_total_count(void);
+
+/**
+ * mark all page frames within a physical address range as used.
+ * used by subsystems that claim memory after pmm_init() (e.g., kernel heap).
+ * @param start first byte of the region (inclusive, page-aligned).
+ * @param end first byte past the region (exclusive, page-aligned).
+ */
+void pmm_mark_region_used(uint32_t start, uint32_t end);
