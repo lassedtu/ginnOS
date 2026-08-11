@@ -28,7 +28,7 @@ typedef enum
  */
 typedef struct
 {
-    BLOCK_DEVICE block;    // block device interface — must be first for safe casting.
+    BLOCK_DEVICE block;    // block device interface, must be first for safe casting.
     uint16_t io_base;      // I/O base port (0x1F0 primary, 0x170 secondary).
     uint16_t control_base; // control/alt-status port (0x3F6 primary, 0x376 secondary).
     uint8_t drive_select;  // drive-select byte written to the drive/head register.

@@ -11,9 +11,9 @@
  * live vector ranges (vectors become present only when a handler is registered
  * via isr_register_handler):
  *
- *   0–31   CPU exceptions — registered by exception_initialize()
- *  32–47   Hardware IRQs  — registered by irq_initialize() via PIC_REMAP_OFFSET
- *  48–255  Unassigned     — any new subsystem claiming a vector in this range
+ *   0–31   CPU exceptions, registered by exception_initialize()
+ *  32–47   Hardware IRQs , registered by irq_initialize() via PIC_REMAP_OFFSET
+ *  48–255  Unassigned    , any new subsystem claiming a vector in this range
  *          MUST call isr_register_handler() before that vector can fire.
  *          Record the claim here: (none yet)
  */

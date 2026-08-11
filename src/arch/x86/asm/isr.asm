@@ -6,7 +6,7 @@ BITS 32
 
 extern isr_handler
 
-; kernel data segment selector — must match GDT_DATA_SEGMENT in gdt.h.
+; kernel data segment selector, must match GDT_DATA_SEGMENT in gdt.h.
 %define GDT_DATA_SEGMENT 0x10
 
 
@@ -40,7 +40,7 @@ isr_stub_%1:
 %include "isr_gen.inc"
 
 
-; common ISR handler — saves register state, calls C handler, restores state.
+; common ISR handler, saves register state, calls C handler, restores state.
 isr_common:
     pusha               ; push eax, ecx, edx, ebx, esp, ebp, esi, edi
 

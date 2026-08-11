@@ -42,3 +42,16 @@ uint32_t pmm_total_count(void);
  * @param end first byte past the region (exclusive, page-aligned).
  */
 void pmm_mark_region_used(uint32_t start, uint32_t end);
+
+/**
+ * check whether a specific page frame is free.
+ * @param page_index index of the page frame to check.
+ * @return true if the page is free, false if used or out of range.
+ */
+bool pmm_is_page_free(uint32_t page_index);
+
+/**
+ * mark a single page frame as used.
+ * @param page_index index of the page frame to mark.
+ */
+void pmm_mark_page_used(uint32_t page_index);

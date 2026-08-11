@@ -17,8 +17,8 @@
 /* ATA status register bits */
 #define ATA_STATUS_ERR 0x01u // error occurred
 #define ATA_STATUS_DF 0x20u  // device fault
-#define ATA_STATUS_DRQ 0x08u // data request — drive is ready to transfer
-#define ATA_STATUS_BSY 0x80u // busy — do not access other registers
+#define ATA_STATUS_DRQ 0x08u // data request, drive is ready to transfer
+#define ATA_STATUS_BSY 0x80u // busy, do not access other registers
 
 /* ATA commands */
 #define ATA_COMMAND_READ_SECTORS 0x20u      // LBA28 read
@@ -29,7 +29,7 @@
 #define ATA_COMMAND_CACHE_FLUSH_EXT 0xEAu   // flush write cache (LBA48 devices)
 #define ATA_COMMAND_IDENTIFY 0xECu          // identify device
 
-/* LBA28 ceiling — 28 usable address bits */
+/* LBA28 ceiling, 28 usable address bits */
 #define ATA_LBA28_MAX 0x0FFFFFFFu
 
 /* I/O port constants for each channel */
@@ -40,13 +40,13 @@
 
 /* drive-select byte for LBA mode: bit6=LBA, bit5=1 (obsolete), bit7=1 (obsolete) */
 #define ATA_DRIVE_SELECT_MASTER 0xE0u // 1110 0000
-#define ATA_DRIVE_SELECT_SLAVE  0xF0u // 1111 0000
+#define ATA_DRIVE_SELECT_SLAVE 0xF0u  // 1111 0000
 
 /*
  * device control register (written to control_base).
  * nIEN (bit 1): when set, disables the drive's IRQ line so the controller
  * will not assert IRQ 14/15 after a command completes. safe for pure PIO
- * use — all status polling goes through the status register directly.
+ * use, all status polling goes through the status register directly.
  */
 #define ATA_DCR_NIEN 0x02u // disable interrupts from this device
 
@@ -202,7 +202,7 @@ static bool ata_read_lba48(ATA_DEVICE *dev, uint64_t lba, uint8_t sector_count, 
     if (!ata_wait_not_busy(dev))
         return false;
 
-    /* Drive select: LBA mode, drive bit only — no LBA bits in this register */
+    /* Drive select: LBA mode, drive bit only, no LBA bits in this register */
     io_outb((uint16_t)(dev->io_base + ATA_REG_DRIVE_HEAD),
             (uint8_t)(dev->drive_select & 0xF0u));
     ata_400ns_delay(dev);
@@ -418,7 +418,7 @@ bool ATA_Initialize(ATA_DEVICE *device, ATA_CHANNEL channel, ATA_DRIVE drive)
     device->sector_count = 0;
 
     // disable IRQ generation on this channel before issuing any command.
-    // the driver is PIO-only — all completion detection is done via polling
+    // the driver is PIO-only, all completion detection is done via polling
     // the status register, so the ATA interrupt line (IRQ 14 on primary,
     // IRQ 15 on secondary) is never needed and would fire unhandled otherwise.
     io_outb(device->control_base, ATA_DCR_NIEN);

@@ -15,6 +15,12 @@
 #define HEAP_MIN_BLOCK_DATA 16
 
 /**
+ * number of pages to add when the heap needs to grow.
+ * 4 pages = 16 KiB per expansion.
+ */
+#define HEAP_EXPAND_PAGES 4
+
+/**
  * block header placed before each allocation.
  * the usable memory returned to the caller begins immediately after this header.
  * all allocations are 4-byte aligned.
@@ -69,3 +75,8 @@ uint32_t heap_total_size(void);
  * return the number of free bytes available in the heap.
  */
 uint32_t heap_free_size(void);
+
+/**
+ * return the total number of blocks (free + used) in the heap.
+ */
+uint32_t heap_block_count(void);

@@ -192,3 +192,27 @@ void pmm_mark_region_used(uint32_t start, uint32_t end)
         }
     }
 }
+
+bool pmm_is_page_free(uint32_t page_index)
+{
+    if (page_index >= total_pages)
+    {
+        return false;
+    }
+
+    return bitmap_test(page_index);
+}
+
+void pmm_mark_page_used(uint32_t page_index)
+{
+    if (page_index >= total_pages)
+    {
+        return;
+    }
+
+    if (bitmap_test(page_index))
+    {
+        bitmap_clear(page_index);
+        free_pages--;
+    }
+}
