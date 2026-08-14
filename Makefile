@@ -97,6 +97,15 @@ KERNEL_LINK_OBJS := $(KERNEL_ENTRY_OBJ) \
 
 STAGE2_LINK_OBJS := $(STAGE2_ENTRY_OBJ) $(sort $(STAGE2_C_OBJS)) $(COMMON_OBJS)
 
+# User programs
+USER_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
+                -fno-pie -fno-stack-protector -nostdlib -MMD -MP
+USER_LDFLAGS := -T linker/user.ld -nostdlib
+USER_CRT0    := $(BUILD_DIR)/user/lib/crt0.o
+
+# List of user programs (add new ones here)
+USER_PROGRAMS := $(BUILD_DIR)/user/bin/hello
+
 # Dependency files (C compilations only)
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
 
@@ -173,10 +182,23 @@ $(KERNEL_ELF): $(KERNEL_LINK_OBJS) linker/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
 
+# User program build rules
+$(USER_CRT0): src/user/lib/crt0.asm
+	@mkdir -p $(dir $@)
+	$(AS) -f elf32 $< -o $@
+
+$(BUILD_DIR)/user/bin/hello: src/user/hello/hello.c $(USER_CRT0) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/hello/hello.c -o $(BUILD_DIR)/user/hello.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/hello.o
+
+user-programs: $(USER_PROGRAMS)
+
 # Root filesystem and disk image
-rootfs-image: $(KERNEL_BIN)
-	@mkdir -p $(EXT2_SOURCE_DIR)/boot $(dir $(ROOTFS_IMAGE))
+rootfs-image: $(KERNEL_BIN) user-programs
+	@mkdir -p $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin $(dir $(ROOTFS_IMAGE))
 	cp $(KERNEL_BIN) $(EXT2_SOURCE_DIR)/boot/kernel.bin
+	cp $(BUILD_DIR)/user/bin/hello $(EXT2_SOURCE_DIR)/bin/hello
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(EXT2_SOURCE_DIR)" \
 		--output "$(ROOTFS_IMAGE)" \
@@ -197,6 +219,7 @@ run: check-tools $(DISK_IMAGE)
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(EXT2_SOURCE_DIR)/boot/kernel.bin
+	rm -f $(EXT2_SOURCE_DIR)/bin/hello
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 
 # Automatic header dependencies

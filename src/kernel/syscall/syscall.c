@@ -6,6 +6,7 @@
 #include "../../arch/x86/cpu/gdt.h"
 #include "../vfs/vfs.h"
 #include "../console/console.h"
+#include "../usermode/usermode.h"
 #include "../../drivers/keyboard/keyboard.h"
 #include "../../common/stdio.h"
 
@@ -24,6 +25,7 @@ static int32_t sys_close(struct registers *regs);
 static int32_t sys_stat(struct registers *regs);
 static int32_t sys_create(struct registers *regs);
 static int32_t sys_mkdir(struct registers *regs);
+static int32_t sys_exec(struct registers *regs);
 static int32_t sys_getpid(struct registers *regs);
 
 /**
@@ -38,7 +40,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_STAT] = sys_stat,
     [SYS_CREATE] = sys_create,
     [SYS_MKDIR] = sys_mkdir,
-    [SYS_EXEC] = 0,
+    [SYS_EXEC] = sys_exec,
     [SYS_GETPID] = sys_getpid,
     [SYS_WAITPID] = 0,
     [SYS_SBRK] = 0,
@@ -83,20 +85,15 @@ void syscall_initialize(void)
 /**
  * SYS_exit: terminate the current process.
  * arg: EBX = exit code.
- * for now, halts the CPU (no process management yet).
+ * returns control to the kernel (exec_program caller).
  */
 static int32_t sys_exit(struct registers *regs)
 {
     int32_t code = (int32_t)regs->ebx;
 
-    printf("sys_exit: process exited with code %d\r\n", code);
+    usermode_exit(code);
 
-    /* no process to kill yet — just halt */
-    for (;;)
-    {
-        __asm__ volatile("cli; hlt");
-    }
-
+    /* unreachable */
     return 0;
 }
 
@@ -343,4 +340,21 @@ static int32_t sys_getpid(struct registers *regs)
 {
     (void)regs;
     return 1;
+}
+
+/**
+ * SYS_exec: load and execute an ELF binary.
+ * args: EBX = path string pointer.
+ * does not return on success. returns -1 on failure.
+ */
+static int32_t sys_exec(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    return (int32_t)exec_program(path);
 }
