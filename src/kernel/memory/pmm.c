@@ -114,11 +114,6 @@ void pmm_init(boot_info_t *boot)
             free_pages++;
         }
     }
-
-    printf("PMM: %u free pages (%u KiB) of %u total\r\n",
-           free_pages,
-           free_pages * 4,
-           total_pages);
 }
 
 void *pmm_alloc_page(void)

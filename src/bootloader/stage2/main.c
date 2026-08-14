@@ -52,8 +52,6 @@ void cstart_(boot_info_t *boot)
             ;
     }
 
-    printf("stage2: detected EXT2 partition at LBA %u\r\n", part.start_lba);
-
     if (!EXT2_Initialize(&volume, &part.block))
     {
         printf("stage2: error - EXT2 volume mount failed\r\n");
@@ -69,8 +67,6 @@ void cstart_(boot_info_t *boot)
             ;
     }
 
-    printf("stage2: loading kernel from ext2 (%u bytes) to 0x%x...\r\n", file.size, KERNEL_ENTRY_ADDRESS);
-
     bytes_read = EXT2_Read(&file, file.size, (void *)KERNEL_ENTRY_ADDRESS);
     EXT2_Close(&file);
 
@@ -80,8 +76,6 @@ void cstart_(boot_info_t *boot)
         for (;;)
             ;
     }
-
-    printf("stage2: jumping to kernel at 0x%x\r\n", KERNEL_ENTRY_ADDRESS);
 
     kernel_entry = (KernelEntryFn)KERNEL_ENTRY_ADDRESS;
     kernel_entry(boot);
