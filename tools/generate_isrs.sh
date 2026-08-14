@@ -88,7 +88,7 @@ while [ "$i" -le 255 ]; do
     else
         gate_type="IDT_FLAG_GATE_32BIT_INT"
     fi
-    echo "    idt_set_gate($i, isr_stub_${i}, GDT_CODE_SEGMENT, IDT_FLAG_RING0 | ${gate_type});" >> "$ISR_GEN_C"
+    echo "    idt_set_gate($i, isr_stub_${i}, GDT_KERNEL_CODE, IDT_FLAG_RING0 | ${gate_type});" >> "$ISR_GEN_C"
     i=$((i + 1))
 done
 

@@ -1,8 +1,10 @@
-; flushes the GDT by loading the new GDT pointer into the GDTR register
+; flushes the GDT by loading the new GDT pointer into the GDTR register,
+; reloads segment registers with kernel selectors, and loads the TSS.
 
 BITS 32
 
 global gdt_flush
+global tss_flush
 
 
 gdt_flush:
@@ -12,9 +14,8 @@ gdt_flush:
     lgdt [eax]         ; load the GDT descriptor into the GDTR register
 
 
-    mov ax, 0x10       ; load the data segment selector (0x10) into AX
+    mov ax, 0x10       ; GDT_KERNEL_DATA selector
 
-                       ; set the data segment registers to the new data segment selector
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -22,8 +23,20 @@ gdt_flush:
     mov ss, ax
 
 
-    jmp 0x08:.flush     ; jump to the code segment selector (0x08) and flush the instruction pipeline
+    jmp 0x08:.flush    ; GDT_KERNEL_CODE selector — flush instruction pipeline
 
 .flush:
+
+    ret
+
+
+; void tss_flush(void)
+; loads the TSS selector into the Task Register.
+
+tss_flush:
+
+    mov ax, 0x28       ; GDT_TSS selector
+
+    ltr ax
 
     ret
