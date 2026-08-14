@@ -23,8 +23,7 @@
 #include "memory/region.h"
 #include "memory/reservations.h"
 #include "memory/heap.h"
-
-void memory_print_map(boot_info_t *boot);
+#include "../arch/x86/cpu/paging.h"
 
 void cstart(boot_info_t *boot)
 {
@@ -49,10 +48,6 @@ void kernel_main(boot_info_t *boot)
     stdio_set_putchar(console_putchar); // set stdio output to console (sophisticated VGA text buffer)
 
     printf("Kernel: entered 32-bit C main\r\n");
-    printf("Kernel layout: start=0x%x end=0x%x\r\n",
-           kernel_start_address(),
-           kernel_end_address());
-    printf("kernel size: %u bytes\r\n", kernel_size());
 
     if (kernel_end_address() <= kernel_start_address())
     {
@@ -65,16 +60,11 @@ void kernel_main(boot_info_t *boot)
     pmm_layout_init(boot);
     memory_reserve_pmm_bitmap(pmm_bitmap_start(), pmm_bitmap_end());
 
-    region_print_all();
-
     pmm_init(boot);
 
     heap_init();
 
-    printf("Boot drive: %u\r\n", boot->boot_drive);
-    printf("E820 regions: %u\r\n", boot->memory_map.count);
-
-    memory_print_map(boot);
+    paging_init();
 
     // enable hardware interrupts (STI).
     // hal_initialize() has fully installed all exception handlers (vectors 0–31),
@@ -82,8 +72,6 @@ void kernel_main(boot_info_t *boot)
     // can fire is now present and backed by a registered handler. No interrupt
     // can arrive before this point because the CPU holds IF=0 from boot.
     io_enable_interrupts();
-
-    printf("HAL initialized\r\n");
 
     if (!ATA_Initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
     {
@@ -104,8 +92,6 @@ void kernel_main(boot_info_t *boot)
     {
         kernel_panic("VFS root mount failed");
     }
-
-    printf("kernel: mounted EXT2 partition at LBA %u\r\n", part.start_lba);
 
     commands_initialize();
 

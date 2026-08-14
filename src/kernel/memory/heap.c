@@ -98,11 +98,6 @@ void heap_init(void)
 
     /* zero the data area */
     memset((uint8_t *)heap_head + sizeof(heap_block_t), 0, heap_head->size);
-
-    printf("Heap: %u bytes at 0x%x-0x%x\r\n",
-           heap_end - heap_start,
-           heap_start,
-           heap_end);
 }
 
 /**
