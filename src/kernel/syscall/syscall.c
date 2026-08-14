@@ -21,6 +21,9 @@ static int32_t sys_write(struct registers *regs);
 static int32_t sys_read(struct registers *regs);
 static int32_t sys_open(struct registers *regs);
 static int32_t sys_close(struct registers *regs);
+static int32_t sys_stat(struct registers *regs);
+static int32_t sys_create(struct registers *regs);
+static int32_t sys_mkdir(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -31,9 +34,9 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_READ] = sys_read,
     [SYS_OPEN] = sys_open,
     [SYS_CLOSE] = sys_close,
-    [SYS_STAT] = 0,
-    [SYS_CREATE] = 0,
-    [SYS_MKDIR] = 0,
+    [SYS_STAT] = sys_stat,
+    [SYS_CREATE] = sys_create,
+    [SYS_MKDIR] = sys_mkdir,
     [SYS_EXEC] = 0,
     [SYS_GETPID] = 0,
     [SYS_WAITPID] = 0,
@@ -260,4 +263,73 @@ static int32_t sys_read(struct registers *regs)
     }
 
     return -1;
+}
+
+/**
+ * SYS_stat: get file metadata.
+ * args: EBX = path string pointer, ECX = pointer to stat output struct.
+ * the output struct matches VFS_STAT (FS_STAT).
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_stat(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+    VFS_STAT *stat_out = (VFS_STAT *)regs->ecx;
+
+    if (!path || !stat_out)
+    {
+        return -1;
+    }
+
+    VFS_STATUS status = vfs_stat(path, stat_out);
+    if (status != VFS_OK)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_create: create a regular file.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_create(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    if (!vfs_create(path))
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_mkdir: create a directory.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_mkdir(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    if (!vfs_mkdir(path))
+    {
+        return -1;
+    }
+
+    return 0;
 }
