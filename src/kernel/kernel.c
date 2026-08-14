@@ -24,6 +24,7 @@
 #include "memory/reservations.h"
 #include "memory/heap.h"
 #include "../arch/x86/cpu/paging.h"
+#include "syscall/syscall.h"
 
 void cstart(boot_info_t *boot)
 {
@@ -65,6 +66,8 @@ void kernel_main(boot_info_t *boot)
     heap_init();
 
     paging_init();
+
+    syscall_initialize();
 
     // enable hardware interrupts (STI).
     // hal_initialize() has fully installed all exception handlers (vectors 0–31),
