@@ -14,7 +14,7 @@ void hal_initialize(void)
      * and must not be reordered.
      *
      *  1. gdt_initialize()      , must run first. Every IDT gate entry embeds
-     *                              a GDT segment selector (GDT_CODE_SEGMENT).
+     *                              a GDT segment selector (GDT_KERNEL_CODE).
      *                              If the GDT is not loaded, those selectors
      *                              are meaningless and the CPU will fault the
      *                              moment it tries to dispatch an interrupt.

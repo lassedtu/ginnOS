@@ -6,8 +6,8 @@ BITS 32
 
 extern isr_handler
 
-; kernel data segment selector, must match GDT_DATA_SEGMENT in gdt.h.
-%define GDT_DATA_SEGMENT 0x10
+; kernel data segment selector, must match GDT_KERNEL_DATA in gdt.h.
+%define GDT_KERNEL_DATA 0x10
 
 
 ; macro for interrupts that do NOT push an error code.
@@ -48,7 +48,7 @@ isr_common:
     mov ax, ds
     push eax
 
-    mov ax, GDT_DATA_SEGMENT ; load kernel data segment selector
+    mov ax, GDT_KERNEL_DATA ; load kernel data segment selector
     mov ds, ax
     mov es, ax
     mov fs, ax
