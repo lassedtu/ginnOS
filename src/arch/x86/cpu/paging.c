@@ -161,6 +161,13 @@ bool paging_map(uint32_t virt, uint32_t phys, uint32_t flags)
         allocated_tables++;
     }
 
+    /* if mapping a user-accessible page, the PDE must also have the user bit
+     * set — the CPU checks both levels before granting access. */
+    if (flags & PTE_USER)
+    {
+        kernel_directory[dir_index] |= PDE_USER;
+    }
+
     table = (uint32_t *)PAGE_FRAME(kernel_directory[dir_index]);
     table[tbl_index] = (phys & 0xFFFFF000u) | (flags & 0xFFFu);
 
