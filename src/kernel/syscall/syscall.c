@@ -4,6 +4,7 @@
 #include "../../arch/x86/cpu/isr.h"
 #include "../../arch/x86/cpu/idt.h"
 #include "../../arch/x86/cpu/gdt.h"
+#include "../vfs/vfs.h"
 #include "../../common/stdio.h"
 
 /**
@@ -15,6 +16,8 @@ typedef int32_t (*syscall_fn_t)(struct registers *regs);
 
 static int32_t sys_exit(struct registers *regs);
 static int32_t sys_write(struct registers *regs);
+static int32_t sys_open(struct registers *regs);
+static int32_t sys_close(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -23,8 +26,8 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_EXIT] = sys_exit,
     [SYS_WRITE] = sys_write,
     [SYS_READ] = 0,
-    [SYS_OPEN] = 0,
-    [SYS_CLOSE] = 0,
+    [SYS_OPEN] = sys_open,
+    [SYS_CLOSE] = sys_close,
     [SYS_STAT] = 0,
     [SYS_CREATE] = 0,
     [SYS_MKDIR] = 0,
@@ -129,4 +132,54 @@ static int32_t sys_write(struct registers *regs)
     }
 
     return (int32_t)count;
+}
+
+/**
+ * SYS_open: open a file by path.
+ * args: EBX = path string pointer, ECX = flags (unused for now).
+ * returns fd number on success, -1 on failure.
+ */
+static int32_t sys_open(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+    (void)regs->ecx; /* flags — reserved for future use */
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    VFS_FILE file;
+
+    if (!vfs_open(path, &file))
+    {
+        return -1;
+    }
+
+    int fd = fd_alloc(&file);
+    if (fd < 0)
+    {
+        vfs_close(&file);
+        return -1;
+    }
+
+    return (int32_t)fd;
+}
+
+/**
+ * SYS_close: close an open file descriptor.
+ * args: EBX = fd.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_close(struct registers *regs)
+{
+    int fd = (int)regs->ebx;
+
+    /* don't allow closing stdin/stdout/stderr */
+    if (fd < 3)
+    {
+        return -1;
+    }
+
+    return (int32_t)fd_free(fd);
 }
