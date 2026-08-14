@@ -5,6 +5,8 @@
 #include "../../arch/x86/cpu/idt.h"
 #include "../../arch/x86/cpu/gdt.h"
 #include "../vfs/vfs.h"
+#include "../console/console.h"
+#include "../../drivers/keyboard/keyboard.h"
 #include "../../common/stdio.h"
 
 /**
@@ -16,6 +18,7 @@ typedef int32_t (*syscall_fn_t)(struct registers *regs);
 
 static int32_t sys_exit(struct registers *regs);
 static int32_t sys_write(struct registers *regs);
+static int32_t sys_read(struct registers *regs);
 static int32_t sys_open(struct registers *regs);
 static int32_t sys_close(struct registers *regs);
 
@@ -25,7 +28,7 @@ static int32_t sys_close(struct registers *regs);
 static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_EXIT] = sys_exit,
     [SYS_WRITE] = sys_write,
-    [SYS_READ] = 0,
+    [SYS_READ] = sys_read,
     [SYS_OPEN] = sys_open,
     [SYS_CLOSE] = sys_close,
     [SYS_STAT] = 0,
@@ -182,4 +185,79 @@ static int32_t sys_close(struct registers *regs)
     }
 
     return (int32_t)fd_free(fd);
+}
+
+/**
+ * SYS_read: read bytes from a file descriptor.
+ * args: EBX = fd, ECX = buffer pointer, EDX = count.
+ * for stdin (fd 0): line-buffered read from keyboard with echo.
+ * for files: reads via VFS.
+ * returns number of bytes read, or -1 on error.
+ */
+static int32_t sys_read(struct registers *regs)
+{
+    int fd_num = (int)regs->ebx;
+    char *buf = (char *)regs->ecx;
+    uint32_t count = regs->edx;
+
+    if (!buf || count == 0)
+    {
+        return -1;
+    }
+
+    fd_entry_t *entry = fd_get(fd_num);
+    if (!entry)
+    {
+        return -1;
+    }
+
+    if (entry->type == FD_TYPE_CONSOLE)
+    {
+        /* only stdin (fd 0) is readable */
+        if (fd_num != 0)
+        {
+            return -1;
+        }
+
+        /* line-buffered read: collect characters until newline or buffer full */
+        uint32_t i = 0;
+        while (i < count - 1)
+        {
+            char c = keyboard_read(); /* blocks until a key is available */
+
+            if (c == '\n')
+            {
+                console_putchar('\r');
+                console_putchar('\n');
+                buf[i] = '\n';
+                i++;
+                break;
+            }
+
+            if (c == '\b')
+            {
+                if (i > 0)
+                {
+                    i--;
+                    console_putchar('\b');
+                }
+                continue;
+            }
+
+            buf[i] = c;
+            i++;
+            console_putchar(c);
+        }
+
+        buf[i] = '\0';
+        return (int32_t)i;
+    }
+
+    if (entry->type == FD_TYPE_FILE)
+    {
+        uint32_t bytes_read = vfs_read(&entry->file, count, buf);
+        return (int32_t)bytes_read;
+    }
+
+    return -1;
 }
