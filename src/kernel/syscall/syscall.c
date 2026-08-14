@@ -24,6 +24,7 @@ static int32_t sys_close(struct registers *regs);
 static int32_t sys_stat(struct registers *regs);
 static int32_t sys_create(struct registers *regs);
 static int32_t sys_mkdir(struct registers *regs);
+static int32_t sys_getpid(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -38,7 +39,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_CREATE] = sys_create,
     [SYS_MKDIR] = sys_mkdir,
     [SYS_EXEC] = 0,
-    [SYS_GETPID] = 0,
+    [SYS_GETPID] = sys_getpid,
     [SYS_WAITPID] = 0,
     [SYS_SBRK] = 0,
 };
@@ -332,4 +333,14 @@ static int32_t sys_mkdir(struct registers *regs)
     }
 
     return 0;
+}
+
+/**
+ * SYS_getpid: return the current process ID.
+ * stub: always returns 1 until process management is implemented.
+ */
+static int32_t sys_getpid(struct registers *regs)
+{
+    (void)regs;
+    return 1;
 }
