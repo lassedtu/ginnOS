@@ -3,6 +3,7 @@
 #include "../../arch/x86/cpu/io.h"
 #include "../../arch/x86/cpu/irq.h"
 #include "../../arch/x86/cpu/pic.h"
+#include "../../kernel/scheduler/scheduler.h"
 
 enum
 {
@@ -23,13 +24,14 @@ static volatile uint64_t ticks = 0; // number of PIT interrupts since initializa
 
 /**
  * PIT interrupt handler
- * increments the tick count
+ * increments the tick count and notifies the scheduler.
  */
 static void pit_irq_handler(struct registers *regs)
 {
     (void)regs;
 
     ticks++;
+    scheduler_tick();
 }
 
 void pit_initialize(uint32_t frequency)

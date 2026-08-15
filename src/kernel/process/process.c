@@ -1,4 +1,5 @@
 #include "process.h"
+#include "../memory/pmm.h"
 #include "../../common/memory.h"
 
 // the process table — fixed array of PCBs.
@@ -31,6 +32,17 @@ process_t *process_create(void)
             proc->state = PROC_STATE_READY;
             proc->brk = 0;
             proc->exit_code = 0;
+
+            // allocate a kernel stack page
+            void *stack_page = pmm_alloc_page();
+            if (!stack_page)
+            {
+                return (void *)0;
+            }
+            memset(stack_page, 0, KERNEL_STACK_SIZE);
+            proc->kernel_stack = (uint32_t)stack_page;
+            // ESP starts at the top of the stack (grows downward)
+            proc->kernel_esp = (uint32_t)stack_page + KERNEL_STACK_SIZE;
 
             // initialize fd table: stdin/stdout/stderr as console
             proc->fds[0].type = FD_TYPE_CONSOLE;
@@ -68,6 +80,13 @@ void process_destroy(process_t *proc)
         {
             vfs_close(&proc->fds[i].file);
         }
+    }
+
+    // free the kernel stack
+    if (proc->kernel_stack)
+    {
+        pmm_free_page((void *)proc->kernel_stack);
+        proc->kernel_stack = 0;
     }
 
     proc->state = PROC_STATE_UNUSED;

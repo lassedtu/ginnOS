@@ -26,6 +26,7 @@
 #include "../arch/x86/cpu/paging.h"
 #include "syscall/syscall.h"
 #include "process/process.h"
+#include "scheduler/scheduler.h"
 
 void cstart(boot_info_t *boot)
 {
@@ -71,6 +72,8 @@ void kernel_main(boot_info_t *boot)
     syscall_initialize();
 
     process_init();
+
+    scheduler_init();
 
     // enable hardware interrupts (STI).
     // hal_initialize() has fully installed all exception handlers (vectors 0–31),

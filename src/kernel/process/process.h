@@ -9,6 +9,9 @@
 // invalid PID sentinel.
 #define PID_NONE 0
 
+// size of per-process kernel stack (4 KiB).
+#define KERNEL_STACK_SIZE 4096
+
 /**
  * process states.
  */
@@ -30,6 +33,8 @@ typedef struct process
     process_state_t state;  // current state
     uint32_t brk;           // program break (for sbrk)
     int32_t exit_code;      // exit code (valid in ZOMBIE state)
+    uint32_t kernel_stack;  // base address of kernel stack page
+    uint32_t kernel_esp;    // saved kernel ESP (for context switch)
     fd_entry_t fds[FD_MAX]; // per-process file descriptor table
 } process_t;
 
