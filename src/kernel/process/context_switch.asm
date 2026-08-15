@@ -1,4 +1,4 @@
-; context_switch.asm — switch kernel execution context between two processes.
+; context_switch.asm switch kernel execution context between two processes.
 ;
 ; void context_switch(uint32_t *old_esp, uint32_t new_esp);
 ;

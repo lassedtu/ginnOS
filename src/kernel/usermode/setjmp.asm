@@ -6,8 +6,8 @@
 ;   [4] esi
 ;   [8] edi
 ;  [12] ebp
-;  [16] esp (after return from setjmp — i.e., caller's esp)
-;  [20] eip (return address — where to resume in caller)
+;  [16] esp (after return from setjmp i.e., caller's esp)
+;  [20] eip (return address where to resume in caller)
 
 BITS 32
 

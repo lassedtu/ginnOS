@@ -12,7 +12,7 @@
 typedef enum
 {
     FD_TYPE_NONE = 0, // slot is unused
-    FD_TYPE_CONSOLE,  // stdin/stdout/stderr — backed by keyboard + VGA
+    FD_TYPE_CONSOLE,  // stdin/stdout/stderr backed by keyboard + VGA
     FD_TYPE_FILE,     // regular file or directory backed by VFS
 } fd_type_t;
 

@@ -1,12 +1,12 @@
 /**
- * /bin/waitpid_test — test program for SYS_exec + SYS_waitpid.
+ * /bin/waitpid_test test program for SYS_exec + SYS_waitpid.
  * spawns /bin/hello as a child process, waits for it, and reports
  * the exit code.
  */
 
-#define SYS_WRITE   1
-#define SYS_EXEC    8
-#define SYS_GETPID  9
+#define SYS_WRITE 1
+#define SYS_EXEC 8
+#define SYS_GETPID 9
 #define SYS_WAITPID 10
 
 static int write(int fd, const char *buf, int count)
@@ -15,8 +15,7 @@ static int write(int fd, const char *buf, int count)
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYS_WRITE), "b"(fd), "c"(buf), "d"(count)
-    );
+        : "a"(SYS_WRITE), "b"(fd), "c"(buf), "d"(count));
     return ret;
 }
 
@@ -26,8 +25,7 @@ static int exec(const char *path)
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYS_EXEC), "b"(path)
-    );
+        : "a"(SYS_EXEC), "b"(path));
     return ret;
 }
 
@@ -37,8 +35,7 @@ static int getpid(void)
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYS_GETPID)
-    );
+        : "a"(SYS_GETPID));
     return ret;
 }
 
@@ -48,8 +45,7 @@ static int waitpid(int pid)
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYS_WAITPID), "b"(pid)
-    );
+        : "a"(SYS_WAITPID), "b"(pid));
     return ret;
 }
 
@@ -107,7 +103,7 @@ int main(void)
 
     if (child_pid < 0)
     {
-        puts("waitpid_test: FAIL — exec returned error\n");
+        puts("waitpid_test: FAIL exec returned error\n");
         return 1;
     }
 
@@ -131,7 +127,7 @@ int main(void)
     }
     else
     {
-        puts("waitpid_test: FAIL — unexpected exit code\n");
+        puts("waitpid_test: FAIL unexpected exit code\n");
         return 1;
     }
 

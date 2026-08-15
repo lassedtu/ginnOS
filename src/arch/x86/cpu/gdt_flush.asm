@@ -23,7 +23,7 @@ gdt_flush:
     mov ss, ax
 
 
-    jmp 0x08:.flush    ; GDT_KERNEL_CODE selector — flush instruction pipeline
+    jmp 0x08:.flush    ; GDT_KERNEL_CODE selector flush instruction pipeline
 
 .flush:
 

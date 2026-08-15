@@ -199,10 +199,10 @@ $(BUILD_DIR)/user/bin/sbrk_test: src/user/sbrk_test/sbrk_test.c $(USER_CRT0) lin
 	$(CC) $(USER_CFLAGS) -c src/user/sbrk_test/sbrk_test.c -o $(BUILD_DIR)/user/sbrk_test.o
 	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/sbrk_test.o
 
-$(BUILD_DIR)/user/bin/waitpid_test: src/user/waitpid_test/waitpid_test.c $(USER_CRT0) linker/user_high.ld
+$(BUILD_DIR)/user/bin/waitpid_test: src/user/waitpid_test/waitpid_test.c $(USER_CRT0) linker/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -c src/user/waitpid_test/waitpid_test.c -o $(BUILD_DIR)/user/waitpid_test.o
-	$(LD) -T linker/user_high.ld -nostdlib -o $@ $(USER_CRT0) $(BUILD_DIR)/user/waitpid_test.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/waitpid_test.o
 
 user-programs: $(USER_PROGRAMS)
 

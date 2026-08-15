@@ -96,16 +96,16 @@ void gdt_initialize(void)
     /* index 0: null descriptor */
     gdt_set_entry(0, 0, 0, 0, 0);
 
-    /* index 1: kernel code — DPL 0, executable, readable */
+    /* index 1: kernel code DPL 0, executable, readable */
     gdt_set_entry(1, 0, 0xFFFFF, 0x9A, 0xCF);
 
-    /* index 2: kernel data — DPL 0, writable */
+    /* index 2: kernel data DPL 0, writable */
     gdt_set_entry(2, 0, 0xFFFFF, 0x92, 0xCF);
 
-    /* index 3: user code — DPL 3, executable, readable */
+    /* index 3: user code DPL 3, executable, readable */
     gdt_set_entry(3, 0, 0xFFFFF, 0xFA, 0xCF);
 
-    /* index 4: user data — DPL 3, writable */
+    /* index 4: user data DPL 3, writable */
     gdt_set_entry(4, 0, 0xFFFFF, 0xF2, 0xCF);
 
     /* index 5: TSS */

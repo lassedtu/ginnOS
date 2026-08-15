@@ -1,5 +1,5 @@
 /**
- * /bin/hello — first ginnOS user program.
+ * /bin/hello first ginnOS user program.
  * prints a message via SYS_write and returns 0.
  */
 
@@ -11,8 +11,7 @@ static int write(int fd, const char *buf, int count)
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYS_WRITE), "b"(fd), "c"(buf), "d"(count)
-    );
+        : "a"(SYS_WRITE), "b"(fd), "c"(buf), "d"(count));
     return ret;
 }
 

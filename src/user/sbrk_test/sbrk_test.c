@@ -1,10 +1,10 @@
 /**
- * /bin/sbrk_test — test program for SYS_sbrk.
+ * /bin/sbrk_test test program for SYS_sbrk.
  * exercises sbrk with various patterns and reports results.
  */
 
 #define SYS_WRITE 1
-#define SYS_SBRK  11
+#define SYS_SBRK 11
 
 static int write(int fd, const char *buf, int count)
 {
@@ -12,8 +12,7 @@ static int write(int fd, const char *buf, int count)
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYS_WRITE), "b"(fd), "c"(buf), "d"(count)
-    );
+        : "a"(SYS_WRITE), "b"(fd), "c"(buf), "d"(count));
     return ret;
 }
 
@@ -23,8 +22,7 @@ static void *sbrk(int increment)
     __asm__ volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYS_SBRK), "b"(increment)
-    );
+        : "a"(SYS_SBRK), "b"(increment));
     return (void *)ret;
 }
 

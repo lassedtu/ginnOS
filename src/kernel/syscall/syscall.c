@@ -153,7 +153,7 @@ static int32_t sys_write(struct registers *regs)
 static int32_t sys_open(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
-    (void)regs->ecx; /* flags — reserved for future use */
+    (void)regs->ecx; /* flags reserved for future use */
 
     if (!path)
     {
@@ -407,18 +407,11 @@ static int32_t sys_sbrk(struct registers *regs)
     /* allocate and map any new pages between old_brk and new_brk */
     uint32_t page = old_brk & ~(PAGE_SIZE - 1);
     uint32_t end = (new_brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    process_t *proc = process_current();
+    uint32_t pd = proc ? proc->page_directory : paging_directory_address();
 
     for (; page < end; page += PAGE_SIZE)
     {
-        uint32_t phys = paging_get_physical(page);
-
-        if (phys != 0)
-        {
-            /* page exists but may be kernel-only — re-map with user flags */
-            paging_map(page, phys, PTE_USER_RW);
-            continue;
-        }
-
         void *frame = pmm_alloc_page();
         if (!frame)
         {
@@ -426,7 +419,7 @@ static int32_t sys_sbrk(struct registers *regs)
         }
 
         memset(frame, 0, PAGE_SIZE);
-        paging_map(page, (uint32_t)frame, PTE_USER_RW);
+        paging_map_in(pd, page, (uint32_t)frame, PTE_USER_RW);
     }
 
     usermode_set_brk(new_brk);
@@ -471,13 +464,13 @@ static int32_t sys_waitpid(struct registers *regs)
         return code;
     }
 
-    /* child is still running — block the parent */
+    /* child is still running block the parent */
     parent->state = PROC_STATE_BLOCKED;
     parent->wait_for_pid = child_pid;
     scheduler_remove(parent);
     scheduler_yield();
 
-    /* we've been woken up — child should now be a zombie */
+    /* we've been woken up child should now be a zombie */
     child = process_get(child_pid);
     if (child && child->state == PROC_STATE_ZOMBIE)
     {

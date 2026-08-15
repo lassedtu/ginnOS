@@ -60,10 +60,10 @@ static uint32_t page_align_up(uint32_t addr)
 }
 
 /**
- * map a range of virtual pages as user-accessible, allocating physical frames.
- * pages already mapped are skipped.
+ * map a range of virtual pages as user-accessible in the given page directory,
+ * allocating physical frames. pages already mapped are skipped.
  */
-static bool map_user_range(uint32_t vaddr_start, uint32_t vaddr_end)
+static bool map_user_range(uint32_t pd_phys, uint32_t vaddr_start, uint32_t vaddr_end)
 {
     uint32_t page;
 
@@ -72,15 +72,6 @@ static bool map_user_range(uint32_t vaddr_start, uint32_t vaddr_end)
 
     for (page = vaddr_start; page < vaddr_end; page += PAGE_SIZE)
     {
-        /* skip if already mapped */
-        if (paging_get_physical(page) != 0)
-        {
-            /* re-map with user flags in case it was kernel-only */
-            uint32_t phys = paging_get_physical(page);
-            paging_map(page, phys, PTE_USER_RW);
-            continue;
-        }
-
         void *frame = pmm_alloc_page();
         if (!frame)
         {
@@ -88,13 +79,88 @@ static bool map_user_range(uint32_t vaddr_start, uint32_t vaddr_end)
         }
 
         memset(frame, 0, PAGE_SIZE);
-        paging_map(page, (uint32_t)frame, PTE_USER_RW);
+        paging_map_in(pd_phys, page, (uint32_t)frame, PTE_USER_RW);
     }
 
     return true;
 }
 
-bool elf_load(const char *path, elf_load_result_t *result)
+/**
+ * translate a virtual address through a given page directory.
+ * used to find the physical frame backing a virtual address in a
+ * process's address space (for copying data before switching to it).
+ */
+static uint32_t pd_get_physical(uint32_t pd_phys, uint32_t virt)
+{
+    uint32_t *dir = (uint32_t *)pd_phys;
+    uint32_t dir_index = (virt >> 22) & 0x3FF;
+    uint32_t tbl_index = (virt >> 12) & 0x3FF;
+
+    if (!(dir[dir_index] & PTE_PRESENT))
+    {
+        return 0;
+    }
+
+    uint32_t *table = (uint32_t *)(dir[dir_index] & 0xFFFFF000u);
+
+    if (!(table[tbl_index] & PTE_PRESENT))
+    {
+        return 0;
+    }
+
+    return (table[tbl_index] & 0xFFFFF000u) | (virt & 0xFFF);
+}
+
+/**
+ * copy data into a process's virtual address space.
+ * resolves each page through the process's page directory and writes
+ * to the physical frame via identity mapping.
+ */
+static void copy_to_process(uint32_t pd_phys, uint32_t vaddr, const void *src, uint32_t size)
+{
+    const uint8_t *s = (const uint8_t *)src;
+
+    while (size > 0)
+    {
+        uint32_t phys = pd_get_physical(pd_phys, vaddr);
+        uint32_t offset_in_page = vaddr & (PAGE_SIZE - 1);
+        uint32_t chunk = PAGE_SIZE - offset_in_page;
+        if (chunk > size)
+        {
+            chunk = size;
+        }
+
+        memcpy((void *)phys, s, chunk);
+
+        vaddr += chunk;
+        s += chunk;
+        size -= chunk;
+    }
+}
+
+/**
+ * zero a range in a process's virtual address space.
+ */
+static void zero_in_process(uint32_t pd_phys, uint32_t vaddr, uint32_t size)
+{
+    while (size > 0)
+    {
+        uint32_t phys = pd_get_physical(pd_phys, vaddr);
+        uint32_t offset_in_page = vaddr & (PAGE_SIZE - 1);
+        uint32_t chunk = PAGE_SIZE - offset_in_page;
+        if (chunk > size)
+        {
+            chunk = size;
+        }
+
+        memset((void *)phys, 0, chunk);
+
+        vaddr += chunk;
+        size -= chunk;
+    }
+}
+
+bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
 {
     VFS_FILE file;
     VFS_STAT stat;
@@ -180,7 +246,7 @@ bool elf_load(const char *path, elf_load_result_t *result)
         uint32_t seg_end = seg_start + phdr->p_memsz;
 
         /* allocate and map pages for this segment */
-        if (!map_user_range(seg_start, seg_end))
+        if (!map_user_range(pd_phys, seg_start, seg_end))
         {
             printf("elf: failed to map segment at 0x%x\r\n", seg_start);
             kfree(file_data);
@@ -197,14 +263,14 @@ bool elf_load(const char *path, elf_load_result_t *result)
                 return false;
             }
 
-            memcpy((void *)seg_start, file_data + phdr->p_offset, phdr->p_filesz);
+            copy_to_process(pd_phys, seg_start, file_data + phdr->p_offset, phdr->p_filesz);
         }
 
         /* zero BSS region (memsz > filesz) */
         if (phdr->p_memsz > phdr->p_filesz)
         {
-            memset((void *)(seg_start + phdr->p_filesz), 0,
-                   phdr->p_memsz - phdr->p_filesz);
+            zero_in_process(pd_phys, seg_start + phdr->p_filesz,
+                           phdr->p_memsz - phdr->p_filesz);
         }
 
         /* track highest loaded address for program break */

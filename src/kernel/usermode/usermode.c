@@ -54,10 +54,12 @@ void jump_to_usermode(uint32_t entry)
 
     uint32_t stack_phys = (uint32_t)stack_page;
 
-    // mark the stack page as user-accessible
-    paging_map(stack_phys, stack_phys, PTE_USER_RW);
+    // map the stack page as user-accessible in the current process's page directory
+    process_t *proc = process_current();
+    uint32_t pd = proc ? proc->page_directory : paging_directory_address();
+    paging_map_in(pd, stack_phys, stack_phys, PTE_USER_RW);
 
-    // user stack grows downward — ESP starts at the top of the page
+    // user stack grows downward ESP starts at the top of the page
     uint32_t user_esp = stack_phys + USER_STACK_SIZE;
 
     // set the kernel stack in the TSS to the current kernel ESP
@@ -107,6 +109,9 @@ static void process_entry_trampoline(void)
         kernel_panic("trampoline: no current process");
     }
 
+    // switch to this process's page directory
+    paging_switch_directory(proc->page_directory);
+
     uint32_t entry = proc->entry;
     jump_to_usermode(entry);
 }
@@ -142,19 +147,20 @@ static void setup_child_stack(process_t *child, uint32_t entry)
 int exec_program(const char *path)
 {
     elf_load_result_t elf;
-
-    if (!elf_load(path, &elf))
-    {
-        return -1;
-    }
-
     process_t *parent = process_current();
 
-    // create a child process
+    // create a child process first (to get its page directory)
     process_t *child = process_create();
     if (!child)
     {
         printf("exec: process table full\r\n");
+        return -1;
+    }
+
+    // load ELF into the child's page directory
+    if (!elf_load(path, child->page_directory, &elf))
+    {
+        process_destroy(child);
         return -1;
     }
 
@@ -176,6 +182,9 @@ int exec_program(const char *path)
         child->state = PROC_STATE_RUNNING;
         process_set_current(child);
 
+        // switch to the child's page directory
+        paging_switch_directory(child->page_directory);
+
         int code = kernel_setjmp(exec_jmp_buf);
         if (code != 0)
         {
@@ -189,6 +198,9 @@ int exec_program(const char *path)
                 :
                 : "i"(GDT_KERNEL_DATA)
                 : "eax");
+
+            // switch back to kernel page directory
+            paging_switch_directory(paging_directory_address());
 
             int exit_code = code - 1;
             process_destroy(child);
@@ -227,7 +239,7 @@ void usermode_exit(int exit_code)
             scheduler_ready(parent);
         }
 
-        // yield — this process is now a zombie and will never run again
+        // yield this process is now a zombie and will never run again
         scheduler_yield();
 
         // unreachable

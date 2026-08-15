@@ -4,7 +4,7 @@
 /**
  * minimal user-mode test function.
  * writes "hello from ring 3!\n" to stdout via SYS_write, then exits via SYS_exit.
- * uses only int 0x80 — no direct kernel calls.
+ * uses only int 0x80 no direct kernel calls.
  *
  * this function runs in ring 3 after jump_to_usermode() transfers control.
  */
@@ -22,8 +22,7 @@ void __attribute__((section(".text"))) user_test_function(void)
         "int $0x80\n"
         :
         : "i"(SYS_WRITE), "r"(msg), "r"(len)
-        : "eax", "ebx", "ecx", "edx"
-    );
+        : "eax", "ebx", "ecx", "edx");
 
     /* SYS_exit(code=0) */
     __asm__ volatile(
@@ -32,8 +31,7 @@ void __attribute__((section(".text"))) user_test_function(void)
         "int $0x80\n"
         :
         : "i"(SYS_EXIT)
-        : "eax", "ebx"
-    );
+        : "eax", "ebx");
 
     /* unreachable, but prevent return into garbage */
     for (;;)

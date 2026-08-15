@@ -1,8 +1,9 @@
 #include "process.h"
 #include "../memory/pmm.h"
+#include "../../arch/x86/cpu/paging.h"
 #include "../../common/memory.h"
 
-// the process table — fixed array of PCBs.
+// the process table fixed array of PCBs.
 static process_t proc_table[PROCESS_MAX];
 
 // next PID to assign (monotonically increasing).
@@ -45,6 +46,15 @@ process_t *process_create(void)
             proc->kernel_stack = (uint32_t)stack_page;
             // ESP starts at the top of the stack (grows downward)
             proc->kernel_esp = (uint32_t)stack_page + KERNEL_STACK_SIZE;
+
+            // allocate a per-process page directory (clone kernel mappings)
+            uint32_t pd = paging_clone_directory();
+            if (pd == 0)
+            {
+                pmm_free_page(stack_page);
+                return (void *)0;
+            }
+            proc->page_directory = pd;
 
             // initialize fd table: stdin/stdout/stderr as console
             proc->fds[0].type = FD_TYPE_CONSOLE;
@@ -89,6 +99,13 @@ void process_destroy(process_t *proc)
     {
         pmm_free_page((void *)proc->kernel_stack);
         proc->kernel_stack = 0;
+    }
+
+    // free the per-process page directory (and user page tables/frames)
+    if (proc->page_directory)
+    {
+        paging_free_directory(proc->page_directory);
+        proc->page_directory = 0;
     }
 
     proc->state = PROC_STATE_UNUSED;

@@ -137,7 +137,7 @@ void paging_init(void)
     /* install dedicated page fault handler (replaces generic exception handler) */
     isr_register_handler(14, page_fault_handler);
 
-    /* load CR3 and set CR0.PG — paging is now active */
+    /* load CR3 and set CR0.PG paging is now active */
     paging_flush(kernel_directory_phys);
 }
 
@@ -156,7 +156,7 @@ bool paging_map(uint32_t virt, uint32_t phys, uint32_t flags)
     }
 
     /* if mapping a user-accessible page, the PDE must also have the user bit
-     * set — the CPU checks both levels before granting access. */
+     * set the CPU checks both levels before granting access. */
     if (flags & PTE_USER)
     {
         kernel_directory[dir_index] |= PDE_USER;
@@ -222,4 +222,129 @@ bool paging_is_enabled(void)
     uint32_t cr0;
     __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
     return (cr0 & 0x80000000u) != 0;
+}
+
+// index boundary: entries 0–767 are user space, 768–1023 are kernel.
+#define KERNEL_PDE_START 768
+
+uint32_t paging_clone_directory(void)
+{
+    void *page = pmm_alloc_page();
+    if (!page)
+    {
+        return 0;
+    }
+
+    uint32_t *new_dir = (uint32_t *)page;
+
+    // copy all entries from the kernel directory.
+    // kernel page tables are marked supervisor-only (no PDE_USER bit),
+    // so user code cannot access kernel memory even though entries are present.
+    // user-space mappings (with PDE_USER) will be added per-process.
+    for (uint32_t i = 0; i < PAGE_ENTRIES; i++)
+    {
+        new_dir[i] = kernel_directory[i];
+    }
+
+    return (uint32_t)new_dir;
+}
+
+void paging_free_directory(uint32_t pd_phys)
+{
+    if (pd_phys == 0 || pd_phys == kernel_directory_phys)
+    {
+        return;
+    }
+
+    uint32_t *dir = (uint32_t *)pd_phys;
+
+    // free process-specific page tables and their user-mapped frames.
+    // only process entries with PDE_USER set — these are either newly
+    // allocated or copied-on-write from kernel tables.
+    for (uint32_t i = 0; i < PAGE_ENTRIES; i++)
+    {
+        if (!(dir[i] & PDE_PRESENT))
+        {
+            continue;
+        }
+
+        // skip kernel-shared entries (no user bit)
+        if (!(dir[i] & PDE_USER))
+        {
+            continue;
+        }
+
+        uint32_t *table = (uint32_t *)PAGE_FRAME(dir[i]);
+
+        // only free physical frames that have PTE_USER set —
+        // kernel identity-mapped entries (copied) don't have PTE_USER.
+        for (uint32_t j = 0; j < PAGE_ENTRIES; j++)
+        {
+            if ((table[j] & PTE_PRESENT) && (table[j] & PTE_USER))
+            {
+                uint32_t frame = PAGE_FRAME(table[j]);
+                if (frame != 0)
+                {
+                    pmm_free_page((void *)frame);
+                }
+            }
+        }
+
+        // free the page table itself (it was allocated for this process)
+        pmm_free_page(table);
+    }
+
+    // free the directory page
+    pmm_free_page((void *)pd_phys);
+}
+
+bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flags)
+{
+    uint32_t *dir = (uint32_t *)pd_phys;
+    uint32_t dir_index = PAGE_DIR_INDEX(virt);
+    uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
+    uint32_t *table;
+
+    if (!(dir[dir_index] & PDE_PRESENT))
+    {
+        // no page table exists — allocate a fresh one
+        void *new_table = pmm_alloc_page();
+        if (!new_table)
+        {
+            return false;
+        }
+        memset(new_table, 0, PAGE_SIZE);
+        dir[dir_index] = (uint32_t)new_table | PDE_KERNEL_RW;
+    }
+    else if ((flags & PTE_USER) && !(dir[dir_index] & PDE_USER))
+    {
+        // PDE exists but is kernel-only (shared from clone).
+        // we need to add a user mapping, so we must copy the page table
+        // to avoid contaminating the shared kernel table.
+        uint32_t *old_table = (uint32_t *)PAGE_FRAME(dir[dir_index]);
+        void *new_table = pmm_alloc_page();
+        if (!new_table)
+        {
+            return false;
+        }
+        // copy existing kernel entries
+        memcpy(new_table, old_table, PAGE_SIZE);
+        dir[dir_index] = (uint32_t)new_table | PDE_USER_RW;
+    }
+
+    // if mapping a user-accessible page, the PDE must also have the user bit
+    if (flags & PTE_USER)
+    {
+        dir[dir_index] |= PDE_USER;
+    }
+
+    table = (uint32_t *)PAGE_FRAME(dir[dir_index]);
+    table[tbl_index] = (phys & 0xFFFFF000u) | (flags & 0xFFFu);
+
+    return true;
+}
+
+void paging_switch_directory(uint32_t pd_phys)
+{
+    __asm__ volatile("mov %0, %%cr3" : : "r"(pd_phys) : "memory");
 }

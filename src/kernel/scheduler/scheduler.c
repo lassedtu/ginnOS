@@ -1,10 +1,11 @@
 #include "scheduler.h"
 #include "../process/process.h"
 #include "../../arch/x86/cpu/gdt.h"
+#include "../../arch/x86/cpu/paging.h"
 #include "../../common/memory.h"
 
 /**
- * context_switch — defined in context_switch.asm.
+ * context_switch defined in context_switch.asm.
  * saves current state on old stack, switches to new stack.
  */
 extern void context_switch(uint32_t *old_esp, uint32_t new_esp);
@@ -30,7 +31,7 @@ static void queue_push(process_t *proc)
 {
     if (queue_count >= READY_QUEUE_SIZE)
     {
-        return; // queue full — drop silently
+        return; // queue full drop silently
     }
 
     ready_queue[queue_tail] = proc;
@@ -118,14 +119,14 @@ static void schedule(void)
 
     if (!next)
     {
-        // no other process ready — continue running current
+        // no other process ready continue running current
         ticks_remaining = SCHED_TIME_SLICE;
         return;
     }
 
     if (current && current->state == PROC_STATE_RUNNING)
     {
-        // current process is still runnable — put it back in the queue
+        // current process is still runnable put it back in the queue
         current->state = PROC_STATE_READY;
         queue_push(current);
     }
@@ -136,6 +137,12 @@ static void schedule(void)
 
     // update TSS kernel stack to the new process's kernel stack top
     tss_set_kernel_stack(next->kernel_stack + KERNEL_STACK_SIZE);
+
+    // switch to the new process's page directory
+    if (next->page_directory)
+    {
+        paging_switch_directory(next->page_directory);
+    }
 
     // reset time slice
     ticks_remaining = SCHED_TIME_SLICE;

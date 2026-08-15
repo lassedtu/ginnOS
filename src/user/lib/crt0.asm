@@ -1,4 +1,4 @@
-; crt0.asm — user program entry point for ginnOS.
+; crt0.asm user program entry point for ginnOS.
 ; calls main(), then invokes SYS_exit with the return value.
 
 BITS 32

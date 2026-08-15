@@ -37,6 +37,7 @@ typedef struct process
     uint32_t kernel_stack;  // base address of kernel stack page
     uint32_t kernel_esp;    // saved kernel ESP (for context switch)
     uint32_t entry;         // ELF entry point (used by trampoline on first schedule)
+    uint32_t page_directory; // physical address of this process's page directory
     uint32_t wait_for_pid;  // PID this process is waiting for (0 = not waiting)
     fd_entry_t fds[FD_MAX]; // per-process file descriptor table
 } process_t;
