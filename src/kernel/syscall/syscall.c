@@ -1,8 +1,13 @@
 #include "syscall.h"
+#include "fd_table.h"
 
 #include "../../arch/x86/cpu/isr.h"
 #include "../../arch/x86/cpu/idt.h"
 #include "../../arch/x86/cpu/gdt.h"
+#include "../vfs/vfs.h"
+#include "../console/console.h"
+#include "../usermode/usermode.h"
+#include "../../drivers/keyboard/keyboard.h"
 #include "../../common/stdio.h"
 
 /**
@@ -14,6 +19,14 @@ typedef int32_t (*syscall_fn_t)(struct registers *regs);
 
 static int32_t sys_exit(struct registers *regs);
 static int32_t sys_write(struct registers *regs);
+static int32_t sys_read(struct registers *regs);
+static int32_t sys_open(struct registers *regs);
+static int32_t sys_close(struct registers *regs);
+static int32_t sys_stat(struct registers *regs);
+static int32_t sys_create(struct registers *regs);
+static int32_t sys_mkdir(struct registers *regs);
+static int32_t sys_exec(struct registers *regs);
+static int32_t sys_getpid(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -21,14 +34,14 @@ static int32_t sys_write(struct registers *regs);
 static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_EXIT] = sys_exit,
     [SYS_WRITE] = sys_write,
-    [SYS_READ] = 0,
-    [SYS_OPEN] = 0,
-    [SYS_CLOSE] = 0,
-    [SYS_STAT] = 0,
-    [SYS_CREATE] = 0,
-    [SYS_MKDIR] = 0,
-    [SYS_EXEC] = 0,
-    [SYS_GETPID] = 0,
+    [SYS_READ] = sys_read,
+    [SYS_OPEN] = sys_open,
+    [SYS_CLOSE] = sys_close,
+    [SYS_STAT] = sys_stat,
+    [SYS_CREATE] = sys_create,
+    [SYS_MKDIR] = sys_mkdir,
+    [SYS_EXEC] = sys_exec,
+    [SYS_GETPID] = sys_getpid,
     [SYS_WAITPID] = 0,
     [SYS_SBRK] = 0,
 };
@@ -53,6 +66,8 @@ static void syscall_handler(struct registers *regs)
 
 void syscall_initialize(void)
 {
+    fd_table_init();
+
     /* register the handler in the ISR dispatch table */
     isr_register_handler(SYSCALL_VECTOR, syscall_handler);
 
@@ -70,20 +85,15 @@ void syscall_initialize(void)
 /**
  * SYS_exit: terminate the current process.
  * arg: EBX = exit code.
- * for now, halts the CPU (no process management yet).
+ * returns control to the kernel (exec_program caller).
  */
 static int32_t sys_exit(struct registers *regs)
 {
     int32_t code = (int32_t)regs->ebx;
 
-    printf("sys_exit: process exited with code %d\r\n", code);
+    usermode_exit(code);
 
-    /* no process to kill yet — just halt */
-    for (;;)
-    {
-        __asm__ volatile("cli; hlt");
-    }
-
+    /* unreachable */
     return 0;
 }
 
@@ -126,4 +136,225 @@ static int32_t sys_write(struct registers *regs)
     }
 
     return (int32_t)count;
+}
+
+/**
+ * SYS_open: open a file by path.
+ * args: EBX = path string pointer, ECX = flags (unused for now).
+ * returns fd number on success, -1 on failure.
+ */
+static int32_t sys_open(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+    (void)regs->ecx; /* flags — reserved for future use */
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    VFS_FILE file;
+
+    if (!vfs_open(path, &file))
+    {
+        return -1;
+    }
+
+    int fd = fd_alloc(&file);
+    if (fd < 0)
+    {
+        vfs_close(&file);
+        return -1;
+    }
+
+    return (int32_t)fd;
+}
+
+/**
+ * SYS_close: close an open file descriptor.
+ * args: EBX = fd.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_close(struct registers *regs)
+{
+    int fd = (int)regs->ebx;
+
+    /* don't allow closing stdin/stdout/stderr */
+    if (fd < 3)
+    {
+        return -1;
+    }
+
+    return (int32_t)fd_free(fd);
+}
+
+/**
+ * SYS_read: read bytes from a file descriptor.
+ * args: EBX = fd, ECX = buffer pointer, EDX = count.
+ * for stdin (fd 0): line-buffered read from keyboard with echo.
+ * for files: reads via VFS.
+ * returns number of bytes read, or -1 on error.
+ */
+static int32_t sys_read(struct registers *regs)
+{
+    int fd_num = (int)regs->ebx;
+    char *buf = (char *)regs->ecx;
+    uint32_t count = regs->edx;
+
+    if (!buf || count == 0)
+    {
+        return -1;
+    }
+
+    fd_entry_t *entry = fd_get(fd_num);
+    if (!entry)
+    {
+        return -1;
+    }
+
+    if (entry->type == FD_TYPE_CONSOLE)
+    {
+        /* only stdin (fd 0) is readable */
+        if (fd_num != 0)
+        {
+            return -1;
+        }
+
+        /* line-buffered read: collect characters until newline or buffer full */
+        uint32_t i = 0;
+        while (i < count - 1)
+        {
+            char c = keyboard_read(); /* blocks until a key is available */
+
+            if (c == '\n')
+            {
+                console_putchar('\r');
+                console_putchar('\n');
+                buf[i] = '\n';
+                i++;
+                break;
+            }
+
+            if (c == '\b')
+            {
+                if (i > 0)
+                {
+                    i--;
+                    console_putchar('\b');
+                }
+                continue;
+            }
+
+            buf[i] = c;
+            i++;
+            console_putchar(c);
+        }
+
+        buf[i] = '\0';
+        return (int32_t)i;
+    }
+
+    if (entry->type == FD_TYPE_FILE)
+    {
+        uint32_t bytes_read = vfs_read(&entry->file, count, buf);
+        return (int32_t)bytes_read;
+    }
+
+    return -1;
+}
+
+/**
+ * SYS_stat: get file metadata.
+ * args: EBX = path string pointer, ECX = pointer to stat output struct.
+ * the output struct matches VFS_STAT (FS_STAT).
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_stat(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+    VFS_STAT *stat_out = (VFS_STAT *)regs->ecx;
+
+    if (!path || !stat_out)
+    {
+        return -1;
+    }
+
+    VFS_STATUS status = vfs_stat(path, stat_out);
+    if (status != VFS_OK)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_create: create a regular file.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_create(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    if (!vfs_create(path))
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_mkdir: create a directory.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_mkdir(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    if (!vfs_mkdir(path))
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_getpid: return the current process ID.
+ * stub: always returns 1 until process management is implemented.
+ */
+static int32_t sys_getpid(struct registers *regs)
+{
+    (void)regs;
+    return 1;
+}
+
+/**
+ * SYS_exec: load and execute an ELF binary.
+ * args: EBX = path string pointer.
+ * does not return on success. returns -1 on failure.
+ */
+static int32_t sys_exec(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    return (int32_t)exec_program(path);
 }

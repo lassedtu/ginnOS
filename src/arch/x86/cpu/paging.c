@@ -134,17 +134,11 @@ void paging_init(void)
                    kernel_directory_phys + PAGE_SIZE,
                    "page_directory");
 
-    printf("Paging: identity-mapped %u MiB (%u page tables)\r\n",
-           total_memory / (1024 * 1024),
-           allocated_tables);
-
     /* install dedicated page fault handler (replaces generic exception handler) */
     isr_register_handler(14, page_fault_handler);
 
     /* load CR3 and set CR0.PG — paging is now active */
     paging_flush(kernel_directory_phys);
-
-    printf("Paging: enabled (CR3=0x%x)\r\n", kernel_directory_phys);
 }
 
 bool paging_map(uint32_t virt, uint32_t phys, uint32_t flags)
