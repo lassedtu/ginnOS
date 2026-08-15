@@ -1,27 +1,27 @@
 #include "fd_table.h"
+#include "../process/process.h"
 #include "../../common/memory.h"
-
-static fd_entry_t fd_table[FD_MAX];
 
 void fd_table_init(void)
 {
-    memset(fd_table, 0, sizeof(fd_table));
-
-    /* pre-open stdin, stdout, stderr as console descriptors */
-    fd_table[0].type = FD_TYPE_CONSOLE;
-    fd_table[1].type = FD_TYPE_CONSOLE;
-    fd_table[2].type = FD_TYPE_CONSOLE;
+    /* no-op: per-process fd tables are initialized in process_create(). */
 }
 
 int fd_alloc(VFS_FILE *file)
 {
+    process_t *proc = process_current();
+    if (!proc)
+    {
+        return -1;
+    }
+
     /* start searching at fd 3 (0/1/2 are reserved) */
     for (int i = 3; i < FD_MAX; i++)
     {
-        if (fd_table[i].type == FD_TYPE_NONE)
+        if (proc->fds[i].type == FD_TYPE_NONE)
         {
-            fd_table[i].type = FD_TYPE_FILE;
-            fd_table[i].file = *file;
+            proc->fds[i].type = FD_TYPE_FILE;
+            proc->fds[i].file = *file;
             return i;
         }
     }
@@ -31,36 +31,48 @@ int fd_alloc(VFS_FILE *file)
 
 fd_entry_t *fd_get(int fd)
 {
+    process_t *proc = process_current();
+    if (!proc)
+    {
+        return (void *)0;
+    }
+
     if (fd < 0 || fd >= FD_MAX)
     {
         return (void *)0;
     }
 
-    if (fd_table[fd].type == FD_TYPE_NONE)
+    if (proc->fds[fd].type == FD_TYPE_NONE)
     {
         return (void *)0;
     }
 
-    return &fd_table[fd];
+    return &proc->fds[fd];
 }
 
 int fd_free(int fd)
 {
+    process_t *proc = process_current();
+    if (!proc)
+    {
+        return -1;
+    }
+
     if (fd < 0 || fd >= FD_MAX)
     {
         return -1;
     }
 
-    if (fd_table[fd].type == FD_TYPE_NONE)
+    if (proc->fds[fd].type == FD_TYPE_NONE)
     {
         return -1;
     }
 
-    if (fd_table[fd].type == FD_TYPE_FILE)
+    if (proc->fds[fd].type == FD_TYPE_FILE)
     {
-        vfs_close(&fd_table[fd].file);
+        vfs_close(&proc->fds[fd].file);
     }
 
-    fd_table[fd].type = FD_TYPE_NONE;
+    proc->fds[fd].type = FD_TYPE_NONE;
     return 0;
 }

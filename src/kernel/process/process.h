@@ -1,0 +1,73 @@
+#pragma once
+
+#include "../../common/stdint.h"
+#include "../syscall/fd_table.h"
+
+// maximum number of concurrent processes.
+#define PROCESS_MAX 64
+
+// invalid PID sentinel.
+#define PID_NONE 0
+
+/**
+ * process states.
+ */
+typedef enum
+{
+    PROC_STATE_UNUSED = 0, // slot is free
+    PROC_STATE_RUNNING,    // currently executing
+    PROC_STATE_READY,      // runnable, waiting for CPU
+    PROC_STATE_BLOCKED,    // waiting for I/O or event
+    PROC_STATE_ZOMBIE,     // exited, waiting to be reaped
+} process_state_t;
+
+/**
+ * process control block.
+ */
+typedef struct process
+{
+    uint32_t pid;           // process identifier
+    process_state_t state;  // current state
+    uint32_t brk;           // program break (for sbrk)
+    int32_t exit_code;      // exit code (valid in ZOMBIE state)
+    fd_entry_t fds[FD_MAX]; // per-process file descriptor table
+} process_t;
+
+/**
+ * initialize the process subsystem.
+ * must be called once during kernel startup.
+ */
+void process_init(void);
+
+/**
+ * create a new process and return its PCB.
+ * allocates a PID and initializes the fd table with stdin/stdout/stderr.
+ * @return pointer to the new process, or NULL if the table is full.
+ */
+process_t *process_create(void);
+
+/**
+ * get the currently running process.
+ * @return pointer to the current process, or NULL if none is running.
+ */
+process_t *process_current(void);
+
+/**
+ * set the currently running process.
+ * @param proc the process to mark as current.
+ */
+void process_set_current(process_t *proc);
+
+/**
+ * destroy a process and free its slot in the process table.
+ * closes any open file descriptors.
+ * @param proc the process to destroy.
+ */
+void process_destroy(process_t *proc);
+
+/**
+ * look up a process by PID.
+ * @param pid the process identifier.
+ * @return pointer to the process, or NULL if not found.
+ */
+process_t *process_get(uint32_t pid);

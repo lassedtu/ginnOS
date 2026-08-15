@@ -4,6 +4,7 @@
 #include "../../arch/x86/cpu/paging.h"
 #include "../memory/pmm.h"
 #include "../elf/elf_loader.h"
+#include "../process/process.h"
 #include "../panic.h"
 #include "../../common/stdio.h"
 #include "../../common/memory.h"
@@ -20,17 +21,23 @@ extern void kernel_longjmp(kernel_jmp_buf buf, int val) __attribute__((noreturn)
 // saved context for returning from userspace to exec_program's caller.
 static kernel_jmp_buf exec_jmp_buf;
 
-// current program break (page-aligned end of user heap).
-static uint32_t current_brk = 0;
-
 uint32_t usermode_get_brk(void)
 {
-    return current_brk;
+    process_t *proc = process_current();
+    if (!proc)
+    {
+        return 0;
+    }
+    return proc->brk;
 }
 
 void usermode_set_brk(uint32_t brk)
 {
-    current_brk = brk;
+    process_t *proc = process_current();
+    if (proc)
+    {
+        proc->brk = brk;
+    }
 }
 
 void jump_to_usermode(uint32_t entry)
@@ -92,15 +99,24 @@ int exec_program(const char *path)
         return -1;
     }
 
-    // initialize the program break to the end of loaded segments
-    usermode_set_brk(elf.brk);
+    /* create a process for this program */
+    process_t *proc = process_create();
+    if (!proc)
+    {
+        printf("exec: process table full\r\n");
+        return -1;
+    }
 
-    // save kernel context. when usermode_exit calls longjmp,
-    // execution resumes here with the exit code as return value.
+    proc->state = PROC_STATE_RUNNING;
+    proc->brk = elf.brk;
+    process_set_current(proc);
+
+    /* save kernel context. when usermode_exit calls longjmp,
+     * execution resumes here with the exit code as return value. */
     int code = kernel_setjmp(exec_jmp_buf);
     if (code != 0)
     {
-        // returned from usermode_exit — restore kernel segments
+        /* returned from usermode_exit — restore kernel segments */
         __asm__ volatile(
             "mov %0, %%ax\n"
             "mov %%ax, %%ds\n"
@@ -110,14 +126,18 @@ int exec_program(const char *path)
             :
             : "i"(GDT_KERNEL_DATA)
             : "eax");
-        // code is exit_code + 1 (longjmp forces nonzero), so subtract 1.
-        // but we pass exit_code + 1 in usermode_exit to handle code==0.
-        return code - 1;
+
+        /* clean up the process */
+        int exit_code = code - 1;
+        process_destroy(proc);
+        process_set_current((void *)0);
+
+        return exit_code;
     }
 
     jump_to_usermode(elf.entry);
 
-    return -1; // unreachable
+    return -1; /* unreachable */
 }
 
 void usermode_exit(int exit_code)

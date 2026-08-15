@@ -9,6 +9,7 @@
 #include "../vfs/vfs.h"
 #include "../console/console.h"
 #include "../usermode/usermode.h"
+#include "../process/process.h"
 #include "../../drivers/keyboard/keyboard.h"
 #include "../../common/stdio.h"
 #include "../../common/memory.h"
@@ -338,12 +339,16 @@ static int32_t sys_mkdir(struct registers *regs)
 
 /**
  * SYS_getpid: return the current process ID.
- * stub: always returns 1 until process management is implemented.
  */
 static int32_t sys_getpid(struct registers *regs)
 {
     (void)regs;
-    return 1;
+    process_t *proc = process_current();
+    if (!proc)
+    {
+        return -1;
+    }
+    return (int32_t)proc->pid;
 }
 
 /**
