@@ -9,6 +9,7 @@
 #include "../panic.h"
 #include "../../common/stdio.h"
 #include "../../common/memory.h"
+#include "../../common/string.h"
 
 // size of the user stack in bytes (one page).
 #define USER_STACK_SIZE 4096
@@ -153,7 +154,6 @@ int exec_program(const char *path)
     process_t *child = process_create();
     if (!child)
     {
-        printf("exec: process table full\r\n");
         return -1;
     }
 
@@ -166,6 +166,10 @@ int exec_program(const char *path)
 
     child->brk = elf.brk;
     child->parent_pid = parent ? parent->pid : PID_NONE;
+
+    // inherit parent's working directory
+    if (parent)
+        strcpy(child->cwd, parent->cwd);
 
     if (parent)
     {

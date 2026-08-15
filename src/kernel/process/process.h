@@ -24,6 +24,8 @@ typedef enum
     PROC_STATE_ZOMBIE,     // exited, waiting to be reaped
 } process_state_t;
 
+#define PATH_MAX 256
+
 /**
  * process control block.
  */
@@ -39,6 +41,7 @@ typedef struct process
     uint32_t entry;         // ELF entry point (used by trampoline on first schedule)
     uint32_t page_directory; // physical address of this process's page directory
     uint32_t wait_for_pid;  // PID this process is waiting for (0 = not waiting)
+    char cwd[PATH_MAX];     // current working directory
     fd_entry_t fds[FD_MAX]; // per-process file descriptor table
 } process_t;
 

@@ -50,3 +50,13 @@ void *sbrk(int increment)
 {
     return (void *)_syscall(SYS_SBRK, increment, 0, 0, 0, 0);
 }
+
+int getcwd(char *buf, size_t size)
+{
+    return _syscall(SYS_GETCWD, (int)buf, (int)size, 0, 0, 0);
+}
+
+int chdir(const char *path)
+{
+    return _syscall(SYS_CHDIR, (int)path, 0, 0, 0, 0);
+}

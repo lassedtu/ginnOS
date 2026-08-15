@@ -117,7 +117,10 @@ LIBC_A       := $(BUILD_DIR)/libc/libc.a
 # List of user programs (add new ones here)
 USER_PROGRAMS := $(BUILD_DIR)/user/bin/hello \
                  $(BUILD_DIR)/user/bin/sbrk_test \
-                 $(BUILD_DIR)/user/bin/waitpid_test
+                 $(BUILD_DIR)/user/bin/waitpid_test \
+                 $(BUILD_DIR)/user/bin/sh \
+                 $(BUILD_DIR)/user/bin/echo \
+                 $(BUILD_DIR)/user/bin/pwd
 
 # Dependency files (C compilations only)
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
@@ -228,6 +231,27 @@ $(BUILD_DIR)/user/bin/waitpid_test: src/user/waitpid_test/waitpid_test.c $(USER_
 	$(CC) $(USER_CFLAGS) -c src/user/waitpid_test/waitpid_test.c -o $(BUILD_DIR)/user/waitpid_test.o
 	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/waitpid_test.o $(LIBC_A)
 
+SH_SRCS := $(wildcard src/user/sh/*.c)
+SH_OBJS := $(patsubst src/user/sh/%.c,$(BUILD_DIR)/user/sh/%.o,$(SH_SRCS))
+
+$(BUILD_DIR)/user/bin/sh: $(SH_SRCS) $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(BUILD_DIR)/user/sh $(dir $@)
+	@for f in $(SH_SRCS); do \
+		obj=$(BUILD_DIR)/user/sh/$$(basename $$f .c).o; \
+		$(CC) $(USER_CFLAGS) -Isrc/user/sh -c $$f -o $$obj; \
+	done
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(SH_OBJS) $(LIBC_A)
+
+$(BUILD_DIR)/user/bin/echo: src/user/echo/echo.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/echo/echo.c -o $(BUILD_DIR)/user/echo.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/echo.o $(LIBC_A)
+
+$(BUILD_DIR)/user/bin/pwd: src/user/pwd/pwd.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/pwd/pwd.c -o $(BUILD_DIR)/user/pwd.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/pwd.o $(LIBC_A)
+
 user-programs: $(USER_PROGRAMS)
 
 # Root filesystem and disk image
@@ -237,6 +261,9 @@ rootfs-image: $(KERNEL_BIN) user-programs
 	cp $(BUILD_DIR)/user/bin/hello $(EXT2_SOURCE_DIR)/bin/hello
 	cp $(BUILD_DIR)/user/bin/sbrk_test $(EXT2_SOURCE_DIR)/bin/sbrk_test
 	cp $(BUILD_DIR)/user/bin/waitpid_test $(EXT2_SOURCE_DIR)/bin/waitpid_test
+	cp $(BUILD_DIR)/user/bin/sh $(EXT2_SOURCE_DIR)/bin/sh
+	cp $(BUILD_DIR)/user/bin/echo $(EXT2_SOURCE_DIR)/bin/echo
+	cp $(BUILD_DIR)/user/bin/pwd $(EXT2_SOURCE_DIR)/bin/pwd
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(EXT2_SOURCE_DIR)" \
 		--output "$(ROOTFS_IMAGE)" \
@@ -260,6 +287,9 @@ clean:
 	rm -f $(EXT2_SOURCE_DIR)/bin/hello
 	rm -f $(EXT2_SOURCE_DIR)/bin/sbrk_test
 	rm -f $(EXT2_SOURCE_DIR)/bin/waitpid_test
+	rm -f $(EXT2_SOURCE_DIR)/bin/sh
+	rm -f $(EXT2_SOURCE_DIR)/bin/echo
+	rm -f $(EXT2_SOURCE_DIR)/bin/pwd
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 
 # Automatic header dependencies

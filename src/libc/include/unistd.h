@@ -76,3 +76,18 @@ pid_t getpid(void);
  * @return pointer to the previous break, or (void*)-1 on failure.
  */
 void *sbrk(int increment);
+
+/**
+ * get the current working directory.
+ * @param buf buffer to write the path into.
+ * @param size size of the buffer.
+ * @return 0 on success, -1 on failure.
+ */
+int getcwd(char *buf, size_t size);
+
+/**
+ * change the current working directory.
+ * @param path path to change to.
+ * @return 0 on success, -1 on failure.
+ */
+int chdir(const char *path);

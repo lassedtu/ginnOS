@@ -18,9 +18,11 @@
 #define SYS_GETPID 9
 #define SYS_WAITPID 10
 #define SYS_SBRK 11
+#define SYS_GETCWD 12
+#define SYS_CHDIR 13
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 12
+#define SYSCALL_COUNT 14
 
 /**
  * initialize the system call interface.

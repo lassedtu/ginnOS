@@ -14,6 +14,7 @@
 #include "../../drivers/keyboard/keyboard.h"
 #include "../../common/stdio.h"
 #include "../../common/memory.h"
+#include "../../common/string.h"
 
 /**
  * syscall function pointer type. takes a pointer to the CPU registers struct and returns an int32_t.
@@ -34,6 +35,8 @@ static int32_t sys_exec(struct registers *regs);
 static int32_t sys_getpid(struct registers *regs);
 static int32_t sys_waitpid(struct registers *regs);
 static int32_t sys_sbrk(struct registers *regs);
+static int32_t sys_getcwd(struct registers *regs);
+static int32_t sys_chdir(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -51,6 +54,8 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_GETPID] = sys_getpid,
     [SYS_WAITPID] = sys_waitpid,
     [SYS_SBRK] = sys_sbrk,
+    [SYS_GETCWD] = sys_getcwd,
+    [SYS_CHDIR] = sys_chdir,
 };
 
 /**
@@ -229,7 +234,7 @@ static int32_t sys_read(struct registers *regs)
 
         /* line-buffered read: collect characters until newline or buffer full */
         uint32_t i = 0;
-        while (i < count - 1)
+        while (i < count)
         {
             char c = keyboard_read(); /* blocks until a key is available */
 
@@ -257,7 +262,6 @@ static int32_t sys_read(struct registers *regs)
             console_putchar(c);
         }
 
-        buf[i] = '\0';
         return (int32_t)i;
     }
 
@@ -481,4 +485,69 @@ static int32_t sys_waitpid(struct registers *regs)
 
     /* child disappeared somehow */
     return -1;
+}
+
+/**
+ * SYS_getcwd: copy the current working directory into a user buffer.
+ * args: EBX = buffer pointer, ECX = buffer size.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_getcwd(struct registers *regs)
+{
+    char *buf = (char *)regs->ebx;
+    uint32_t size = regs->ecx;
+    process_t *proc = process_current();
+
+    if (!proc || !buf || size == 0)
+    {
+        return -1;
+    }
+
+    uint32_t len = strlen(proc->cwd);
+    if (len + 1 > size)
+    {
+        return -1;
+    }
+
+    strcpy(buf, proc->cwd);
+    return 0;
+}
+
+/**
+ * SYS_chdir: change the current working directory.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_chdir(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+    process_t *proc = process_current();
+
+    if (!proc || !path)
+    {
+        return -1;
+    }
+
+    // resolve the path relative to the current cwd
+    char resolved[PATH_MAX];
+    if (!vfs_resolve_path(proc->cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    // verify the target is a valid directory
+    VFS_STAT stat;
+    if (vfs_stat(resolved, &stat) != VFS_OK)
+    {
+        return -1;
+    }
+
+    if (stat.file_type != FS_TYPE_DIR)
+    {
+        return -1;
+    }
+
+    strncpy(proc->cwd, resolved, PATH_MAX - 1);
+    proc->cwd[PATH_MAX - 1] = '\0';
+    return 0;
 }

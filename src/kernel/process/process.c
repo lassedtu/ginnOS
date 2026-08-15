@@ -61,6 +61,10 @@ process_t *process_create(void)
             proc->fds[1].type = FD_TYPE_CONSOLE;
             proc->fds[2].type = FD_TYPE_CONSOLE;
 
+            // default working directory
+            proc->cwd[0] = '/';
+            proc->cwd[1] = '\0';
+
             return proc;
         }
     }
