@@ -259,7 +259,7 @@ void paging_free_directory(uint32_t pd_phys)
     uint32_t *dir = (uint32_t *)pd_phys;
 
     // free process-specific page tables and their user-mapped frames.
-    // only process entries with PDE_USER set — these are either newly
+    // only process entries with PDE_USER set  these are either newly
     // allocated or copied-on-write from kernel tables.
     for (uint32_t i = 0; i < PAGE_ENTRIES; i++)
     {
@@ -276,7 +276,7 @@ void paging_free_directory(uint32_t pd_phys)
 
         uint32_t *table = (uint32_t *)PAGE_FRAME(dir[i]);
 
-        // only free physical frames that have PTE_USER set —
+        // only free physical frames that have PTE_USER set
         // kernel identity-mapped entries (copied) don't have PTE_USER.
         for (uint32_t j = 0; j < PAGE_ENTRIES; j++)
         {
@@ -307,7 +307,7 @@ bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flag
 
     if (!(dir[dir_index] & PDE_PRESENT))
     {
-        // no page table exists — allocate a fresh one
+        // no page table exists  allocate a fresh one
         void *new_table = pmm_alloc_page();
         if (!new_table)
         {

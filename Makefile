@@ -99,9 +99,20 @@ STAGE2_LINK_OBJS := $(STAGE2_ENTRY_OBJ) $(sort $(STAGE2_C_OBJS)) $(COMMON_OBJS)
 
 # User programs
 USER_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
-                -fno-pie -fno-stack-protector -nostdlib -MMD -MP
+                -fno-pie -fno-stack-protector -nostdlib \
+                -Isrc/libc/include -MMD -MP
 USER_LDFLAGS := -T linker/user.ld -nostdlib
 USER_CRT0    := $(BUILD_DIR)/user/lib/crt0.o
+
+# Libc
+LIBC_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
+                -fno-pie -fno-stack-protector -Isrc/libc/include -MMD -MP
+LIBC_C_SRCS  := $(shell find src/libc/src -name '*.c' 2>/dev/null | sort)
+LIBC_ASM_SRCS := $(shell find src/libc/src -name '*.asm' 2>/dev/null | sort)
+LIBC_C_OBJS  := $(patsubst src/libc/src/%.c,$(BUILD_DIR)/libc/%.o,$(LIBC_C_SRCS))
+LIBC_ASM_OBJS := $(patsubst src/libc/src/%.asm,$(BUILD_DIR)/libc/%.o,$(LIBC_ASM_SRCS))
+LIBC_OBJS    := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
+LIBC_A       := $(BUILD_DIR)/libc/libc.a
 
 # List of user programs (add new ones here)
 USER_PROGRAMS := $(BUILD_DIR)/user/bin/hello \
@@ -184,25 +195,38 @@ $(KERNEL_ELF): $(KERNEL_LINK_OBJS) linker/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
 
+# Libc build rules
+$(BUILD_DIR)/libc/%.o: src/libc/src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(LIBC_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/libc/%.o: src/libc/src/%.asm
+	@mkdir -p $(dir $@)
+	$(AS) -f elf32 $< -o $@
+
+$(LIBC_A): $(LIBC_OBJS)
+	@mkdir -p $(dir $@)
+	$(CROSS)ar rcs $@ $(LIBC_OBJS)
+
 # User program build rules
 $(USER_CRT0): src/user/lib/crt0.asm
 	@mkdir -p $(dir $@)
 	$(AS) -f elf32 $< -o $@
 
-$(BUILD_DIR)/user/bin/hello: src/user/hello/hello.c $(USER_CRT0) linker/user.ld
+$(BUILD_DIR)/user/bin/hello: src/user/hello/hello.c $(USER_CRT0) $(LIBC_A) linker/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -c src/user/hello/hello.c -o $(BUILD_DIR)/user/hello.o
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/hello.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/hello.o $(LIBC_A)
 
-$(BUILD_DIR)/user/bin/sbrk_test: src/user/sbrk_test/sbrk_test.c $(USER_CRT0) linker/user.ld
+$(BUILD_DIR)/user/bin/sbrk_test: src/user/sbrk_test/sbrk_test.c $(USER_CRT0) $(LIBC_A) linker/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -c src/user/sbrk_test/sbrk_test.c -o $(BUILD_DIR)/user/sbrk_test.o
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/sbrk_test.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/sbrk_test.o $(LIBC_A)
 
-$(BUILD_DIR)/user/bin/waitpid_test: src/user/waitpid_test/waitpid_test.c $(USER_CRT0) linker/user.ld
+$(BUILD_DIR)/user/bin/waitpid_test: src/user/waitpid_test/waitpid_test.c $(USER_CRT0) $(LIBC_A) linker/user.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(USER_CFLAGS) -c src/user/waitpid_test/waitpid_test.c -o $(BUILD_DIR)/user/waitpid_test.o
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/waitpid_test.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/waitpid_test.o $(LIBC_A)
 
 user-programs: $(USER_PROGRAMS)
 

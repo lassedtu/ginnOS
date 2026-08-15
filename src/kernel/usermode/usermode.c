@@ -188,7 +188,7 @@ int exec_program(const char *path)
         int code = kernel_setjmp(exec_jmp_buf);
         if (code != 0)
         {
-            // returned from usermode_exit — restore kernel segments
+            // returned from usermode_exit  restore kernel segments
             __asm__ volatile(
                 "mov %0, %%ax\n"
                 "mov %%ax, %%ds\n"
