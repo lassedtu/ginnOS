@@ -4,11 +4,14 @@
 #include "../../arch/x86/cpu/isr.h"
 #include "../../arch/x86/cpu/idt.h"
 #include "../../arch/x86/cpu/gdt.h"
+#include "../../arch/x86/cpu/paging.h"
+#include "../memory/pmm.h"
 #include "../vfs/vfs.h"
 #include "../console/console.h"
 #include "../usermode/usermode.h"
 #include "../../drivers/keyboard/keyboard.h"
 #include "../../common/stdio.h"
+#include "../../common/memory.h"
 
 /**
  * syscall function pointer type. takes a pointer to the CPU registers struct and returns an int32_t.
@@ -27,6 +30,7 @@ static int32_t sys_create(struct registers *regs);
 static int32_t sys_mkdir(struct registers *regs);
 static int32_t sys_exec(struct registers *regs);
 static int32_t sys_getpid(struct registers *regs);
+static int32_t sys_sbrk(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -43,7 +47,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_EXEC] = sys_exec,
     [SYS_GETPID] = sys_getpid,
     [SYS_WAITPID] = 0,
-    [SYS_SBRK] = 0,
+    [SYS_SBRK] = sys_sbrk,
 };
 
 /**
@@ -357,4 +361,67 @@ static int32_t sys_exec(struct registers *regs)
     }
 
     return (int32_t)exec_program(path);
+}
+
+/**
+ * SYS_sbrk: grow the user program break.
+ * args: EBX = increment (signed; only positive values supported for now).
+ * returns the previous break address on success, or (uint32_t)-1 on failure.
+ *
+ * if increment is 0, simply returns the current break without changing it.
+ * for positive increments, allocates physical pages and maps them as
+ * user-accessible for any new pages between the old and new break.
+ */
+static int32_t sys_sbrk(struct registers *regs)
+{
+    int32_t increment = (int32_t)regs->ebx;
+    uint32_t old_brk = usermode_get_brk();
+
+    /* increment of 0: just return current break */
+    if (increment == 0)
+    {
+        return (int32_t)old_brk;
+    }
+
+    /* negative increment not supported yet */
+    if (increment < 0)
+    {
+        return (int32_t)(uint32_t)-1;
+    }
+
+    uint32_t new_brk = old_brk + (uint32_t)increment;
+
+    /* overflow check */
+    if (new_brk < old_brk)
+    {
+        return (int32_t)(uint32_t)-1;
+    }
+
+    /* allocate and map any new pages between old_brk and new_brk */
+    uint32_t page = old_brk & ~(PAGE_SIZE - 1);
+    uint32_t end = (new_brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    for (; page < end; page += PAGE_SIZE)
+    {
+        uint32_t phys = paging_get_physical(page);
+
+        if (phys != 0)
+        {
+            /* page exists but may be kernel-only — re-map with user flags */
+            paging_map(page, phys, PTE_USER_RW);
+            continue;
+        }
+
+        void *frame = pmm_alloc_page();
+        if (!frame)
+        {
+            return (int32_t)(uint32_t)-1;
+        }
+
+        memset(frame, 0, PAGE_SIZE);
+        paging_map(page, (uint32_t)frame, PTE_USER_RW);
+    }
+
+    usermode_set_brk(new_brk);
+    return (int32_t)old_brk;
 }

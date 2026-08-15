@@ -30,3 +30,16 @@ int exec_program(const char *path);
  * @param exit_code the exit code passed by the user program.
  */
 void usermode_exit(int exit_code);
+
+/**
+ * get the current program break (end of the user heap).
+ * @return current break address.
+ */
+uint32_t usermode_get_brk(void);
+
+/**
+ * set the program break.
+ * called by exec_program after ELF loading to initialize the break.
+ * @param brk the initial break address (page-aligned end of loaded segments).
+ */
+void usermode_set_brk(uint32_t brk);
