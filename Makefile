@@ -105,7 +105,8 @@ USER_CRT0    := $(BUILD_DIR)/user/lib/crt0.o
 
 # List of user programs (add new ones here)
 USER_PROGRAMS := $(BUILD_DIR)/user/bin/hello \
-                 $(BUILD_DIR)/user/bin/sbrk_test
+                 $(BUILD_DIR)/user/bin/sbrk_test \
+                 $(BUILD_DIR)/user/bin/waitpid_test
 
 # Dependency files (C compilations only)
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
@@ -198,6 +199,11 @@ $(BUILD_DIR)/user/bin/sbrk_test: src/user/sbrk_test/sbrk_test.c $(USER_CRT0) lin
 	$(CC) $(USER_CFLAGS) -c src/user/sbrk_test/sbrk_test.c -o $(BUILD_DIR)/user/sbrk_test.o
 	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/sbrk_test.o
 
+$(BUILD_DIR)/user/bin/waitpid_test: src/user/waitpid_test/waitpid_test.c $(USER_CRT0) linker/user_high.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/waitpid_test/waitpid_test.c -o $(BUILD_DIR)/user/waitpid_test.o
+	$(LD) -T linker/user_high.ld -nostdlib -o $@ $(USER_CRT0) $(BUILD_DIR)/user/waitpid_test.o
+
 user-programs: $(USER_PROGRAMS)
 
 # Root filesystem and disk image
@@ -206,6 +212,7 @@ rootfs-image: $(KERNEL_BIN) user-programs
 	cp $(KERNEL_BIN) $(EXT2_SOURCE_DIR)/boot/kernel.bin
 	cp $(BUILD_DIR)/user/bin/hello $(EXT2_SOURCE_DIR)/bin/hello
 	cp $(BUILD_DIR)/user/bin/sbrk_test $(EXT2_SOURCE_DIR)/bin/sbrk_test
+	cp $(BUILD_DIR)/user/bin/waitpid_test $(EXT2_SOURCE_DIR)/bin/waitpid_test
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(EXT2_SOURCE_DIR)" \
 		--output "$(ROOTFS_IMAGE)" \
@@ -228,6 +235,7 @@ clean:
 	rm -f $(EXT2_SOURCE_DIR)/boot/kernel.bin
 	rm -f $(EXT2_SOURCE_DIR)/bin/hello
 	rm -f $(EXT2_SOURCE_DIR)/bin/sbrk_test
+	rm -f $(EXT2_SOURCE_DIR)/bin/waitpid_test
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 
 # Automatic header dependencies

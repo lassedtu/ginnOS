@@ -10,6 +10,7 @@
 #include "../console/console.h"
 #include "../usermode/usermode.h"
 #include "../process/process.h"
+#include "../scheduler/scheduler.h"
 #include "../../drivers/keyboard/keyboard.h"
 #include "../../common/stdio.h"
 #include "../../common/memory.h"
@@ -31,6 +32,7 @@ static int32_t sys_create(struct registers *regs);
 static int32_t sys_mkdir(struct registers *regs);
 static int32_t sys_exec(struct registers *regs);
 static int32_t sys_getpid(struct registers *regs);
+static int32_t sys_waitpid(struct registers *regs);
 static int32_t sys_sbrk(struct registers *regs);
 
 /**
@@ -47,7 +49,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_MKDIR] = sys_mkdir,
     [SYS_EXEC] = sys_exec,
     [SYS_GETPID] = sys_getpid,
-    [SYS_WAITPID] = 0,
+    [SYS_WAITPID] = sys_waitpid,
     [SYS_SBRK] = sys_sbrk,
 };
 
@@ -429,4 +431,61 @@ static int32_t sys_sbrk(struct registers *regs)
 
     usermode_set_brk(new_brk);
     return (int32_t)old_brk;
+}
+
+/**
+ * SYS_waitpid: wait for a child process to exit.
+ * args: EBX = child PID to wait for.
+ * returns the child's exit code on success, or -1 on error.
+ *
+ * if the child is already a zombie, reaps it immediately.
+ * otherwise, blocks the calling process until the child exits.
+ */
+static int32_t sys_waitpid(struct registers *regs)
+{
+    uint32_t child_pid = regs->ebx;
+    process_t *parent = process_current();
+
+    if (!parent)
+    {
+        return -1;
+    }
+
+    process_t *child = process_get(child_pid);
+    if (!child)
+    {
+        return -1; /* no such process */
+    }
+
+    /* verify this is actually our child */
+    if (child->parent_pid != parent->pid)
+    {
+        return -1; /* not our child */
+    }
+
+    /* if child is already a zombie, reap immediately */
+    if (child->state == PROC_STATE_ZOMBIE)
+    {
+        int32_t code = child->exit_code;
+        process_destroy(child);
+        return code;
+    }
+
+    /* child is still running — block the parent */
+    parent->state = PROC_STATE_BLOCKED;
+    parent->wait_for_pid = child_pid;
+    scheduler_remove(parent);
+    scheduler_yield();
+
+    /* we've been woken up — child should now be a zombie */
+    child = process_get(child_pid);
+    if (child && child->state == PROC_STATE_ZOMBIE)
+    {
+        int32_t code = child->exit_code;
+        process_destroy(child);
+        return code;
+    }
+
+    /* child disappeared somehow */
+    return -1;
 }

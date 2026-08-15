@@ -29,9 +29,11 @@ process_t *process_create(void)
 
             memset(proc, 0, sizeof(process_t));
             proc->pid = next_pid++;
+            proc->parent_pid = PID_NONE;
             proc->state = PROC_STATE_READY;
             proc->brk = 0;
             proc->exit_code = 0;
+            proc->wait_for_pid = PID_NONE;
 
             // allocate a kernel stack page
             void *stack_page = pmm_alloc_page();
