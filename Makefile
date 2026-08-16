@@ -114,12 +114,10 @@ LIBC_ASM_OBJS := $(patsubst src/libc/src/%.asm,$(BUILD_DIR)/libc/%.o,$(LIBC_ASM_
 LIBC_OBJS    := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
 LIBC_A       := $(BUILD_DIR)/libc/libc.a
 
-# User programs
-
-# Convention: each program lives in src/user/<name>/ with one or more .c files.
-# The binary is built as build/user/bin/<name>.
+# User programs — automatic discovery via per-program Makefiles
+# Convention: each program lives in src/user/<name>/ with its own Makefile.
 # src/user/lib/ is excluded (it contains crt0, not a program).
-USER_PROG_DIRS := $(sort $(filter-out src/user/lib,$(wildcard src/user/*)))
+USER_PROG_DIRS := $(sort $(filter-out src/user/lib,$(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
 USER_PROG_NAMES := $(notdir $(USER_PROG_DIRS))
 USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
 
@@ -217,28 +215,11 @@ $(USER_CRT0): src/user/lib/crt0.asm
 	@mkdir -p $(dir $@)
 	$(AS) -f elf32 $< -o $@
 
-# Generic user program build rule.
-# For each program dir, find all .c files, compile them, and link with crt0 + libc.
-define USER_PROG_RULE
-USER_$(1)_SRCS := $$(wildcard src/user/$(1)/*.c)
-USER_$(1)_OBJS := $$(patsubst src/user/$(1)/%.c,$$(BUILD_DIR)/user/$(1)/%.o,$$(USER_$(1)_SRCS))
-
-$$(BUILD_DIR)/user/$(1)/%.o: src/user/$(1)/%.c
-	@mkdir -p $$(dir $$@)
-	$$(CC) $$(USER_CFLAGS) -Isrc/user/$(1) -c $$< -o $$@
-
-$$(BUILD_DIR)/user/bin/$(1): $$(USER_$(1)_SRCS) $$(USER_CRT0) $$(LIBC_A) linker/user.ld
-	@mkdir -p $$(BUILD_DIR)/user/$(1) $$(dir $$@)
-	@for f in $$(USER_$(1)_SRCS); do \
-		obj=$$(BUILD_DIR)/user/$(1)/$$$$(basename $$$$f .c).o; \
-		$$(CC) $$(USER_CFLAGS) -Isrc/user/$(1) -c $$$$f -o $$$$obj; \
+# Delegate to per-program Makefiles
+user-programs: $(USER_CRT0) $(LIBC_A)
+	@for d in $(USER_PROG_DIRS); do \
+		$(MAKE) --no-print-directory -C $$d || exit 1; \
 	done
-	$$(LD) $$(USER_LDFLAGS) -o $$@ $$(USER_CRT0) $$(USER_$(1)_OBJS) $$(LIBC_A)
-endef
-
-$(foreach prog,$(USER_PROG_NAMES),$(eval $(call USER_PROG_RULE,$(prog))))
-
-user-programs: $(USER_PROGRAMS)
 
 # Root filesystem and disk image
 rootfs-image: $(KERNEL_BIN) user-programs
