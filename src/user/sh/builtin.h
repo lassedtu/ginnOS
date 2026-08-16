@@ -1,4 +1,7 @@
-// builtin.h - shell built-in commands
+/**
+ * @file builtin.h
+ * @brief Header for built-in shell commands.
+ */
 
 #pragma once
 

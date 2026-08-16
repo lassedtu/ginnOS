@@ -1,9 +1,12 @@
-// sh.h - shared definitions for the ginnOS shell
+/**
+ * @file sh.h
+ * @brief Header for shell implementation.
+ */
 
 #pragma once
 
-#define TOKEN_MAX  32
-#define TOKEN_LEN  128
+#define TOKEN_MAX 32
+#define TOKEN_LEN 128
 
 typedef struct
 {

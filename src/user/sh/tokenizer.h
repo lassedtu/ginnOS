@@ -1,4 +1,7 @@
-// tokenizer.h - split input line into tokens
+/**
+ * @file tokenizer.h
+ * @brief Header for shell input tokenizer.
+ */
 
 #pragma once
 

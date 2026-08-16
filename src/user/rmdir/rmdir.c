@@ -1,4 +1,7 @@
-// rmdir - remove empty directories
+/**
+ * @file rmdir.c
+ * @brief Remove directories.
+ */
 
 #include <stdio.h>
 #include <unistd.h>

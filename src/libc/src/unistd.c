@@ -86,7 +86,15 @@ int mkdir(const char *path)
     return _syscall(SYS_MKDIR, (int)path, 0, 0, 0, 0);
 }
 
-int clear_screen(void)
+int ttyctl(int mode)
 {
-    return _syscall(SYS_CLEAR, 0, 0, 0, 0, 0);
+    return _syscall(SYS_TTYCTL, mode, 0, 0, 0, 0);
+}
+
+int read_event(key_event_t *event)
+{
+    int n = (int)read(0, (void *)event, sizeof(key_event_t));
+    if (n < (int)sizeof(key_event_t))
+        return -1;
+    return 0;
 }

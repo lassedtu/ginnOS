@@ -1,4 +1,7 @@
-// cat - concatenate and print files
+/**
+ * @file cat.c
+ * @brief Concatenate and print files to standard output.
+ */
 
 #include <stdio.h>
 #include <unistd.h>

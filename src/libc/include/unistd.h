@@ -145,8 +145,51 @@ int create(const char *path);
  */
 int mkdir(const char *path);
 
+/* terminal mode constants */
+#define TTY_COOKED 0
+#define TTY_RAW    1
+
 /**
- * clear the console screen.
- * @return 0 on success.
+ * switch terminal mode for the calling process.
+ * @param mode TTY_COOKED (0) for line-buffered or TTY_RAW (1) for event-based.
+ * @return the previous mode, or -1 on error.
  */
-int clear_screen(void);
+int ttyctl(int mode);
+
+/* keyboard event types (matches kernel keyboard_event_type_t) */
+#define KEY_EVENT_CHAR    0
+#define KEY_EVENT_SPECIAL 1
+
+/* special key codes (matches kernel keyboard_special_key_t) */
+#define KEY_ARROW_UP    1
+#define KEY_ARROW_DOWN  2
+#define KEY_ARROW_LEFT  3
+#define KEY_ARROW_RIGHT 4
+#define KEY_HOME        5
+#define KEY_END         6
+#define KEY_PAGE_UP     7
+#define KEY_PAGE_DOWN   8
+#define KEY_INSERT      9
+#define KEY_DELETE       10
+
+/**
+ * keyboard event structure (matches kernel keyboard_event_t).
+ * in raw mode, read() on stdin fills this struct.
+ */
+typedef struct
+{
+    int type;          // KEY_EVENT_CHAR or KEY_EVENT_SPECIAL
+    union
+    {
+        char character;  // valid when type == KEY_EVENT_CHAR
+        int  special;    // valid when type == KEY_EVENT_SPECIAL
+    };
+} key_event_t;
+
+/**
+ * read a single keyboard event from stdin (raw mode).
+ * blocks until an event is available.
+ * @param event pointer to event struct to fill.
+ * @return 0 on success, -1 on error.
+ */
+int read_event(key_event_t *event);

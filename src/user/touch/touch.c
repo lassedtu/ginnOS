@@ -1,4 +1,7 @@
-// touch - create empty files
+/**
+ * @file touch.c
+ * @brief Create empty files or update the access and modification times of existing files.
+ */
 
 #include <stdio.h>
 #include <unistd.h>

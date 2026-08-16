@@ -1,4 +1,9 @@
-// tokenizer.c - split input line into tokens by whitespace
+/**
+ * @file tokenizer.c
+ * @brief Tokenizer for shell input.
+ *
+ * This file implements a simple tokenizer for shell input. It splits a line of input into tokens based on whitespace, preparing them for command execution.
+ */
 
 #include "tokenizer.h"
 

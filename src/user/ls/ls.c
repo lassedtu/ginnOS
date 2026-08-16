@@ -1,4 +1,7 @@
-// ls - list directory contents
+/**
+ * @file ls.c
+ * @brief List directory contents.
+ */
 
 #include <stdio.h>
 #include <unistd.h>

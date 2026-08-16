@@ -1,4 +1,7 @@
-// mkdir - create directories
+/**
+ * @file mkdir.c
+ * @brief Create directories.
+ */
 
 #include <stdio.h>
 #include <unistd.h>

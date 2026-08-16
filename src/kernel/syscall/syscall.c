@@ -12,7 +12,6 @@
 #include "../process/process.h"
 #include "../scheduler/scheduler.h"
 #include "../../drivers/keyboard/keyboard.h"
-#include "../../drivers/video/vga/vga.h"
 #include "../../common/stdio.h"
 #include "../../common/memory.h"
 #include "../../common/string.h"
@@ -41,7 +40,7 @@ static int32_t sys_chdir(struct registers *regs);
 static int32_t sys_readdir(struct registers *regs);
 static int32_t sys_unlink(struct registers *regs);
 static int32_t sys_rmdir(struct registers *regs);
-static int32_t sys_clear(struct registers *regs);
+static int32_t sys_ttyctl(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -64,7 +63,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_READDIR] = sys_readdir,
     [SYS_UNLINK] = sys_unlink,
     [SYS_RMDIR] = sys_rmdir,
-    [SYS_CLEAR] = sys_clear,
+    [SYS_TTYCTL] = sys_ttyctl,
 };
 
 /**
@@ -251,7 +250,25 @@ static int32_t sys_read(struct registers *regs)
             return -1;
         }
 
-        /* line-buffered read: collect characters until newline or buffer full */
+        process_t *proc = process_current();
+
+        if (proc && proc->tty_raw)
+        {
+            /* raw mode: deliver one keyboard_event_t per read call.
+             * the buffer must be large enough to hold the struct (8 bytes). */
+            if (count < sizeof(keyboard_event_t))
+            {
+                return -1;
+            }
+
+            keyboard_event_t event;
+            keyboard_wait_event(&event);
+
+            memcpy(buf, &event, sizeof(keyboard_event_t));
+            return (int32_t)sizeof(keyboard_event_t);
+        }
+
+        /* cooked mode: line-buffered read with echo */
         uint32_t i = 0;
         while (i < count)
         {
@@ -716,13 +733,22 @@ static int32_t sys_rmdir(struct registers *regs)
 }
 
 /**
- * SYS_clear: clear the console screen.
- * no arguments.
- * returns 0.
+ * SYS_ttyctl: switch terminal mode for the calling process.
+ * args: EBX = mode (0 = cooked/line-buffered, 1 = raw/event-based).
+ * returns the previous mode on success, -1 on error.
  */
-static int32_t sys_clear(struct registers *regs)
+static int32_t sys_ttyctl(struct registers *regs)
 {
-    (void)regs;
-    vga_clear();
-    return 0;
+    uint32_t mode = regs->ebx;
+    process_t *proc = process_current();
+
+    if (!proc)
+        return -1;
+
+    if (mode > 1)
+        return -1;
+
+    int32_t prev = (int32_t)proc->tty_raw;
+    proc->tty_raw = (uint8_t)mode;
+    return prev;
 }

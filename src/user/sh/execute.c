@@ -1,4 +1,9 @@
-// execute.c - external command execution via exec + waitpid
+/**
+ * @file execute.c
+ * @brief Execute external commands.
+ *
+ * This file implements the logic for executing external commands in the shell. It handles searching for the command in the system's PATH, preparing the arguments, and invoking the command in a child process.
+ */
 
 #include "execute.h"
 

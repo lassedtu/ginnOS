@@ -1,4 +1,9 @@
-// builtin.c - shell built-in commands (cd, exit)
+/**
+ * @file builtin.c
+ * @brief Built-in shell commands.
+ *
+ * This file implements the built-in commands for the shell, such as `cd` and `exit`. Built-in commands are executed directly by the shell without invoking external programs.
+ */
 
 #include "builtin.h"
 

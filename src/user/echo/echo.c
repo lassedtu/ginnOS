@@ -1,4 +1,7 @@
-// echo - print arguments to stdout
+/**
+ * @file echo.c
+ * @brief Echo the command line arguments to standard output.
+ */
 
 #include <stdio.h>
 

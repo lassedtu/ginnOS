@@ -1,4 +1,7 @@
-// execute.h - external command execution
+/**
+ * @file execute.h
+ * @brief Header for executing external commands.
+ */
 
 #pragma once
 

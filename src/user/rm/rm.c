@@ -1,4 +1,7 @@
-// rm - remove files
+/**
+ * @file rm.c
+ * @brief Remove files.
+ */
 
 #include <stdio.h>
 #include <unistd.h>

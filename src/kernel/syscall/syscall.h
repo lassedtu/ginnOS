@@ -23,7 +23,7 @@
 #define SYS_READDIR 14
 #define SYS_UNLINK 15
 #define SYS_RMDIR 16
-#define SYS_CLEAR 17
+#define SYS_TTYCTL 17
 
 // total number of syscalls defined
 #define SYSCALL_COUNT 18
