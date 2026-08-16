@@ -2,8 +2,6 @@
 
 #include "panic.h"
 #include "assert.h"
-#include "shell/command.h"
-#include "shell/shell.h"
 
 #include "fs/fs.h"
 #include "hal/hal.h"
@@ -27,6 +25,7 @@
 #include "syscall/syscall.h"
 #include "process/process.h"
 #include "scheduler/scheduler.h"
+#include "usermode/usermode.h"
 
 void cstart(boot_info_t *boot)
 {
@@ -102,10 +101,16 @@ void kernel_main(boot_info_t *boot)
         kernel_panic("VFS root mount failed");
     }
 
-    commands_initialize();
+    // launch the userspace shell as the first process
+    const char *argv[] = {"sh", (const char *)0};
+    int ret = exec_program("/bin/sh", argv);
+    if (ret < 0)
+    {
+        kernel_panic("failed to launch /bin/sh");
+    }
 
-    shell_run();
-
+    // shell exited — halt
+    printf("Shell exited with code %d. System halted.\r\n", ret);
     for (;;)
         ;
 }
