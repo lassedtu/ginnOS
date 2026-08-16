@@ -1,4 +1,9 @@
-// execute.c - command execution with redirection and pipeline support
+/**
+ * @file execute.c
+ * @brief Execute commands and pipelines.
+ *
+ * This file contains functions to execute commands and pipelines in the shell.
+ */
 
 #include "execute.h"
 #include "redir.h"
@@ -131,15 +136,12 @@ static int apply_redirections(redir_t *redir_in, redir_t *redir_out)
 
 /**
  * restore stdin/stdout to console after redirection.
- * since we dup2'd over fd 0/1, we need to restore them.
- * The shell's fds 0/1/2 are always console, so we can just
- * re-mark them as console type via dup2 from fd 2 (stderr,
- * which is never redirected).
+ * uses dup2 from stderr (fd 2, never redirected) to reset 0 and 1.
+ * Note: for pipe fds, this will decrement ref counts, but the child
+ * already has its own reference so the pipe stays alive.
  */
 static void restore_stdio(void)
 {
-    // dup2(2, 0) and dup2(2, 1) restores console on stdin/stdout
-    // since stderr (fd 2) is always console
     dup2(2, 0);
     dup2(2, 1);
 }
@@ -269,7 +271,7 @@ void execute_pipeline(pipeline_t *pipeline)
         restore_stdio();
     }
 
-    // close all pipe fds in the parent
+    // close all pipe fds in the shell (children already have what they need)
     for (int i = 0; i < pipeline->count - 1; i++)
     {
         close(pipe_fds[i][0]);

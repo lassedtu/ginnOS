@@ -1,12 +1,20 @@
-/**
- * @file cat.c
- * @brief Concatenate and print files to standard output.
- */
+// cat - concatenate and print files (or stdin)
 
 #include <stdio.h>
 #include <unistd.h>
 
 #define BUF_SIZE 512
+
+static int cat_fd(int fd)
+{
+    char buf[BUF_SIZE];
+    int n;
+
+    while ((n = read(fd, buf, BUF_SIZE)) > 0)
+        write(1, buf, n);
+
+    return 0;
+}
 
 static int cat_file(const char *path)
 {
@@ -17,14 +25,7 @@ static int cat_file(const char *path)
         return 1;
     }
 
-    char buf[BUF_SIZE];
-    int n;
-
-    while ((n = read(fd, buf, BUF_SIZE)) > 0)
-        write(1, buf, n);
-
-    printf("\n");
-
+    cat_fd(fd);
     close(fd);
     return 0;
 }
@@ -33,8 +34,9 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("cat: usage: cat <file> [file...]\n");
-        return 1;
+        // no arguments: read from stdin
+        cat_fd(0);
+        return 0;
     }
 
     int ret = 0;

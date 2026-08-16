@@ -289,11 +289,29 @@ int exec_program(const char *path, const char **argv)
         // copy parent's fd table to child (fd inheritance)
         for (int i = 0; i < FD_MAX; i++)
         {
-            child->fds[i] = parent->fds[i];
-            // increment pipe ref counts for inherited pipe fds
-            if (child->fds[i].type == FD_TYPE_PIPE)
+            if (i <= 2)
             {
-                child->fds[i].pipe.buf->ref_count++;
+                // always inherit stdin/stdout/stderr
+                child->fds[i] = parent->fds[i];
+                if (child->fds[i].type == FD_TYPE_PIPE)
+                {
+                    child->fds[i].pipe.buf->ref_count++;
+                    if (child->fds[i].pipe.dir == PIPE_READ)
+                        child->fds[i].pipe.buf->read_refs++;
+                    else
+                        child->fds[i].pipe.buf->write_refs++;
+                }
+            }
+            else if (parent->fds[i].type == FD_TYPE_PIPE)
+            {
+                // close-on-exec: pipe fds > 2 are NOT inherited
+                // (prevents children from holding extra pipe refs)
+                child->fds[i].type = FD_TYPE_NONE;
+            }
+            else
+            {
+                // inherit regular file fds
+                child->fds[i] = parent->fds[i];
             }
         }
     }

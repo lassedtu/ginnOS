@@ -176,7 +176,7 @@ static int32_t sys_write(struct registers *regs)
             return -1;
 
         /* if read end is closed, broken pipe */
-        if (!pb->read_open)
+        if (pb->read_refs <= 0)
             return -1;
 
         /* write as many bytes as fit into the buffer */
@@ -367,9 +367,9 @@ static int32_t sys_read(struct registers *regs)
         /* block until data is available or write end is closed */
         while (pb->count == 0)
         {
-            if (!pb->write_open)
+            if (pb->write_refs <= 0)
             {
-                /* write end closed + buffer empty = EOF */
+                /* all write ends closed + buffer empty = EOF */
                 return 0;
             }
             /* yield and try again (busy-wait with halt for now) */
@@ -924,10 +924,14 @@ static int32_t sys_dup2(struct registers *regs)
     // copy the fd entry
     proc->fds[new_fd] = proc->fds[old_fd];
 
-    // if it's a pipe, increment the ref count
+    // if it's a pipe, increment the ref counts
     if (proc->fds[new_fd].type == FD_TYPE_PIPE)
     {
         proc->fds[new_fd].pipe.buf->ref_count++;
+        if (proc->fds[new_fd].pipe.dir == PIPE_READ)
+            proc->fds[new_fd].pipe.buf->read_refs++;
+        else
+            proc->fds[new_fd].pipe.buf->write_refs++;
     }
 
     return new_fd;

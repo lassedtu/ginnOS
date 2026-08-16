@@ -29,12 +29,12 @@ typedef enum
 typedef struct pipe_buf
 {
     char data[PIPE_BUF_SIZE];
-    uint32_t read_pos;   // next byte to read
-    uint32_t write_pos;  // next byte to write
-    uint32_t count;      // bytes currently in buffer
-    int read_open;       // 1 if read end is still open
-    int write_open;      // 1 if write end is still open
-    int ref_count;       // number of fd entries referencing this pipe
+    uint32_t read_pos;    // next byte to read
+    uint32_t write_pos;   // next byte to write
+    uint32_t count;       // bytes currently in buffer
+    int read_refs;        // number of open read-end file descriptors
+    int write_refs;       // number of open write-end file descriptors
+    int ref_count;        // total fd entries referencing this pipe
 } pipe_buf_t;
 
 /**

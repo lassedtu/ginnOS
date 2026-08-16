@@ -11,8 +11,8 @@ void fd_table_init(void)
     for (int i = 0; i < PIPE_MAX; i++)
     {
         pipe_pool[i].ref_count = 0;
-        pipe_pool[i].read_open = 0;
-        pipe_pool[i].write_open = 0;
+        pipe_pool[i].read_refs = 0;
+        pipe_pool[i].write_refs = 0;
     }
 }
 
@@ -87,9 +87,9 @@ int fd_free(int fd)
         pipe_dir_t dir = proc->fds[fd].pipe.dir;
 
         if (dir == PIPE_READ)
-            buf->read_open = 0;
+            buf->read_refs--;
         else
-            buf->write_open = 0;
+            buf->write_refs--;
 
         buf->ref_count--;
         if (buf->ref_count <= 0)
@@ -109,8 +109,8 @@ pipe_buf_t *pipe_alloc(void)
             pipe_pool[i].read_pos = 0;
             pipe_pool[i].write_pos = 0;
             pipe_pool[i].count = 0;
-            pipe_pool[i].read_open = 1;
-            pipe_pool[i].write_open = 1;
+            pipe_pool[i].read_refs = 1;
+            pipe_pool[i].write_refs = 1;
             pipe_pool[i].ref_count = 2; // read end + write end
             return &pipe_pool[i];
         }
@@ -121,8 +121,8 @@ pipe_buf_t *pipe_alloc(void)
 void pipe_release(pipe_buf_t *buf)
 {
     buf->ref_count = 0;
-    buf->read_open = 0;
-    buf->write_open = 0;
+    buf->read_refs = 0;
+    buf->write_refs = 0;
     buf->count = 0;
     buf->read_pos = 0;
     buf->write_pos = 0;
