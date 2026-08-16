@@ -1,4 +1,4 @@
-// builtin.c - shell built-in commands (cd, exit, echo)
+// builtin.c - shell built-in commands (cd, exit)
 
 #include "builtin.h"
 
@@ -33,18 +33,6 @@ static int builtin_exit(token_list_t *tokens)
     return 1; // unreachable
 }
 
-static int builtin_echo(token_list_t *tokens)
-{
-    for (int i = 1; i < tokens->count; i++)
-    {
-        if (i > 1)
-            putchar(' ');
-        printf("%s", tokens->tokens[i]);
-    }
-    putchar('\n');
-    return 1;
-}
-
 // table of built-in commands
 typedef struct
 {
@@ -55,7 +43,6 @@ typedef struct
 static builtin_entry_t builtins[] = {
     {"cd", builtin_cd},
     {"exit", builtin_exit},
-    {"echo", builtin_echo},
     {0, 0},
 };
 

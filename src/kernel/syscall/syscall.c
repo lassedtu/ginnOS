@@ -12,6 +12,7 @@
 #include "../process/process.h"
 #include "../scheduler/scheduler.h"
 #include "../../drivers/keyboard/keyboard.h"
+#include "../../drivers/video/vga/vga.h"
 #include "../../common/stdio.h"
 #include "../../common/memory.h"
 #include "../../common/string.h"
@@ -37,6 +38,10 @@ static int32_t sys_waitpid(struct registers *regs);
 static int32_t sys_sbrk(struct registers *regs);
 static int32_t sys_getcwd(struct registers *regs);
 static int32_t sys_chdir(struct registers *regs);
+static int32_t sys_readdir(struct registers *regs);
+static int32_t sys_unlink(struct registers *regs);
+static int32_t sys_rmdir(struct registers *regs);
+static int32_t sys_clear(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -56,6 +61,10 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_SBRK] = sys_sbrk,
     [SYS_GETCWD] = sys_getcwd,
     [SYS_CHDIR] = sys_chdir,
+    [SYS_READDIR] = sys_readdir,
+    [SYS_UNLINK] = sys_unlink,
+    [SYS_RMDIR] = sys_rmdir,
+    [SYS_CLEAR] = sys_clear,
 };
 
 /**
@@ -165,9 +174,19 @@ static int32_t sys_open(struct registers *regs)
         return -1;
     }
 
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
     VFS_FILE file;
 
-    if (!vfs_open(path, &file))
+    if (!vfs_open(resolved, &file))
     {
         return -1;
     }
@@ -290,7 +309,17 @@ static int32_t sys_stat(struct registers *regs)
         return -1;
     }
 
-    VFS_STATUS status = vfs_stat(path, stat_out);
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    VFS_STATUS status = vfs_stat(resolved, stat_out);
     if (status != VFS_OK)
     {
         return -1;
@@ -313,7 +342,17 @@ static int32_t sys_create(struct registers *regs)
         return -1;
     }
 
-    if (!vfs_create(path))
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    if (!vfs_create(resolved))
     {
         return -1;
     }
@@ -335,7 +374,17 @@ static int32_t sys_mkdir(struct registers *regs)
         return -1;
     }
 
-    if (!vfs_mkdir(path))
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    if (!vfs_mkdir(resolved))
     {
         return -1;
     }
@@ -359,19 +408,30 @@ static int32_t sys_getpid(struct registers *regs)
 
 /**
  * SYS_exec: load and execute an ELF binary.
- * args: EBX = path string pointer.
+ * args: EBX = path string pointer, ECX = argv array pointer (may be NULL).
  * does not return on success. returns -1 on failure.
  */
 static int32_t sys_exec(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
+    const char **argv = (const char **)regs->ecx;
 
     if (!path)
     {
         return -1;
     }
 
-    return (int32_t)exec_program(path);
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    return (int32_t)exec_program(resolved, argv);
 }
 
 /**
@@ -549,5 +609,120 @@ static int32_t sys_chdir(struct registers *regs)
 
     strncpy(proc->cwd, resolved, PATH_MAX - 1);
     proc->cwd[PATH_MAX - 1] = '\0';
+    return 0;
+}
+
+/**
+ * SYS_readdir: read the next directory entry from an open directory fd.
+ * args: EBX = fd, ECX = pointer to user dirent struct.
+ *
+ * user dirent layout (matches FS_DIRENT):
+ *   uint32_t inode
+ *   uint8_t  file_type
+ *   uint32_t size
+ *   char     name[256]
+ *
+ * returns 0 on success, -1 on failure or end of directory.
+ */
+static int32_t sys_readdir(struct registers *regs)
+{
+    int fd_num = (int)regs->ebx;
+    FS_DIRENT *user_dirent = (FS_DIRENT *)regs->ecx;
+
+    if (!user_dirent)
+    {
+        return -1;
+    }
+
+    fd_entry_t *entry = fd_get(fd_num);
+    if (!entry || entry->type != FD_TYPE_FILE)
+    {
+        return -1;
+    }
+
+    FS_DIRENT dirent;
+    if (!vfs_read_entry(&entry->file, &dirent))
+    {
+        return -1;
+    }
+
+    /* copy to userspace */
+    memcpy(user_dirent, &dirent, sizeof(FS_DIRENT));
+    return 0;
+}
+
+/**
+ * SYS_unlink: remove a file.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_unlink(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    if (!vfs_remove(resolved))
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_rmdir: remove a directory.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_rmdir(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    if (!vfs_rmdir(resolved))
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_clear: clear the console screen.
+ * no arguments.
+ * returns 0.
+ */
+static int32_t sys_clear(struct registers *regs)
+{
+    (void)regs;
+    vga_clear();
     return 0;
 }

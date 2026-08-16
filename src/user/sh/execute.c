@@ -27,7 +27,15 @@ void execute(token_list_t *tokens)
         path[PATH_BUF_SIZE - 1] = '\0';
     }
 
-    pid_t child = exec(path);
+    // build a null-terminated argv array from the token list
+    // tokens->tokens[] already contains the arguments; we just need
+    // to ensure it's null-terminated for the syscall.
+    const char *argv[TOKEN_MAX + 1];
+    for (int i = 0; i < tokens->count; i++)
+        argv[i] = tokens->tokens[i];
+    argv[tokens->count] = (const char *)0;
+
+    pid_t child = exec(path, argv);
     if (child < 0)
     {
         printf("%s: command not found\n", cmd);

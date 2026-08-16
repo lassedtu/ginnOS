@@ -13,7 +13,8 @@ int main(void)
 
     /* spawn /bin/hello as a child */
     printf("waitpid_test: spawning /bin/hello...\n");
-    pid_t child_pid = exec("/bin/hello");
+    const char *argv[] = {"hello", (const char *)0};
+    pid_t child_pid = exec("/bin/hello", argv);
 
     if (child_pid < 0)
     {

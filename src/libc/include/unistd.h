@@ -47,9 +47,10 @@ int close(int fd);
 /**
  * execute a program, spawning a child process.
  * @param path path to the ELF executable.
+ * @param argv null-terminated array of argument strings (may be NULL).
  * @return child PID on success, -1 on failure.
  */
-pid_t exec(const char *path);
+pid_t exec(const char *path, const char **argv);
 
 /**
  * wait for a child process to exit.
@@ -91,3 +92,61 @@ int getcwd(char *buf, size_t size);
  * @return 0 on success, -1 on failure.
  */
 int chdir(const char *path);
+
+/**
+ * directory entry structure (matches kernel FS_DIRENT).
+ */
+typedef struct dirent
+{
+    unsigned int inode;
+    unsigned char file_type;
+    unsigned int size;
+    char name[256];
+} dirent_t;
+
+/* file type constants */
+#define FT_UNKNOWN 0
+#define FT_FILE    1
+#define FT_DIR     2
+
+/**
+ * read the next directory entry from an open directory fd.
+ * @param fd file descriptor for an open directory.
+ * @param entry pointer to dirent structure to fill.
+ * @return 0 on success, -1 on end-of-directory or error.
+ */
+int readdir(int fd, dirent_t *entry);
+
+/**
+ * remove (unlink) a file.
+ * @param path path to the file to remove.
+ * @return 0 on success, -1 on failure.
+ */
+int unlink(const char *path);
+
+/**
+ * remove a directory.
+ * @param path path to the directory to remove.
+ * @return 0 on success, -1 on failure.
+ */
+int rmdir(const char *path);
+
+/**
+ * create an empty file.
+ * @param path path to the file to create.
+ * @return 0 on success, -1 on failure.
+ */
+int create(const char *path);
+
+/**
+ * create a directory.
+ * @param path path to the directory to create.
+ * @return 0 on success, -1 on failure.
+ */
+int mkdir(const char *path);
+
+/**
+ * clear the console screen.
+ * @return 0 on success.
+ */
+int clear_screen(void);

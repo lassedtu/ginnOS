@@ -20,6 +20,10 @@
 #define SYS_SBRK 11
 #define SYS_GETCWD 12
 #define SYS_CHDIR 13
+#define SYS_READDIR 14
+#define SYS_UNLINK 15
+#define SYS_RMDIR 16
+#define SYS_CLEAR 17
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

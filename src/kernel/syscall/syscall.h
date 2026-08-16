@@ -20,9 +20,13 @@
 #define SYS_SBRK 11
 #define SYS_GETCWD 12
 #define SYS_CHDIR 13
+#define SYS_READDIR 14
+#define SYS_UNLINK 15
+#define SYS_RMDIR 16
+#define SYS_CLEAR 17
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 14
+#define SYSCALL_COUNT 18
 
 /**
  * initialize the system call interface.

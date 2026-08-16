@@ -24,7 +24,7 @@ static int exec_main(int argc, char **argv)
         return -1;
     }
 
-    int result = exec_program(resolved_path);
+    int result = exec_program(resolved_path, (const char **)0);
 
     if (result < 0)
     {

@@ -25,9 +25,9 @@ int close(int fd)
     return _syscall(SYS_CLOSE, fd, 0, 0, 0, 0);
 }
 
-pid_t exec(const char *path)
+pid_t exec(const char *path, const char **argv)
 {
-    return (pid_t)_syscall(SYS_EXEC, (int)path, 0, 0, 0, 0);
+    return (pid_t)_syscall(SYS_EXEC, (int)path, (int)argv, 0, 0, 0);
 }
 
 int waitpid(pid_t pid)
@@ -59,4 +59,34 @@ int getcwd(char *buf, size_t size)
 int chdir(const char *path)
 {
     return _syscall(SYS_CHDIR, (int)path, 0, 0, 0, 0);
+}
+
+int readdir(int fd, dirent_t *entry)
+{
+    return _syscall(SYS_READDIR, fd, (int)entry, 0, 0, 0);
+}
+
+int unlink(const char *path)
+{
+    return _syscall(SYS_UNLINK, (int)path, 0, 0, 0, 0);
+}
+
+int rmdir(const char *path)
+{
+    return _syscall(SYS_RMDIR, (int)path, 0, 0, 0, 0);
+}
+
+int create(const char *path)
+{
+    return _syscall(SYS_CREATE, (int)path, 0, 0, 0, 0);
+}
+
+int mkdir(const char *path)
+{
+    return _syscall(SYS_MKDIR, (int)path, 0, 0, 0, 0);
+}
+
+int clear_screen(void)
+{
+    return _syscall(SYS_CLEAR, 0, 0, 0, 0, 0);
 }

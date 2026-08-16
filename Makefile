@@ -120,7 +120,14 @@ USER_PROGRAMS := $(BUILD_DIR)/user/bin/hello \
                  $(BUILD_DIR)/user/bin/waitpid_test \
                  $(BUILD_DIR)/user/bin/sh \
                  $(BUILD_DIR)/user/bin/echo \
-                 $(BUILD_DIR)/user/bin/pwd
+                 $(BUILD_DIR)/user/bin/pwd \
+                 $(BUILD_DIR)/user/bin/cat \
+                 $(BUILD_DIR)/user/bin/ls \
+                 $(BUILD_DIR)/user/bin/mkdir \
+                 $(BUILD_DIR)/user/bin/touch \
+                 $(BUILD_DIR)/user/bin/rm \
+                 $(BUILD_DIR)/user/bin/rmdir \
+                 $(BUILD_DIR)/user/bin/clear
 
 # Dependency files (C compilations only)
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
@@ -252,6 +259,41 @@ $(BUILD_DIR)/user/bin/pwd: src/user/pwd/pwd.c $(USER_CRT0) $(LIBC_A) linker/user
 	$(CC) $(USER_CFLAGS) -c src/user/pwd/pwd.c -o $(BUILD_DIR)/user/pwd.o
 	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/pwd.o $(LIBC_A)
 
+$(BUILD_DIR)/user/bin/cat: src/user/cat/cat.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/cat/cat.c -o $(BUILD_DIR)/user/cat.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/cat.o $(LIBC_A)
+
+$(BUILD_DIR)/user/bin/ls: src/user/ls/ls.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/ls/ls.c -o $(BUILD_DIR)/user/ls.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/ls.o $(LIBC_A)
+
+$(BUILD_DIR)/user/bin/mkdir: src/user/mkdir_cmd/mkdir.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/mkdir_cmd/mkdir.c -o $(BUILD_DIR)/user/mkdir.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/mkdir.o $(LIBC_A)
+
+$(BUILD_DIR)/user/bin/touch: src/user/touch/touch.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/touch/touch.c -o $(BUILD_DIR)/user/touch.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/touch.o $(LIBC_A)
+
+$(BUILD_DIR)/user/bin/rm: src/user/rm/rm.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/rm/rm.c -o $(BUILD_DIR)/user/rm.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/rm.o $(LIBC_A)
+
+$(BUILD_DIR)/user/bin/rmdir: src/user/rmdir_cmd/rmdir.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/rmdir_cmd/rmdir.c -o $(BUILD_DIR)/user/rmdir.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/rmdir.o $(LIBC_A)
+
+$(BUILD_DIR)/user/bin/clear: src/user/clear/clear.c $(USER_CRT0) $(LIBC_A) linker/user.ld
+	@mkdir -p $(dir $@)
+	$(CC) $(USER_CFLAGS) -c src/user/clear/clear.c -o $(BUILD_DIR)/user/clear.o
+	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/clear.o $(LIBC_A)
+
 user-programs: $(USER_PROGRAMS)
 
 # Root filesystem and disk image
@@ -264,6 +306,13 @@ rootfs-image: $(KERNEL_BIN) user-programs
 	cp $(BUILD_DIR)/user/bin/sh $(EXT2_SOURCE_DIR)/bin/sh
 	cp $(BUILD_DIR)/user/bin/echo $(EXT2_SOURCE_DIR)/bin/echo
 	cp $(BUILD_DIR)/user/bin/pwd $(EXT2_SOURCE_DIR)/bin/pwd
+	cp $(BUILD_DIR)/user/bin/cat $(EXT2_SOURCE_DIR)/bin/cat
+	cp $(BUILD_DIR)/user/bin/ls $(EXT2_SOURCE_DIR)/bin/ls
+	cp $(BUILD_DIR)/user/bin/mkdir $(EXT2_SOURCE_DIR)/bin/mkdir
+	cp $(BUILD_DIR)/user/bin/touch $(EXT2_SOURCE_DIR)/bin/touch
+	cp $(BUILD_DIR)/user/bin/rm $(EXT2_SOURCE_DIR)/bin/rm
+	cp $(BUILD_DIR)/user/bin/rmdir $(EXT2_SOURCE_DIR)/bin/rmdir
+	cp $(BUILD_DIR)/user/bin/clear $(EXT2_SOURCE_DIR)/bin/clear
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(EXT2_SOURCE_DIR)" \
 		--output "$(ROOTFS_IMAGE)" \
@@ -290,6 +339,13 @@ clean:
 	rm -f $(EXT2_SOURCE_DIR)/bin/sh
 	rm -f $(EXT2_SOURCE_DIR)/bin/echo
 	rm -f $(EXT2_SOURCE_DIR)/bin/pwd
+	rm -f $(EXT2_SOURCE_DIR)/bin/cat
+	rm -f $(EXT2_SOURCE_DIR)/bin/ls
+	rm -f $(EXT2_SOURCE_DIR)/bin/mkdir
+	rm -f $(EXT2_SOURCE_DIR)/bin/touch
+	rm -f $(EXT2_SOURCE_DIR)/bin/rm
+	rm -f $(EXT2_SOURCE_DIR)/bin/rmdir
+	rm -f $(EXT2_SOURCE_DIR)/bin/clear
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 
 # Automatic header dependencies

@@ -1,12 +1,15 @@
-// echo - print a newline
-// TODO: argument passing from shell to child process not yet implemented.
-// once argv is available, this will print all arguments separated by spaces.
+// echo - print arguments to stdout
 
 #include <stdio.h>
-#include <unistd.h>
 
-int main(void)
+int main(int argc, char **argv)
 {
-    write(1, "\n", 1);
+    for (int i = 1; i < argc; i++)
+    {
+        if (i > 1)
+            putchar(' ');
+        printf("%s", argv[i]);
+    }
+    putchar('\n');
     return 0;
 }
