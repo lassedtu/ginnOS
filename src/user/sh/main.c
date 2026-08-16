@@ -1,9 +1,4 @@
-/**
- * @file main.c
- * @brief Main shell program.
- *
- * This file implements the main loop of the shell, handling user input, tokenization, and command execution. It integrates the line editor, built-in commands, and external command execution.
- */
+// sh - ginnOS userspace shell (skl)
 
 #include <stdio.h>
 #include <string.h>
@@ -14,14 +9,19 @@
 #include "tokenizer.h"
 #include "builtin.h"
 #include "execute.h"
+#include "expand.h"
 #include "line.h"
 #include "history.h"
+#include "env.h"
 
 #define INPUT_MAX 256
-#define CWD_MAX 256
+#define CWD_MAX   256
 
 static char input_buf[INPUT_MAX];
 static char cwd_buf[CWD_MAX];
+
+// global shell state used by expand.c and execute.c
+int shell_last_exit_code = 0;
 
 void print_prompt(void)
 {
@@ -44,9 +44,14 @@ int main(void)
 {
     token_list_t tokens;
 
-    // initialize line editor (switches to raw mode)
+    // initialize subsystems
+    env_init();
     line_init();
     history_init();
+
+    // set default environment
+    env_set("PATH", "/bin");
+    env_set("HOME", "/");
 
     while (1)
     {
@@ -69,6 +74,9 @@ int main(void)
         tokenize(input_buf, &tokens);
         if (tokens.count == 0)
             continue;
+
+        // expand variables ($VAR, ${VAR}, $?, $$)
+        expand_variables(&tokens);
 
         // try builtins first
         if (builtin_run(&tokens))
