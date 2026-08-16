@@ -99,7 +99,7 @@ static void init_layout(void)
     s[0x02] = '!';
     s[0x03] = '"';
     s[0x04] = '#';
-    s[0x05] = 0 /*€*/;
+    s[0x05] = '$'; // Shift+4 (€ on real DK Mac, but no Unicode support)
     s[0x06] = '%';
     s[0x07] = '&';
     s[0x08] = '/';
