@@ -15,6 +15,7 @@
 #include "builtin.h"
 #include "execute.h"
 #include "line.h"
+#include "history.h"
 
 #define INPUT_MAX 256
 #define CWD_MAX 256
@@ -45,6 +46,7 @@ int main(void)
 
     // initialize line editor (switches to raw mode)
     line_init();
+    history_init();
 
     while (1)
     {
@@ -60,6 +62,9 @@ int main(void)
         }
         if (len == 0)
             continue;
+
+        // add to history before executing
+        history_add(input_buf);
 
         tokenize(input_buf, &tokens);
         if (tokens.count == 0)

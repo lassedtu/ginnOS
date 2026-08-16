@@ -6,6 +6,7 @@
  */
 
 #include "builtin.h"
+#include "history.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -38,6 +39,21 @@ static int builtin_exit(token_list_t *tokens)
     return 1; // unreachable
 }
 
+static int builtin_history(token_list_t *tokens)
+{
+    (void)tokens;
+    int count = history_count();
+
+    for (int i = 0; i < count; i++)
+    {
+        const char *entry = history_get(i);
+        if (entry)
+            printf(" %d  %s\n", i + 1, entry);
+    }
+
+    return 1;
+}
+
 // table of built-in commands
 typedef struct
 {
@@ -48,6 +64,7 @@ typedef struct
 static builtin_entry_t builtins[] = {
     {"cd", builtin_cd},
     {"exit", builtin_exit},
+    {"history", builtin_history},
     {0, 0},
 };
 

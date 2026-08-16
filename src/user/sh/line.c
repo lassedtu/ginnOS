@@ -20,6 +20,7 @@
 // - Enter: submit line
 
 #include "line.h"
+#include "history.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -149,6 +150,22 @@ static void redraw_full(int prompt_len)
     move_cursor_to(prompt_len, line_pos);
 }
 
+/**
+ * replace the entire line buffer with new content and redraw.
+ */
+static void line_replace(const char *new_content, int prompt_len)
+{
+    int len = strlen(new_content);
+    if (len >= LINE_MAX)
+        len = LINE_MAX - 1;
+
+    memcpy(line_buf, new_content, len);
+    line_buf[len] = '\0';
+    line_len = len;
+    line_pos = len;
+    redraw_full(prompt_len);
+}
+
 // store prompt length for refresh operations
 static int current_prompt_len;
 
@@ -185,6 +202,7 @@ int line_read(char *buf, int size)
                 // submit line
                 emit_char('\r');
                 emit_char('\n');
+                history_reset_nav();
                 int len = line_len < size - 1 ? line_len : size - 1;
                 memcpy(buf, line_buf, len);
                 buf[len] = '\0';
@@ -354,6 +372,22 @@ int line_read(char *buf, int size)
                     refresh_line(prompt_len);
                 }
                 break;
+
+            case KEY_ARROW_UP:
+            {
+                const char *entry = history_prev(line_buf);
+                if (entry)
+                    line_replace(entry, prompt_len);
+                break;
+            }
+
+            case KEY_ARROW_DOWN:
+            {
+                const char *entry = history_next();
+                if (entry)
+                    line_replace(entry, prompt_len);
+                break;
+            }
 
             default:
                 break;
