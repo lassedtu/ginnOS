@@ -148,6 +148,22 @@ FS_STATUS fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out);
 uint32_t fs_read(FS_FILE *file, uint32_t byteCount, void *dataOut);
 
 /**
+ * write bytes to an open file.
+ * @param file open file handle.
+ * @param byteCount number of bytes to write.
+ * @param dataIn source buffer.
+ * @return number of bytes actually written, or 0 on failure.
+ */
+uint32_t fs_write(FS_FILE *file, uint32_t byteCount, const void *dataIn);
+
+/**
+ * truncate an open file to zero length.
+ * @param file open file handle.
+ * @return true on success. false on failure.
+ */
+bool fs_truncate(FS_FILE *file);
+
+/**
  * read a directory entry from an open directory file.
  * @param file open directory file handle.
  * @param entryOut output directory entry.

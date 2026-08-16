@@ -24,9 +24,13 @@
 #define SYS_UNLINK 15
 #define SYS_RMDIR 16
 #define SYS_TTYCTL 17
+#define SYS_PIPE 18
+#define SYS_DUP2 19
+#define SYS_FTRUNCATE 20
+#define SYS_LSEEK 21
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 18
+#define SYSCALL_COUNT 22
 
 /**
  * initialize the system call interface.

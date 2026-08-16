@@ -12,8 +12,8 @@
 #include "../../common/memory.h"
 #include "../../common/string.h"
 
-// size of the user stack in bytes (one page).
-#define USER_STACK_SIZE 4096
+// size of the user stack in bytes (4 pages = 16 KiB).
+#define USER_STACK_SIZE (4096 * 4)
 
 // jump buffer: 6 x uint32_t (ebx, esi, edi, ebp, esp, eip).
 typedef uint32_t kernel_jmp_buf[6];
@@ -47,20 +47,25 @@ void usermode_set_brk(uint32_t brk)
 
 void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv)
 {
-    // allocate a physical page for the user stack
-    void *stack_page = pmm_alloc_page();
-    if (!stack_page)
+    // allocate physical pages for the user stack and map them at a fixed
+    // virtual address range just below the program load address (0x800000).
+    // stack region: 0x7FC000 – 0x800000 (16 KiB, 4 pages)
+    uint32_t stack_pages = USER_STACK_SIZE / 4096;
+    uint32_t stack_virt_base = 0x800000 - USER_STACK_SIZE; // 0x7FC000
+
+    for (uint32_t p = 0; p < stack_pages; p++)
     {
-        kernel_panic("jump_to_usermode: failed to allocate user stack");
+        void *frame = pmm_alloc_page();
+        if (!frame)
+        {
+            kernel_panic("jump_to_usermode: failed to allocate user stack page");
+        }
+        memset(frame, 0, 4096);
+        paging_map_in(pd_phys, stack_virt_base + p * 4096, (uint32_t)frame, PTE_USER_RW);
     }
 
-    uint32_t stack_phys = (uint32_t)stack_page;
-
-    // map the stack page as user-accessible in the process's page directory
-    paging_map_in(pd_phys, stack_phys, stack_phys, PTE_USER_RW);
-
-    // user stack grows downward — start at the top of the page
-    uint32_t stack_top = stack_phys + USER_STACK_SIZE;
+    // user stack grows downward — start at the top of the stack region
+    uint32_t stack_top = stack_virt_base + USER_STACK_SIZE; // 0x800000
     uint32_t sp = stack_top;
 
     // count arguments
@@ -276,9 +281,22 @@ int exec_program(const char *path, const char **argv)
     // deep-copy argv into kernel heap (survives until trampoline consumes it)
     child->argv = argv_copy(argv);
 
-    // inherit parent's working directory
+    // inherit parent's working directory and file descriptor table
     if (parent)
+    {
         strcpy(child->cwd, parent->cwd);
+
+        // copy parent's fd table to child (fd inheritance)
+        for (int i = 0; i < FD_MAX; i++)
+        {
+            child->fds[i] = parent->fds[i];
+            // increment pipe ref counts for inherited pipe fds
+            if (child->fds[i].type == FD_TYPE_PIPE)
+            {
+                child->fds[i].pipe.buf->ref_count++;
+            }
+        }
+    }
 
     if (parent)
     {

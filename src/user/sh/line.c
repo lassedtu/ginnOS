@@ -78,76 +78,74 @@ static void emit_char(char c)
 }
 
 /**
- * move the terminal cursor to a column relative to prompt start.
- * uses ANSI: \033[nG (cursor horizontal absolute, 1-based).
+ * move the terminal cursor to a specific position on the current line.
+ * uses carriage return + forward movement for reliability.
  */
 static void move_cursor_to(int prompt_len, int pos)
 {
-    char seq[16];
-    int col = prompt_len + pos + 1; // 1-based column
-    int i = 0;
+    // carriage return to column 0
+    char cr = '\r';
+    emit(&cr, 1);
 
-    seq[i++] = 27; // ESC
-    seq[i++] = '[';
-
-    // simple itoa for the column number
-    if (col >= 100)
+    // move forward prompt_len + pos columns using CSI C (cursor forward)
+    int total = prompt_len + pos;
+    if (total > 0)
     {
-        seq[i++] = (char)('0' + col / 100);
-        seq[i++] = (char)('0' + (col / 10) % 10);
-        seq[i++] = (char)('0' + col % 10);
+        char seq[16];
+        int i = 0;
+        seq[i++] = 27;
+        seq[i++] = '[';
+        if (total >= 100)
+        {
+            seq[i++] = (char)('0' + total / 100);
+            seq[i++] = (char)('0' + (total / 10) % 10);
+            seq[i++] = (char)('0' + total % 10);
+        }
+        else if (total >= 10)
+        {
+            seq[i++] = (char)('0' + total / 10);
+            seq[i++] = (char)('0' + total % 10);
+        }
+        else
+        {
+            seq[i++] = (char)('0' + total);
+        }
+        seq[i++] = 'C';
+        emit(seq, i);
     }
-    else if (col >= 10)
-    {
-        seq[i++] = (char)('0' + col / 10);
-        seq[i++] = (char)('0' + col % 10);
-    }
-    else
-    {
-        seq[i++] = (char)('0' + col);
-    }
-
-    seq[i++] = 'G';
-    emit(seq, i);
 }
 
 /**
- * refresh the line display from the cursor position onward.
- * erases to end of line after printing remaining characters.
+ * refresh the line display: redraws the full line content and
+ * positions the cursor correctly.
  */
 static void refresh_line(int prompt_len)
 {
-    // move cursor to current position
-    move_cursor_to(prompt_len, line_pos);
+    // go to start of line content
+    char cr = '\r';
+    emit(&cr, 1);
 
-    // write everything from cursor position to end
-    if (line_pos < line_len)
-        emit(line_buf + line_pos, line_len - line_pos);
+    // re-emit the prompt (we need it to be there for the cursor to be right)
+    extern void print_prompt(void);
+    print_prompt();
 
-    // erase any leftover characters from previous content
+    // print the full line buffer
+    if (line_len > 0)
+        emit(line_buf, line_len);
+
+    // erase any leftover characters
     emit_erase_eol();
 
-    // move cursor back to actual position
+    // move cursor to the correct position
     move_cursor_to(prompt_len, line_pos);
 }
 
 /**
- * redraw the entire line (after clearing or on init).
+ * redraw the entire line (same as refresh_line).
  */
 static void redraw_full(int prompt_len)
 {
-    // move to start of line content
-    move_cursor_to(prompt_len, 0);
-
-    // print the full buffer
-    if (line_len > 0)
-        emit(line_buf, line_len);
-
-    // erase anything after
-    emit_erase_eol();
-
-    // position cursor
-    move_cursor_to(prompt_len, line_pos);
+    refresh_line(prompt_len);
 }
 
 /**
@@ -320,16 +318,7 @@ int line_read(char *buf, int size)
                 line_len++;
                 line_buf[line_len] = '\0';
 
-                if (line_pos == line_len)
-                {
-                    // appending at end — just print the character
-                    emit_char(c);
-                }
-                else
-                {
-                    // inserted in middle — need to refresh
-                    refresh_line(prompt_len);
-                }
+                refresh_line(prompt_len);
             }
         }
         else if (event.type == KEY_EVENT_SPECIAL)

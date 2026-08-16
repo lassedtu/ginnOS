@@ -178,6 +178,27 @@ uint32_t fs_read(FS_FILE *file, uint32_t byteCount, void *dataOut)
     return EXT2_Read(&file->ext2_file, byteCount, dataOut);
 }
 
+uint32_t fs_write(FS_FILE *file, uint32_t byteCount, const void *dataIn)
+{
+    if (!file || !file->is_open)
+    {
+        return 0;
+    }
+
+    return EXT2_Write(&file->ext2_file, byteCount, dataIn);
+}
+
+bool fs_truncate(FS_FILE *file)
+{
+    if (!file || !file->is_open)
+    {
+        return false;
+    }
+
+    EXT2_Truncate(&file->ext2_file);
+    return true;
+}
+
 bool fs_read_entry(FS_FILE *file, FS_DIRENT *entryOut)
 {
     EXT2_DIRECTORY_ENTRY ext2_entry;

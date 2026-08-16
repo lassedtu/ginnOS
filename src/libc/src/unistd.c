@@ -98,3 +98,23 @@ int read_event(key_event_t *event)
         return -1;
     return 0;
 }
+
+int pipe(int fds[2])
+{
+    return _syscall(SYS_PIPE, (int)fds, 0, 0, 0, 0);
+}
+
+int dup2(int old_fd, int new_fd)
+{
+    return _syscall(SYS_DUP2, old_fd, new_fd, 0, 0, 0);
+}
+
+int ftruncate(int fd)
+{
+    return _syscall(SYS_FTRUNCATE, fd, 0, 0, 0, 0);
+}
+
+int lseek(int fd, int offset, int whence)
+{
+    return _syscall(SYS_LSEEK, fd, offset, whence, 0, 0);
+}

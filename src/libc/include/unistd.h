@@ -193,3 +193,40 @@ typedef struct
  * @return 0 on success, -1 on error.
  */
 int read_event(key_event_t *event);
+
+/**
+ * create a pipe (pair of connected file descriptors).
+ * @param fds array of two ints: fds[0] = read end, fds[1] = write end.
+ * @return 0 on success, -1 on failure.
+ */
+int pipe(int fds[2]);
+
+/**
+ * duplicate a file descriptor to a specific number.
+ * if new_fd is already open, it is closed first.
+ * @param old_fd the fd to duplicate.
+ * @param new_fd the target fd number.
+ * @return new_fd on success, -1 on failure.
+ */
+int dup2(int old_fd, int new_fd);
+
+/**
+ * truncate an open file to zero length.
+ * @param fd file descriptor.
+ * @return 0 on success, -1 on failure.
+ */
+int ftruncate(int fd);
+
+/* lseek whence constants */
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+
+/**
+ * set file cursor position.
+ * @param fd file descriptor.
+ * @param offset byte offset.
+ * @param whence SEEK_SET (from start), SEEK_CUR (from current), SEEK_END (from end).
+ * @return new cursor position, or -1 on error.
+ */
+int lseek(int fd, int offset, int whence);
