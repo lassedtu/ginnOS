@@ -61,6 +61,10 @@ process_t *process_create(void)
             proc->fds[1].type = FD_TYPE_CONSOLE;
             proc->fds[2].type = FD_TYPE_CONSOLE;
 
+            // default working directory
+            proc->cwd[0] = '/';
+            proc->cwd[1] = '\0';
+
             return proc;
         }
     }
@@ -85,12 +89,29 @@ void process_destroy(process_t *proc)
         return;
     }
 
-    // close any open file descriptors
-    for (int i = 3; i < FD_MAX; i++)
+    // close all open file descriptors (including pipes and fds 0-2)
+    for (int i = 0; i < FD_MAX; i++)
     {
         if (proc->fds[i].type == FD_TYPE_FILE)
         {
             vfs_close(&proc->fds[i].file);
+            proc->fds[i].type = FD_TYPE_NONE;
+        }
+        else if (proc->fds[i].type == FD_TYPE_PIPE)
+        {
+            pipe_buf_t *buf = proc->fds[i].pipe.buf;
+            pipe_dir_t dir = proc->fds[i].pipe.dir;
+
+            if (dir == PIPE_READ)
+                buf->read_refs--;
+            else
+                buf->write_refs--;
+
+            buf->ref_count--;
+            if (buf->ref_count <= 0)
+                pipe_release(buf);
+
+            proc->fds[i].type = FD_TYPE_NONE;
         }
     }
 

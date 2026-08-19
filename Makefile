@@ -114,10 +114,12 @@ LIBC_ASM_OBJS := $(patsubst src/libc/src/%.asm,$(BUILD_DIR)/libc/%.o,$(LIBC_ASM_
 LIBC_OBJS    := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
 LIBC_A       := $(BUILD_DIR)/libc/libc.a
 
-# List of user programs (add new ones here)
-USER_PROGRAMS := $(BUILD_DIR)/user/bin/hello \
-                 $(BUILD_DIR)/user/bin/sbrk_test \
-                 $(BUILD_DIR)/user/bin/waitpid_test
+# User programs  automatic discovery via per-program Makefiles
+# Convention: each program lives in src/user/<name>/ with its own Makefile.
+# src/user/lib/ is excluded (it contains crt0, not a program).
+USER_PROG_DIRS := $(sort $(filter-out src/user/lib,$(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
+USER_PROG_NAMES := $(notdir $(USER_PROG_DIRS))
+USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
 
 # Dependency files (C compilations only)
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
@@ -213,30 +215,19 @@ $(USER_CRT0): src/user/lib/crt0.asm
 	@mkdir -p $(dir $@)
 	$(AS) -f elf32 $< -o $@
 
-$(BUILD_DIR)/user/bin/hello: src/user/hello/hello.c $(USER_CRT0) $(LIBC_A) linker/user.ld
-	@mkdir -p $(dir $@)
-	$(CC) $(USER_CFLAGS) -c src/user/hello/hello.c -o $(BUILD_DIR)/user/hello.o
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/hello.o $(LIBC_A)
-
-$(BUILD_DIR)/user/bin/sbrk_test: src/user/sbrk_test/sbrk_test.c $(USER_CRT0) $(LIBC_A) linker/user.ld
-	@mkdir -p $(dir $@)
-	$(CC) $(USER_CFLAGS) -c src/user/sbrk_test/sbrk_test.c -o $(BUILD_DIR)/user/sbrk_test.o
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/sbrk_test.o $(LIBC_A)
-
-$(BUILD_DIR)/user/bin/waitpid_test: src/user/waitpid_test/waitpid_test.c $(USER_CRT0) $(LIBC_A) linker/user.ld
-	@mkdir -p $(dir $@)
-	$(CC) $(USER_CFLAGS) -c src/user/waitpid_test/waitpid_test.c -o $(BUILD_DIR)/user/waitpid_test.o
-	$(LD) $(USER_LDFLAGS) -o $@ $(USER_CRT0) $(BUILD_DIR)/user/waitpid_test.o $(LIBC_A)
-
-user-programs: $(USER_PROGRAMS)
+# Delegate to per-program Makefiles
+user-programs: $(USER_CRT0) $(LIBC_A)
+	@for d in $(USER_PROG_DIRS); do \
+		$(MAKE) --no-print-directory -C $$d || exit 1; \
+	done
 
 # Root filesystem and disk image
 rootfs-image: $(KERNEL_BIN) user-programs
 	@mkdir -p $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin $(dir $(ROOTFS_IMAGE))
 	cp $(KERNEL_BIN) $(EXT2_SOURCE_DIR)/boot/kernel.bin
-	cp $(BUILD_DIR)/user/bin/hello $(EXT2_SOURCE_DIR)/bin/hello
-	cp $(BUILD_DIR)/user/bin/sbrk_test $(EXT2_SOURCE_DIR)/bin/sbrk_test
-	cp $(BUILD_DIR)/user/bin/waitpid_test $(EXT2_SOURCE_DIR)/bin/waitpid_test
+	@for prog in $(USER_PROGRAMS); do \
+		cp $$prog $(EXT2_SOURCE_DIR)/bin/$$(basename $$prog); \
+	done
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(EXT2_SOURCE_DIR)" \
 		--output "$(ROOTFS_IMAGE)" \
@@ -257,9 +248,7 @@ run: check-tools $(DISK_IMAGE)
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(EXT2_SOURCE_DIR)/boot/kernel.bin
-	rm -f $(EXT2_SOURCE_DIR)/bin/hello
-	rm -f $(EXT2_SOURCE_DIR)/bin/sbrk_test
-	rm -f $(EXT2_SOURCE_DIR)/bin/waitpid_test
+	rm -rf $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 
 # Automatic header dependencies

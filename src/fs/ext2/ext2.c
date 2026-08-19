@@ -2152,6 +2152,50 @@ uint32_t EXT2_Read(EXT2_FILE *file, uint32_t byteCount, void *dataOut)
     return byteCount;
 }
 
+uint32_t EXT2_Write(EXT2_FILE *file, uint32_t byteCount, const void *dataIn)
+{
+    if (!file || !file->is_open || !file->volume || !dataIn)
+    {
+        return 0;
+    }
+
+    if (!inode_is_regular(&file->inode_cache))
+    {
+        return 0;
+    }
+
+    if (byteCount == 0)
+    {
+        return 0;
+    }
+
+    if (!EXT2_WriteFile(file->volume, file->inode, file->cursor, byteCount, dataIn))
+    {
+        return 0;
+    }
+
+    file->cursor += byteCount;
+
+    /* update cached size if we extended the file */
+    if (file->cursor > file->size)
+    {
+        file->size = file->cursor;
+    }
+
+    return byteCount;
+}
+
+void EXT2_Truncate(EXT2_FILE *file)
+{
+    if (!file || !file->is_open || !file->volume)
+        return;
+
+    EXT2_TruncateFile(file->volume, file->inode);
+    file->size = 0;
+    file->cursor = 0;
+    file->inode_cache.i_size = 0;
+}
+
 bool EXT2_ReadEntry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut)
 {
     if (!file || !entryOut)
@@ -2609,4 +2653,139 @@ bool EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_path
     }
 
     return true;
+}
+
+/**
+ * assign a physical block to a logical block index in an inode.
+ * if the logical block is not yet allocated (i_block entry is 0), a new
+ * block is allocated. only supports direct blocks (indices 0–11).
+ *
+ * @param volume ext2 volume.
+ * @param inode pointer to the inode (modified in place).
+ * @param logical_block_index the logical block index.
+ * @param physical_block_out receives the physical block number.
+ * @return true on success, false on failure.
+ */
+static bool assign_data_block(EXT2_VOLUME *volume, EXT2_INODE *inode, uint32_t logical_block_index, uint32_t *physical_block_out)
+{
+    /* only direct blocks for now */
+    if (logical_block_index >= EXT2_NDIR_BLOCKS)
+    {
+        return false;
+    }
+
+    if (inode->i_block[logical_block_index] != 0)
+    {
+        /* already allocated */
+        *physical_block_out = inode->i_block[logical_block_index];
+        return true;
+    }
+
+    /* allocate a new block */
+    uint32_t new_block;
+    if (!alloc_block(volume, &new_block))
+    {
+        return false;
+    }
+
+    /* zero the new block on disk */
+    memset(g_block_buffer, 0, volume->block_size);
+    if (!write_block(volume, new_block, g_block_buffer))
+    {
+        return false;
+    }
+
+    inode->i_block[logical_block_index] = new_block;
+    inode->i_blocks += volume->block_size / 512; /* ext2 counts in 512-byte units */
+
+    *physical_block_out = new_block;
+    return true;
+}
+
+bool EXT2_WriteFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer)
+{
+    EXT2_INODE inode;
+    const uint8_t *src = (const uint8_t *)buffer;
+    uint32_t written = 0;
+
+    if (!volume || !buffer)
+    {
+        return false;
+    }
+
+    if (length == 0)
+    {
+        return true;
+    }
+
+    if (!EXT2_ReadInode(volume, inode_number, &inode) || !inode_is_regular(&inode))
+    {
+        return false;
+    }
+
+    while (written < length)
+    {
+        uint32_t file_pos = offset + written;
+        uint32_t block_index = file_pos / volume->block_size;
+        uint32_t block_offset = file_pos % volume->block_size;
+        uint32_t chunk = length - written;
+        uint32_t phys_block;
+
+        if (chunk > volume->block_size - block_offset)
+            chunk = volume->block_size - block_offset;
+
+        /* ensure a physical block is allocated for this logical index */
+        if (!assign_data_block(volume, &inode, block_index, &phys_block))
+        {
+            return false;
+        }
+
+        /* read the existing block (for partial block writes) */
+        if (!read_block(volume, phys_block, g_block_buffer))
+        {
+            return false;
+        }
+
+        /* copy user data into the block buffer */
+        memcpy(g_block_buffer + block_offset, src + written, chunk);
+
+        /* write the block back */
+        if (!write_block(volume, phys_block, g_block_buffer))
+        {
+            return false;
+        }
+
+        written += chunk;
+    }
+
+    /* update inode size if we extended the file */
+    uint32_t new_end = offset + length;
+    if (new_end > inode.i_size)
+    {
+        inode.i_size = new_end;
+    }
+
+    /* write back the updated inode */
+    if (!write_inode(volume, inode_number, &inode))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool EXT2_TruncateFile(EXT2_VOLUME *volume, uint32_t inode_number)
+{
+    EXT2_INODE inode;
+
+    if (!volume)
+        return false;
+
+    if (!EXT2_ReadInode(volume, inode_number, &inode) || !inode_is_regular(&inode))
+        return false;
+
+    /* just set size to 0  blocks remain allocated (simple approach) */
+    inode.i_size = 0;
+
+    return write_inode(volume, inode_number, &inode);
 }

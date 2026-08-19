@@ -1,4 +1,12 @@
+/**
+ * @file keyboard.c
+ * @brief PS/2 keyboard driver implementation.
+ *
+ * This file implements a PS/2 keyboard driver that handles keyboard interrupts, processes scan codes, and provides an interface for reading keyboard events. It supports modifier keys (Shift, Ctrl, Alt, AltGr) and special keys (arrows, home, end, etc.) and maintains a circular buffer of keyboard events.
+ */
+
 #include "keyboard.h"
+#include "keyboard_layout.h"
 
 #include "../../arch/x86/cpu/irq.h"
 #include "../../arch/x86/cpu/isr.h"
@@ -17,18 +25,23 @@ static uint32_t dropped_count = 0; // events dropped because the buffer was full
 
 static key_state_t shift_state = KEY_RELEASED; // current shift key state
 static key_state_t ctrl_state = KEY_RELEASED;  // current ctrl key state
-static key_state_t alt_state = KEY_RELEASED;   // current alt key state
+static key_state_t alt_state = KEY_RELEASED;   // current left alt key state
+static key_state_t altgr_state = KEY_RELEASED; // current right alt (AltGr) key state
 
 static int caps_lock_enabled = 0; // caps lock toggle state
 
 // set when a 0xE0 prefix byte has been read; cleared after the following byte is processed
 static int extended_prefix_pending = 0;
 
-/**
- * PS/2 scan code set 1, standard US QWERTY layout.
- * index is the scan code (0x00–0x7F); value is the ASCII character, or 0 for
- * keys that don't produce a printable character.
- */
+// debug mode: when enabled, prints raw scancodes instead of translating
+static int scancode_debug = 0;
+
+// simple hex digit helper for debug output
+static char hex_digit(uint8_t v)
+{
+    return v < 10 ? (char)('0' + v) : (char)('a' + v - 10);
+}
+
 typedef enum
 {
     SCANCODE_LEFT_SHIFT = 0x2A,  // left shift key
@@ -38,60 +51,14 @@ typedef enum
     SCANCODE_LEFT_ALT = 0x38,    // left alt key
 } keyboard_scancode_t;
 
-#define SCANCODE_EXTENDED_PREFIX 0xE0 // prefix byte that introduces a two-byte extended sequence
+// extended scan codes (after 0xE0 prefix)
+#define EXT_RIGHT_ALT 0x38  // right alt (AltGr)
+#define EXT_RIGHT_CTRL 0x1D // right control
+
+#define SCANCODE_EXTENDED_PREFIX 0xE0 // prefix byte for two-byte sequences
 
 /**
- * PS/2 scan code set 1: standard US QWERTY layout.
- * index is the scan code (0x00–0x7F); value is the ASCII character, or 0 for
- * keys that don't produce a printable character.
- */
-static const char keyboard_map[128] = {
-    0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    0, /* 29: Left Control */
-    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
-    0, /* 42: Left Shift */
-    '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
-    0,                                                               /* 54: Right Shift */
-    '*',                                                             /* 55: Keypad * */
-    0,                                                               /* 56: Left Alt */
-    ' ',                                                             /* 57: Spacebar */
-    0,                                                               /* 58: Caps Lock */
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                                    /* 59-68: F1–F10 */
-    0,                                                               /* 69: Num Lock */
-    0,                                                               /* 70: Scroll Lock */
-    '7', '8', '9', '-', '4', '5', '6', '+', '1', '2', '3', '0', '.', /* 71-83: Numpad */
-    0, 0, 0,
-    0, 0, /* 87-88: F11–F12 */
-    [127] = 0};
-
-/**
- * PS/2 scan code set 1, standard US QWERTY layout with shift held.
- */
-static const char keyboard_shift_map[128] = {
-    0, 27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
-    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
-    0, /* 29: Left Control */
-    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
-    0, /* 42: Left Shift */
-    '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?',
-    0,                                                               /* 54: Right Shift */
-    '*',                                                             /* 55: Keypad * */
-    0,                                                               /* 56: Left Alt */
-    ' ',                                                             /* 57: Spacebar */
-    0,                                                               /* 58: Caps Lock */
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                                    /* 59-68: F1–F10 */
-    0,                                                               /* 69: Num Lock */
-    0,                                                               /* 70: Scroll Lock */
-    '7', '8', '9', '-', '4', '5', '6', '+', '1', '2', '3', '0', '.', /* 71-83: Numpad */
-    0, 0, 0,
-    0, 0, /* 87-88: F11–F12 */
-    [127] = 0};
-
-/**
- * extended scan code (0xE0 xx) to keyboard_special_key_t mapping.
- * index is the second byte of the sequence (0x00–0x7F); value is the
- * special key code, or 0 if the sequence is unrecognised.
+ * extended scan code to keyboard_special_key_t mapping.
  */
 static const keyboard_special_key_t extended_map[128] = {
     [0x48] = KEY_ARROW_UP,
@@ -108,7 +75,6 @@ static const keyboard_special_key_t extended_map[128] = {
 
 /**
  * push a keyboard event into the circular buffer.
- * @param event the keyboard event to push.
  */
 static void keyboard_buffer_push(keyboard_event_t event)
 {
@@ -116,7 +82,6 @@ static void keyboard_buffer_push(keyboard_event_t event)
 
     if (next == buffer_read)
     {
-        // buffer full, drop and record
         dropped_count++;
         return;
     }
@@ -126,22 +91,54 @@ static void keyboard_buffer_push(keyboard_event_t event)
 }
 
 /**
- * keyboard IRQ handler called on IRQ1 (keyboard).
- * reads the scan code from the keyboard controller and translates it into
- * a keyboard_event_t, which is pushed into the circular buffer.
- * handles modifier keys (shift, ctrl, alt) and caps lock state.
- * handles extended scan codes (0xE0 prefix) for arrow keys, home/end,
- * page up/down, insert/delete, etc.
- * @param regs pointer to the CPU registers at the time of the interrupt (unused).
+ * keyboard IRQ handler.
  */
 static void keyboard_irq_handler(struct registers *regs)
 {
     (void)regs;
 
     uint8_t scancode = io_inb(0x60);
+    const keyboard_layout_t *layout = keyboard_get_layout();
 
-    // a 0xE0 byte introduces a two-byte extended sequence, record and wait
-    // for the next IRQ to deliver the actual scan code
+    // F12 (scancode 0x58 press) toggles debug mode
+    if (scancode == 0x58)
+    {
+        scancode_debug = !scancode_debug;
+        return;
+    }
+    if (scancode == 0xD8) // F12 release
+        return;
+
+    // in debug mode, print raw scancode as hex and push nothing
+    if (scancode_debug && !(scancode & 0x80))
+    {
+        keyboard_event_t ev;
+        // print format: [XX] or [E0 XX]
+        ev.type = KEY_EVENT_CHAR;
+        ev.character = '[';
+        keyboard_buffer_push(ev);
+        if (extended_prefix_pending)
+        {
+            ev.character = 'E';
+            keyboard_buffer_push(ev);
+            ev.character = '0';
+            keyboard_buffer_push(ev);
+            ev.character = ' ';
+            keyboard_buffer_push(ev);
+            extended_prefix_pending = 0;
+        }
+        ev.character = hex_digit((scancode & 0x7F) >> 4);
+        keyboard_buffer_push(ev);
+        ev.character = hex_digit((scancode & 0x7F) & 0x0F);
+        keyboard_buffer_push(ev);
+        ev.character = ']';
+        keyboard_buffer_push(ev);
+        return;
+    }
+    if (scancode_debug && (scancode & 0x80))
+        return; // suppress releases in debug mode
+
+    // 0xE0 prefix introduces a two-byte extended sequence
     if (scancode == SCANCODE_EXTENDED_PREFIX)
     {
         extended_prefix_pending = 1;
@@ -155,7 +152,21 @@ static void keyboard_irq_handler(struct registers *regs)
     {
         extended_prefix_pending = 0;
 
-        // only process key-press events for extended keys (ignore releases)
+        // handle extended modifier keys
+        if (key == EXT_RIGHT_ALT)
+        {
+            altgr_state = released ? KEY_RELEASED : KEY_PRESSED;
+            return;
+        }
+
+        if (key == EXT_RIGHT_CTRL)
+        {
+            // treat as regular ctrl for now
+            ctrl_state = released ? KEY_RELEASED : KEY_PRESSED;
+            return;
+        }
+
+        // process extended key-press events (special keys)
         if (!released && key < 128)
         {
             keyboard_special_key_t special = extended_map[key];
@@ -170,7 +181,7 @@ static void keyboard_irq_handler(struct registers *regs)
         return;
     }
 
-    // handle modifier keys, they update state but do not produce events
+    // handle modifier keys
     switch (key)
     {
     case SCANCODE_LEFT_SHIFT:
@@ -199,30 +210,50 @@ static void keyboard_irq_handler(struct registers *regs)
     if (key >= 128)
         return;
 
-    char c = keyboard_map[key];
+    // determine which map to use
+    // on macOS, both Left and Right Alt/Option produce special characters
+    int altgr_active = (altgr_state == KEY_PRESSED || alt_state == KEY_PRESSED);
+    char c = 0;
+
+    if (altgr_active && shift_state == KEY_PRESSED)
+    {
+        c = layout->altgr_shift[key];
+        if (c == 0)
+            c = layout->altgr[key]; // fallback to altgr without shift
+    }
+    else if (altgr_active)
+    {
+        c = layout->altgr[key];
+    }
+    else if (shift_state == KEY_PRESSED)
+    {
+        c = layout->shift[key];
+    }
+    else
+    {
+        c = layout->normal[key];
+    }
 
     if (c == 0)
         return;
 
     // ctrl+letter produces a control character (0x01–0x1A)
-    if (ctrl_state == KEY_PRESSED && c >= 'a' && c <= 'z')
+    // only when alt/altgr is not active
+    if (ctrl_state == KEY_PRESSED && !altgr_active && c >= 'a' && c <= 'z')
     {
         c = (char)(c - 'a' + 1);
     }
-    else if (ctrl_state == KEY_PRESSED && c >= 'A' && c <= 'Z')
+    else if (ctrl_state == KEY_PRESSED && !altgr_active && c >= 'A' && c <= 'Z')
     {
         c = (char)(c - 'A' + 1);
     }
-    else if (c >= 'a' && c <= 'z')
+    else if (!altgr_active && !(shift_state == KEY_PRESSED))
     {
-        // caps lock and shift each individually toggle uppercase;
-        // holding both cancels out (XOR behaviour)
-        if ((int)shift_state ^ caps_lock_enabled)
+        // caps lock applies only to letters in the normal map
+        if (c >= 'a' && c <= 'z' && caps_lock_enabled)
+        {
             c = (char)(c - 'a' + 'A');
-    }
-    else if (shift_state == KEY_PRESSED)
-    {
-        c = keyboard_shift_map[key];
+        }
     }
 
     keyboard_event_t event;
@@ -258,7 +289,6 @@ char keyboard_getchar(void)
 {
     keyboard_event_t event;
 
-    // skip events until we find a character event or the buffer empties
     while (keyboard_available())
     {
         if (keyboard_read_event(&event) && event.type == KEY_EVENT_CHAR)
@@ -277,8 +307,6 @@ char keyboard_read(void)
         keyboard_wait_event(&event);
         if (event.type == KEY_EVENT_CHAR)
             return event.character;
-        // special key events are skipped; caller should use keyboard_wait_event
-        // directly if they need arrow keys / home / end / etc.
     }
 }
 

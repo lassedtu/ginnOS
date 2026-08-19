@@ -239,6 +239,22 @@ bool EXT2_Open(EXT2_VOLUME *volume, const char *path, EXT2_FILE *file);
 uint32_t EXT2_Read(EXT2_FILE *file, uint32_t byteCount, void *dataOut);
 
 /**
+ * write bytes to an open ext2 file at the current cursor position.
+ * allocates blocks as needed. advances the cursor.
+ * @param file open file handle.
+ * @param byteCount bytes to write.
+ * @param dataIn source buffer.
+ * @return number of bytes actually written, or 0 on failure.
+ */
+uint32_t EXT2_Write(EXT2_FILE *file, uint32_t byteCount, const void *dataIn);
+
+/**
+ * truncate an open file to zero length.
+ * @param file open file handle.
+ */
+void EXT2_Truncate(EXT2_FILE *file);
+
+/**
  * read one directory entry from an open directory handle.
  * @param file open directory handle.
  * @param entryOut output directory entry.
@@ -251,3 +267,23 @@ bool EXT2_ReadEntry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut);
  * @param file file handle to close.
  */
 void EXT2_Close(EXT2_FILE *file);
+
+/**
+ * write bytes to a file inode.
+ * allocates blocks as needed (direct blocks only, up to 48KB with 4K blocks).
+ * @param volume initialized ext2 volume.
+ * @param inode_number file inode number.
+ * @param offset byte offset in file to start writing.
+ * @param length bytes to write.
+ * @param buffer source data.
+ * @return true on success. false on failure.
+ */
+bool EXT2_WriteFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer);
+
+/**
+ * truncate a file to zero length.
+ * @param volume initialized ext2 volume.
+ * @param inode_number file inode number.
+ * @return true on success. false on failure.
+ */
+bool EXT2_TruncateFile(EXT2_VOLUME *volume, uint32_t inode_number);

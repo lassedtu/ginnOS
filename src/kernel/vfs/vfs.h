@@ -129,6 +129,25 @@ uint32_t vfs_read(
     void *buffer);
 
 /**
+ * write data to an open file in the virtual file system.
+ * @param file pointer to the VFS_FILE structure representing the open file.
+ * @param size number of bytes to write.
+ * @param buffer pointer to the source data.
+ * @return number of bytes actually written, or 0 on failure.
+ */
+uint32_t vfs_write(
+    VFS_FILE *file,
+    uint32_t size,
+    const void *buffer);
+
+/**
+ * truncate an open file to zero length.
+ * @param file pointer to the VFS_FILE structure.
+ * @return true on success, false on failure.
+ */
+bool vfs_truncate(VFS_FILE *file);
+
+/**
  * read a directory entry from an open directory in the virtual file system.
  * @param file pointer to the VFS_FILE structure representing the open directory.
  * @param entryOut pointer to output directory entry.

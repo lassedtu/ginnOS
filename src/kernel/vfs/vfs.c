@@ -390,6 +390,32 @@ uint32_t vfs_read(
         buffer);
 }
 
+uint32_t vfs_write(
+    VFS_FILE *file,
+    uint32_t size,
+    const void *buffer)
+{
+    if (!file || !file->mount)
+    {
+        return 0;
+    }
+
+    return fs_write(
+        &file->file,
+        size,
+        buffer);
+}
+
+bool vfs_truncate(VFS_FILE *file)
+{
+    if (!file || !file->mount)
+    {
+        return false;
+    }
+
+    return fs_truncate(&file->file);
+}
+
 bool vfs_read_entry(
     VFS_FILE *file,
     FS_DIRENT *entryOut)

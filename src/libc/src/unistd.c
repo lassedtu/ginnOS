@@ -25,9 +25,9 @@ int close(int fd)
     return _syscall(SYS_CLOSE, fd, 0, 0, 0, 0);
 }
 
-pid_t exec(const char *path)
+pid_t exec(const char *path, const char **argv)
 {
-    return (pid_t)_syscall(SYS_EXEC, (int)path, 0, 0, 0, 0);
+    return (pid_t)_syscall(SYS_EXEC, (int)path, (int)argv, 0, 0, 0);
 }
 
 int waitpid(pid_t pid)
@@ -49,4 +49,72 @@ pid_t getpid(void)
 void *sbrk(int increment)
 {
     return (void *)_syscall(SYS_SBRK, increment, 0, 0, 0, 0);
+}
+
+int getcwd(char *buf, size_t size)
+{
+    return _syscall(SYS_GETCWD, (int)buf, (int)size, 0, 0, 0);
+}
+
+int chdir(const char *path)
+{
+    return _syscall(SYS_CHDIR, (int)path, 0, 0, 0, 0);
+}
+
+int readdir(int fd, dirent_t *entry)
+{
+    return _syscall(SYS_READDIR, fd, (int)entry, 0, 0, 0);
+}
+
+int unlink(const char *path)
+{
+    return _syscall(SYS_UNLINK, (int)path, 0, 0, 0, 0);
+}
+
+int rmdir(const char *path)
+{
+    return _syscall(SYS_RMDIR, (int)path, 0, 0, 0, 0);
+}
+
+int create(const char *path)
+{
+    return _syscall(SYS_CREATE, (int)path, 0, 0, 0, 0);
+}
+
+int mkdir(const char *path)
+{
+    return _syscall(SYS_MKDIR, (int)path, 0, 0, 0, 0);
+}
+
+int ttyctl(int mode)
+{
+    return _syscall(SYS_TTYCTL, mode, 0, 0, 0, 0);
+}
+
+int read_event(key_event_t *event)
+{
+    int n = (int)read(0, (void *)event, sizeof(key_event_t));
+    if (n < (int)sizeof(key_event_t))
+        return -1;
+    return 0;
+}
+
+int pipe(int fds[2])
+{
+    return _syscall(SYS_PIPE, (int)fds, 0, 0, 0, 0);
+}
+
+int dup2(int old_fd, int new_fd)
+{
+    return _syscall(SYS_DUP2, old_fd, new_fd, 0, 0, 0);
+}
+
+int ftruncate(int fd)
+{
+    return _syscall(SYS_FTRUNCATE, fd, 0, 0, 0, 0);
+}
+
+int lseek(int fd, int offset, int whence)
+{
+    return _syscall(SYS_LSEEK, fd, offset, whence, 0, 0);
 }

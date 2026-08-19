@@ -6,7 +6,6 @@
 #include "../memory/heap.h"
 #include "../../arch/x86/cpu/paging.h"
 #include "../../common/memory.h"
-#include "../../common/stdio.h"
 
 #define PAGE_SIZE 4096u
 
@@ -179,21 +178,18 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
     /* stat the file to get its size */
     if (vfs_stat(path, &stat) != VFS_OK)
     {
-        printf("elf: cannot stat %s\r\n", path);
         return false;
     }
 
     file_size = stat.size;
     if (file_size < sizeof(Elf32_Ehdr))
     {
-        printf("elf: file too small\r\n");
         return false;
     }
 
     /* open the file */
     if (!vfs_open(path, &file))
     {
-        printf("elf: cannot open %s\r\n", path);
         return false;
     }
 
@@ -201,7 +197,6 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
     file_data = (uint8_t *)kmalloc(file_size);
     if (!file_data)
     {
-        printf("elf: out of memory (%u bytes)\r\n", file_size);
         vfs_close(&file);
         return false;
     }
@@ -211,7 +206,6 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
 
     if (bytes_read != file_size)
     {
-        printf("elf: short read (%u of %u)\r\n", bytes_read, file_size);
         kfree(file_data);
         return false;
     }
@@ -220,7 +214,6 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
     ehdr = (Elf32_Ehdr *)file_data;
     if (!elf_validate(ehdr))
     {
-        printf("elf: invalid ELF header\r\n");
         kfree(file_data);
         return false;
     }
@@ -248,7 +241,6 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
         /* allocate and map pages for this segment */
         if (!map_user_range(pd_phys, seg_start, seg_end))
         {
-            printf("elf: failed to map segment at 0x%x\r\n", seg_start);
             kfree(file_data);
             return false;
         }
@@ -258,7 +250,6 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
         {
             if (phdr->p_offset + phdr->p_filesz > file_size)
             {
-                printf("elf: segment extends beyond file\r\n");
                 kfree(file_data);
                 return false;
             }
@@ -282,7 +273,6 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
 
     if (highest_addr == 0)
     {
-        printf("elf: no loadable segments\r\n");
         kfree(file_data);
         return false;
     }
@@ -291,9 +281,6 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
     result->brk = page_align_up(highest_addr);
 
     kfree(file_data);
-
-    printf("elf: loaded %s (entry=0x%x brk=0x%x)\r\n",
-           path, result->entry, result->brk);
 
     return true;
 }

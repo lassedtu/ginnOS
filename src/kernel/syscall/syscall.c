@@ -14,6 +14,7 @@
 #include "../../drivers/keyboard/keyboard.h"
 #include "../../common/stdio.h"
 #include "../../common/memory.h"
+#include "../../common/string.h"
 
 /**
  * syscall function pointer type. takes a pointer to the CPU registers struct and returns an int32_t.
@@ -34,6 +35,16 @@ static int32_t sys_exec(struct registers *regs);
 static int32_t sys_getpid(struct registers *regs);
 static int32_t sys_waitpid(struct registers *regs);
 static int32_t sys_sbrk(struct registers *regs);
+static int32_t sys_getcwd(struct registers *regs);
+static int32_t sys_chdir(struct registers *regs);
+static int32_t sys_readdir(struct registers *regs);
+static int32_t sys_unlink(struct registers *regs);
+static int32_t sys_rmdir(struct registers *regs);
+static int32_t sys_ttyctl(struct registers *regs);
+static int32_t sys_pipe(struct registers *regs);
+static int32_t sys_dup2(struct registers *regs);
+static int32_t sys_ftruncate(struct registers *regs);
+static int32_t sys_lseek(struct registers *regs);
 
 /**
  * syscall dispatch table. indexed by syscall number (EAX). unimplemented syscalls are NULL.
@@ -51,6 +62,16 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_GETPID] = sys_getpid,
     [SYS_WAITPID] = sys_waitpid,
     [SYS_SBRK] = sys_sbrk,
+    [SYS_GETCWD] = sys_getcwd,
+    [SYS_CHDIR] = sys_chdir,
+    [SYS_READDIR] = sys_readdir,
+    [SYS_UNLINK] = sys_unlink,
+    [SYS_RMDIR] = sys_rmdir,
+    [SYS_TTYCTL] = sys_ttyctl,
+    [SYS_PIPE] = sys_pipe,
+    [SYS_DUP2] = sys_dup2,
+    [SYS_FTRUNCATE] = sys_ftruncate,
+    [SYS_LSEEK] = sys_lseek,
 };
 
 /**
@@ -107,42 +128,83 @@ static int32_t sys_exit(struct registers *regs)
 /**
  * SYS_write: write bytes to a file descriptor.
  * args: EBX = fd, ECX = buffer pointer, EDX = count.
- * currently only supports fd 1 (stdout) via printf.
+ * supports console fds (1, 2), pipe fds, and file fds.
  * returns number of bytes written, or -1 on error.
  */
 static int32_t sys_write(struct registers *regs)
 {
-    int32_t fd = (int32_t)regs->ebx;
+    int32_t fd_num = (int32_t)regs->ebx;
     const char *buf = (const char *)regs->ecx;
     uint32_t count = regs->edx;
 
-    /* only stdout (fd 1) and stderr (fd 2) for now */
-    if (fd != 1 && fd != 2)
+    if (!buf || count == 0)
     {
         return -1;
     }
 
-    /* basic validation: buffer must not be NULL */
-    if (!buf)
+    fd_entry_t *entry = fd_get(fd_num);
+    if (!entry)
     {
         return -1;
     }
 
-    /* write each byte to the console */
-    for (uint32_t i = 0; i < count; i++)
+    if (entry->type == FD_TYPE_CONSOLE)
     {
-        char c = buf[i];
-        if (c == '\n')
+        /* write each byte to the console */
+        for (uint32_t i = 0; i < count; i++)
         {
-            printf("\r\n");
+            char c = buf[i];
+            if (c == '\n')
+            {
+                console_putchar('\r');
+                console_putchar('\n');
+            }
+            else
+            {
+                console_putchar(c);
+            }
         }
-        else
-        {
-            printf("%c", c);
-        }
+        return (int32_t)count;
     }
 
-    return (int32_t)count;
+    if (entry->type == FD_TYPE_PIPE)
+    {
+        pipe_buf_t *pb = entry->pipe.buf;
+
+        /* only the write end can write */
+        if (entry->pipe.dir != PIPE_WRITE)
+            return -1;
+
+        /* if read end is closed, broken pipe */
+        if (pb->read_refs <= 0)
+            return -1;
+
+        /* write as many bytes as fit into the buffer */
+        uint32_t written = 0;
+        while (written < count)
+        {
+            if (pb->count >= PIPE_BUF_SIZE)
+            {
+                /* buffer full. for now, return short write */
+                break;
+            }
+
+            pb->data[pb->write_pos] = buf[written];
+            pb->write_pos = (pb->write_pos + 1) % PIPE_BUF_SIZE;
+            pb->count++;
+            written++;
+        }
+
+        return (int32_t)written;
+    }
+
+    if (entry->type == FD_TYPE_FILE)
+    {
+        uint32_t bytes_written = vfs_write(&entry->file, count, buf);
+        return (int32_t)bytes_written;
+    }
+
+    return -1;
 }
 
 /**
@@ -160,9 +222,19 @@ static int32_t sys_open(struct registers *regs)
         return -1;
     }
 
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
     VFS_FILE file;
 
-    if (!vfs_open(path, &file))
+    if (!vfs_open(resolved, &file))
     {
         return -1;
     }
@@ -227,9 +299,27 @@ static int32_t sys_read(struct registers *regs)
             return -1;
         }
 
-        /* line-buffered read: collect characters until newline or buffer full */
+        process_t *proc = process_current();
+
+        if (proc && proc->tty_raw)
+        {
+            /* raw mode: deliver one keyboard_event_t per read call.
+             * the buffer must be large enough to hold the struct (8 bytes). */
+            if (count < sizeof(keyboard_event_t))
+            {
+                return -1;
+            }
+
+            keyboard_event_t event;
+            keyboard_wait_event(&event);
+
+            memcpy(buf, &event, sizeof(keyboard_event_t));
+            return (int32_t)sizeof(keyboard_event_t);
+        }
+
+        /* cooked mode: line-buffered read with echo */
         uint32_t i = 0;
-        while (i < count - 1)
+        while (i < count)
         {
             char c = keyboard_read(); /* blocks until a key is available */
 
@@ -257,7 +347,6 @@ static int32_t sys_read(struct registers *regs)
             console_putchar(c);
         }
 
-        buf[i] = '\0';
         return (int32_t)i;
     }
 
@@ -265,6 +354,38 @@ static int32_t sys_read(struct registers *regs)
     {
         uint32_t bytes_read = vfs_read(&entry->file, count, buf);
         return (int32_t)bytes_read;
+    }
+
+    if (entry->type == FD_TYPE_PIPE)
+    {
+        pipe_buf_t *pb = entry->pipe.buf;
+
+        /* only the read end can read */
+        if (entry->pipe.dir != PIPE_READ)
+            return -1;
+
+        /* block until data is available or write end is closed */
+        while (pb->count == 0)
+        {
+            if (pb->write_refs <= 0)
+            {
+                /* all write ends closed + buffer empty = EOF */
+                return 0;
+            }
+            /* yield and try again (busy-wait with halt for now) */
+            __asm__ volatile("hlt");
+        }
+
+        /* read as many bytes as available (up to count) */
+        uint32_t to_read = pb->count < count ? pb->count : count;
+        for (uint32_t i = 0; i < to_read; i++)
+        {
+            buf[i] = pb->data[pb->read_pos];
+            pb->read_pos = (pb->read_pos + 1) % PIPE_BUF_SIZE;
+        }
+        pb->count -= to_read;
+
+        return (int32_t)to_read;
     }
 
     return -1;
@@ -286,7 +407,17 @@ static int32_t sys_stat(struct registers *regs)
         return -1;
     }
 
-    VFS_STATUS status = vfs_stat(path, stat_out);
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    VFS_STATUS status = vfs_stat(resolved, stat_out);
     if (status != VFS_OK)
     {
         return -1;
@@ -309,7 +440,17 @@ static int32_t sys_create(struct registers *regs)
         return -1;
     }
 
-    if (!vfs_create(path))
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    if (!vfs_create(resolved))
     {
         return -1;
     }
@@ -331,7 +472,17 @@ static int32_t sys_mkdir(struct registers *regs)
         return -1;
     }
 
-    if (!vfs_mkdir(path))
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    if (!vfs_mkdir(resolved))
     {
         return -1;
     }
@@ -355,19 +506,30 @@ static int32_t sys_getpid(struct registers *regs)
 
 /**
  * SYS_exec: load and execute an ELF binary.
- * args: EBX = path string pointer.
+ * args: EBX = path string pointer, ECX = argv array pointer (may be NULL).
  * does not return on success. returns -1 on failure.
  */
 static int32_t sys_exec(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
+    const char **argv = (const char **)regs->ecx;
 
     if (!path)
     {
         return -1;
     }
 
-    return (int32_t)exec_program(path);
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    return (int32_t)exec_program(resolved, argv);
 }
 
 /**
@@ -481,4 +643,356 @@ static int32_t sys_waitpid(struct registers *regs)
 
     /* child disappeared somehow */
     return -1;
+}
+
+/**
+ * SYS_getcwd: copy the current working directory into a user buffer.
+ * args: EBX = buffer pointer, ECX = buffer size.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_getcwd(struct registers *regs)
+{
+    char *buf = (char *)regs->ebx;
+    uint32_t size = regs->ecx;
+    process_t *proc = process_current();
+
+    if (!proc || !buf || size == 0)
+    {
+        return -1;
+    }
+
+    uint32_t len = strlen(proc->cwd);
+    if (len + 1 > size)
+    {
+        return -1;
+    }
+
+    strcpy(buf, proc->cwd);
+    return 0;
+}
+
+/**
+ * SYS_chdir: change the current working directory.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_chdir(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+    process_t *proc = process_current();
+
+    if (!proc || !path)
+    {
+        return -1;
+    }
+
+    // resolve the path relative to the current cwd
+    char resolved[PATH_MAX];
+    if (!vfs_resolve_path(proc->cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    // verify the target is a valid directory
+    VFS_STAT stat;
+    if (vfs_stat(resolved, &stat) != VFS_OK)
+    {
+        return -1;
+    }
+
+    if (stat.file_type != FS_TYPE_DIR)
+    {
+        return -1;
+    }
+
+    strncpy(proc->cwd, resolved, PATH_MAX - 1);
+    proc->cwd[PATH_MAX - 1] = '\0';
+    return 0;
+}
+
+/**
+ * SYS_readdir: read the next directory entry from an open directory fd.
+ * args: EBX = fd, ECX = pointer to user dirent struct.
+ *
+ * user dirent layout (matches FS_DIRENT):
+ *   uint32_t inode
+ *   uint8_t  file_type
+ *   uint32_t size
+ *   char     name[256]
+ *
+ * returns 0 on success, -1 on failure or end of directory.
+ */
+static int32_t sys_readdir(struct registers *regs)
+{
+    int fd_num = (int)regs->ebx;
+    FS_DIRENT *user_dirent = (FS_DIRENT *)regs->ecx;
+
+    if (!user_dirent)
+    {
+        return -1;
+    }
+
+    fd_entry_t *entry = fd_get(fd_num);
+    if (!entry || entry->type != FD_TYPE_FILE)
+    {
+        return -1;
+    }
+
+    FS_DIRENT dirent;
+    if (!vfs_read_entry(&entry->file, &dirent))
+    {
+        return -1;
+    }
+
+    /* copy to userspace */
+    memcpy(user_dirent, &dirent, sizeof(FS_DIRENT));
+    return 0;
+}
+
+/**
+ * SYS_unlink: remove a file.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_unlink(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    if (!vfs_remove(resolved))
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_rmdir: remove a directory.
+ * args: EBX = path string pointer.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_rmdir(struct registers *regs)
+{
+    const char *path = (const char *)regs->ebx;
+
+    if (!path)
+    {
+        return -1;
+    }
+
+    /* resolve relative paths against the process's cwd */
+    char resolved[PATH_MAX];
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    {
+        return -1;
+    }
+
+    if (!vfs_rmdir(resolved))
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * SYS_ttyctl: switch terminal mode for the calling process.
+ * args: EBX = mode (0 = cooked/line-buffered, 1 = raw/event-based).
+ * returns the previous mode on success, -1 on error.
+ */
+static int32_t sys_ttyctl(struct registers *regs)
+{
+    uint32_t mode = regs->ebx;
+    process_t *proc = process_current();
+
+    if (!proc)
+        return -1;
+
+    if (mode > 1)
+        return -1;
+
+    int32_t prev = (int32_t)proc->tty_raw;
+    proc->tty_raw = (uint8_t)mode;
+    return prev;
+}
+
+/**
+ * SYS_pipe: create a pipe (pair of connected file descriptors).
+ * args: EBX = pointer to int[2] array (receives [read_fd, write_fd]).
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_pipe(struct registers *regs)
+{
+    int *user_fds = (int *)regs->ebx;
+    process_t *proc = process_current();
+
+    if (!proc || !user_fds)
+        return -1;
+
+    // allocate a pipe buffer
+    pipe_buf_t *buf = pipe_alloc();
+    if (!buf)
+        return -1;
+
+    // find two free fd slots
+    int read_fd = -1;
+    int write_fd = -1;
+
+    for (int i = 3; i < FD_MAX && (read_fd < 0 || write_fd < 0); i++)
+    {
+        if (proc->fds[i].type == FD_TYPE_NONE)
+        {
+            if (read_fd < 0)
+                read_fd = i;
+            else
+                write_fd = i;
+        }
+    }
+
+    if (read_fd < 0 || write_fd < 0)
+    {
+        pipe_release(buf);
+        return -1;
+    }
+
+    // set up read end
+    proc->fds[read_fd].type = FD_TYPE_PIPE;
+    proc->fds[read_fd].pipe.buf = buf;
+    proc->fds[read_fd].pipe.dir = PIPE_READ;
+
+    // set up write end
+    proc->fds[write_fd].type = FD_TYPE_PIPE;
+    proc->fds[write_fd].pipe.buf = buf;
+    proc->fds[write_fd].pipe.dir = PIPE_WRITE;
+
+    // return fd numbers to userspace
+    user_fds[0] = read_fd;
+    user_fds[1] = write_fd;
+
+    return 0;
+}
+
+/**
+ * SYS_dup2: duplicate a file descriptor to a specific number.
+ * args: EBX = old_fd, ECX = new_fd.
+ * if new_fd is already open, it is closed first.
+ * returns new_fd on success, -1 on failure.
+ */
+static int32_t sys_dup2(struct registers *regs)
+{
+    int old_fd = (int)regs->ebx;
+    int new_fd = (int)regs->ecx;
+    process_t *proc = process_current();
+
+    if (!proc)
+        return -1;
+
+    if (old_fd < 0 || old_fd >= FD_MAX || new_fd < 0 || new_fd >= FD_MAX)
+        return -1;
+
+    if (proc->fds[old_fd].type == FD_TYPE_NONE)
+        return -1;
+
+    // if same fd, just return it
+    if (old_fd == new_fd)
+        return new_fd;
+
+    // close new_fd if it's already open
+    if (proc->fds[new_fd].type != FD_TYPE_NONE)
+    {
+        fd_free(new_fd);
+    }
+
+    // copy the fd entry
+    proc->fds[new_fd] = proc->fds[old_fd];
+
+    // if it's a pipe, increment the ref counts
+    if (proc->fds[new_fd].type == FD_TYPE_PIPE)
+    {
+        proc->fds[new_fd].pipe.buf->ref_count++;
+        if (proc->fds[new_fd].pipe.dir == PIPE_READ)
+            proc->fds[new_fd].pipe.buf->read_refs++;
+        else
+            proc->fds[new_fd].pipe.buf->write_refs++;
+    }
+
+    return new_fd;
+}
+
+/**
+ * SYS_ftruncate: truncate an open file to zero length.
+ * args: EBX = fd.
+ * returns 0 on success, -1 on failure.
+ */
+static int32_t sys_ftruncate(struct registers *regs)
+{
+    int fd_num = (int)regs->ebx;
+    fd_entry_t *entry = fd_get(fd_num);
+
+    if (!entry || entry->type != FD_TYPE_FILE)
+        return -1;
+
+    if (!vfs_truncate(&entry->file))
+        return -1;
+
+    return 0;
+}
+
+/**
+ * SYS_lseek: set the file cursor position.
+ * args: EBX = fd, ECX = offset, EDX = whence (0=SET, 1=CUR, 2=END).
+ * returns the new cursor position, or -1 on error.
+ */
+static int32_t sys_lseek(struct registers *regs)
+{
+    int fd_num = (int)regs->ebx;
+    int32_t offset = (int32_t)regs->ecx;
+    int whence = (int)regs->edx;
+
+    fd_entry_t *entry = fd_get(fd_num);
+    if (!entry || entry->type != FD_TYPE_FILE)
+        return -1;
+
+    uint32_t size = entry->file.file.ext2_file.size;
+    uint32_t cursor = entry->file.file.ext2_file.cursor;
+    int32_t new_pos;
+
+    switch (whence)
+    {
+    case 0: /* SEEK_SET */
+        new_pos = offset;
+        break;
+    case 1: /* SEEK_CUR */
+        new_pos = (int32_t)cursor + offset;
+        break;
+    case 2: /* SEEK_END */
+        new_pos = (int32_t)size + offset;
+        break;
+    default:
+        return -1;
+    }
+
+    if (new_pos < 0)
+        new_pos = 0;
+
+    entry->file.file.ext2_file.cursor = (uint32_t)new_pos;
+    return new_pos;
 }
