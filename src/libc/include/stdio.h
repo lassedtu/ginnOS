@@ -4,9 +4,13 @@
  * @file stdio.h
  * @brief minimal stdio for ginnOS libc.
  *
- * supports: putchar, puts, printf, snprintf, vsnprintf.
+ * supports: putchar, puts, printf, fprintf, snprintf, vsnprintf.
  * format specifiers: %d, %i, %u, %x, %X, %s, %c, %%.
  */
+
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
 
 typedef unsigned int size_t;
 
@@ -17,9 +21,24 @@ typedef __builtin_va_list va_list;
 #define va_end(ap)         __builtin_va_end(ap)
 #define va_copy(dst, src)  __builtin_va_copy(dst, src)
 
+/* standard file descriptors as "FILE *" for fprintf compatibility */
+typedef int FILE;
+#define stdin  ((FILE *)0)
+#define stdout ((FILE *)1)
+#define stderr ((FILE *)2)
+
 int putchar(int c);
 int puts(const char *s);
 int printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
+/**
+ * write formatted output to a file stream.
+ * @param stream file stream (stdin/stdout/stderr).
+ * @param fmt format string.
+ * @return number of characters written.
+ */
+int fprintf(FILE *stream, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 
 /**
  * write formatted output to a buffer with a size limit.

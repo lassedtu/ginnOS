@@ -27,6 +27,13 @@ static void stdout_emit(const char *str, int len, void *ctx)
     write(1, str, (size_t)len);
 }
 
+/* file descriptor output callback */
+static void fd_emit(const char *str, int len, void *ctx)
+{
+    int fd = (int)(long)ctx;
+    write(fd, str, (size_t)len);
+}
+
 /* buffer output context */
 typedef struct
 {
@@ -219,6 +226,19 @@ int printf(const char *fmt, ...)
     va_start(ap, fmt);
 
     output_t out = {.emit = stdout_emit, .ctx = NULL};
+    int count = format_core(&out, fmt, ap);
+
+    va_end(ap);
+    return count;
+}
+
+int fprintf(FILE *stream, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+
+    int fd = (int)(long)stream;
+    output_t out = {.emit = fd_emit, .ctx = (void *)(long)fd};
     int count = format_core(&out, fmt, ap);
 
     va_end(ap);
