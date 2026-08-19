@@ -64,7 +64,7 @@ void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv)
         paging_map_in(pd_phys, stack_virt_base + p * 4096, (uint32_t)frame, PTE_USER_RW);
     }
 
-    // user stack grows downward — start at the top of the stack region
+    // user stack grows downward. start at the top of the stack region
     uint32_t stack_top = stack_virt_base + USER_STACK_SIZE; // 0x800000
     uint32_t sp = stack_top;
 
@@ -104,7 +104,7 @@ void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv)
         *(uint32_t *)sp = string_ptrs[i];
     }
 
-    // sp now points to argv[0] — this is the value of argv
+    // sp now points to argv[0], this is the value of argv
     uint32_t argv_ptr = sp;
 
     // push argv pointer

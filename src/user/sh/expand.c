@@ -76,7 +76,7 @@ static int expand_token(const char *in, char *out, int out_size)
 
             if (*in == '?')
             {
-                // $? — last exit code
+                // $?: last exit code
                 in++;
                 char tmp[16];
                 int_to_str(shell_last_exit_code, tmp, sizeof(tmp));
@@ -85,7 +85,7 @@ static int expand_token(const char *in, char *out, int out_size)
             }
             else if (*in == '$')
             {
-                // $$ — shell PID
+                // $$: shell PID
                 in++;
                 char tmp[16];
                 int_to_str(getpid(), tmp, sizeof(tmp));
@@ -94,7 +94,7 @@ static int expand_token(const char *in, char *out, int out_size)
             }
             else if (*in == '{')
             {
-                // ${VAR} — braced variable
+                // ${VAR}: braced variable
                 in++; // skip {
                 char varname[ENV_KEY_MAX];
                 int vi = 0;
@@ -113,7 +113,7 @@ static int expand_token(const char *in, char *out, int out_size)
             }
             else if (is_var_char(*in))
             {
-                // $VAR — unbraced variable
+                // $VAR: unbraced variable
                 char varname[ENV_KEY_MAX];
                 int vi = 0;
                 while (is_var_char(*in) && vi < ENV_KEY_MAX - 1)
@@ -129,7 +129,7 @@ static int expand_token(const char *in, char *out, int out_size)
             }
             else
             {
-                // lone $ — output literally
+                // lone $: output literally
                 out[oi++] = '$';
             }
         }

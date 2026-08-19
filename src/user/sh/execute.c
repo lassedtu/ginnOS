@@ -15,7 +15,7 @@
 
 #define PATH_BUF_SIZE 256
 
-// external — set by main.c after each command
+// external: set by main.c after each command
 extern int shell_last_exit_code;
 
 /**
@@ -182,7 +182,7 @@ void execute_pipeline(pipeline_t *pipeline)
     if (pipeline->count == 0)
         return;
 
-    // single command — simple case with redirection
+    // single command. simple case with redirection
     if (pipeline->count == 1)
     {
         pipeline_stage_t *stage = &pipeline->stages[0];

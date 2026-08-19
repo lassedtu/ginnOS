@@ -215,21 +215,21 @@ int line_read(char *buf, int size)
                 continue;
             }
 
-            if (c == 1) // Ctrl+A — home
+            if (c == 1) // Ctrl+A: home
             {
                 line_pos = 0;
                 move_cursor_to(prompt_len, line_pos);
                 continue;
             }
 
-            if (c == 5) // Ctrl+E — end
+            if (c == 5) // Ctrl+E: end
             {
                 line_pos = line_len;
                 move_cursor_to(prompt_len, line_pos);
                 continue;
             }
 
-            if (c == 11) // Ctrl+K — kill to end
+            if (c == 11) // Ctrl+K: kill to end
             {
                 line_len = line_pos;
                 line_buf[line_len] = '\0';
@@ -237,7 +237,7 @@ int line_read(char *buf, int size)
                 continue;
             }
 
-            if (c == 21) // Ctrl+U — kill to start
+            if (c == 21) // Ctrl+U: kill to start
             {
                 int removed = line_pos;
                 if (removed > 0)
@@ -253,7 +253,7 @@ int line_read(char *buf, int size)
                 continue;
             }
 
-            if (c == 23) // Ctrl+W — kill previous word
+            if (c == 23) // Ctrl+W: kill previous word
             {
                 if (line_pos > 0)
                 {
@@ -276,7 +276,7 @@ int line_read(char *buf, int size)
                 continue;
             }
 
-            if (c == 12) // Ctrl+L — clear screen and redraw
+            if (c == 12) // Ctrl+L: clear screen and redraw
             {
                 emit_clear_home();
                 // reprint prompt (we can't call print_prompt from here,
@@ -292,7 +292,7 @@ int line_read(char *buf, int size)
                 continue;
             }
 
-            if (c == '\b') // Backspace
+            if (c == '\b') // Backspace: delete character before cursor
             {
                 if (line_pos > 0)
                 {
@@ -307,7 +307,7 @@ int line_read(char *buf, int size)
                 continue;
             }
 
-            // regular printable character — insert at cursor
+            // regular printable character  insert at cursor
             if (c >= 32 && line_len < LINE_MAX - 1)
             {
                 // shift characters right

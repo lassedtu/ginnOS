@@ -2784,7 +2784,7 @@ bool EXT2_TruncateFile(EXT2_VOLUME *volume, uint32_t inode_number)
     if (!EXT2_ReadInode(volume, inode_number, &inode) || !inode_is_regular(&inode))
         return false;
 
-    /* just set size to 0 — blocks remain allocated (simple approach) */
+    /* just set size to 0  blocks remain allocated (simple approach) */
     inode.i_size = 0;
 
     return write_inode(volume, inode_number, &inode);

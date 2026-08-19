@@ -3,7 +3,7 @@
 #include "../../drivers/video/vga/vga.h"
 #include "../../drivers/keyboard/keyboard.h"
 
-#define CONSOLE_VGA_WIDTH  80u
+#define CONSOLE_VGA_WIDTH 80u
 #define CONSOLE_VGA_HEIGHT 25u
 
 // ANSI escape sequence parser state
@@ -12,6 +12,7 @@ typedef enum
     STATE_NORMAL,   // normal character output
     STATE_ESC,      // received ESC (0x1B)
     STATE_CSI,      // received ESC [ (CSI sequence)
+    STATE_CSI_PRIV, // received ESC [ ? (DEC private mode sequence)
 } console_state_t;
 
 static console_state_t console_state = STATE_NORMAL;
@@ -89,21 +90,27 @@ static void csi_dispatch(char final)
     case 'G': // Cursor Horizontal Absolute (column)
     {
         int n = csi_params[0] ? csi_params[0] : 1;
-        if (n < 1) n = 1;
-        if (n > (int)CONSOLE_VGA_WIDTH) n = (int)CONSOLE_VGA_WIDTH;
+        if (n < 1)
+            n = 1;
+        if (n > (int)CONSOLE_VGA_WIDTH)
+            n = (int)CONSOLE_VGA_WIDTH;
         vga_set_cursor(row, (uint8_t)(n - 1)); // 1-based
         break;
     }
 
-    case 'H': // Cursor Position (row;col) — 1-based
+    case 'H': // Cursor Position (row;col)  1-based
     case 'f': // same as H
     {
         int r = csi_params[0] ? csi_params[0] : 1;
         int c = (csi_param_count >= 2 && csi_params[1]) ? csi_params[1] : 1;
-        if (r < 1) r = 1;
-        if (r > (int)CONSOLE_VGA_HEIGHT) r = (int)CONSOLE_VGA_HEIGHT;
-        if (c < 1) c = 1;
-        if (c > (int)CONSOLE_VGA_WIDTH) c = (int)CONSOLE_VGA_WIDTH;
+        if (r < 1)
+            r = 1;
+        if (r > (int)CONSOLE_VGA_HEIGHT)
+            r = (int)CONSOLE_VGA_HEIGHT;
+        if (c < 1)
+            c = 1;
+        if (c > (int)CONSOLE_VGA_WIDTH)
+            c = (int)CONSOLE_VGA_WIDTH;
         vga_set_cursor((uint8_t)(r - 1), (uint8_t)(c - 1));
         break;
     }
@@ -155,7 +162,7 @@ static void csi_dispatch(char final)
     }
 
     default:
-        // unrecognized sequence — silently ignore
+        // unrecognized sequence: silently ignore
         break;
     }
 }
@@ -185,13 +192,19 @@ void console_putchar(char c)
             csi_reset();
             return;
         }
-        // not a CSI sequence — output the ESC and the character literally
+        // not a CSI sequence: output the ESC and the character literally
         console_state = STATE_NORMAL;
         // fall through to print c
         break;
 
     case STATE_CSI:
-        if (c >= '0' && c <= '9')
+        if (c == '?')
+        {
+            // DEC private mode: consume until final byte
+            console_state = STATE_CSI_PRIV;
+            return;
+        }
+        else if (c >= '0' && c <= '9')
         {
             // accumulate numeric parameter
             csi_current_param = csi_current_param * 10 + (c - '0');
@@ -210,17 +223,28 @@ void console_putchar(char c)
         }
         else if (c >= 0x40 && c <= 0x7E)
         {
-            // final byte — dispatch the sequence
+            // final byte: dispatch the sequence
             csi_dispatch(c);
             console_state = STATE_NORMAL;
             return;
         }
         else
         {
-            // unexpected character — abort sequence
+            // unexpected character: abort sequence
             console_state = STATE_NORMAL;
             return;
         }
+
+    case STATE_CSI_PRIV:
+        if (c >= 0x40 && c <= 0x7E)
+        {
+            // final byte silently discard DEC private mode sequences
+            // (e.g., ?25l = hide cursor, ?25h = show cursor)
+            console_state = STATE_NORMAL;
+            return;
+        }
+        // intermediate bytes (digits, ;) just consume them
+        return;
     }
 
     // normal character output

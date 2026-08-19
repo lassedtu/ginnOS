@@ -114,7 +114,7 @@ LIBC_ASM_OBJS := $(patsubst src/libc/src/%.asm,$(BUILD_DIR)/libc/%.o,$(LIBC_ASM_
 LIBC_OBJS    := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
 LIBC_A       := $(BUILD_DIR)/libc/libc.a
 
-# User programs — automatic discovery via per-program Makefiles
+# User programs  automatic discovery via per-program Makefiles
 # Convention: each program lives in src/user/<name>/ with its own Makefile.
 # src/user/lib/ is excluded (it contains crt0, not a program).
 USER_PROG_DIRS := $(sort $(filter-out src/user/lib,$(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))

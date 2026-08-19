@@ -185,7 +185,7 @@ static int32_t sys_write(struct registers *regs)
         {
             if (pb->count >= PIPE_BUF_SIZE)
             {
-                /* buffer full — for now, return short write */
+                /* buffer full. for now, return short write */
                 break;
             }
 

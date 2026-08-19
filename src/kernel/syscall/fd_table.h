@@ -24,17 +24,17 @@ typedef enum
 } fd_type_t;
 
 /**
- * pipe buffer — shared between read and write ends.
+ * pipe buffer. shared between read and write ends.
  */
 typedef struct pipe_buf
 {
     char data[PIPE_BUF_SIZE];
-    uint32_t read_pos;    // next byte to read
-    uint32_t write_pos;   // next byte to write
-    uint32_t count;       // bytes currently in buffer
-    int read_refs;        // number of open read-end file descriptors
-    int write_refs;       // number of open write-end file descriptors
-    int ref_count;        // total fd entries referencing this pipe
+    uint32_t read_pos;  // next byte to read
+    uint32_t write_pos; // next byte to write
+    uint32_t count;     // bytes currently in buffer
+    int read_refs;      // number of open read-end file descriptors
+    int write_refs;     // number of open write-end file descriptors
+    int ref_count;      // total fd entries referencing this pipe
 } pipe_buf_t;
 
 /**
@@ -54,12 +54,12 @@ typedef struct
     fd_type_t type;
     union
     {
-        VFS_FILE file;          /* valid when type == FD_TYPE_FILE */
+        VFS_FILE file; /* valid when type == FD_TYPE_FILE */
         struct
         {
-            pipe_buf_t *buf;    /* shared pipe buffer */
-            pipe_dir_t dir;     /* read or write end */
-        } pipe;                 /* valid when type == FD_TYPE_PIPE */
+            pipe_buf_t *buf; /* shared pipe buffer */
+            pipe_dir_t dir;  /* read or write end */
+        } pipe;              /* valid when type == FD_TYPE_PIPE */
     };
 } fd_entry_t;
 

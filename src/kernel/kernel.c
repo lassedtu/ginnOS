@@ -109,7 +109,7 @@ void kernel_main(boot_info_t *boot)
         kernel_panic("failed to launch /bin/sh");
     }
 
-    // shell exited — halt
+    // shell exited. halt
     printf("Shell exited with code %d. System halted.\r\n", ret);
     for (;;)
         ;

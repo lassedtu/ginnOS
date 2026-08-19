@@ -58,13 +58,13 @@ static void extract_redirections(pipeline_stage_t *stage)
             }
             else
             {
-                // missing filename after operator — skip
+                // missing filename after operator: skip
                 i++;
             }
         }
         else
         {
-            // regular token — keep it
+            // regular token: keep it
             if (cleaned.count < TOKEN_MAX)
                 cleaned.tokens[cleaned.count++] = t->tokens[i];
             i++;

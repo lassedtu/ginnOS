@@ -76,7 +76,7 @@ static void init_layout(void)
     n[0x26] = 'l';
     // 0x27 = æ (non-ASCII, skip)
     // 0x28 = ø (non-ASCII, skip)
-    n[0x29] = '<'; // ISO key (LSGT) — QEMU on macOS sends this as 0x29
+    n[0x29] = '<'; // ISO key (LSGT)  QEMU on macOS sends this as 0x29
     // 0x2A = Left Shift (modifier)
     n[0x2B] = '\''; // BKSL key (apostrophe)
     n[0x2C] = 'z';
@@ -91,7 +91,7 @@ static void init_layout(void)
     n[0x35] = '-';
     // 0x37 = Keypad *
     n[0x39] = ' '; // Spacebar
-    n[0x56] = '$'; // TLDE key (§/$ on Danish Mac) — QEMU macOS may send this as 0x56
+    n[0x56] = '$'; // TLDE key (§/$ on Danish Mac)  QEMU macOS may send this as 0x56
 
     // === Shift map ===
     char *s = (char *)layout_dk_mac.shift;
@@ -133,7 +133,7 @@ static void init_layout(void)
     s[0x25] = 'K';
     s[0x26] = 'L';
     // 0x27 = Æ, 0x28 = Ø (non-ASCII)
-    s[0x29] = '>'; // ISO key shifted — QEMU on macOS sends this as 0x29
+    s[0x29] = '>'; // ISO key shifted  QEMU on macOS sends this as 0x29
     s[0x2B] = '*'; // BKSL shifted
     s[0x2C] = 'Z';
     s[0x2D] = 'X';

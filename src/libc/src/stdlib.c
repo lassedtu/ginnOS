@@ -121,7 +121,7 @@ void *malloc(size_t size)
         return (char *)block + HEADER_SIZE;
     }
 
-    /* no suitable free block — request more memory */
+    /* no suitable free block: request more memory */
     block = request_memory(size);
     if (!block)
         return NULL;

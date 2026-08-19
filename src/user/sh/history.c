@@ -7,13 +7,13 @@
 
 // ring buffer of history entries
 static char history_buf[HISTORY_MAX][LINE_MAX];
-static int history_size;    // number of valid entries (up to HISTORY_MAX)
-static int history_start;   // index of the oldest entry in the ring
-static int history_end;     // index of the next write slot
+static int history_size;  // number of valid entries (up to HISTORY_MAX)
+static int history_start; // index of the oldest entry in the ring
+static int history_end;   // index of the next write slot
 
 // navigation state
-static int nav_pos;         // current position during Up/Down navigation
-                            // -1 = not navigating (at the bottom/current line)
+static int nav_pos;              // current position during Up/Down navigation
+                                 // -1 = not navigating (at the bottom/current line)
 static char nav_saved[LINE_MAX]; // saved in-progress line before navigating
 
 void history_init(void)
@@ -51,7 +51,7 @@ void history_add(const char *line)
     }
     else
     {
-        // buffer is full — oldest entry gets overwritten
+        // buffer is full: oldest entry gets overwritten
         history_start = (history_start + 1) % HISTORY_MAX;
     }
 }
@@ -77,7 +77,7 @@ const char *history_prev(const char *current)
 
     if (nav_pos == -1)
     {
-        // first time pressing up — save current line
+        // first time pressing up: save current line
         strncpy(nav_saved, current, LINE_MAX - 1);
         nav_saved[LINE_MAX - 1] = '\0';
         nav_pos = history_size - 1;

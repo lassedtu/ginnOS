@@ -96,7 +96,7 @@ static int builtin_export(token_list_t *tokens)
         }
         else
         {
-            // KEY with no value — set to empty string
+            // KEY with no value. set to empty string
             env_set(arg, "");
         }
     }

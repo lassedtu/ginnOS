@@ -15,7 +15,7 @@
 #include "env.h"
 
 #define INPUT_MAX 256
-#define CWD_MAX   256
+#define CWD_MAX 256
 
 static char input_buf[INPUT_MAX];
 static char cwd_buf[CWD_MAX];
@@ -61,7 +61,7 @@ int main(void)
         int len = line_read(input_buf, sizeof(input_buf));
         if (len < 0)
         {
-            // Ctrl+D on empty line — exit
+            // Ctrl+D on empty line: exit
             printf("\n");
             break;
         }
