@@ -1,0 +1,3 @@
+[submodule "src/user/ze/zen-editor"]
+	path = src/user/ze/zen-editor
+	url = https://github.com/lassedtu/zen-editor.git
