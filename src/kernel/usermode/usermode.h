@@ -2,6 +2,9 @@
 
 #include "common/stdint.h"
 
+struct process;
+typedef struct process process_t;
+
 /**
  * jump to a user-mode function at the given entry point.
  * allocates a user stack, pushes argc/argv onto it, configures the TSS
@@ -47,3 +50,12 @@ uint32_t usermode_get_brk(void);
  * @param brk the initial break address (page-aligned end of loaded segments).
  */
 void usermode_set_brk(uint32_t brk);
+
+/**
+ * set up a child process's kernel stack so that context_switch
+ * returns into the process entry trampoline.
+ * @param child pointer to the child process control block.
+ * @param entry ELF entry point for the child.
+ */
+void setup_child_stack(process_t *child, uint32_t entry);
+
