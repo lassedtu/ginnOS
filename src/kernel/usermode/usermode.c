@@ -1,5 +1,6 @@
 #include "usermode.h"
 
+#include "arch/arch.h"
 #include "arch/x86/cpu/gdt.h"
 #include "arch/x86/cpu/paging.h"
 #include "kernel/memory/pmm.h"
@@ -123,34 +124,11 @@ void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv)
     uint32_t user_esp = sp;
 
     // set the kernel stack in the TSS to the current kernel ESP
-    uint32_t kernel_esp;
-    __asm__ volatile("mov %%esp, %0" : "=r"(kernel_esp));
+    uint32_t kernel_esp = arch_get_stack_pointer();
     tss_set_kernel_stack(kernel_esp);
 
-    // build the iret frame and drop to ring 3
-    __asm__ volatile(
-        "cli\n"
-        "mov %0, %%ax\n"
-        "mov %%ax, %%ds\n"
-        "mov %%ax, %%es\n"
-        "mov %%ax, %%fs\n"
-        "mov %%ax, %%gs\n"
-        "\n"
-        "push %0\n" /* SS */
-        "push %1\n" /* ESP */
-        "pushf\n"
-        "pop %%eax\n"
-        "or $0x200, %%eax\n" /* IF */
-        "push %%eax\n"       /* EFLAGS */
-        "push %2\n"          /* CS */
-        "push %3\n"          /* EIP */
-        "iret\n"
-        :
-        : "i"(GDT_USER_DATA),
-          "r"(user_esp),
-          "i"(GDT_USER_CODE),
-          "r"(entry)
-        : "eax", "memory");
+    // drop to ring 3
+    arch_jump_to_usermode(entry, user_esp);
 
     kernel_panic("jump_to_usermode: iret returned");
 }
@@ -337,16 +315,8 @@ int exec_program(const char *path, const char **argv)
         int code = kernel_setjmp(exec_jmp_buf);
         if (code != 0)
         {
-            // returned from usermode_exit  restore kernel segments
-            __asm__ volatile(
-                "mov %0, %%ax\n"
-                "mov %%ax, %%ds\n"
-                "mov %%ax, %%es\n"
-                "mov %%ax, %%fs\n"
-                "mov %%ax, %%gs\n"
-                :
-                : "i"(GDT_KERNEL_DATA)
-                : "eax");
+            // returned from usermode_exit, restore kernel segments
+            arch_reload_segments();
 
             // switch back to kernel page directory
             paging_switch_directory(paging_directory_address());

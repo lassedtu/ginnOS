@@ -8,6 +8,7 @@
 #include "keyboard.h"
 #include "keyboard_layout.h"
 
+#include "arch/arch.h"
 #include "arch/x86/cpu/irq.h"
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/io.h"
@@ -280,7 +281,7 @@ int keyboard_read_event(keyboard_event_t *event_out)
 void keyboard_wait_event(keyboard_event_t *event_out)
 {
     while (!keyboard_available())
-        __asm__ __volatile__("hlt");
+        arch_halt();
 
     keyboard_read_event(event_out);
 }

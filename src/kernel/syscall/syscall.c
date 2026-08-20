@@ -1,6 +1,7 @@
 #include "syscall.h"
 #include "fd_table.h"
 
+#include "arch/arch.h"
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/idt.h"
 #include "arch/x86/cpu/gdt.h"
@@ -373,7 +374,7 @@ static int32_t sys_read(struct registers *regs)
                 return 0;
             }
             /* yield and try again (busy-wait with halt for now) */
-            __asm__ volatile("hlt");
+            arch_halt();
         }
 
         /* read as many bytes as available (up to count) */
