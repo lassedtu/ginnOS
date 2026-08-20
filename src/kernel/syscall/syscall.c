@@ -7,6 +7,7 @@
 #include "arch/x86/cpu/gdt.h"
 #include "arch/x86/cpu/paging.h"
 #include "kernel/memory/pmm.h"
+#include "kernel/memory/memory_layout.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/console/console.h"
 #include "kernel/usermode/usermode.h"
@@ -163,10 +164,11 @@ static int32_t sys_write(struct registers *regs)
     const char *buf = (const char *)regs->ecx;
     uint32_t count = regs->edx;
 
-    if (!buf || count == 0)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_ptr(buf, count))
+        return -18; /* EFAULT */
+
+    if (count == 0)
+        return 0;
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
@@ -243,10 +245,8 @@ static int32_t sys_open(struct registers *regs)
     const char *path = (const char *)regs->ebx;
     (void)regs->ecx; /* flags reserved for future use */
 
-    if (!path)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_str(path))
+        return -18; /* EFAULT */
 
     /* resolve relative paths against the process's cwd */
     char resolved[PATH_MAX];
@@ -311,10 +311,11 @@ static int32_t sys_read(struct registers *regs)
     char *buf = (char *)regs->ecx;
     uint32_t count = regs->edx;
 
-    if (!buf || count == 0)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_ptr(buf, count))
+        return -18; /* EFAULT */
+
+    if (count == 0)
+        return 0;
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
@@ -433,10 +434,11 @@ static int32_t sys_stat(struct registers *regs)
     const char *path = (const char *)regs->ebx;
     VFS_STAT *stat_out = (VFS_STAT *)regs->ecx;
 
-    if (!path || !stat_out)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_str(path))
+        return -18; /* EFAULT */
+
+    if (!is_user_ptr(stat_out, sizeof(VFS_STAT)))
+        return -18; /* EFAULT */
 
     /* resolve relative paths against the process's cwd */
     char resolved[PATH_MAX];
@@ -466,10 +468,8 @@ static int32_t sys_create(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
 
-    if (!path)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_str(path))
+        return -18; /* EFAULT */
 
     /* resolve relative paths against the process's cwd */
     char resolved[PATH_MAX];
@@ -499,10 +499,8 @@ static int32_t sys_mkdir(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
 
-    if (!path)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_str(path))
+        return -18; /* EFAULT */
 
     /* resolve relative paths against the process's cwd */
     char resolved[PATH_MAX];
@@ -547,10 +545,8 @@ static int32_t sys_exec(struct registers *regs)
     const char *path = (const char *)regs->ebx;
     const char **argv = (const char **)regs->ecx;
 
-    if (!path)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_str(path))
+        return -18; /* EFAULT */
 
     /* resolve relative paths against the process's cwd */
     char resolved[PATH_MAX];
@@ -694,7 +690,10 @@ static int32_t sys_getcwd(struct registers *regs)
     uint32_t size = regs->ecx;
     process_t *proc = process_current();
 
-    if (!proc || !buf || size == 0)
+    if (!is_user_ptr(buf, size))
+        return -18; /* EFAULT */
+
+    if (!proc || size == 0)
     {
         return -3; /* EINVAL */
     }
@@ -719,7 +718,10 @@ static int32_t sys_chdir(struct registers *regs)
     const char *path = (const char *)regs->ebx;
     process_t *proc = process_current();
 
-    if (!proc || !path)
+    if (!is_user_str(path))
+        return -18; /* EFAULT */
+
+    if (!proc)
     {
         return -3; /* EINVAL */
     }
@@ -766,10 +768,8 @@ static int32_t sys_readdir(struct registers *regs)
     int fd_num = (int)regs->ebx;
     FS_DIRENT *user_dirent = (FS_DIRENT *)regs->ecx;
 
-    if (!user_dirent)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_ptr(user_dirent, sizeof(FS_DIRENT)))
+        return -18; /* EFAULT */
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry || entry->type != FD_TYPE_FILE)
@@ -798,10 +798,8 @@ static int32_t sys_unlink(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
 
-    if (!path)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_str(path))
+        return -18; /* EFAULT */
 
     /* resolve relative paths against the process's cwd */
     char resolved[PATH_MAX];
@@ -831,10 +829,8 @@ static int32_t sys_rmdir(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
 
-    if (!path)
-    {
-        return -3; /* EINVAL */
-    }
+    if (!is_user_str(path))
+        return -18; /* EFAULT */
 
     /* resolve relative paths against the process's cwd */
     char resolved[PATH_MAX];
@@ -886,7 +882,10 @@ static int32_t sys_pipe(struct registers *regs)
     int *user_fds = (int *)regs->ebx;
     process_t *proc = process_current();
 
-    if (!proc || !user_fds)
+    if (!is_user_ptr(user_fds, 2 * sizeof(int)))
+        return -18; /* EFAULT */
+
+    if (!proc)
         return -3; /* EINVAL */
 
     /* allocate a pipe buffer */

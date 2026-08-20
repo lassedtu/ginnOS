@@ -26,7 +26,7 @@ BASE_WARNINGS := -Wall -Wextra
 BASE_CFLAGS   := -std=gnu11 -ffreestanding -m32 -I src -MMD -MP
 
 # per-subsystem compiler flags
-KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 \
+KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 -DNDEBUG \
                  -fno-pie -fno-jump-tables
 
 DRIVER_CFLAGS := $(KERNEL_CFLAGS)

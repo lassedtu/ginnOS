@@ -380,7 +380,7 @@ uint32_t vfs_read(
     uint32_t size,
     void *buffer)
 {
-    if (!file || !file->mount)
+    if (!file || !file->mount || !buffer)
     {
         return 0;
     }
@@ -396,7 +396,7 @@ uint32_t vfs_write(
     uint32_t size,
     const void *buffer)
 {
-    if (!file || !file->mount)
+    if (!file || !file->mount || !buffer)
     {
         return 0;
     }
