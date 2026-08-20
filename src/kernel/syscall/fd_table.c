@@ -1,6 +1,6 @@
 #include "fd_table.h"
-#include "../process/process.h"
-#include "../../common/memory.h"
+#include "kernel/process/process.h"
+#include "common/memory.h"
 
 // system-wide pipe buffer pool
 static pipe_buf_t pipe_pool[PIPE_MAX];

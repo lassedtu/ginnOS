@@ -1,7 +1,7 @@
 #include "pmm_layout.h"
 
 #include "kernel_layout.h"
-#include "../panic.h"
+#include "kernel/panic.h"
 
 static uint32_t bitmap_start;
 static uint32_t bitmap_end;

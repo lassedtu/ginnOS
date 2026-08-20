@@ -8,11 +8,11 @@
 #include "keyboard.h"
 #include "keyboard_layout.h"
 
-#include "../../arch/x86/cpu/irq.h"
-#include "../../arch/x86/cpu/isr.h"
-#include "../../arch/x86/cpu/io.h"
-#include "../../arch/x86/cpu/pic.h"
-#include "../../common/stdint.h"
+#include "arch/x86/cpu/irq.h"
+#include "arch/x86/cpu/isr.h"
+#include "arch/x86/cpu/io.h"
+#include "arch/x86/cpu/pic.h"
+#include "common/stdint.h"
 
 #define KEYBOARD_BUFFER_SIZE 128 // number of events the ring buffer can hold
 

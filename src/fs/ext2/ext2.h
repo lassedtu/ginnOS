@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../common/stdint.h"
-#include "../../drivers/disk/block_device.h"
+#include "common/stdint.h"
+#include "drivers/disk/block_device.h"
 
 #define EXT2_SUPERBLOCK_OFFSET 1024u  // byte offset of superblock from start of partition
 #define EXT2_SUPERBLOCK_MAGIC 0xEF53u // magic number in superblock to identify ext2 filesystem

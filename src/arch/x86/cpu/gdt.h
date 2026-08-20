@@ -1,7 +1,7 @@
 #ifndef GDT_H
 #define GDT_H
 
-#include "../../../common/stdint.h"
+#include "common/stdint.h"
 
 /** kernel code segment selector (GDT index 1, RPL 0). */
 #define GDT_KERNEL_CODE 0x08

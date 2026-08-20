@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../common/stdint.h"
+#include "common/stdint.h"
 
 /**
  * initial number of pages allocated for the kernel heap.

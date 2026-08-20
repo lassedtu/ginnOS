@@ -1,16 +1,16 @@
 #include "usermode.h"
 
-#include "../../arch/x86/cpu/gdt.h"
-#include "../../arch/x86/cpu/paging.h"
-#include "../memory/pmm.h"
-#include "../memory/heap.h"
-#include "../elf/elf_loader.h"
-#include "../process/process.h"
-#include "../scheduler/scheduler.h"
-#include "../panic.h"
-#include "../../common/stdio.h"
-#include "../../common/memory.h"
-#include "../../common/string.h"
+#include "arch/x86/cpu/gdt.h"
+#include "arch/x86/cpu/paging.h"
+#include "kernel/memory/pmm.h"
+#include "kernel/memory/heap.h"
+#include "kernel/elf/elf_loader.h"
+#include "kernel/process/process.h"
+#include "kernel/scheduler/scheduler.h"
+#include "kernel/panic.h"
+#include "common/stdio.h"
+#include "common/memory.h"
+#include "common/string.h"
 
 // size of the user stack in bytes (4 pages = 16 KiB).
 #define USER_STACK_SIZE (4096 * 4)

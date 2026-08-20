@@ -1,9 +1,9 @@
 #include "isr.h"
 
 #include "idt.h"
-#include "../../../common/stdint.h"
-#include "../../../common/stdio.h"
-#include "../../../kernel/assert.h"
+#include "common/stdint.h"
+#include "common/stdio.h"
+#include "kernel/assert.h"
 
 /**
  * interrupt handler table.

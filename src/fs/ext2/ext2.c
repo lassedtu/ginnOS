@@ -1,7 +1,7 @@
 #include "ext2.h"
-#include "../../common/memory.h"
-#include "../../common/string.h"
-#include "../../common/stdio.h"
+#include "common/memory.h"
+#include "common/string.h"
+#include "common/stdio.h"
 
 #define EXT2_SECTOR_SIZE 512u
 #define EXT2_MIN(a, b) ((a) < (b) ? (a) : (b))

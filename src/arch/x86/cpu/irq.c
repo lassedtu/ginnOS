@@ -2,8 +2,8 @@
 #include "pic.h"
 #include "io.h"
 #include "isr.h"
-#include "../../../common/stdio.h"
-#include "../../../kernel/assert.h"
+#include "common/stdio.h"
+#include "kernel/assert.h"
 
 /** handler table for the 16 hardware IRQ lines (IRQ 0–15). */
 static irq_handler_t irq_handlers[16];

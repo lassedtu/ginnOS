@@ -1,6 +1,6 @@
-#include "../../common/stdint.h"
-#include "../../common/stdio.h"
-#include "../../common/boot/boot_info.h"
+#include "common/stdint.h"
+#include "common/stdio.h"
+#include "common/boot/boot_info.h"
 
 void memory_print_map(boot_info_t *boot)
 {

@@ -1,6 +1,6 @@
 #include "vfs.h"
 
-#include "../../common/string.h"
+#include "common/string.h"
 
 static FS_MOUNT *root_mount = 0; // pointer to the root filesystem mount structure, initialized during kernel startup
 

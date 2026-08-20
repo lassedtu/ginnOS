@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../common/stdint.h"
+#include "common/stdint.h"
 
 // ELF32 file header magic numbers.
 #define ELF_MAGIC_0 0x7F

@@ -1,7 +1,7 @@
 #include "console.h"
 
-#include "../../drivers/video/vga/vga.h"
-#include "../../drivers/keyboard/keyboard.h"
+#include "drivers/video/vga/vga.h"
+#include "drivers/keyboard/keyboard.h"
 
 #define CONSOLE_VGA_WIDTH 80u
 #define CONSOLE_VGA_HEIGHT 25u

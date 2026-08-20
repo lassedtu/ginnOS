@@ -1,7 +1,7 @@
 #include "exception.h"
-#include "../../../common/stdint.h"
-#include "../../../common/stdio.h"
-#include "../../../kernel/panic.h"
+#include "common/stdint.h"
+#include "common/stdio.h"
+#include "kernel/panic.h"
 
 /**
  * exception names for the first 32 CPU exceptions.

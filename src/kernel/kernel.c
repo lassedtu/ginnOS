@@ -7,12 +7,12 @@
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
-#include "../common/stdio.h"
-#include "../arch/x86/cpu/io.h"
+#include "common/stdio.h"
+#include "arch/x86/cpu/io.h"
 
-#include "../drivers/disk/ata.h"
-#include "../drivers/disk/partition.h"
-#include "../drivers/keyboard/keyboard.h"
+#include "drivers/disk/ata.h"
+#include "drivers/disk/partition.h"
+#include "drivers/keyboard/keyboard.h"
 
 #include "console/console.h"
 #include "memory/kernel_layout.h"
@@ -21,7 +21,7 @@
 #include "memory/region.h"
 #include "memory/reservations.h"
 #include "memory/heap.h"
-#include "../arch/x86/cpu/paging.h"
+#include "arch/x86/cpu/paging.h"
 #include "syscall/syscall.h"
 #include "process/process.h"
 #include "scheduler/scheduler.h"

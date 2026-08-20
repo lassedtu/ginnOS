@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../common/stdint.h"
+#include "common/stdint.h"
 
 /**
  * maximum number of reserved memory regions the table can hold.

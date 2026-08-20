@@ -1,4 +1,4 @@
-#include "../../common/stdint.h"
+#include "common/stdint.h"
 
 #define VGA_TEXT_BUFFER ((volatile uint16_t *)0xB8000)
 #define VGA_WIDTH 80u

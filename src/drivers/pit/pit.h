@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../common/stdint.h"
+#include "common/stdint.h"
 
 /**
  * initializes the PIT timer.

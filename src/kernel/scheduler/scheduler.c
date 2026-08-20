@@ -1,8 +1,8 @@
 #include "scheduler.h"
-#include "../process/process.h"
-#include "../../arch/x86/cpu/gdt.h"
-#include "../../arch/x86/cpu/paging.h"
-#include "../../common/memory.h"
+#include "kernel/process/process.h"
+#include "arch/x86/cpu/gdt.h"
+#include "arch/x86/cpu/paging.h"
+#include "common/memory.h"
 
 /**
  * context_switch defined in context_switch.asm.

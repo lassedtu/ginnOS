@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../common/stdint.h"
+#include "common/stdint.h"
 
 /**
  * jump to a user-mode function at the given entry point.

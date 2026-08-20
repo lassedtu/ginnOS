@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../../common/stdint.h"
+#include "common/stdint.h"
 
 // Page size
 #define PAGE_SIZE 4096u

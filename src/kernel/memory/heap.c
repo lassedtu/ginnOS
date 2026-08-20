@@ -3,9 +3,9 @@
 #include "pmm.h"
 #include "pmm_layout.h"
 #include "reservations.h"
-#include "../panic.h"
-#include "../../common/stdio.h"
-#include "../../common/memory.h"
+#include "kernel/panic.h"
+#include "common/stdio.h"
+#include "common/memory.h"
 
 /**
  * pointer to the first block in the heap's linked list.

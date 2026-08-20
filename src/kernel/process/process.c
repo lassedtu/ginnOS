@@ -1,7 +1,7 @@
 #include "process.h"
-#include "../memory/pmm.h"
-#include "../../arch/x86/cpu/paging.h"
-#include "../../common/memory.h"
+#include "kernel/memory/pmm.h"
+#include "arch/x86/cpu/paging.h"
+#include "common/memory.h"
 
 // the process table fixed array of PCBs.
 static process_t proc_table[PROCESS_MAX];

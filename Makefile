@@ -14,19 +14,19 @@ BUILD_DIR := build
 
 CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
           -fno-pie -fno-jump-tables \
-          -MMD -MP
+          -I src -MMD -MP
 
 STAGE2_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 \
                  -fno-pic -fno-stack-protector \
                  -fno-unwind-tables -fno-asynchronous-unwind-tables \
                  -ffunction-sections -fdata-sections -fomit-frame-pointer \
-                 -MMD -MP
+                 -I src -MMD -MP
 
 COMMON_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 \
                  -fno-pic -fno-stack-protector \
                  -fno-unwind-tables -fno-asynchronous-unwind-tables \
                  -ffunction-sections -fdata-sections -fomit-frame-pointer \
-                 -MMD -MP
+                 -I src -MMD -MP
 
 LDFLAGS        := -T linker/kernel.ld -nostdlib
 STAGE2_LDFLAGS := -T linker/stage2.ld -nostdlib --gc-sections

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../process/process.h"
+#include "kernel/process/process.h"
 
 /** number of PIT ticks per scheduling time slice (~20ms at 100Hz). */
 #define SCHED_TIME_SLICE 2

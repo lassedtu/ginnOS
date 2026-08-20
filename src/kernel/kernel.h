@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../common/boot/boot_info.h"
+#include "common/boot/boot_info.h"
 
 /**
  * stable kernel entry point invoked from early asm with boot metadata.

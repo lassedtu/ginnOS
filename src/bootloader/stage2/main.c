@@ -1,9 +1,9 @@
-#include "../../common/stdint.h"
-#include "../../common/stdio.h"
-#include "../../common/boot/boot_info.h"
-#include "../../drivers/disk/ata.h"
-#include "../../drivers/disk/partition.h"
-#include "../../fs/ext2/ext2.h"
+#include "common/stdint.h"
+#include "common/stdio.h"
+#include "common/boot/boot_info.h"
+#include "drivers/disk/ata.h"
+#include "drivers/disk/partition.h"
+#include "fs/ext2/ext2.h"
 
 #define KERNEL_ENTRY_ADDRESS 0x10000u // address where the kernel binary will be loaded in memory (64KB mark)
 

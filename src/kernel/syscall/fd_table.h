@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../common/stdint.h"
-#include "../vfs/vfs.h"
+#include "common/stdint.h"
+#include "kernel/vfs/vfs.h"
 
 // maximum number of file descriptors per process.
 #define FD_MAX 16

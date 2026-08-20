@@ -1,5 +1,5 @@
 #include "panic.h"
-#include "../common/stdio.h"
+#include "common/stdio.h"
 
 void kernel_panic(const char *message)
 {

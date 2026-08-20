@@ -1,11 +1,11 @@
 #include "elf_loader.h"
 #include "elf.h"
 
-#include "../vfs/vfs.h"
-#include "../memory/pmm.h"
-#include "../memory/heap.h"
-#include "../../arch/x86/cpu/paging.h"
-#include "../../common/memory.h"
+#include "kernel/vfs/vfs.h"
+#include "kernel/memory/pmm.h"
+#include "kernel/memory/heap.h"
+#include "arch/x86/cpu/paging.h"
+#include "common/memory.h"
 
 #define PAGE_SIZE 4096u
 

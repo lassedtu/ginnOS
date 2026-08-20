@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../common/stdint.h"
-#include "../syscall/fd_table.h"
+#include "common/stdint.h"
+#include "kernel/syscall/fd_table.h"
 
 // maximum number of concurrent processes.
 #define PROCESS_MAX 64

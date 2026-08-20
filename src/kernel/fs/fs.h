@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../../common/stdint.h"
-#include "../../drivers/disk/block_device.h"
-#include "../../fs/ext2/ext2.h"
+#include "common/stdint.h"
+#include "drivers/disk/block_device.h"
+#include "fs/ext2/ext2.h"
 
 /**
  * file system types

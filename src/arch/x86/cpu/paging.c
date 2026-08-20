@@ -1,12 +1,12 @@
 #include "paging.h"
 #include "isr.h"
 
-#include "../../../common/memory.h"
-#include "../../../common/stdio.h"
-#include "../../../kernel/memory/pmm.h"
-#include "../../../kernel/memory/pmm_layout.h"
-#include "../../../kernel/memory/region.h"
-#include "../../../kernel/panic.h"
+#include "common/memory.h"
+#include "common/stdio.h"
+#include "kernel/memory/pmm.h"
+#include "kernel/memory/pmm_layout.h"
+#include "kernel/memory/region.h"
+#include "kernel/panic.h"
 
 extern void paging_flush(uint32_t page_directory_phys);
 extern void paging_invalidate(uint32_t virtual_address);

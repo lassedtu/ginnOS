@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../../common/stdint.h"
-#include "../../common/boot/boot_info.h"
+#include "common/stdint.h"
+#include "common/boot/boot_info.h"
 
 #define PAGE_SIZE 4096u
 

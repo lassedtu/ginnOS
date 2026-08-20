@@ -1,5 +1,5 @@
 #include "ata.h"
-#include "../../arch/x86/cpu/io.h"
+#include "arch/x86/cpu/io.h"
 
 /*
  * register offsets from the I/O base port.

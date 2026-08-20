@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../fs/fs.h"
+#include "kernel/fs/fs.h"
 
 typedef FS_STAT VFS_STAT;
 

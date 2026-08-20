@@ -1,9 +1,9 @@
 #include "pit.h"
 
-#include "../../arch/x86/cpu/io.h"
-#include "../../arch/x86/cpu/irq.h"
-#include "../../arch/x86/cpu/pic.h"
-#include "../../kernel/scheduler/scheduler.h"
+#include "arch/x86/cpu/io.h"
+#include "arch/x86/cpu/irq.h"
+#include "arch/x86/cpu/pic.h"
+#include "kernel/scheduler/scheduler.h"
 
 enum
 {

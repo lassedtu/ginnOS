@@ -1,5 +1,5 @@
 #include "fs.h"
-#include "../../common/memory.h"
+#include "common/memory.h"
 
 /**
  * map EXT2 file type to FS file type.
