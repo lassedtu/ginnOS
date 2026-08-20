@@ -1,4 +1,5 @@
 #include "unistd.h"
+#include "errno.h"
 
 /**
  * @file unistd.c
@@ -7,32 +8,68 @@
 
 ssize_t write(int fd, const void *buf, size_t count)
 {
-    return (ssize_t)_syscall(SYS_WRITE, fd, (int)buf, (int)count, 0, 0);
+    int ret = _syscall(SYS_WRITE, fd, (int)buf, (int)count, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return (ssize_t)ret;
 }
 
 ssize_t read(int fd, void *buf, size_t count)
 {
-    return (ssize_t)_syscall(SYS_READ, fd, (int)buf, (int)count, 0, 0);
+    int ret = _syscall(SYS_READ, fd, (int)buf, (int)count, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return (ssize_t)ret;
 }
 
 int open(const char *path, int flags)
 {
-    return _syscall(SYS_OPEN, (int)path, flags, 0, 0, 0);
+    int ret = _syscall(SYS_OPEN, (int)path, flags, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int close(int fd)
 {
-    return _syscall(SYS_CLOSE, fd, 0, 0, 0, 0);
+    int ret = _syscall(SYS_CLOSE, fd, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 pid_t exec(const char *path, const char **argv)
 {
-    return (pid_t)_syscall(SYS_EXEC, (int)path, (int)argv, 0, 0, 0);
+    int ret = _syscall(SYS_EXEC, (int)path, (int)argv, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return (pid_t)ret;
 }
 
 int waitpid(pid_t pid)
 {
-    return _syscall(SYS_WAITPID, (int)pid, 0, 0, 0, 0);
+    int ret = _syscall(SYS_WAITPID, (int)pid, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 void _exit(int status)
@@ -53,42 +90,90 @@ void *sbrk(int increment)
 
 int getcwd(char *buf, size_t size)
 {
-    return _syscall(SYS_GETCWD, (int)buf, (int)size, 0, 0, 0);
+    int ret = _syscall(SYS_GETCWD, (int)buf, (int)size, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int chdir(const char *path)
 {
-    return _syscall(SYS_CHDIR, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_CHDIR, (int)path, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int readdir(int fd, dirent_t *entry)
 {
-    return _syscall(SYS_READDIR, fd, (int)entry, 0, 0, 0);
+    int ret = _syscall(SYS_READDIR, fd, (int)entry, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int unlink(const char *path)
 {
-    return _syscall(SYS_UNLINK, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_UNLINK, (int)path, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int rmdir(const char *path)
 {
-    return _syscall(SYS_RMDIR, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_RMDIR, (int)path, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int create(const char *path)
 {
-    return _syscall(SYS_CREATE, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_CREATE, (int)path, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int mkdir(const char *path)
 {
-    return _syscall(SYS_MKDIR, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_MKDIR, (int)path, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int ttyctl(int mode)
 {
-    return _syscall(SYS_TTYCTL, mode, 0, 0, 0, 0);
+    int ret = _syscall(SYS_TTYCTL, mode, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int read_event(key_event_t *event)
@@ -101,20 +186,44 @@ int read_event(key_event_t *event)
 
 int pipe(int fds[2])
 {
-    return _syscall(SYS_PIPE, (int)fds, 0, 0, 0, 0);
+    int ret = _syscall(SYS_PIPE, (int)fds, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int dup2(int old_fd, int new_fd)
 {
-    return _syscall(SYS_DUP2, old_fd, new_fd, 0, 0, 0);
+    int ret = _syscall(SYS_DUP2, old_fd, new_fd, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int ftruncate(int fd)
 {
-    return _syscall(SYS_FTRUNCATE, fd, 0, 0, 0, 0);
+    int ret = _syscall(SYS_FTRUNCATE, fd, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 int lseek(int fd, int offset, int whence)
 {
-    return _syscall(SYS_LSEEK, fd, offset, whence, 0, 0);
+    int ret = _syscall(SYS_LSEEK, fd, offset, whence, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }

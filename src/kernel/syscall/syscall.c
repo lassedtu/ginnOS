@@ -18,6 +18,30 @@
 #include "common/memory.h"
 #include "common/string.h"
 
+/* map a kerr_t error to a negative errno value for userspace */
+static int32_t kerr_to_errno(kerr_t err)
+{
+    switch (err)
+    {
+    case KERR_OK:       return 0;
+    case KERR_NOMEM:    return -4;  /* ENOMEM */
+    case KERR_IO:       return -14; /* EIO */
+    case KERR_NOTFOUND: return -5;  /* ENOENT */
+    case KERR_PERM:     return -6;  /* EACCES */
+    case KERR_INVAL:    return -3;  /* EINVAL */
+    case KERR_BUSY:     return -16; /* EBUSY */
+    case KERR_NOSPC:    return -15; /* ENOSPC */
+    case KERR_RANGE:    return -17; /* ERANGE */
+    case KERR_EXIST:    return -9;  /* EEXIST */
+    case KERR_ISDIR:    return -10; /* EISDIR */
+    case KERR_NOTDIR:   return -11; /* ENOTDIR */
+    case KERR_PIPE:     return -7;  /* EPIPE */
+    case KERR_NOENT:    return -5;  /* ENOENT */
+    case KERR_FAULT:    return -18; /* EFAULT */
+    }
+    return -3; /* EINVAL as fallback */
+}
+
 /**
  * syscall function pointer type. takes a pointer to the CPU registers struct and returns an int32_t.
  * the registers struct contains the syscall number in EAX and arguments in EBX, ECX, EDX, ESI, EDI.
@@ -87,7 +111,7 @@ static void syscall_handler(struct registers *regs)
 
     if (num >= SYSCALL_COUNT || !syscall_table[num])
     {
-        regs->eax = (uint32_t)-1; /* ENOSYS */
+        regs->eax = (uint32_t)(-1); /* -ENOSYS */
         return;
     }
 
@@ -131,7 +155,7 @@ static int32_t sys_exit(struct registers *regs)
  * SYS_write: write bytes to a file descriptor.
  * args: EBX = fd, ECX = buffer pointer, EDX = count.
  * supports console fds (1, 2), pipe fds, and file fds.
- * returns number of bytes written, or -1 on error.
+ * returns number of bytes written, or negative errno on error.
  */
 static int32_t sys_write(struct registers *regs)
 {
@@ -141,13 +165,13 @@ static int32_t sys_write(struct registers *regs)
 
     if (!buf || count == 0)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
     {
-        return -1;
+        return -2; /* EBADF */
     }
 
     if (entry->type == FD_TYPE_CONSOLE)
@@ -175,11 +199,11 @@ static int32_t sys_write(struct registers *regs)
 
         /* only the write end can write */
         if (entry->pipe.dir != PIPE_WRITE)
-            return -1;
+            return -3; /* EINVAL */
 
         /* if read end is closed, broken pipe */
         if (pb->read_refs <= 0)
-            return -1;
+            return -7; /* EPIPE */
 
         /* write as many bytes as fit into the buffer */
         uint32_t written = 0;
@@ -206,13 +230,13 @@ static int32_t sys_write(struct registers *regs)
         return (int32_t)bytes_written;
     }
 
-    return -1;
+    return -2; /* EBADF */
 }
 
 /**
  * SYS_open: open a file by path.
  * args: EBX = path string pointer, ECX = flags (unused for now).
- * returns fd number on success, -1 on failure.
+ * returns fd number on success, negative errno on failure.
  */
 static int32_t sys_open(struct registers *regs)
 {
@@ -221,7 +245,7 @@ static int32_t sys_open(struct registers *regs)
 
     if (!path)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     /* resolve relative paths against the process's cwd */
@@ -231,21 +255,21 @@ static int32_t sys_open(struct registers *regs)
 
     if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     VFS_FILE file;
-
-    if (kerr_failed(vfs_open(resolved, &file)))
+    kerr_t err = vfs_open(resolved, &file);
+    if (kerr_failed(err))
     {
-        return -1;
+        return kerr_to_errno(err);
     }
 
     int fd = fd_alloc(&file);
     if (fd < 0)
     {
         vfs_close(&file);
-        return -1;
+        return -12; /* EMFILE */
     }
 
     return (int32_t)fd;
@@ -254,7 +278,7 @@ static int32_t sys_open(struct registers *regs)
 /**
  * SYS_close: close an open file descriptor.
  * args: EBX = fd.
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_close(struct registers *regs)
 {
@@ -263,10 +287,15 @@ static int32_t sys_close(struct registers *regs)
     /* don't allow closing stdin/stdout/stderr */
     if (fd < 3)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    return (int32_t)fd_free(fd);
+    if (fd_free(fd) != 0)
+    {
+        return -2; /* EBADF */
+    }
+
+    return 0;
 }
 
 /**
@@ -274,7 +303,7 @@ static int32_t sys_close(struct registers *regs)
  * args: EBX = fd, ECX = buffer pointer, EDX = count.
  * for stdin (fd 0): line-buffered read from keyboard with echo.
  * for files: reads via VFS.
- * returns number of bytes read, or -1 on error.
+ * returns number of bytes read, or negative errno on error.
  */
 static int32_t sys_read(struct registers *regs)
 {
@@ -284,13 +313,13 @@ static int32_t sys_read(struct registers *regs)
 
     if (!buf || count == 0)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
     {
-        return -1;
+        return -2; /* EBADF */
     }
 
     if (entry->type == FD_TYPE_CONSOLE)
@@ -298,7 +327,7 @@ static int32_t sys_read(struct registers *regs)
         /* only stdin (fd 0) is readable */
         if (fd_num != 0)
         {
-            return -1;
+            return -2; /* EBADF */
         }
 
         process_t *proc = process_current();
@@ -309,7 +338,7 @@ static int32_t sys_read(struct registers *regs)
              * the buffer must be large enough to hold the struct (8 bytes). */
             if (count < sizeof(keyboard_event_t))
             {
-                return -1;
+                return -3; /* EINVAL */
             }
 
             keyboard_event_t event;
@@ -364,7 +393,7 @@ static int32_t sys_read(struct registers *regs)
 
         /* only the read end can read */
         if (entry->pipe.dir != PIPE_READ)
-            return -1;
+            return -2; /* EBADF */
 
         /* block until data is available or write end is closed */
         while (pb->count == 0)
@@ -390,14 +419,14 @@ static int32_t sys_read(struct registers *regs)
         return (int32_t)to_read;
     }
 
-    return -1;
+    return -2; /* EBADF */
 }
 
 /**
  * SYS_stat: get file metadata.
  * args: EBX = path string pointer, ECX = pointer to stat output struct.
  * the output struct matches VFS_STAT (FS_STAT).
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_stat(struct registers *regs)
 {
@@ -406,7 +435,7 @@ static int32_t sys_stat(struct registers *regs)
 
     if (!path || !stat_out)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     /* resolve relative paths against the process's cwd */
@@ -416,12 +445,13 @@ static int32_t sys_stat(struct registers *regs)
 
     if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    if (kerr_failed(vfs_stat(resolved, stat_out)))
+    kerr_t err = vfs_stat(resolved, stat_out);
+    if (kerr_failed(err))
     {
-        return -1;
+        return kerr_to_errno(err);
     }
 
     return 0;
@@ -430,7 +460,7 @@ static int32_t sys_stat(struct registers *regs)
 /**
  * SYS_create: create a regular file.
  * args: EBX = path string pointer.
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_create(struct registers *regs)
 {
@@ -438,7 +468,7 @@ static int32_t sys_create(struct registers *regs)
 
     if (!path)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     /* resolve relative paths against the process's cwd */
@@ -448,12 +478,13 @@ static int32_t sys_create(struct registers *regs)
 
     if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    if (kerr_failed(vfs_create(resolved)))
+    kerr_t err = vfs_create(resolved);
+    if (kerr_failed(err))
     {
-        return -1;
+        return kerr_to_errno(err);
     }
 
     return 0;
@@ -462,7 +493,7 @@ static int32_t sys_create(struct registers *regs)
 /**
  * SYS_mkdir: create a directory.
  * args: EBX = path string pointer.
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_mkdir(struct registers *regs)
 {
@@ -470,7 +501,7 @@ static int32_t sys_mkdir(struct registers *regs)
 
     if (!path)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     /* resolve relative paths against the process's cwd */
@@ -480,12 +511,13 @@ static int32_t sys_mkdir(struct registers *regs)
 
     if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    if (kerr_failed(vfs_mkdir(resolved)))
+    kerr_t err = vfs_mkdir(resolved);
+    if (kerr_failed(err))
     {
-        return -1;
+        return kerr_to_errno(err);
     }
 
     return 0;
@@ -508,7 +540,7 @@ static int32_t sys_getpid(struct registers *regs)
 /**
  * SYS_exec: load and execute an ELF binary.
  * args: EBX = path string pointer, ECX = argv array pointer (may be NULL).
- * does not return on success. returns -1 on failure.
+ * does not return on success. returns negative errno on failure.
  */
 static int32_t sys_exec(struct registers *regs)
 {
@@ -517,7 +549,7 @@ static int32_t sys_exec(struct registers *regs)
 
     if (!path)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     /* resolve relative paths against the process's cwd */
@@ -527,10 +559,15 @@ static int32_t sys_exec(struct registers *regs)
 
     if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    return (int32_t)exec_program(resolved, argv);
+    int32_t ret = (int32_t)exec_program(resolved, argv);
+    if (ret < 0)
+    {
+        return -5; /* ENOENT */
+    }
+    return ret;
 }
 
 /**
@@ -592,7 +629,7 @@ static int32_t sys_sbrk(struct registers *regs)
 /**
  * SYS_waitpid: wait for a child process to exit.
  * args: EBX = child PID to wait for.
- * returns the child's exit code on success, or -1 on error.
+ * returns the child's exit code on success, or negative errno on error.
  *
  * if the child is already a zombie, reaps it immediately.
  * otherwise, blocks the calling process until the child exits.
@@ -604,19 +641,19 @@ static int32_t sys_waitpid(struct registers *regs)
 
     if (!parent)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     process_t *child = process_get(child_pid);
     if (!child)
     {
-        return -1; /* no such process */
+        return -19; /* ESRCH */
     }
 
     /* verify this is actually our child */
     if (child->parent_pid != parent->pid)
     {
-        return -1; /* not our child */
+        return -20; /* ECHILD */
     }
 
     /* if child is already a zombie, reap immediately */
@@ -643,13 +680,13 @@ static int32_t sys_waitpid(struct registers *regs)
     }
 
     /* child disappeared somehow */
-    return -1;
+    return -19; /* ESRCH */
 }
 
 /**
  * SYS_getcwd: copy the current working directory into a user buffer.
  * args: EBX = buffer pointer, ECX = buffer size.
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_getcwd(struct registers *regs)
 {
@@ -659,13 +696,13 @@ static int32_t sys_getcwd(struct registers *regs)
 
     if (!proc || !buf || size == 0)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     uint32_t len = strlen(proc->cwd);
     if (len + 1 > size)
     {
-        return -1;
+        return -17; /* ERANGE */
     }
 
     strcpy(buf, proc->cwd);
@@ -675,7 +712,7 @@ static int32_t sys_getcwd(struct registers *regs)
 /**
  * SYS_chdir: change the current working directory.
  * args: EBX = path string pointer.
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_chdir(struct registers *regs)
 {
@@ -684,26 +721,27 @@ static int32_t sys_chdir(struct registers *regs)
 
     if (!proc || !path)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    // resolve the path relative to the current cwd
+    /* resolve the path relative to the current cwd */
     char resolved[PATH_MAX];
     if (!vfs_resolve_path(proc->cwd, path, resolved, sizeof(resolved)))
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    // verify the target is a valid directory
+    /* verify the target is a valid directory */
     VFS_STAT stat;
-    if (kerr_failed(vfs_stat(resolved, &stat)))
+    kerr_t err = vfs_stat(resolved, &stat);
+    if (kerr_failed(err))
     {
-        return -1;
+        return kerr_to_errno(err);
     }
 
     if (stat.file_type != FS_TYPE_DIR)
     {
-        return -1;
+        return -11; /* ENOTDIR */
     }
 
     strncpy(proc->cwd, resolved, PATH_MAX - 1);
@@ -721,7 +759,7 @@ static int32_t sys_chdir(struct registers *regs)
  *   uint32_t size
  *   char     name[256]
  *
- * returns 0 on success, -1 on failure or end of directory.
+ * returns 0 on success, negative errno on failure or end of directory.
  */
 static int32_t sys_readdir(struct registers *regs)
 {
@@ -730,19 +768,20 @@ static int32_t sys_readdir(struct registers *regs)
 
     if (!user_dirent)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry || entry->type != FD_TYPE_FILE)
     {
-        return -1;
+        return -2; /* EBADF */
     }
 
     FS_DIRENT dirent;
-    if (kerr_failed(vfs_read_entry(&entry->file, &dirent)))
+    kerr_t err = vfs_read_entry(&entry->file, &dirent);
+    if (kerr_failed(err))
     {
-        return -1;
+        return kerr_to_errno(err);
     }
 
     /* copy to userspace */
@@ -753,7 +792,7 @@ static int32_t sys_readdir(struct registers *regs)
 /**
  * SYS_unlink: remove a file.
  * args: EBX = path string pointer.
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_unlink(struct registers *regs)
 {
@@ -761,7 +800,7 @@ static int32_t sys_unlink(struct registers *regs)
 
     if (!path)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     /* resolve relative paths against the process's cwd */
@@ -771,12 +810,13 @@ static int32_t sys_unlink(struct registers *regs)
 
     if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    if (kerr_failed(vfs_remove(resolved)))
+    kerr_t err = vfs_remove(resolved);
+    if (kerr_failed(err))
     {
-        return -1;
+        return kerr_to_errno(err);
     }
 
     return 0;
@@ -785,7 +825,7 @@ static int32_t sys_unlink(struct registers *regs)
 /**
  * SYS_rmdir: remove a directory.
  * args: EBX = path string pointer.
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_rmdir(struct registers *regs)
 {
@@ -793,7 +833,7 @@ static int32_t sys_rmdir(struct registers *regs)
 
     if (!path)
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
     /* resolve relative paths against the process's cwd */
@@ -803,12 +843,13 @@ static int32_t sys_rmdir(struct registers *regs)
 
     if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
     {
-        return -1;
+        return -3; /* EINVAL */
     }
 
-    if (kerr_failed(vfs_rmdir(resolved)))
+    kerr_t err = vfs_rmdir(resolved);
+    if (kerr_failed(err))
     {
-        return -1;
+        return kerr_to_errno(err);
     }
 
     return 0;
@@ -817,7 +858,7 @@ static int32_t sys_rmdir(struct registers *regs)
 /**
  * SYS_ttyctl: switch terminal mode for the calling process.
  * args: EBX = mode (0 = cooked/line-buffered, 1 = raw/event-based).
- * returns the previous mode on success, -1 on error.
+ * returns the previous mode on success, negative errno on error.
  */
 static int32_t sys_ttyctl(struct registers *regs)
 {
@@ -825,10 +866,10 @@ static int32_t sys_ttyctl(struct registers *regs)
     process_t *proc = process_current();
 
     if (!proc)
-        return -1;
+        return -3; /* EINVAL */
 
     if (mode > 1)
-        return -1;
+        return -3; /* EINVAL */
 
     int32_t prev = (int32_t)proc->tty_raw;
     proc->tty_raw = (uint8_t)mode;
@@ -838,7 +879,7 @@ static int32_t sys_ttyctl(struct registers *regs)
 /**
  * SYS_pipe: create a pipe (pair of connected file descriptors).
  * args: EBX = pointer to int[2] array (receives [read_fd, write_fd]).
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_pipe(struct registers *regs)
 {
@@ -846,14 +887,14 @@ static int32_t sys_pipe(struct registers *regs)
     process_t *proc = process_current();
 
     if (!proc || !user_fds)
-        return -1;
+        return -3; /* EINVAL */
 
-    // allocate a pipe buffer
+    /* allocate a pipe buffer */
     pipe_buf_t *buf = pipe_alloc();
     if (!buf)
-        return -1;
+        return -21; /* ENOBUFS */
 
-    // find two free fd slots
+    /* find two free fd slots */
     int read_fd = -1;
     int write_fd = -1;
 
@@ -871,20 +912,20 @@ static int32_t sys_pipe(struct registers *regs)
     if (read_fd < 0 || write_fd < 0)
     {
         pipe_release(buf);
-        return -1;
+        return -12; /* EMFILE */
     }
 
-    // set up read end
+    /* set up read end */
     proc->fds[read_fd].type = FD_TYPE_PIPE;
     proc->fds[read_fd].pipe.buf = buf;
     proc->fds[read_fd].pipe.dir = PIPE_READ;
 
-    // set up write end
+    /* set up write end */
     proc->fds[write_fd].type = FD_TYPE_PIPE;
     proc->fds[write_fd].pipe.buf = buf;
     proc->fds[write_fd].pipe.dir = PIPE_WRITE;
 
-    // return fd numbers to userspace
+    /* return fd numbers to userspace */
     user_fds[0] = read_fd;
     user_fds[1] = write_fd;
 
@@ -895,7 +936,7 @@ static int32_t sys_pipe(struct registers *regs)
  * SYS_dup2: duplicate a file descriptor to a specific number.
  * args: EBX = old_fd, ECX = new_fd.
  * if new_fd is already open, it is closed first.
- * returns new_fd on success, -1 on failure.
+ * returns new_fd on success, negative errno on failure.
  */
 static int32_t sys_dup2(struct registers *regs)
 {
@@ -904,28 +945,28 @@ static int32_t sys_dup2(struct registers *regs)
     process_t *proc = process_current();
 
     if (!proc)
-        return -1;
+        return -3; /* EINVAL */
 
     if (old_fd < 0 || old_fd >= FD_MAX || new_fd < 0 || new_fd >= FD_MAX)
-        return -1;
+        return -2; /* EBADF */
 
     if (proc->fds[old_fd].type == FD_TYPE_NONE)
-        return -1;
+        return -2; /* EBADF */
 
-    // if same fd, just return it
+    /* if same fd, just return it */
     if (old_fd == new_fd)
         return new_fd;
 
-    // close new_fd if it's already open
+    /* close new_fd if it's already open */
     if (proc->fds[new_fd].type != FD_TYPE_NONE)
     {
         fd_free(new_fd);
     }
 
-    // copy the fd entry
+    /* copy the fd entry */
     proc->fds[new_fd] = proc->fds[old_fd];
 
-    // if it's a pipe, increment the ref counts
+    /* if it's a pipe, increment the ref counts */
     if (proc->fds[new_fd].type == FD_TYPE_PIPE)
     {
         proc->fds[new_fd].pipe.buf->ref_count++;
@@ -941,18 +982,22 @@ static int32_t sys_dup2(struct registers *regs)
 /**
  * SYS_ftruncate: truncate an open file to zero length.
  * args: EBX = fd.
- * returns 0 on success, -1 on failure.
+ * returns 0 on success, negative errno on failure.
  */
 static int32_t sys_ftruncate(struct registers *regs)
 {
     int fd_num = (int)regs->ebx;
     fd_entry_t *entry = fd_get(fd_num);
 
-    if (!entry || entry->type != FD_TYPE_FILE)
-        return -1;
+    if (!entry)
+        return -2; /* EBADF */
 
-    if (kerr_failed(vfs_truncate(&entry->file)))
-        return -1;
+    if (entry->type != FD_TYPE_FILE)
+        return -3; /* EINVAL */
+
+    kerr_t err = vfs_truncate(&entry->file);
+    if (kerr_failed(err))
+        return kerr_to_errno(err);
 
     return 0;
 }
@@ -960,7 +1005,7 @@ static int32_t sys_ftruncate(struct registers *regs)
 /**
  * SYS_lseek: set the file cursor position.
  * args: EBX = fd, ECX = offset, EDX = whence (0=SET, 1=CUR, 2=END).
- * returns the new cursor position, or -1 on error.
+ * returns the new cursor position, or negative errno on error.
  */
 static int32_t sys_lseek(struct registers *regs)
 {
@@ -969,8 +1014,11 @@ static int32_t sys_lseek(struct registers *regs)
     int whence = (int)regs->edx;
 
     fd_entry_t *entry = fd_get(fd_num);
-    if (!entry || entry->type != FD_TYPE_FILE)
-        return -1;
+    if (!entry)
+        return -2; /* EBADF */
+
+    if (entry->type != FD_TYPE_FILE)
+        return -8; /* ESPIPE */
 
     uint32_t size = entry->file.file.ext2_file.size;
     uint32_t cursor = entry->file.file.ext2_file.cursor;
@@ -988,7 +1036,7 @@ static int32_t sys_lseek(struct registers *regs)
         new_pos = (int32_t)size + offset;
         break;
     default:
-        return -1;
+        return -3; /* EINVAL */
     }
 
     if (new_pos < 0)
