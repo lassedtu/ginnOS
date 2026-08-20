@@ -1,0 +1,42 @@
+Language: C
+BasedOnStyle: LLVM
+
+# indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentCaseLabels: false
+
+# braces: allman style
+BreakBeforeBraces: Allman
+
+# line length
+ColumnLimit: 100
+
+# spaces
+SpaceBeforeParens: ControlStatements
+SpaceAfterCStyleCast: false
+SpacesInParentheses: false
+
+# alignment
+AlignConsecutiveMacros: true
+AlignEscapedNewlines: Left
+AlignTrailingComments: true
+
+# includes
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# pointer alignment
+PointerAlignment: Right
+
+# single-line allowances
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+
+# misc
+InsertBraces: false
+BinPackParameters: true
+BinPackArguments: true

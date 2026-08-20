@@ -1,52 +1,70 @@
-# Toolchain
+# architecture selection (prepares multi-arch builds)
+ARCH ?= i686
 
-CROSS   ?= i686-elf-
+ifeq ($(ARCH),i686)
+  CROSS       ?= i686-elf-
+  ARCH_DIRS   := src/arch/x86
+  LINKER_DIR  := linker
+  QEMU        := qemu-system-i386
+  ASM_FORMAT  := elf32
+  ASM_BIN_FMT := bin
+else
+  $(error unsupported ARCH=$(ARCH). currently only i686 is implemented)
+endif
+
+# toolchain
 AS      := nasm
 CC      := $(CROSS)gcc
 LD      := $(CROSS)ld
 OBJCOPY := $(CROSS)objcopy
-QEMU    := qemu-system-i386
 PYTHON  ?= python3
 
 BUILD_DIR := build
 
-#  Compiler / linker flags 
+# shared base flags
+BASE_WARNINGS := -Wall -Wextra
+BASE_CFLAGS   := -std=gnu11 -ffreestanding -m32 -I src -MMD -MP
 
-CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
-          -fno-pie -fno-jump-tables \
-          -I src -MMD -MP
+# per-subsystem compiler flags
+KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 \
+                 -fno-pie -fno-jump-tables
 
-STAGE2_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 \
+DRIVER_CFLAGS := $(KERNEL_CFLAGS)
+
+COMMON_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Os \
                  -fno-pic -fno-stack-protector \
                  -fno-unwind-tables -fno-asynchronous-unwind-tables \
-                 -ffunction-sections -fdata-sections -fomit-frame-pointer \
-                 -I src -MMD -MP
+                 -ffunction-sections -fdata-sections -fomit-frame-pointer
 
-COMMON_CFLAGS := -std=gnu11 -ffreestanding -Os -Wall -Wextra -m32 \
-                 -fno-pic -fno-stack-protector \
-                 -fno-unwind-tables -fno-asynchronous-unwind-tables \
-                 -ffunction-sections -fdata-sections -fomit-frame-pointer \
-                 -I src -MMD -MP
+STAGE2_CFLAGS := $(COMMON_CFLAGS)
 
-LDFLAGS        := -T linker/kernel.ld -nostdlib
-STAGE2_LDFLAGS := -T linker/stage2.ld -nostdlib --gc-sections
+# debug build overrides (make debug)
+ifeq ($(BUILD_MODE),debug)
+  KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Og -g -DDEBUG \
+                   -fno-pie -fno-jump-tables
+  DRIVER_CFLAGS := $(KERNEL_CFLAGS)
+endif
 
-#  Source directory sets
+# linker flags
+LDFLAGS        := -T $(LINKER_DIR)/kernel.ld -nostdlib
+STAGE2_LDFLAGS := -T $(LINKER_DIR)/stage2.ld -nostdlib --gc-sections
+
+# source directory sets
 STAGE1_SRC := src/bootloader/stage1/boot.asm
 
-STAGE2_C_DIRS   := src/bootloader/stage2 src/drivers/disk src/fs/ext2
+STAGE2_C_DIRS    := src/bootloader/stage2 src/drivers/disk src/fs/ext2
 STAGE2_ENTRY_ASM := src/bootloader/stage2/main.asm
 
-KERNEL_C_DIRS   := src/kernel src/arch src/drivers src/fs
-KERNEL_ASM_DIRS := src/kernel src/arch
+KERNEL_C_DIRS   := src/kernel $(ARCH_DIRS) src/drivers src/fs
+KERNEL_ASM_DIRS := src/kernel $(ARCH_DIRS)
 COMMON_C_DIR    := src/common
 
-#  ISR code generation
+# isr code generation
 ISR_GEN_SCRIPT := tools/generate_isrs.sh
 ISR_GEN_C      := src/arch/x86/cpu/isr_gen.c
 ISR_GEN_INC    := src/arch/x86/asm/isr_gen.inc
 
-#  Root filesystem / disk image
+# root filesystem / disk image
 EXT2_IMAGE_TOOL  := tools/ext2/make_image.py
 EXT2_SOURCE_DIR  ?= tools/ext2/rootfs
 EXT2_SIZE_MB     ?=
@@ -65,7 +83,7 @@ STAGE2_SECTORS   := 62
 SECTOR_SIZE      := 512
 STAGE2_MAX_BYTES := $(shell echo $$(( $(STAGE2_SECTORS) * $(SECTOR_SIZE) )))
 
-#  Path mapping helpers 
+# path mapping helpers
 src_c_to_obj      = $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(1))
 src_asm_to_obj    = $(patsubst src/%.asm,$(BUILD_DIR)/%.o,$(1))
 src_c_to_stage2   = $(patsubst src/%.c,$(BUILD_DIR)/stage2/%.o,$(1))
@@ -73,7 +91,7 @@ src_c_to_stage2   = $(patsubst src/%.c,$(BUILD_DIR)/stage2/%.o,$(1))
 find_c_sources    = $(shell find $(1) -name '*.c' 2>/dev/null | sort)
 find_asm_sources  = $(shell find $(1) -name '*.asm' 2>/dev/null | sort)
 
-#  Automatic source discovery
+# automatic source discovery
 COMMON_C_SRCS := $(call find_c_sources,$(COMMON_C_DIR))
 COMMON_OBJS   := $(call src_c_to_obj,$(COMMON_C_SRCS))
 
@@ -81,7 +99,7 @@ STAGE2_C_SRCS    := $(foreach d,$(STAGE2_C_DIRS),$(call find_c_sources,$(d)))
 STAGE2_C_OBJS    := $(call src_c_to_stage2,$(STAGE2_C_SRCS))
 STAGE2_ENTRY_OBJ := $(BUILD_DIR)/stage2/bootloader/stage2/entry.o
 
-# Generated ISR table
+# generated isr table
 KERNEL_C_SRCS := $(sort $(foreach d,$(KERNEL_C_DIRS),$(call find_c_sources,$(d))) \
                          $(ISR_GEN_C))
 KERNEL_ASM_SRCS := $(foreach d,$(KERNEL_ASM_DIRS),$(call find_asm_sources,$(d)))
@@ -90,21 +108,21 @@ KERNEL_C_OBJS   := $(call src_c_to_obj,$(KERNEL_C_SRCS))
 KERNEL_ASM_OBJS := $(call src_asm_to_obj,$(KERNEL_ASM_SRCS))
 KERNEL_ENTRY_OBJ := $(BUILD_DIR)/kernel/main.o
 
-# Link order
+# link order
 KERNEL_LINK_OBJS := $(KERNEL_ENTRY_OBJ) \
                     $(filter-out $(KERNEL_ENTRY_OBJ),$(sort $(KERNEL_ASM_OBJS) $(KERNEL_C_OBJS))) \
                     $(COMMON_OBJS)
 
 STAGE2_LINK_OBJS := $(STAGE2_ENTRY_OBJ) $(sort $(STAGE2_C_OBJS)) $(COMMON_OBJS)
 
-# User programs
+# user programs
 USER_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
                 -fno-pie -fno-stack-protector -nostdlib \
                 -Isrc/libc/include -MMD -MP
-USER_LDFLAGS := -T linker/user.ld -nostdlib
+USER_LDFLAGS := -T $(LINKER_DIR)/user.ld -nostdlib
 USER_CRT0    := $(BUILD_DIR)/user/lib/crt0.o
 
-# Libc
+# libc
 LIBC_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
                 -fno-pie -fno-stack-protector -Isrc/libc/include -MMD -MP
 LIBC_C_SRCS  := $(shell find src/libc/src -name '*.c' 2>/dev/null | sort)
@@ -114,60 +132,111 @@ LIBC_ASM_OBJS := $(patsubst src/libc/src/%.asm,$(BUILD_DIR)/libc/%.o,$(LIBC_ASM_
 LIBC_OBJS    := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
 LIBC_A       := $(BUILD_DIR)/libc/libc.a
 
-# User programs  automatic discovery via per-program Makefiles
-# Convention: each program lives in src/user/<name>/ with its own Makefile.
+# user programs: automatic discovery via per-program Makefiles.
+# each program lives in src/user/<name>/ with its own Makefile.
 # src/user/lib/ is excluded (it contains crt0, not a program).
 USER_PROG_DIRS := $(sort $(filter-out src/user/lib,$(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
 USER_PROG_NAMES := $(notdir $(USER_PROG_DIRS))
 USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
 
-# Dependency files (C compilations only)
+# dependency files (C compilations only)
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
 
-# Phony targets
-.PHONY: all run rootfs-image clean check-tools
+# all source files for lint/format targets
+ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
+              $(STAGE2_C_SRCS) $(LIBC_C_SRCS)
+ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
+
+# phony targets
+.PHONY: all run rootfs-image clean check-tools debug lint format compile_commands iso
 
 all: check-tools $(DISK_IMAGE)
 
-check-tools:
-	@command -v $(CC) >/dev/null 2>&1 || { echo "Missing tool: $(CC)"; exit 1; }
-	@command -v $(LD) >/dev/null 2>&1 || { echo "Missing tool: $(LD)"; exit 1; }
-	@command -v $(OBJCOPY) >/dev/null 2>&1 || { echo "Missing tool: $(OBJCOPY)"; exit 1; }
-	@command -v $(AS) >/dev/null 2>&1 || { echo "Missing tool: $(AS)"; exit 1; }
-	@command -v $(QEMU) >/dev/null 2>&1 || { echo "Missing tool: $(QEMU)"; exit 1; }
-	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "Missing tool: $(PYTHON)"; exit 1; }
+# debug build: compile with -Og -g -DDEBUG and launch qemu with gdb stub
+debug:
+	$(MAKE) BUILD_MODE=debug all
+	$(QEMU) -s -S -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE) &
+	@echo "qemu started with gdb stub on localhost:1234"
+	@echo "connect with: gdb build/kernel.elf -ex 'target remote :1234'"
 
-# ISR generation
+check-tools:
+	@command -v $(CC) >/dev/null 2>&1 || { echo "missing tool: $(CC)"; exit 1; }
+	@command -v $(LD) >/dev/null 2>&1 || { echo "missing tool: $(LD)"; exit 1; }
+	@command -v $(OBJCOPY) >/dev/null 2>&1 || { echo "missing tool: $(OBJCOPY)"; exit 1; }
+	@command -v $(AS) >/dev/null 2>&1 || { echo "missing tool: $(AS)"; exit 1; }
+	@command -v $(QEMU) >/dev/null 2>&1 || { echo "missing tool: $(QEMU)"; exit 1; }
+	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "missing tool: $(PYTHON)"; exit 1; }
+
+# static analysis via clang-tidy (uses .clang-tidy config)
+lint:
+	@command -v clang-tidy >/dev/null 2>&1 || { echo "install clang-tidy to use make lint"; exit 1; }
+	clang-tidy $(filter %.c,$(ALL_C_SRCS)) $(ALL_H_SRCS) -- $(KERNEL_CFLAGS)
+
+# auto-format via clang-format (uses .clang-format config)
+format:
+	@command -v clang-format >/dev/null 2>&1 || { echo "install clang-format to use make format"; exit 1; }
+	clang-format -i $(filter %.c,$(ALL_C_SRCS)) $(ALL_H_SRCS)
+
+# generate compile_commands.json for clangd/lsp support.
+# uses a simple python script to build from the Makefile's dry-run output.
+compile_commands:
+	@command -v bear >/dev/null 2>&1 && { \
+		$(MAKE) clean; \
+		bear -- $(MAKE) all; \
+	} || { \
+		echo '[]' > compile_commands.json; \
+		$(MAKE) clean; \
+		$(MAKE) all CC_JSON=1 2>&1 | grep '$(CC)' | \
+		$(PYTHON) -c "\
+import sys, json, os; \
+entries = []; \
+for line in sys.stdin: \
+    parts = line.strip().split(); \
+    if not parts: continue; \
+    src = next((p for p in parts if p.endswith('.c')), None); \
+    if src: entries.append({'directory': os.getcwd(), 'command': line.strip(), 'file': src}); \
+json.dump(entries, open('compile_commands.json','w'), indent=2)"; \
+		echo "generated compile_commands.json"; \
+	}
+
+# grub-bootable iso image (requires grub-mkrescue and xorriso)
+iso: check-tools $(KERNEL_ELF)
+	@command -v grub-mkrescue >/dev/null 2>&1 || { echo "install grub-mkrescue to use make iso"; exit 1; }
+	@mkdir -p $(BUILD_DIR)/isodir/boot/grub
+	cp $(KERNEL_ELF) $(BUILD_DIR)/isodir/boot/kernel.elf
+	echo 'menuentry "ginnOS" { multiboot /boot/kernel.elf }' > $(BUILD_DIR)/isodir/boot/grub/grub.cfg
+	grub-mkrescue -o $(BUILD_DIR)/ginnos.iso $(BUILD_DIR)/isodir
+	@echo "iso created: $(BUILD_DIR)/ginnos.iso"
+
+# isr generation
 $(ISR_GEN_C) $(ISR_GEN_INC): $(ISR_GEN_SCRIPT)
 	@mkdir -p $(dir $(ISR_GEN_C)) $(dir $(ISR_GEN_INC))
 	./$(ISR_GEN_SCRIPT) $(ISR_GEN_C) $(ISR_GEN_INC)
 
-# Stage 1 bootloader flat binary, no C
+# stage 1 bootloader flat binary, no C
 $(STAGE1_BIN): $(STAGE1_SRC)
 	@mkdir -p $(dir $@)
-	$(AS) -f bin $< -o $@
+	$(AS) -f $(ASM_BIN_FMT) $< -o $@
 	@test $$(wc -c < $@) -eq 512 || { echo "stage1 must be exactly 512 bytes"; exit 1; }
 
-# Pattern rules shared library code (compiled once, linked into stage2 + kernel)
+# pattern rules: shared library code (compiled once, linked into stage2 + kernel)
 $(BUILD_DIR)/common/%.o: src/common/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(COMMON_CFLAGS) -c $< -o $@
 
-
-# Pattern rules kernel (C + NASM elf32)
+# pattern rules: kernel (C + nasm elf32)
 $(BUILD_DIR)/%.o: src/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/%.asm
 	@mkdir -p $(dir $@)
-	$(AS) -f elf32 -I $(dir $<) $< -o $@
+	$(AS) -f $(ASM_FORMAT) -I $(dir $<) $< -o $@
 
 # isr.asm %includes the generated stub table
 $(BUILD_DIR)/arch/x86/asm/isr.o: $(ISR_GEN_INC)
 
-
-# Pattern rules stage2 (separate object tree, different C flags)
+# pattern rules: stage2 (separate object tree, different C flags)
 $(BUILD_DIR)/stage2/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(STAGE2_CFLAGS) -c $< -o $@
@@ -176,10 +245,10 @@ $(BUILD_DIR)/stage2/%.o: src/%.c
 # so the entry object is named entry.o to avoid a basename collision.
 $(STAGE2_ENTRY_OBJ): $(STAGE2_ENTRY_ASM)
 	@mkdir -p $(dir $@)
-	$(AS) -f elf32 $< -o $@
+	$(AS) -f $(ASM_FORMAT) $< -o $@
 
-# Stage 2 link
-$(STAGE2_BIN): $(STAGE2_LINK_OBJS) linker/stage2.ld $(ISR_GEN_SCRIPT)
+# stage 2 link
+$(STAGE2_BIN): $(STAGE2_LINK_OBJS) $(LINKER_DIR)/stage2.ld $(ISR_GEN_SCRIPT)
 	@mkdir -p $(dir $(STAGE2_ELF))
 	$(LD) $(STAGE2_LDFLAGS) -o $(STAGE2_ELF) $(STAGE2_LINK_OBJS)
 	$(OBJCOPY) -O binary $(STAGE2_ELF) $@
@@ -190,38 +259,38 @@ $(STAGE2_PAD): $(STAGE2_BIN)
 	cp $(STAGE2_BIN) $@
 	truncate -s $(STAGE2_MAX_BYTES) $@
 
-# Kernel link
-$(KERNEL_ELF): $(KERNEL_LINK_OBJS) linker/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
+# kernel link
+$(KERNEL_ELF): $(KERNEL_LINK_OBJS) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_LINK_OBJS)
 
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
 
-# Libc build rules
+# libc build rules
 $(BUILD_DIR)/libc/%.o: src/libc/src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/libc/%.o: src/libc/src/%.asm
 	@mkdir -p $(dir $@)
-	$(AS) -f elf32 $< -o $@
+	$(AS) -f $(ASM_FORMAT) $< -o $@
 
 $(LIBC_A): $(LIBC_OBJS)
 	@mkdir -p $(dir $@)
 	$(CROSS)ar rcs $@ $(LIBC_OBJS)
 
-# User program build rules
+# user program build rules
 $(USER_CRT0): src/user/lib/crt0.asm
 	@mkdir -p $(dir $@)
-	$(AS) -f elf32 $< -o $@
+	$(AS) -f $(ASM_FORMAT) $< -o $@
 
-# Delegate to per-program Makefiles
+# delegate to per-program Makefiles
 user-programs: $(USER_CRT0) $(LIBC_A)
 	@for d in $(USER_PROG_DIRS); do \
 		$(MAKE) --no-print-directory -C $$d || exit 1; \
 	done
 
-# Root filesystem and disk image
+# root filesystem and disk image
 rootfs-image: $(KERNEL_BIN) user-programs
 	@mkdir -p $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin $(dir $(ROOTFS_IMAGE))
 	cp $(KERNEL_BIN) $(EXT2_SOURCE_DIR)/boot/kernel.bin
@@ -250,6 +319,7 @@ clean:
 	rm -f $(EXT2_SOURCE_DIR)/boot/kernel.bin
 	rm -rf $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
+	rm -f compile_commands.json
 
-# Automatic header dependencies
+# automatic header dependencies
 -include $(DEP_FILES)
