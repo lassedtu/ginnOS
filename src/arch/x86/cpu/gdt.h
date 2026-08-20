@@ -1,5 +1,4 @@
-#ifndef GDT_H
-#define GDT_H
+#pragma once
 
 #include "common/stdint.h"
 
@@ -31,5 +30,3 @@ void gdt_initialize(void);
  * @param esp0 the kernel stack pointer to store.
  */
 void tss_set_kernel_stack(uint32_t esp0);
-
-#endif
