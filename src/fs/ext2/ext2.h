@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/stdint.h"
+#include "common/error.h"
 #include "drivers/disk/block_device.h"
 
 #define EXT2_SUPERBLOCK_OFFSET 1024u  // byte offset of superblock from start of partition
@@ -28,14 +29,6 @@
 
 #define EXT2_MAX_BLOCK_SIZE 4096u // maximum block size supported by ext2 filesystem (in bytes)
 #define EXT2_MAX_INODE_SIZE 256u  // maximum inode size supported by ext2 filesystem (in bytes)
-
-typedef enum
-{
-    EXT2_OK = 0,                // operation completed successfully
-    EXT2_NOT_FOUND = 1,         // file or directory not found
-    EXT2_PERMISSION_DENIED = 2, // permission denied for the operation
-    EXT2_IO_ERROR = 3,          // I/O error occurred during the operation
-} EXT2_STATUS;
 
 typedef struct __attribute__((packed))
 {
@@ -154,26 +147,26 @@ typedef struct
  * initialize an ext2 volume from a disk.
  * @param volume volume object to initialize.
  * @param disk initialized block device backend.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool EXT2_Initialize(EXT2_VOLUME *volume, BLOCK_DEVICE *disk);
+kerr_t EXT2_Initialize(EXT2_VOLUME *volume, BLOCK_DEVICE *disk);
 
 /**
  * read one inode by inode number.
  * @param volume initialized ext2 volume.
  * @param inode_number inode to read.
  * @param inode_out output inode.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool EXT2_ReadInode(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_INODE *inode_out);
+kerr_t EXT2_ReadInode(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_INODE *inode_out);
 
 /**
  * list entries in a directory inode.
  * @param volume initialized ext2 volume.
  * @param inode_number directory inode number.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool EXT2_ListDirectory(EXT2_VOLUME *volume, uint32_t inode_number);
+kerr_t EXT2_ListDirectory(EXT2_VOLUME *volume, uint32_t inode_number);
 
 /**
  * read bytes from a file inode into buffer.
@@ -182,52 +175,52 @@ bool EXT2_ListDirectory(EXT2_VOLUME *volume, uint32_t inode_number);
  * @param offset byte offset in file.
  * @param length bytes to read.
  * @param buffer destination buffer.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool EXT2_ReadFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, void *buffer);
+kerr_t EXT2_ReadFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, void *buffer);
 
 /**
  * create a regular file at an absolute path.
  */
-bool EXT2_CreateFile(EXT2_VOLUME *volume, const char *path);
+kerr_t EXT2_CreateFile(EXT2_VOLUME *volume, const char *path);
 
 /**
  * create a directory at an absolute path.
  */
-bool EXT2_CreateDir(EXT2_VOLUME *volume, const char *path);
+kerr_t EXT2_CreateDir(EXT2_VOLUME *volume, const char *path);
 
 /**
  * remove a regular file at an absolute path.
  */
-bool EXT2_RemoveFile(EXT2_VOLUME *volume, const char *path);
+kerr_t EXT2_RemoveFile(EXT2_VOLUME *volume, const char *path);
 
 /**
  * remove a directory at an absolute path.
  */
-bool EXT2_RemoveDir(EXT2_VOLUME *volume, const char *path);
+kerr_t EXT2_RemoveDir(EXT2_VOLUME *volume, const char *path);
 
 /**
  * rename a file or directory.
  */
-bool EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_path);
+kerr_t EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_path);
 
 /**
  * resolve an absolute path to an inode.
  * @param volume initialized ext2 volume.
  * @param path absolute path.
  * @param inode_out resolved inode.
- * @return EXT2_OK on success, or an error code on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-EXT2_STATUS EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out);
+kerr_t EXT2_LookupPath(EXT2_VOLUME *volume, const char *path, uint32_t *inode_out);
 
 /**
  * open a file or directory by absolute path.
  * @param volume initialized ext2 volume.
  * @param path absolute path.
  * @param file output file handle.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool EXT2_Open(EXT2_VOLUME *volume, const char *path, EXT2_FILE *file);
+kerr_t EXT2_Open(EXT2_VOLUME *volume, const char *path, EXT2_FILE *file);
 
 /**
  * read bytes from an open ext2 file handle.
@@ -258,9 +251,9 @@ void EXT2_Truncate(EXT2_FILE *file);
  * read one directory entry from an open directory handle.
  * @param file open directory handle.
  * @param entryOut output directory entry.
- * @return true when an entry is read. false when done or on failure.
+ * @return KERR_OK when an entry is read. KERR_NOENT when done or on failure.
  */
-bool EXT2_ReadEntry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut);
+kerr_t EXT2_ReadEntry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut);
 
 /**
  * close an open ext2 file handle.
@@ -276,14 +269,14 @@ void EXT2_Close(EXT2_FILE *file);
  * @param offset byte offset in file to start writing.
  * @param length bytes to write.
  * @param buffer source data.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool EXT2_WriteFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer);
+kerr_t EXT2_WriteFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer);
 
 /**
  * truncate a file to zero length.
  * @param volume initialized ext2 volume.
  * @param inode_number file inode number.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool EXT2_TruncateFile(EXT2_VOLUME *volume, uint32_t inode_number);
+kerr_t EXT2_TruncateFile(EXT2_VOLUME *volume, uint32_t inode_number);

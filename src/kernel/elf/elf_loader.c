@@ -176,7 +176,7 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
     }
 
     /* stat the file to get its size */
-    if (vfs_stat(path, &stat) != VFS_OK)
+    if (kerr_failed(vfs_stat(path, &stat)))
     {
         return false;
     }
@@ -188,7 +188,7 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
     }
 
     /* open the file */
-    if (!vfs_open(path, &file))
+    if (kerr_failed(vfs_open(path, &file)))
     {
         return false;
     }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/stdint.h"
+#include "common/error.h"
 #include "drivers/disk/block_device.h"
 #include "fs/ext2/ext2.h"
 
@@ -13,17 +14,6 @@ enum
     FS_TYPE_FILE = 1,    // regular file
     FS_TYPE_DIR = 2,     // directory
 };
-
-/**
- * filesystem operation status codes.
- */
-typedef enum
-{
-    FS_OK = 0,                // operation completed successfully
-    FS_NOT_FOUND = 1,         // file or directory not found
-    FS_PERMISSION_DENIED = 2, // permission denied for the operation
-    FS_IO_ERROR = 3,          // I/O error occurred during the operation
-} FS_STATUS;
 
 /**
  * directory entry structure for reading directory contents.
@@ -84,59 +74,59 @@ bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device);
  * @param mount initialized filesystem mount.
  * @param path absolute path to the file or directory.
  * @param file output file handle.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file);
+kerr_t fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file);
 
 /**
  * create a regular file at an absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the new file.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_create(FS_MOUNT *mount, const char *path);
+kerr_t fs_create(FS_MOUNT *mount, const char *path);
 
 /**
  * create a directory at an absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the new directory.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_mkdir(FS_MOUNT *mount, const char *path);
+kerr_t fs_mkdir(FS_MOUNT *mount, const char *path);
 
 /**
  * remove a file at an absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the file to remove.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_remove(FS_MOUNT *mount, const char *path);
+kerr_t fs_remove(FS_MOUNT *mount, const char *path);
 
 /**
  * remove a directory at an absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the directory to remove.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_rmdir(FS_MOUNT *mount, const char *path);
+kerr_t fs_rmdir(FS_MOUNT *mount, const char *path);
 
 /**
  * rename a file or directory.
  * @param mount initialized filesystem mount.
  * @param old_path absolute path to the existing file or directory.
  * @param new_path absolute path to the new name for the file or directory.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path);
+kerr_t fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path);
 
 /**
  * stat a file or directory by absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the file or directory.
  * @param stat_out output stat structure.
- * @return FS_OK on success, or an error code on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-FS_STATUS fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out);
+kerr_t fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out);
 
 /**
  * read bytes from an open file into a buffer.
@@ -159,17 +149,17 @@ uint32_t fs_write(FS_FILE *file, uint32_t byteCount, const void *dataIn);
 /**
  * truncate an open file to zero length.
  * @param file open file handle.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_truncate(FS_FILE *file);
+kerr_t fs_truncate(FS_FILE *file);
 
 /**
  * read a directory entry from an open directory file.
  * @param file open directory file handle.
  * @param entryOut output directory entry.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_read_entry(FS_FILE *file, FS_DIRENT *entryOut);
+kerr_t fs_read_entry(FS_FILE *file, FS_DIRENT *entryOut);
 
 /**
  * close an open file or directory.

@@ -116,96 +116,97 @@ static bool vfs_normalize_absolute_path(
     return true;
 }
 
-bool vfs_mount_root(FS_MOUNT *mount)
+kerr_t vfs_mount_root(FS_MOUNT *mount)
 {
     if (!mount || !mount->is_mounted)
     {
-        return false;
+        return KERR_INVAL;
     }
 
     root_mount = mount;
 
-    return true;
+    return KERR_OK;
 }
 
-bool vfs_open(
+kerr_t vfs_open(
     const char *path,
     VFS_FILE *file)
 {
     if (!root_mount || !file || !path)
-        return false;
+        return KERR_INVAL;
 
-    if (!fs_open(
+    kerr_t err = fs_open(
             root_mount,
             path,
-            &file->file))
+            &file->file);
+    if (kerr_failed(err))
     {
         file->mount = 0;
-        return false;
+        return err;
     }
 
     file->mount = root_mount;
-    return true;
+    return KERR_OK;
 }
 
-bool vfs_create(const char *path)
+kerr_t vfs_create(const char *path)
 {
     if (!root_mount || !path)
     {
-        return false;
+        return KERR_INVAL;
     }
 
     return fs_create(root_mount, path);
 }
 
-bool vfs_mkdir(const char *path)
+kerr_t vfs_mkdir(const char *path)
 {
     if (!root_mount || !path)
     {
-        return false;
+        return KERR_INVAL;
     }
 
     return fs_mkdir(root_mount, path);
 }
 
-bool vfs_remove(const char *path)
+kerr_t vfs_remove(const char *path)
 {
     if (!root_mount || !path)
     {
-        return false;
+        return KERR_INVAL;
     }
 
     return fs_remove(root_mount, path);
 }
 
-bool vfs_rmdir(const char *path)
+kerr_t vfs_rmdir(const char *path)
 {
     if (!root_mount || !path)
     {
-        return false;
+        return KERR_INVAL;
     }
 
     return fs_rmdir(root_mount, path);
 }
 
-bool vfs_rename(const char *old_path, const char *new_path)
+kerr_t vfs_rename(const char *old_path, const char *new_path)
 {
     if (!root_mount || !old_path || !new_path)
     {
-        return false;
+        return KERR_INVAL;
     }
 
     return fs_rename(root_mount, old_path, new_path);
 }
 
-VFS_STATUS vfs_stat(const char *path, VFS_STAT *stat_out)
+kerr_t vfs_stat(const char *path, VFS_STAT *stat_out)
 {
     if (!root_mount || !path || !stat_out)
     {
-        return VFS_IO_ERROR;
+        return KERR_INVAL;
     }
 
-    return (VFS_STATUS)fs_stat(root_mount, path, stat_out);
+    return fs_stat(root_mount, path, stat_out);
 }
 
 bool vfs_resolve_path(
@@ -406,23 +407,23 @@ uint32_t vfs_write(
         buffer);
 }
 
-bool vfs_truncate(VFS_FILE *file)
+kerr_t vfs_truncate(VFS_FILE *file)
 {
     if (!file || !file->mount)
     {
-        return false;
+        return KERR_INVAL;
     }
 
     return fs_truncate(&file->file);
 }
 
-bool vfs_read_entry(
+kerr_t vfs_read_entry(
     VFS_FILE *file,
     FS_DIRENT *entryOut)
 {
     if (!file || !file->mount || !entryOut)
     {
-        return false;
+        return KERR_INVAL;
     }
 
     return fs_read_entry(&file->file, entryOut);

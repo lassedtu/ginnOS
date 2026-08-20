@@ -13,6 +13,7 @@
 #include "kernel/process/process.h"
 #include "kernel/scheduler/scheduler.h"
 #include "drivers/keyboard/keyboard.h"
+#include "common/error.h"
 #include "common/stdio.h"
 #include "common/memory.h"
 #include "common/string.h"
@@ -235,7 +236,7 @@ static int32_t sys_open(struct registers *regs)
 
     VFS_FILE file;
 
-    if (!vfs_open(resolved, &file))
+    if (kerr_failed(vfs_open(resolved, &file)))
     {
         return -1;
     }
@@ -418,8 +419,7 @@ static int32_t sys_stat(struct registers *regs)
         return -1;
     }
 
-    VFS_STATUS status = vfs_stat(resolved, stat_out);
-    if (status != VFS_OK)
+    if (kerr_failed(vfs_stat(resolved, stat_out)))
     {
         return -1;
     }
@@ -451,7 +451,7 @@ static int32_t sys_create(struct registers *regs)
         return -1;
     }
 
-    if (!vfs_create(resolved))
+    if (kerr_failed(vfs_create(resolved)))
     {
         return -1;
     }
@@ -483,7 +483,7 @@ static int32_t sys_mkdir(struct registers *regs)
         return -1;
     }
 
-    if (!vfs_mkdir(resolved))
+    if (kerr_failed(vfs_mkdir(resolved)))
     {
         return -1;
     }
@@ -696,7 +696,7 @@ static int32_t sys_chdir(struct registers *regs)
 
     // verify the target is a valid directory
     VFS_STAT stat;
-    if (vfs_stat(resolved, &stat) != VFS_OK)
+    if (kerr_failed(vfs_stat(resolved, &stat)))
     {
         return -1;
     }
@@ -740,7 +740,7 @@ static int32_t sys_readdir(struct registers *regs)
     }
 
     FS_DIRENT dirent;
-    if (!vfs_read_entry(&entry->file, &dirent))
+    if (kerr_failed(vfs_read_entry(&entry->file, &dirent)))
     {
         return -1;
     }
@@ -774,7 +774,7 @@ static int32_t sys_unlink(struct registers *regs)
         return -1;
     }
 
-    if (!vfs_remove(resolved))
+    if (kerr_failed(vfs_remove(resolved)))
     {
         return -1;
     }
@@ -806,7 +806,7 @@ static int32_t sys_rmdir(struct registers *regs)
         return -1;
     }
 
-    if (!vfs_rmdir(resolved))
+    if (kerr_failed(vfs_rmdir(resolved)))
     {
         return -1;
     }
@@ -951,7 +951,7 @@ static int32_t sys_ftruncate(struct registers *regs)
     if (!entry || entry->type != FD_TYPE_FILE)
         return -1;
 
-    if (!vfs_truncate(&entry->file))
+    if (kerr_failed(vfs_truncate(&entry->file)))
         return -1;
 
     return 0;

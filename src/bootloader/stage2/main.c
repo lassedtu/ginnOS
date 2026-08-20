@@ -52,15 +52,15 @@ void cstart_(boot_info_t *boot)
             ;
     }
 
-    if (!EXT2_Initialize(&volume, &part.block))
+    if (kerr_failed(EXT2_Initialize(&volume, &part.block)))
     {
         printf("stage2: error - EXT2 volume mount failed\r\n");
         for (;;)
             ;
     }
 
-    if (!EXT2_Open(&volume, "/boot/kernel.bin", &file) &&
-        !EXT2_Open(&volume, "/kernel.bin", &file))
+    if (kerr_failed(EXT2_Open(&volume, "/boot/kernel.bin", &file)) &&
+        kerr_failed(EXT2_Open(&volume, "/kernel.bin", &file)))
     {
         printf("stage2: error - kernel.bin not found on EXT2 volume\r\n");
         for (;;)

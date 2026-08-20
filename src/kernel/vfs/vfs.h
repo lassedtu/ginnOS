@@ -1,19 +1,9 @@
 #pragma once
 
+#include "common/error.h"
 #include "kernel/fs/fs.h"
 
 typedef FS_STAT VFS_STAT;
-
-/**
- * virtual file system operation status codes.
- */
-typedef enum
-{
-    VFS_OK = FS_OK,                               // operation completed successfully
-    VFS_NOT_FOUND = FS_NOT_FOUND,                 // file or directory not found
-    VFS_PERMISSION_DENIED = FS_PERMISSION_DENIED, // permission denied for the operation
-    VFS_IO_ERROR = FS_IO_ERROR,                   // I/O error occurred during the operation
-} VFS_STATUS;
 
 /**
  * virtual file system file handle structure representing an open file or directory.
@@ -28,63 +18,63 @@ typedef struct
 /**
  * mount a filesystem as the root filesystem.
  * @param mount pointer to the filesystem mount structure to be used as the root filesystem.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_mount_root(FS_MOUNT *mount);
+kerr_t vfs_mount_root(FS_MOUNT *mount);
 
 /**
  * open a file or directory by absolute path in the virtual file system.
  * @param path absolute path to the file or directory.
  * @param file pointer to a VFS_FILE structure that will be initialized with the opened file
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_open(
+kerr_t vfs_open(
     const char *path,
     VFS_FILE *file);
 
 /**
  * create a regular file by absolute path.
  * @param path absolute path to the new file.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_create(const char *path);
+kerr_t vfs_create(const char *path);
 
 /**
  * create a directory by absolute path.
  * @param path absolute path to the new directory.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_mkdir(const char *path);
+kerr_t vfs_mkdir(const char *path);
 
 /**
  * remove a file by absolute path.
  * @param path absolute path to the file to remove.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_remove(const char *path);
+kerr_t vfs_remove(const char *path);
 
 /**
  * remove a directory by absolute path.
  * @param path absolute path to the directory to remove.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_rmdir(const char *path);
+kerr_t vfs_rmdir(const char *path);
 
 /**
  * rename a file or directory by absolute paths.
  * @param old_path absolute path to the existing file or directory.
  * @param new_path absolute path to the new name for the file or directory.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_rename(const char *old_path, const char *new_path);
+kerr_t vfs_rename(const char *old_path, const char *new_path);
 
 /**
  * stat a file or directory by absolute path.
  * @param path absolute path to the file or directory.
  * @param stat_out pointer to a VFS_STAT structure that will be filled with the file's metadata.
- * @return VFS_OK on success, or an error code on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-VFS_STATUS vfs_stat(const char *path, VFS_STAT *stat_out);
+kerr_t vfs_stat(const char *path, VFS_STAT *stat_out);
 
 /**
  * resolve an input path against the current working directory.
@@ -143,17 +133,17 @@ uint32_t vfs_write(
 /**
  * truncate an open file to zero length.
  * @param file pointer to the VFS_FILE structure.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_truncate(VFS_FILE *file);
+kerr_t vfs_truncate(VFS_FILE *file);
 
 /**
  * read a directory entry from an open directory in the virtual file system.
  * @param file pointer to the VFS_FILE structure representing the open directory.
  * @param entryOut pointer to output directory entry.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_read_entry(
+kerr_t vfs_read_entry(
     VFS_FILE *file,
     FS_DIRENT *entryOut);
 

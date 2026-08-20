@@ -3,6 +3,7 @@
 #include "panic.h"
 #include "assert.h"
 
+#include "common/error.h"
 #include "fs/fs.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
@@ -96,7 +97,7 @@ void kernel_main(boot_info_t *boot)
         kernel_panic("EXT2 mount failed");
     }
 
-    if (!vfs_mount_root(&mount))
+    if (kerr_failed(vfs_mount_root(&mount)))
     {
         kernel_panic("VFS root mount failed");
     }
