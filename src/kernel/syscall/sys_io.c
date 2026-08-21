@@ -268,7 +268,7 @@ int32_t sys_close(struct registers *regs)
     int fd = (int)regs->ebx;
 
     /* don't allow closing stdin/stdout/stderr */
-    if (fd < 3)
+    if (fd < FD_STDIO_COUNT)
     {
         return -3; /* EINVAL */
     }

@@ -2,6 +2,9 @@
 
 #include "common/string.h"
 
+// maximum depth of path components supported during normalization.
+#define VFS_MAX_PATH_COMPONENTS 128
+
 /**
  * normalize an absolute path by resolving '.' and '..' components.
  * @param input absolute path to normalize.
@@ -17,7 +20,7 @@ static bool vfs_normalize_absolute_path(
     uint32_t i;
     uint32_t out_pos;
     uint32_t depth;
-    uint32_t component_start[128];
+    uint32_t component_start[VFS_MAX_PATH_COMPONENTS];
 
     if (!input || !output || size < 2)
     {
@@ -81,7 +84,7 @@ static bool vfs_normalize_absolute_path(
             continue;
         }
 
-        if (depth >= (uint32_t)(sizeof(component_start) / sizeof(component_start[0])))
+        if (depth >= VFS_MAX_PATH_COMPONENTS)
         {
             return false;
         }

@@ -23,7 +23,7 @@ typedef struct
     uint32_t inode;    // inode number of the file or directory
     uint8_t file_type; // type of the file
     uint32_t size;     // size of the file in bytes
-    char name[256];    // null-terminated name of the file or directory (max 255 characters)
+    char name[EXT2_NAME_MAX]; // null-terminated name of the file or directory (max 255 characters)
 } fs_dirent_t;
 
 /**

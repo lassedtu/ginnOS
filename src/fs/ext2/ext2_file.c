@@ -309,8 +309,8 @@ kerr_t ext2_read_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t off
 
 kerr_t ext2_create_file(ext2_volume_t *volume, const char *path)
 {
-    char parent_path[256];
-    char name[256];
+    char parent_path[EXT2_NAME_MAX];
+    char name[EXT2_NAME_MAX];
     uint32_t parent_inode_number;
     ext2_inode_t parent_inode;
     ext2_inode_t new_inode;
@@ -369,8 +369,8 @@ kerr_t ext2_create_file(ext2_volume_t *volume, const char *path)
 
 kerr_t ext2_create_dir(ext2_volume_t *volume, const char *path)
 {
-    char parent_path[256];
-    char name[256];
+    char parent_path[EXT2_NAME_MAX];
+    char name[EXT2_NAME_MAX];
     uint32_t parent_inode_number;
     ext2_inode_t parent_inode;
     ext2_inode_t new_inode;
@@ -456,8 +456,8 @@ kerr_t ext2_create_dir(ext2_volume_t *volume, const char *path)
 
 kerr_t ext2_remove_file(ext2_volume_t *volume, const char *path)
 {
-    char parent_path[256];
-    char name[256];
+    char parent_path[EXT2_NAME_MAX];
+    char name[EXT2_NAME_MAX];
     uint32_t parent_inode_number;
     uint32_t child_inode_number;
     uint8_t child_type;
@@ -494,8 +494,8 @@ kerr_t ext2_remove_file(ext2_volume_t *volume, const char *path)
 
 kerr_t ext2_remove_dir(ext2_volume_t *volume, const char *path)
 {
-    char parent_path[256];
-    char name[256];
+    char parent_path[EXT2_NAME_MAX];
+    char name[EXT2_NAME_MAX];
     uint32_t parent_inode_number;
     uint32_t child_inode_number;
     uint8_t child_type;
@@ -560,10 +560,10 @@ kerr_t ext2_remove_dir(ext2_volume_t *volume, const char *path)
 
 kerr_t ext2_rename(ext2_volume_t *volume, const char *old_path, const char *new_path)
 {
-    char old_parent_path[256];
-    char old_name[256];
-    char new_parent_path[256];
-    char new_name[256];
+    char old_parent_path[EXT2_NAME_MAX];
+    char old_name[EXT2_NAME_MAX];
+    char new_parent_path[EXT2_NAME_MAX];
+    char new_name[EXT2_NAME_MAX];
     uint32_t old_parent_inode_number;
     uint32_t new_parent_inode_number;
     uint32_t child_inode_number;
@@ -694,7 +694,7 @@ static bool assign_data_block(ext2_volume_t *volume, ext2_inode_t *inode, uint32
     }
 
     inode->i_block[logical_block_index] = new_block;
-    inode->i_blocks += volume->block_size / 512; /* ext2 counts in 512-byte units */
+    inode->i_blocks += volume->block_size / EXT2_SECTOR_SIZE;
 
     *physical_block_out = new_block;
     return true;

@@ -4,6 +4,7 @@
 #include "arch/x86/cpu/gdt.h"
 #include "arch/x86/cpu/paging.h"
 #include "kernel/memory/pmm.h"
+#include "kernel/memory/memory_layout.h"
 #include "kernel/panic.h"
 #include "common/memory.h"
 #include "common/string.h"
@@ -11,13 +12,16 @@
 // size of the user stack in bytes (4 pages = 16 KiB).
 #define USER_STACK_SIZE (4096 * 4)
 
+// maximum number of command-line arguments passed to a user program.
+#define ARGV_MAX 64
+
 void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv)
 {
     // allocate physical pages for the user stack and map them at a fixed
-    // virtual address range just below the program load address (0x800000).
-    // stack region: 0x7FC000 - 0x800000 (16 KiB, 4 pages)
+    // virtual address range just below the program load address.
+    // stack region: USER_STACK_BASE - USER_LOAD_ADDR (16 KiB, 4 pages)
     uint32_t stack_pages = USER_STACK_SIZE / 4096;
-    uint32_t stack_virt_base = 0x800000 - USER_STACK_SIZE; // 0x7FC000
+    uint32_t stack_virt_base = USER_LOAD_ADDR - USER_STACK_SIZE;
 
     for (uint32_t p = 0; p < stack_pages; p++)
     {
@@ -44,9 +48,9 @@ void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv)
 
     // copy argument strings onto the top of the user stack
     // string_ptrs[i] will hold the user-space pointer to each string
-    uint32_t string_ptrs[64]; // max 64 args
-    if (argc > 64)
-        argc = 64;
+    uint32_t string_ptrs[ARGV_MAX];
+    if (argc > ARGV_MAX)
+        argc = ARGV_MAX;
 
     for (int i = argc - 1; i >= 0; i--)
     {

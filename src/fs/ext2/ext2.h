@@ -29,6 +29,7 @@
 
 #define EXT2_MAX_BLOCK_SIZE 4096u // maximum block size supported by ext2 filesystem (in bytes)
 #define EXT2_MAX_INODE_SIZE 256u  // maximum inode size supported by ext2 filesystem (in bytes)
+#define EXT2_NAME_MAX 256u        // maximum file/directory name length (255 chars + null terminator)
 
 typedef struct __attribute__((packed))
 {
@@ -140,7 +141,7 @@ typedef struct
     uint32_t inode;    // inode number of the file or directory entry
     uint8_t file_type; // type of the file or directory (e.g., regular file, directory)
     uint32_t size;     // size of the file in bytes (for regular files) or number of entries (for directories)
-    char name[256];    // null-terminated name of the file or directory entry (maximum length of 255 characters plus null terminator)
+    char name[EXT2_NAME_MAX]; // null-terminated name of the file or directory entry (maximum length of 255 characters plus null terminator)
 } ext2_directory_entry_t;
 
 /**

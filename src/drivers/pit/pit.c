@@ -40,7 +40,7 @@ void pit_initialize(uint32_t frequency)
 
     if (frequency == 0)
     {
-        frequency = 100;
+        frequency = PIT_FREQUENCY_HZ;
     }
 
     /* if frequency is very small (e.g. 1 Hz), PIT_INPUT_FREQUENCY / frequency

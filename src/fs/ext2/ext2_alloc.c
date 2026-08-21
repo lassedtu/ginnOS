@@ -459,7 +459,7 @@ bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
     if (!volume || !inode)
         return false;
 
-    ptrs_per_block = volume->block_size / 4u;
+    ptrs_per_block = volume->block_size / sizeof(uint32_t);
 
     // free direct blocks
     for (i = 0; i < EXT2_NDIR_BLOCKS; i++)

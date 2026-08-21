@@ -107,7 +107,7 @@ int exec_program(const char *path, const char **argv)
         // copy parent's fd table to child (fd inheritance)
         for (int i = 0; i < FD_MAX; i++)
         {
-            if (i <= 2)
+            if (i < FD_STDIO_COUNT)
             {
                 // always inherit stdin/stdout/stderr
                 child->fds[i] = parent->fds[i];
@@ -122,7 +122,7 @@ int exec_program(const char *path, const char **argv)
             }
             else if (parent->fds[i].type == FD_TYPE_PIPE)
             {
-                // close-on-exec: pipe fds > 2 are NOT inherited
+                // close-on-exec: pipe fds beyond stdio are NOT inherited
                 // (prevents children from holding extra pipe refs)
                 child->fds[i].type = FD_TYPE_NONE;
             }

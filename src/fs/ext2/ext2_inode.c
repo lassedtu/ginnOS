@@ -125,7 +125,7 @@ kerr_t find_in_directory(ext2_volume_t *volume, uint32_t dir_inode_number, const
  */
 bool resolve_data_block(ext2_volume_t *volume, const ext2_inode_t *inode, uint32_t logical_block_index, uint32_t *physical_block_out)
 {
-    uint32_t ptrs_per_block = volume->block_size / 4u;
+    uint32_t ptrs_per_block = volume->block_size / sizeof(uint32_t);
 
     // direct blocks: i_block[0..11]
     if (logical_block_index < EXT2_NDIR_BLOCKS)

@@ -6,6 +6,9 @@
 // maximum number of file descriptors per process.
 #define FD_MAX 16
 
+// number of standard I/O descriptors (stdin, stdout, stderr).
+#define FD_STDIO_COUNT 3
+
 // pipe buffer size (4 KiB)
 #define PIPE_BUF_SIZE 4096
 

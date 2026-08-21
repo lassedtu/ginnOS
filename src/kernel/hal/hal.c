@@ -56,6 +56,6 @@ void hal_initialize(void)
     isr_initialize();
     exception_initialize();
     irq_initialize();
-    pit_initialize(100); // initialize PIT with 100 Hz frequency
+    pit_initialize(PIT_FREQUENCY_HZ);
     keyboard_initialize();
 }
