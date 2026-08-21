@@ -10,18 +10,18 @@
 /**
  * SYS_stat: get file metadata.
  * args: EBX = path string pointer, ECX = pointer to stat output struct.
- * the output struct matches VFS_STAT (FS_STAT).
+ * the output struct matches vfs_stat_t (fs_stat_t).
  * returns 0 on success, negative errno on failure.
  */
 int32_t sys_stat(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
-    VFS_STAT *stat_out = (VFS_STAT *)regs->ecx;
+    vfs_stat_t *stat_out = (vfs_stat_t *)regs->ecx;
 
     if (!is_user_str(path))
         return -18; /* EFAULT */
 
-    if (!is_user_ptr(stat_out, sizeof(VFS_STAT)))
+    if (!is_user_ptr(stat_out, sizeof(vfs_stat_t)))
         return -18; /* EFAULT */
 
     /* resolve relative paths against the process's cwd */
@@ -171,7 +171,7 @@ int32_t sys_rmdir(struct registers *regs)
  * SYS_readdir: read the next directory entry from an open directory fd.
  * args: EBX = fd, ECX = pointer to user dirent struct.
  *
- * user dirent layout (matches FS_DIRENT):
+ * user dirent layout (matches fs_dirent_t):
  *   uint32_t inode
  *   uint8_t  file_type
  *   uint32_t size
@@ -182,9 +182,9 @@ int32_t sys_rmdir(struct registers *regs)
 int32_t sys_readdir(struct registers *regs)
 {
     int fd_num = (int)regs->ebx;
-    FS_DIRENT *user_dirent = (FS_DIRENT *)regs->ecx;
+    fs_dirent_t *user_dirent = (fs_dirent_t *)regs->ecx;
 
-    if (!is_user_ptr(user_dirent, sizeof(FS_DIRENT)))
+    if (!is_user_ptr(user_dirent, sizeof(fs_dirent_t)))
         return -18; /* EFAULT */
 
     fd_entry_t *entry = fd_get(fd_num);
@@ -193,7 +193,7 @@ int32_t sys_readdir(struct registers *regs)
         return -2; /* EBADF */
     }
 
-    FS_DIRENT dirent;
+    fs_dirent_t dirent;
     kerr_t err = vfs_read_entry(&entry->file, &dirent);
     if (kerr_failed(err))
     {
@@ -201,6 +201,6 @@ int32_t sys_readdir(struct registers *regs)
     }
 
     /* copy to userspace */
-    memcpy(user_dirent, &dirent, sizeof(FS_DIRENT));
+    memcpy(user_dirent, &dirent, sizeof(fs_dirent_t));
     return 0;
 }

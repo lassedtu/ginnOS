@@ -2,11 +2,11 @@
 
 #include "common/string.h"
 
-extern FS_MOUNT *root_mount;
+extern fs_mount_t *root_mount;
 
 kerr_t vfs_open(
     const char *path,
-    VFS_FILE *file)
+    vfs_file_t *file)
 {
     if (!root_mount || !file || !path)
         return KERR_INVAL;
@@ -17,7 +17,7 @@ kerr_t vfs_open(
             &file->file);
     if (kerr_failed(err))
     {
-        file->mount = 0;
+        file->mount = NULL;
         return err;
     }
 
@@ -75,7 +75,7 @@ kerr_t vfs_rename(const char *old_path, const char *new_path)
     return fs_rename(root_mount, old_path, new_path);
 }
 
-kerr_t vfs_stat(const char *path, VFS_STAT *stat_out)
+kerr_t vfs_stat(const char *path, vfs_stat_t *stat_out)
 {
     if (!root_mount || !path || !stat_out)
     {
@@ -86,7 +86,7 @@ kerr_t vfs_stat(const char *path, VFS_STAT *stat_out)
 }
 
 uint32_t vfs_read(
-    VFS_FILE *file,
+    vfs_file_t *file,
     uint32_t size,
     void *buffer)
 {
@@ -102,7 +102,7 @@ uint32_t vfs_read(
 }
 
 uint32_t vfs_write(
-    VFS_FILE *file,
+    vfs_file_t *file,
     uint32_t size,
     const void *buffer)
 {
@@ -117,7 +117,7 @@ uint32_t vfs_write(
         buffer);
 }
 
-kerr_t vfs_truncate(VFS_FILE *file)
+kerr_t vfs_truncate(vfs_file_t *file)
 {
     if (!file || !file->mount)
     {
@@ -128,8 +128,8 @@ kerr_t vfs_truncate(VFS_FILE *file)
 }
 
 kerr_t vfs_read_entry(
-    VFS_FILE *file,
-    FS_DIRENT *entryOut)
+    vfs_file_t *file,
+    fs_dirent_t *entryOut)
 {
     if (!file || !file->mount || !entryOut)
     {
@@ -140,7 +140,7 @@ kerr_t vfs_read_entry(
 }
 
 void vfs_close(
-    VFS_FILE *file)
+    vfs_file_t *file)
 {
     if (!file)
     {
@@ -148,11 +148,11 @@ void vfs_close(
     }
 
     fs_close(&file->file);
-    file->mount = 0;
+    file->mount = NULL;
 }
 
 uint8_t vfs_file_type(
-    VFS_FILE *file)
+    vfs_file_t *file)
 {
     if (!file || !file->mount)
     {

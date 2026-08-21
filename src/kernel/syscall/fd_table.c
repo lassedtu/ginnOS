@@ -16,7 +16,7 @@ void fd_table_init(void)
     }
 }
 
-int fd_alloc(VFS_FILE *file)
+int fd_alloc(vfs_file_t *file)
 {
     process_t *proc = process_current();
     if (!proc)
@@ -43,17 +43,17 @@ fd_entry_t *fd_get(int fd)
     process_t *proc = process_current();
     if (!proc)
     {
-        return (void *)0;
+        return NULL;
     }
 
     if (fd < 0 || fd >= FD_MAX)
     {
-        return (void *)0;
+        return NULL;
     }
 
     if (proc->fds[fd].type == FD_TYPE_NONE)
     {
-        return (void *)0;
+        return NULL;
     }
 
     return &proc->fds[fd];
@@ -115,7 +115,7 @@ pipe_buf_t *pipe_alloc(void)
             return &pipe_pool[i];
         }
     }
-    return (void *)0;
+    return NULL;
 }
 
 void pipe_release(pipe_buf_t *buf)

@@ -47,7 +47,7 @@ static process_t *queue_pop(void)
 {
     if (queue_count == 0)
     {
-        return (void *)0;
+        return NULL;
     }
 
     process_t *proc = ready_queue[queue_head];

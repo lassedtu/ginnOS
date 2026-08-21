@@ -1,8 +1,8 @@
 #include "ext2_internal.h"
 
-kerr_t EXT2_Initialize(EXT2_VOLUME *volume, BLOCK_DEVICE *disk)
+kerr_t ext2_initialize(ext2_volume_t *volume, block_device_t *disk)
 {
-    EXT2_SUPERBLOCK sb;
+    ext2_superblock_t sb;
     uint32_t unsupported;
 
     if (!volume || !disk)
@@ -10,7 +10,7 @@ kerr_t EXT2_Initialize(EXT2_VOLUME *volume, BLOCK_DEVICE *disk)
         return KERR_INVAL;
     }
 
-    if (!read_abs_bytes(disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(EXT2_SUPERBLOCK), &sb))
+    if (!read_abs_bytes(disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(ext2_superblock_t), &sb))
     {
         return KERR_IO;
     }

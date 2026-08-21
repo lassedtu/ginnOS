@@ -84,27 +84,27 @@ static bool split_path(const char *path, char *parent, uint32_t parent_size, cha
 
 /**
  * searches for a directory entry with a specific name within a given directory inode, returning the block index, offset, and entry details if found.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param dir_inode_number the inode number of the directory to search within.
  * @param name the name of the directory entry to search for.
  * @param name_len the length of the name to search for.
  * @param block_index_out pointer to a variable where the block index of the found entry will be stored.
  * @param offset_out pointer to a variable where the byte offset of the found entry within the block will be stored.
- * @param entry_out pointer to an EXT2_DIR_ENTRY structure where the details of the found entry will be stored.
+ * @param entry_out pointer to an ext2_dir_entry_t structure where the details of the found entry will be stored.
  * @return true if the directory entry was found and its details are stored in the output parameters, false if the entry was not found or an error occurred during the search.
  */
-bool find_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len, uint32_t *block_index_out, uint32_t *offset_out, EXT2_DIR_ENTRY *entry_out)
+bool find_directory_entry(ext2_volume_t *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len, uint32_t *block_index_out, uint32_t *offset_out, ext2_dir_entry_t *entry_out)
 {
-    EXT2_INODE dir_inode;
+    ext2_inode_t dir_inode;
     uint32_t block_index;
-    uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
+    uint32_t header_size = OFFSETOF(ext2_dir_entry_t, file_type) + 1;
 
     if (!volume || !name || !block_index_out || !offset_out || !entry_out)
     {
         return false;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, dir_inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
+    if (kerr_failed(ext2_read_inode(volume, dir_inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
     {
         return false;
     }
@@ -126,7 +126,7 @@ bool find_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_number, const 
 
         while (offset + header_size <= volume->block_size)
         {
-            EXT2_DIR_ENTRY *entry = (EXT2_DIR_ENTRY *)(g_block_buffer + offset);
+            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(g_block_buffer + offset);
             uint32_t min_size = header_size + entry->name_len;
             const char *entry_name;
 
@@ -153,18 +153,18 @@ bool find_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_number, const 
 
 /**
  * appends a new directory entry to a parent directory inode or replaces an existing entry with the same name, ensuring proper space allocation and alignment within the directory's data blocks.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param parent_inode_number the inode number of the parent directory where the entry will be added or replaced.
- * @param parent_inode pointer to the EXT2_INODE structure representing the parent directory inode.
+ * @param parent_inode pointer to the ext2_inode_t structure representing the parent directory inode.
  * @param name the name of the directory entry to add or replace.
  * @param name_len the length of the name of the directory entry.
  * @param child_inode_number the inode number of the child entry to be added or replaced.
  * @param file_type the type of the file (e.g., regular file, directory) for the new directory entry.
  * @return true if the directory entry was successfully appended or replaced,
  */
-bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inode_number, EXT2_INODE *parent_inode, const char *name, uint32_t name_len, uint32_t child_inode_number, uint8_t file_type)
+bool append_or_replace_directory_entry(ext2_volume_t *volume, uint32_t parent_inode_number, ext2_inode_t *parent_inode, const char *name, uint32_t name_len, uint32_t child_inode_number, uint8_t file_type)
 {
-    uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
+    uint32_t header_size = OFFSETOF(ext2_dir_entry_t, file_type) + 1;
     uint32_t needed = ext2_dir_entry_size(name_len);
     uint32_t block_index;
     if (!volume || !parent_inode || !name || name_len == 0 || name_len >= 255)
@@ -189,7 +189,7 @@ bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inod
 
         while (cursor + header_size <= volume->block_size)
         {
-            EXT2_DIR_ENTRY *entry = (EXT2_DIR_ENTRY *)(g_block_buffer + cursor);
+            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(g_block_buffer + cursor);
             uint32_t used = ext2_dir_entry_size(entry->name_len);
             uint32_t available;
 
@@ -203,7 +203,7 @@ bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inod
             {
                 if (available >= needed)
                 {
-                    EXT2_DIR_ENTRY *new_entry = entry;
+                    ext2_dir_entry_t *new_entry = entry;
 
                     memset(new_entry, 0, available);
                     new_entry->inode = child_inode_number;
@@ -216,7 +216,7 @@ bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inod
             }
             else if (available >= used + needed)
             {
-                EXT2_DIR_ENTRY *new_entry = (EXT2_DIR_ENTRY *)(g_block_buffer + cursor + used);
+                ext2_dir_entry_t *new_entry = (ext2_dir_entry_t *)(g_block_buffer + cursor + used);
                 uint32_t remaining = available - used;
 
                 entry->rec_len = (uint16_t)used;
@@ -238,7 +238,7 @@ bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inod
         if (parent_inode->i_block[block_index] == 0)
         {
             uint32_t new_block;
-            EXT2_DIR_ENTRY *entry;
+            ext2_dir_entry_t *entry;
 
             if (!alloc_block(volume, &new_block))
             {
@@ -246,7 +246,7 @@ bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inod
             }
 
             memset(g_block_buffer, 0, volume->block_size);
-            entry = (EXT2_DIR_ENTRY *)g_block_buffer;
+            entry = (ext2_dir_entry_t *)g_block_buffer;
             entry->inode = child_inode_number;
             entry->rec_len = (uint16_t)volume->block_size;
             entry->name_len = (uint8_t)name_len;
@@ -265,7 +265,7 @@ bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inod
 
 /**
  * updates the name of an existing directory entry within a specified directory inode, ensuring that the new name fits within the allocated space for the entry.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param dir_inode_number the inode number of the directory containing the entry to be renamed.
  * @param old_name the current name of the directory entry to be renamed.
  * @param old_name_len the length of the current name of the directory entry.
@@ -273,13 +273,13 @@ bool append_or_replace_directory_entry(EXT2_VOLUME *volume, uint32_t parent_inod
  * @param new_name_len the length of the new name to assign to the directory entry.
  * @return true if the directory entry name was successfully updated, false if the entry was not found, the new name does not fit, or an error occurred during the operation.
  */
-bool update_directory_entry_name(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *old_name, uint32_t old_name_len, const char *new_name, uint32_t new_name_len)
+bool update_directory_entry_name(ext2_volume_t *volume, uint32_t dir_inode_number, const char *old_name, uint32_t old_name_len, const char *new_name, uint32_t new_name_len)
 {
-    EXT2_INODE dir_inode;
+    ext2_inode_t dir_inode;
     uint32_t block_index;
     uint32_t entry_offset;
-    EXT2_DIR_ENTRY entry;
-    uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
+    ext2_dir_entry_t entry;
+    uint32_t header_size = OFFSETOF(ext2_dir_entry_t, file_type) + 1;
     uint32_t needed = ext2_dir_entry_size(new_name_len);
 
     if (!volume || !old_name || !new_name || new_name_len == 0 || new_name_len >= 255)
@@ -287,7 +287,7 @@ bool update_directory_entry_name(EXT2_VOLUME *volume, uint32_t dir_inode_number,
         return false;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, dir_inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
+    if (kerr_failed(ext2_read_inode(volume, dir_inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
     {
         return false;
     }
@@ -307,25 +307,25 @@ bool update_directory_entry_name(EXT2_VOLUME *volume, uint32_t dir_inode_number,
         return false;
     }
 
-    ((EXT2_DIR_ENTRY *)(g_block_buffer + entry_offset))->name_len = (uint8_t)new_name_len;
-    ((EXT2_DIR_ENTRY *)(g_block_buffer + entry_offset))->file_type = entry.file_type;
+    ((ext2_dir_entry_t *)(g_block_buffer + entry_offset))->name_len = (uint8_t)new_name_len;
+    ((ext2_dir_entry_t *)(g_block_buffer + entry_offset))->file_type = entry.file_type;
     memcpy(g_block_buffer + entry_offset + header_size, new_name, new_name_len);
     return write_block(volume, dir_inode.i_block[block_index], g_block_buffer);
 }
 
 /**
  * checks if a directory represented by a given inode number is empty, meaning it contains no entries other than the standard '.' and '..' entries.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param inode_number the inode number of the directory to check.
  * @return true if the directory is empty (only contains '.' and '..'), false if it contains other entries or if an error occurred during the check.
  */
-bool directory_is_empty(EXT2_VOLUME *volume, uint32_t inode_number)
+bool directory_is_empty(ext2_volume_t *volume, uint32_t inode_number)
 {
-    EXT2_INODE dir_inode;
+    ext2_inode_t dir_inode;
     uint32_t block_index;
-    uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
+    uint32_t header_size = OFFSETOF(ext2_dir_entry_t, file_type) + 1;
 
-    if (kerr_failed(EXT2_ReadInode(volume, inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
+    if (kerr_failed(ext2_read_inode(volume, inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
     {
         return false;
     }
@@ -347,7 +347,7 @@ bool directory_is_empty(EXT2_VOLUME *volume, uint32_t inode_number)
 
         while (offset + header_size <= volume->block_size)
         {
-            EXT2_DIR_ENTRY *entry = (EXT2_DIR_ENTRY *)(g_block_buffer + offset);
+            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(g_block_buffer + offset);
             uint32_t min_size = header_size + entry->name_len;
 
             if (entry->rec_len < min_size || entry->rec_len == 0 || offset + entry->rec_len > volume->block_size)
@@ -374,18 +374,18 @@ bool directory_is_empty(EXT2_VOLUME *volume, uint32_t inode_number)
 
 /**
  * updates the '..' entry in a directory to point to a new parent inode number, effectively changing the parent directory reference for that directory.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param dir_inode_number the inode number of the directory whose parent link is to be updated.
  * @param parent_inode_number the inode number of the new parent directory to which the '..' entry should point.
  * @return true if the parent link was successfully updated, false if the directory inode could not be read, the directory is invalid, or an error occurred during the update process.
  */
-bool update_directory_parent_link(EXT2_VOLUME *volume, uint32_t dir_inode_number, uint32_t parent_inode_number)
+bool update_directory_parent_link(ext2_volume_t *volume, uint32_t dir_inode_number, uint32_t parent_inode_number)
 {
-    EXT2_INODE dir_inode;
-    EXT2_DIR_ENTRY *entry;
-    uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
+    ext2_inode_t dir_inode;
+    ext2_dir_entry_t *entry;
+    uint32_t header_size = OFFSETOF(ext2_dir_entry_t, file_type) + 1;
 
-    if (kerr_failed(EXT2_ReadInode(volume, dir_inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
+    if (kerr_failed(ext2_read_inode(volume, dir_inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
     {
         return false;
     }
@@ -400,7 +400,7 @@ bool update_directory_parent_link(EXT2_VOLUME *volume, uint32_t dir_inode_number
         return false;
     }
 
-    entry = (EXT2_DIR_ENTRY *)(g_block_buffer + ext2_dir_entry_size(1u));
+    entry = (ext2_dir_entry_t *)(g_block_buffer + ext2_dir_entry_size(1u));
     if (entry->name_len != 2u)
     {
         return false;
@@ -417,20 +417,20 @@ bool update_directory_parent_link(EXT2_VOLUME *volume, uint32_t dir_inode_number
 
 /**
  * removes a directory entry with a specific name from a given directory inode, effectively deleting the entry from the directory's data blocks.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param dir_inode_number the inode number of the directory from which the entry will be removed.
  * @param name the name of the directory entry to be removed.
  * @param name_len the length of the name of the directory entry to be removed.
  * @return true if the directory entry was successfully removed, false if the entry was not found, the directory inode could not be read, or an error occurred during the removal process.
  */
-bool remove_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len)
+bool remove_directory_entry(ext2_volume_t *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len)
 {
-    EXT2_INODE dir_inode;
+    ext2_inode_t dir_inode;
     uint32_t block_index;
     uint32_t entry_offset;
-    EXT2_DIR_ENTRY entry;
+    ext2_dir_entry_t entry;
 
-    if (kerr_failed(EXT2_ReadInode(volume, dir_inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
+    if (kerr_failed(ext2_read_inode(volume, dir_inode_number, &dir_inode)) || !inode_is_dir(&dir_inode))
     {
         return false;
     }
@@ -445,27 +445,27 @@ bool remove_directory_entry(EXT2_VOLUME *volume, uint32_t dir_inode_number, cons
         return false;
     }
 
-    entry = *(EXT2_DIR_ENTRY *)(g_block_buffer + entry_offset);
+    entry = *(ext2_dir_entry_t *)(g_block_buffer + entry_offset);
     entry.inode = 0;
     entry.name_len = 0;
     entry.file_type = 0;
-    memcpy(g_block_buffer + entry_offset, &entry, (uint32_t)sizeof(EXT2_DIR_ENTRY));
+    memcpy(g_block_buffer + entry_offset, &entry, (uint32_t)sizeof(ext2_dir_entry_t));
     return write_block(volume, dir_inode.i_block[block_index], g_block_buffer);
 }
 
 /**
  * initializes a new inode structure for a regular file, setting its mode, link count, and clearing other fields to prepare it for use in the filesystem.
- * @param inode pointer to the EXT2_INODE structure to be initialized.
+ * @param inode pointer to the ext2_inode_t structure to be initialized.
  * @return true if the inode was successfully initialized, false if the inode pointer was null.
  */
-bool setup_new_file_inode(EXT2_INODE *inode)
+bool setup_new_file_inode(ext2_inode_t *inode)
 {
     if (!inode)
     {
         return false;
     }
 
-    memset(inode, 0, (uint32_t)sizeof(EXT2_INODE));
+    memset(inode, 0, (uint32_t)sizeof(ext2_inode_t));
     inode->i_mode = EXT2_S_IFREG | 0644u;
     inode->i_links_count = 1u;
     return true;
@@ -473,18 +473,18 @@ bool setup_new_file_inode(EXT2_INODE *inode)
 
 /**
  * initializes a new inode structure for a directory, setting its mode, link count, size, and block count to prepare it for use in the filesystem.
- * @param inode pointer to the EXT2_INODE structure to be initialized.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume, used to determine the block size and sectors per block for the directory inode.
+ * @param inode pointer to the ext2_inode_t structure to be initialized.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume, used to determine the block size and sectors per block for the directory inode.
  * @return true if the inode was successfully initialized, false if either the inode or volume pointers were null.
  */
-bool setup_new_dir_inode(EXT2_INODE *inode, EXT2_VOLUME *volume)
+bool setup_new_dir_inode(ext2_inode_t *inode, ext2_volume_t *volume)
 {
     if (!inode || !volume)
     {
         return false;
     }
 
-    memset(inode, 0, (uint32_t)sizeof(EXT2_INODE));
+    memset(inode, 0, (uint32_t)sizeof(ext2_inode_t));
     inode->i_mode = EXT2_S_IFDIR | 0755u;
     inode->i_links_count = 2u;
     inode->i_size = volume->block_size;
@@ -494,17 +494,17 @@ bool setup_new_dir_inode(EXT2_INODE *inode, EXT2_VOLUME *volume)
 
 /**
  * initializes a new directory block with the standard '.' and '..' entries, setting their inode numbers and ensuring proper formatting for the directory structure.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param inode_number the inode number of the directory being initialized (for the '.' entry).
  * @param parent_inode_number the inode number of the parent directory (for the '..' entry).
  * @param block_number the block number where the new directory block will be written.
  * @return true if the directory block was successfully initialized and written to the specified block number, false if an error occurred during the initialization or writing process, or if the volume pointer was null or the block size was insufficient to hold the directory entries.
  */
-bool initialize_directory_block(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t parent_inode_number, uint32_t block_number)
+bool initialize_directory_block(ext2_volume_t *volume, uint32_t inode_number, uint32_t parent_inode_number, uint32_t block_number)
 {
-    EXT2_DIR_ENTRY *dot;
-    EXT2_DIR_ENTRY *dotdot;
-    uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
+    ext2_dir_entry_t *dot;
+    ext2_dir_entry_t *dotdot;
+    uint32_t header_size = OFFSETOF(ext2_dir_entry_t, file_type) + 1;
     uint32_t dot_size = ext2_dir_entry_size(1u);
 
     if (!volume || volume->block_size < (dot_size + header_size + 1u))
@@ -513,14 +513,14 @@ bool initialize_directory_block(EXT2_VOLUME *volume, uint32_t inode_number, uint
     }
 
     memset(g_block_buffer, 0, volume->block_size);
-    dot = (EXT2_DIR_ENTRY *)g_block_buffer;
+    dot = (ext2_dir_entry_t *)g_block_buffer;
     dot->inode = inode_number;
     dot->rec_len = (uint16_t)dot_size;
     dot->name_len = 1u;
     dot->file_type = EXT2_FT_DIR;
     memcpy((uint8_t *)dot + header_size, ".", 1u);
 
-    dotdot = (EXT2_DIR_ENTRY *)(g_block_buffer + dot_size);
+    dotdot = (ext2_dir_entry_t *)(g_block_buffer + dot_size);
     dotdot->inode = parent_inode_number;
     dotdot->rec_len = (uint16_t)(volume->block_size - dot_size);
     dotdot->name_len = 2u;
@@ -532,7 +532,7 @@ bool initialize_directory_block(EXT2_VOLUME *volume, uint32_t inode_number, uint
 
 /**
  * looks up the parent directory inode and the name of the final component in a given path, splitting the path into its parent and child components and verifying that the parent is a valid directory.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param path the input path string to be looked up (must start with '/').
  * @param parent_inode_out pointer to a variable where the inode number of the parent directory will be stored.
  * @param name_out buffer to store the name of the final component (file or directory) in the path.
@@ -541,10 +541,10 @@ bool initialize_directory_block(EXT2_VOLUME *volume, uint32_t inode_number, uint
  * @param parent_path_size the size of the parent_path buffer in bytes.
  * @return true if the parent inode and name were successfully looked up and stored in the output parameters, false if the path was invalid, the parent directory could not be found, or the parent inode is not a valid directory.
  */
-bool lookup_parent_and_name(EXT2_VOLUME *volume, const char *path, uint32_t *parent_inode_out, char *name_out, uint32_t name_out_size, char *parent_path, uint32_t parent_path_size)
+bool lookup_parent_and_name(ext2_volume_t *volume, const char *path, uint32_t *parent_inode_out, char *name_out, uint32_t name_out_size, char *parent_path, uint32_t parent_path_size)
 {
     uint32_t parent_inode;
-    EXT2_INODE parent_inode_cache;
+    ext2_inode_t parent_inode_cache;
 
     if (!volume || !path || !parent_inode_out || !name_out || !parent_path)
     {
@@ -556,12 +556,12 @@ bool lookup_parent_and_name(EXT2_VOLUME *volume, const char *path, uint32_t *par
         return false;
     }
 
-    if (EXT2_LookupPath(volume, parent_path, &parent_inode) != KERR_OK)
+    if (ext2_lookup_path(volume, parent_path, &parent_inode) != KERR_OK)
     {
         return false;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, parent_inode, &parent_inode_cache)) || !inode_is_dir(&parent_inode_cache))
+    if (kerr_failed(ext2_read_inode(volume, parent_inode, &parent_inode_cache)) || !inode_is_dir(&parent_inode_cache))
     {
         return false;
     }
@@ -572,7 +572,7 @@ bool lookup_parent_and_name(EXT2_VOLUME *volume, const char *path, uint32_t *par
 
 /**
  * looks up a child directory entry by name within a specified parent directory inode, returning the child's inode number and file type if found.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param parent_inode_number the inode number of the parent directory to search within.
  * @param name the name of the child directory entry to look up.
  * @param name_len the length of the name of the child directory entry.
@@ -580,11 +580,11 @@ bool lookup_parent_and_name(EXT2_VOLUME *volume, const char *path, uint32_t *par
  * @param child_type_out pointer to a variable where the file type of the found child entry will be stored.
  * @return true if the child directory entry was found and its details are stored in the output parameters, false if the entry was not found or an error occurred during the lookup process.
  */
-bool lookup_child_type(EXT2_VOLUME *volume, uint32_t parent_inode_number, const char *name, uint32_t name_len, uint32_t *child_inode_out, uint8_t *child_type_out)
+bool lookup_child_type(ext2_volume_t *volume, uint32_t parent_inode_number, const char *name, uint32_t name_len, uint32_t *child_inode_out, uint8_t *child_type_out)
 {
     uint32_t block_index;
     uint32_t entry_offset;
-    EXT2_DIR_ENTRY entry;
+    ext2_dir_entry_t entry;
 
     if (!find_directory_entry(volume, parent_inode_number, name, name_len, &block_index, &entry_offset, &entry))
     {
@@ -606,14 +606,14 @@ bool lookup_child_type(EXT2_VOLUME *volume, uint32_t parent_inode_number, const 
 
 /**
  * frees the blocks associated with a given inode and then frees the inode itself, effectively removing the file or directory represented by that inode from the filesystem.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param inode_number the inode number of the file or directory to be freed.
- * @param inode pointer to the EXT2_INODE structure representing the inode to be freed. If null, the function will read the inode from the filesystem.
+ * @param inode pointer to the ext2_inode_t structure representing the inode to be freed. If null, the function will read the inode from the filesystem.
  * @return true if the blocks and inode were successfully freed, false if an error occurred during the process or if the volume pointer was null.
  */
-bool free_inode_and_blocks(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_INODE *inode)
+bool free_inode_and_blocks(ext2_volume_t *volume, uint32_t inode_number, ext2_inode_t *inode)
 {
-    EXT2_INODE cache;
+    ext2_inode_t cache;
 
     if (!volume)
     {
@@ -624,7 +624,7 @@ bool free_inode_and_blocks(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_INOD
     {
         cache = *inode;
     }
-    else if (kerr_failed(EXT2_ReadInode(volume, inode_number, &cache)))
+    else if (kerr_failed(ext2_read_inode(volume, inode_number, &cache)))
     {
         return false;
     }

@@ -60,7 +60,7 @@ int32_t sys_chdir(struct registers *regs)
     }
 
     /* verify the target is a valid directory */
-    VFS_STAT stat;
+    vfs_stat_t stat;
     kerr_t err = vfs_stat(resolved, &stat);
     if (kerr_failed(err))
     {

@@ -32,7 +32,7 @@ static kernel_jmp_buf exec_jmp_buf;
 static char **argv_copy(const char **argv)
 {
     if (!argv)
-        return (char **)0;
+        return NULL;
 
     int argc = 0;
     while (argv[argc])
@@ -41,7 +41,7 @@ static char **argv_copy(const char **argv)
     // allocate pointer array (argc + 1 for NULL terminator)
     char **copy = (char **)kmalloc((argc + 1) * sizeof(char *));
     if (!copy)
-        return (char **)0;
+        return NULL;
 
     for (int i = 0; i < argc; i++)
     {
@@ -53,11 +53,11 @@ static char **argv_copy(const char **argv)
             for (int j = 0; j < i; j++)
                 kfree(copy[j]);
             kfree(copy);
-            return (char **)0;
+            return NULL;
         }
         memcpy(copy[i], argv[i], len);
     }
-    copy[argc] = (char *)0;
+    copy[argc] = NULL;
     return copy;
 }
 
@@ -163,9 +163,9 @@ int exec_program(const char *path, const char **argv)
 
             int exit_code = code - 1;
             argv_free(child->argv);
-            child->argv = (char **)0;
+            child->argv = NULL;
             process_destroy(child);
-            process_set_current((void *)0);
+            process_set_current(NULL);
 
             return exit_code;
         }

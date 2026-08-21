@@ -17,7 +17,7 @@ uint8_t g_bitmap_buffer[EXT2_MAX_BLOCK_SIZE];
  * @param out pointer to the output buffer where the read bytes will be stored.
  * @return true if the read operation was successful, false otherwise.
  */
-bool read_abs_bytes(BLOCK_DEVICE *disk, uint32_t byte_offset, uint32_t size, void *out)
+bool read_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, void *out)
 {
     uint8_t *dst = (uint8_t *)out;
 
@@ -44,12 +44,12 @@ bool read_abs_bytes(BLOCK_DEVICE *disk, uint32_t byte_offset, uint32_t size, voi
 
 /**
  * reads a block from the EXT2 volume into the provided output buffer.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param block the block number to read from the volume.
  * @param out pointer to the output buffer where the read block will be stored.
  * @return true if the read operation was successful, false otherwise.
  */
-bool read_block(EXT2_VOLUME *volume, uint32_t block, void *out)
+bool read_block(ext2_volume_t *volume, uint32_t block, void *out)
 {
     uint32_t lba;
     if (!volume || volume->sectors_per_block == 0)
@@ -63,12 +63,12 @@ bool read_block(EXT2_VOLUME *volume, uint32_t block, void *out)
 
 /**
  * reads the block group descriptor for the specified group from the EXT2 volume into the provided output structure.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param group the block group number to read the descriptor for.
- * @param out_desc pointer to the EXT2_BLOCK_GROUP_DESC structure where the read descriptor will be stored.
+ * @param out_desc pointer to the ext2_block_group_desc_t structure where the read descriptor will be stored.
  * @return true if the read operation was successful, false otherwise.
  */
-bool read_group_desc(EXT2_VOLUME *volume, uint32_t group, EXT2_BLOCK_GROUP_DESC *out_desc)
+bool read_group_desc(ext2_volume_t *volume, uint32_t group, ext2_block_group_desc_t *out_desc)
 {
     uint32_t bgdt_byte;
     uint32_t desc_offset;
@@ -79,8 +79,8 @@ bool read_group_desc(EXT2_VOLUME *volume, uint32_t group, EXT2_BLOCK_GROUP_DESC 
     }
 
     bgdt_byte = volume->bgdt_start_block * volume->block_size;
-    desc_offset = group * (uint32_t)sizeof(EXT2_BLOCK_GROUP_DESC);
-    return read_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(EXT2_BLOCK_GROUP_DESC), out_desc);
+    desc_offset = group * (uint32_t)sizeof(ext2_block_group_desc_t);
+    return read_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(ext2_block_group_desc_t), out_desc);
 }
 
 /**
@@ -91,7 +91,7 @@ bool read_group_desc(EXT2_VOLUME *volume, uint32_t group, EXT2_BLOCK_GROUP_DESC 
  * @param in pointer to the input buffer containing the bytes to be written.
  * @return true if the write operation was successful, false otherwise.
  */
-bool write_abs_bytes(BLOCK_DEVICE *disk, uint32_t byte_offset, uint32_t size, const void *in)
+bool write_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, const void *in)
 {
     const uint8_t *src = (const uint8_t *)in;
 
@@ -138,12 +138,12 @@ bool write_abs_bytes(BLOCK_DEVICE *disk, uint32_t byte_offset, uint32_t size, co
 
 /**
  * writes a block to the EXT2 volume from the provided input buffer.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param block the block number to write to the volume.
  * @param in pointer to the input buffer containing the block data to be written.
  * @return true if the write operation was successful, false otherwise.
  */
-bool write_block(EXT2_VOLUME *volume, uint32_t block, const void *in)
+bool write_block(ext2_volume_t *volume, uint32_t block, const void *in)
 {
     if (!volume || !volume->disk || !in || volume->sectors_per_block == 0)
     {
@@ -155,12 +155,12 @@ bool write_block(EXT2_VOLUME *volume, uint32_t block, const void *in)
 
 /**
  * writes the block group descriptor for the specified group to the EXT2 volume from the provided input structure.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param group the block group number to write the descriptor for.
- * @param desc pointer to the EXT2_BLOCK_GROUP_DESC structure containing the descriptor data to be written.
+ * @param desc pointer to the ext2_block_group_desc_t structure containing the descriptor data to be written.
  * @return true if the write operation was successful, false otherwise.
  */
-bool write_group_desc(EXT2_VOLUME *volume, uint32_t group, const EXT2_BLOCK_GROUP_DESC *desc)
+bool write_group_desc(ext2_volume_t *volume, uint32_t group, const ext2_block_group_desc_t *desc)
 {
     uint32_t bgdt_byte;
     uint32_t desc_offset;
@@ -171,35 +171,35 @@ bool write_group_desc(EXT2_VOLUME *volume, uint32_t group, const EXT2_BLOCK_GROU
     }
 
     bgdt_byte = volume->bgdt_start_block * volume->block_size;
-    desc_offset = group * (uint32_t)sizeof(EXT2_BLOCK_GROUP_DESC);
-    return write_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(EXT2_BLOCK_GROUP_DESC), desc);
+    desc_offset = group * (uint32_t)sizeof(ext2_block_group_desc_t);
+    return write_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(ext2_block_group_desc_t), desc);
 }
 
 /**
  * writes the superblock to the EXT2 volume.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @return true if the write operation was successful, false otherwise.
  */
-bool write_superblock(EXT2_VOLUME *volume)
+bool write_superblock(ext2_volume_t *volume)
 {
     if (!volume)
     {
         return false;
     }
 
-    return write_abs_bytes(volume->disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(EXT2_SUPERBLOCK), &volume->superblock);
+    return write_abs_bytes(volume->disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(ext2_superblock_t), &volume->superblock);
 }
 
 /**
  * reads the inode bitmap for the specified block group from the EXT2 volume into the provided output buffer.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param group the block group number to read the inode bitmap for.
  * @param bitmap pointer to the output buffer where the read inode bitmap will be stored.
  * @return true if the read operation was successful, false otherwise.
  */
-bool read_inode_bitmap(EXT2_VOLUME *volume, uint32_t group, uint8_t *bitmap)
+bool read_inode_bitmap(ext2_volume_t *volume, uint32_t group, uint8_t *bitmap)
 {
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
 
     if (!volume || !bitmap || group >= volume->block_group_count)
     {
@@ -216,14 +216,14 @@ bool read_inode_bitmap(EXT2_VOLUME *volume, uint32_t group, uint8_t *bitmap)
 
 /**
  * writes the inode bitmap for the specified block group to the EXT2 volume from the provided input buffer.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param group the block group number to write the inode bitmap for.
  * @param bitmap pointer to the input buffer containing the inode bitmap data to be written.
  * @return true if the write operation was successful, false otherwise.
  */
-bool write_inode_bitmap(EXT2_VOLUME *volume, uint32_t group, const uint8_t *bitmap)
+bool write_inode_bitmap(ext2_volume_t *volume, uint32_t group, const uint8_t *bitmap)
 {
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
 
     if (!volume || !bitmap || group >= volume->block_group_count)
     {
@@ -240,14 +240,14 @@ bool write_inode_bitmap(EXT2_VOLUME *volume, uint32_t group, const uint8_t *bitm
 
 /**
  * reads the block bitmap for the specified block group from the EXT2 volume into the provided output buffer.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param group the block group number to read the block bitmap for.
  * @param bitmap pointer to the output buffer where the read block bitmap will be stored.
  * @return true if the read operation was successful, false otherwise.
  */
-bool read_block_bitmap(EXT2_VOLUME *volume, uint32_t group, uint8_t *bitmap)
+bool read_block_bitmap(ext2_volume_t *volume, uint32_t group, uint8_t *bitmap)
 {
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
 
     if (!volume || !bitmap || group >= volume->block_group_count)
     {
@@ -264,14 +264,14 @@ bool read_block_bitmap(EXT2_VOLUME *volume, uint32_t group, uint8_t *bitmap)
 
 /**
  * writes the block bitmap for the specified block group to the EXT2 volume from the provided input buffer.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param group the block group number to write the block bitmap for.
  * @param bitmap pointer to the input buffer containing the block bitmap data to be written.
  * @return true if the write operation was successful, false otherwise.
  */
-bool write_block_bitmap(EXT2_VOLUME *volume, uint32_t group, const uint8_t *bitmap)
+bool write_block_bitmap(ext2_volume_t *volume, uint32_t group, const uint8_t *bitmap)
 {
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
 
     if (!volume || !bitmap || group >= volume->block_group_count)
     {

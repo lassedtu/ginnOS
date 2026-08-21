@@ -1,14 +1,14 @@
 #include "ext2_internal.h"
 
 /**
- * reads the next directory entry from an open directory file, populating the provided EXT2_DIRECTORY_ENTRY structure with the entry's details if successful.
- * @param file pointer to the EXT2_FILE structure representing the open directory file.
- * @param entryOut pointer to the EXT2_DIRECTORY_ENTRY structure where the read entry's details will be stored.
+ * reads the next directory entry from an open directory file, populating the provided ext2_directory_entry_t structure with the entry's details if successful.
+ * @param file pointer to the ext2_file_t structure representing the open directory file.
+ * @param entryOut pointer to the ext2_directory_entry_t structure where the read entry's details will be stored.
  * @return true if a directory entry was successfully read and stored in entryOut, false if the end of the directory was reached, the file is not a directory, or an error occurred during the read operation.
  */
-static bool read_directory_entry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut)
+static bool read_directory_entry(ext2_file_t *file, ext2_directory_entry_t *entryOut)
 {
-    uint32_t header_size = OFFSETOF(EXT2_DIR_ENTRY, file_type) + 1;
+    uint32_t header_size = OFFSETOF(ext2_dir_entry_t, file_type) + 1;
     uint32_t block_size;
 
     if (!file || !entryOut || !file->volume || !file->is_open || !inode_is_directory(&file->inode_cache))
@@ -23,7 +23,7 @@ static bool read_directory_entry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut
         uint32_t block_index = file->cursor / block_size;
         uint32_t block_offset = file->cursor % block_size;
         uint32_t physical_block;
-        EXT2_DIR_ENTRY *entry;
+        ext2_dir_entry_t *entry;
 
         if (!resolve_data_block(file->volume, &file->inode_cache, block_index, &physical_block))
         {
@@ -41,7 +41,7 @@ static bool read_directory_entry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut
             continue;
         }
 
-        entry = (EXT2_DIR_ENTRY *)(g_block_buffer + block_offset);
+        entry = (ext2_dir_entry_t *)(g_block_buffer + block_offset);
         if (entry->rec_len == 0 || block_offset + entry->rec_len > block_size)
         {
             return false;
@@ -76,22 +76,22 @@ static bool read_directory_entry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut
     return false;
 }
 
-kerr_t EXT2_Open(EXT2_VOLUME *volume, const char *path, EXT2_FILE *file)
+kerr_t ext2_open(ext2_volume_t *volume, const char *path, ext2_file_t *file)
 {
     uint32_t inode_number;
-    EXT2_INODE inode;
+    ext2_inode_t inode;
 
     if (!volume || !path || !file)
     {
         return KERR_INVAL;
     }
 
-    if (kerr_failed(EXT2_LookupPath(volume, path, &inode_number)))
+    if (kerr_failed(ext2_lookup_path(volume, path, &inode_number)))
     {
         return KERR_NOTFOUND;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, inode_number, &inode)))
+    if (kerr_failed(ext2_read_inode(volume, inode_number, &inode)))
     {
         return KERR_IO;
     }
@@ -106,7 +106,7 @@ kerr_t EXT2_Open(EXT2_VOLUME *volume, const char *path, EXT2_FILE *file)
     return KERR_OK;
 }
 
-uint32_t EXT2_Read(EXT2_FILE *file, uint32_t byteCount, void *dataOut)
+uint32_t ext2_read(ext2_file_t *file, uint32_t byteCount, void *dataOut)
 {
     uint32_t available;
 
@@ -136,7 +136,7 @@ uint32_t EXT2_Read(EXT2_FILE *file, uint32_t byteCount, void *dataOut)
         return 0;
     }
 
-    if (kerr_failed(EXT2_ReadFile(file->volume, file->inode, file->cursor, byteCount, dataOut)))
+    if (kerr_failed(ext2_read_file(file->volume, file->inode, file->cursor, byteCount, dataOut)))
     {
         return 0;
     }
@@ -145,7 +145,7 @@ uint32_t EXT2_Read(EXT2_FILE *file, uint32_t byteCount, void *dataOut)
     return byteCount;
 }
 
-uint32_t EXT2_Write(EXT2_FILE *file, uint32_t byteCount, const void *dataIn)
+uint32_t ext2_write(ext2_file_t *file, uint32_t byteCount, const void *dataIn)
 {
     if (!file || !file->is_open || !file->volume || !dataIn)
     {
@@ -162,7 +162,7 @@ uint32_t EXT2_Write(EXT2_FILE *file, uint32_t byteCount, const void *dataIn)
         return 0;
     }
 
-    if (kerr_failed(EXT2_WriteFile(file->volume, file->inode, file->cursor, byteCount, dataIn)))
+    if (kerr_failed(ext2_write_file(file->volume, file->inode, file->cursor, byteCount, dataIn)))
     {
         return 0;
     }
@@ -178,18 +178,18 @@ uint32_t EXT2_Write(EXT2_FILE *file, uint32_t byteCount, const void *dataIn)
     return byteCount;
 }
 
-void EXT2_Truncate(EXT2_FILE *file)
+void ext2_truncate(ext2_file_t *file)
 {
     if (!file || !file->is_open || !file->volume)
         return;
 
-    (void)EXT2_TruncateFile(file->volume, file->inode);
+    (void)ext2_truncate_file(file->volume, file->inode);
     file->size = 0;
     file->cursor = 0;
     file->inode_cache.i_size = 0;
 }
 
-kerr_t EXT2_ReadEntry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut)
+kerr_t ext2_read_entry(ext2_file_t *file, ext2_directory_entry_t *entryOut)
 {
     if (!file || !entryOut)
     {
@@ -214,7 +214,7 @@ kerr_t EXT2_ReadEntry(EXT2_FILE *file, EXT2_DIRECTORY_ENTRY *entryOut)
     return KERR_OK;
 }
 
-void EXT2_Close(EXT2_FILE *file)
+void ext2_close(ext2_file_t *file)
 {
     if (!file)
     {
@@ -227,12 +227,12 @@ void EXT2_Close(EXT2_FILE *file)
     file->file_type = 0;
     file->is_open = 0;
     file->volume = 0;
-    memset(&file->inode_cache, 0, (uint32_t)sizeof(EXT2_INODE));
+    memset(&file->inode_cache, 0, (uint32_t)sizeof(ext2_inode_t));
 }
 
-kerr_t EXT2_ReadFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, void *buffer)
+kerr_t ext2_read_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t offset, uint32_t length, void *buffer)
 {
-    EXT2_INODE inode;
+    ext2_inode_t inode;
     uint8_t *out = (uint8_t *)buffer;
     uint32_t copied = 0;
 
@@ -241,7 +241,7 @@ kerr_t EXT2_ReadFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset
         return KERR_INVAL;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
+    if (kerr_failed(ext2_read_inode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
     {
         return KERR_IO;
     }
@@ -307,13 +307,13 @@ kerr_t EXT2_ReadFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset
     return KERR_OK;
 }
 
-kerr_t EXT2_CreateFile(EXT2_VOLUME *volume, const char *path)
+kerr_t ext2_create_file(ext2_volume_t *volume, const char *path)
 {
     char parent_path[256];
     char name[256];
     uint32_t parent_inode_number;
-    EXT2_INODE parent_inode;
-    EXT2_INODE new_inode;
+    ext2_inode_t parent_inode;
+    ext2_inode_t new_inode;
     uint32_t child_inode_number;
     uint32_t name_len;
     uint8_t child_type;
@@ -334,7 +334,7 @@ kerr_t EXT2_CreateFile(EXT2_VOLUME *volume, const char *path)
         return KERR_EXIST;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, parent_inode_number, &parent_inode)) || !inode_is_directory(&parent_inode))
+    if (kerr_failed(ext2_read_inode(volume, parent_inode_number, &parent_inode)) || !inode_is_directory(&parent_inode))
     {
         return KERR_IO;
     }
@@ -367,13 +367,13 @@ kerr_t EXT2_CreateFile(EXT2_VOLUME *volume, const char *path)
     return KERR_OK;
 }
 
-kerr_t EXT2_CreateDir(EXT2_VOLUME *volume, const char *path)
+kerr_t ext2_create_dir(ext2_volume_t *volume, const char *path)
 {
     char parent_path[256];
     char name[256];
     uint32_t parent_inode_number;
-    EXT2_INODE parent_inode;
-    EXT2_INODE new_inode;
+    ext2_inode_t parent_inode;
+    ext2_inode_t new_inode;
     uint32_t child_inode_number;
     uint32_t child_block_number;
     uint32_t name_len;
@@ -395,7 +395,7 @@ kerr_t EXT2_CreateDir(EXT2_VOLUME *volume, const char *path)
         return KERR_EXIST;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, parent_inode_number, &parent_inode)) || !inode_is_directory(&parent_inode))
+    if (kerr_failed(ext2_read_inode(volume, parent_inode_number, &parent_inode)) || !inode_is_directory(&parent_inode))
     {
         return KERR_IO;
     }
@@ -454,7 +454,7 @@ kerr_t EXT2_CreateDir(EXT2_VOLUME *volume, const char *path)
     return KERR_OK;
 }
 
-kerr_t EXT2_RemoveFile(EXT2_VOLUME *volume, const char *path)
+kerr_t ext2_remove_file(ext2_volume_t *volume, const char *path)
 {
     char parent_path[256];
     char name[256];
@@ -492,15 +492,15 @@ kerr_t EXT2_RemoveFile(EXT2_VOLUME *volume, const char *path)
     return KERR_OK;
 }
 
-kerr_t EXT2_RemoveDir(EXT2_VOLUME *volume, const char *path)
+kerr_t ext2_remove_dir(ext2_volume_t *volume, const char *path)
 {
     char parent_path[256];
     char name[256];
     uint32_t parent_inode_number;
     uint32_t child_inode_number;
     uint8_t child_type;
-    EXT2_INODE child_inode;
-    EXT2_INODE parent_inode;
+    ext2_inode_t child_inode;
+    ext2_inode_t parent_inode;
     uint32_t name_len;
     uint32_t child_group;
 
@@ -520,7 +520,7 @@ kerr_t EXT2_RemoveDir(EXT2_VOLUME *volume, const char *path)
         return KERR_NOTFOUND;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, child_inode_number, &child_inode)) || !inode_is_directory(&child_inode))
+    if (kerr_failed(ext2_read_inode(volume, child_inode_number, &child_inode)) || !inode_is_directory(&child_inode))
     {
         return KERR_IO;
     }
@@ -535,7 +535,7 @@ kerr_t EXT2_RemoveDir(EXT2_VOLUME *volume, const char *path)
         return KERR_IO;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, parent_inode_number, &parent_inode)))
+    if (kerr_failed(ext2_read_inode(volume, parent_inode_number, &parent_inode)))
     {
         return KERR_IO;
     }
@@ -558,7 +558,7 @@ kerr_t EXT2_RemoveDir(EXT2_VOLUME *volume, const char *path)
     return KERR_OK;
 }
 
-kerr_t EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_path)
+kerr_t ext2_rename(ext2_volume_t *volume, const char *old_path, const char *new_path)
 {
     char old_parent_path[256];
     char old_name[256];
@@ -568,8 +568,8 @@ kerr_t EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_pa
     uint32_t new_parent_inode_number;
     uint32_t child_inode_number;
     uint8_t child_type;
-    EXT2_INODE old_parent_inode;
-    EXT2_INODE new_parent_inode;
+    ext2_inode_t old_parent_inode;
+    ext2_inode_t new_parent_inode;
     uint32_t old_name_len;
     uint32_t new_name_len;
     uint32_t child_group;
@@ -597,12 +597,12 @@ kerr_t EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_pa
         return KERR_NOTFOUND;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, old_parent_inode_number, &old_parent_inode)) || !inode_is_directory(&old_parent_inode))
+    if (kerr_failed(ext2_read_inode(volume, old_parent_inode_number, &old_parent_inode)) || !inode_is_directory(&old_parent_inode))
     {
         return KERR_IO;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, new_parent_inode_number, &new_parent_inode)) || !inode_is_directory(&new_parent_inode))
+    if (kerr_failed(ext2_read_inode(volume, new_parent_inode_number, &new_parent_inode)) || !inode_is_directory(&new_parent_inode))
     {
         return KERR_IO;
     }
@@ -664,7 +664,7 @@ kerr_t EXT2_Rename(EXT2_VOLUME *volume, const char *old_path, const char *new_pa
  * @param physical_block_out receives the physical block number.
  * @return true on success, false on failure.
  */
-static bool assign_data_block(EXT2_VOLUME *volume, EXT2_INODE *inode, uint32_t logical_block_index, uint32_t *physical_block_out)
+static bool assign_data_block(ext2_volume_t *volume, ext2_inode_t *inode, uint32_t logical_block_index, uint32_t *physical_block_out)
 {
     /* only direct blocks for now */
     if (logical_block_index >= EXT2_NDIR_BLOCKS)
@@ -700,9 +700,9 @@ static bool assign_data_block(EXT2_VOLUME *volume, EXT2_INODE *inode, uint32_t l
     return true;
 }
 
-kerr_t EXT2_WriteFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer)
+kerr_t ext2_write_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer)
 {
-    EXT2_INODE inode;
+    ext2_inode_t inode;
     const uint8_t *src = (const uint8_t *)buffer;
     uint32_t written = 0;
 
@@ -716,7 +716,7 @@ kerr_t EXT2_WriteFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offse
         return KERR_OK;
     }
 
-    if (kerr_failed(EXT2_ReadInode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
+    if (kerr_failed(ext2_read_inode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
     {
         return KERR_IO;
     }
@@ -772,14 +772,14 @@ kerr_t EXT2_WriteFile(EXT2_VOLUME *volume, uint32_t inode_number, uint32_t offse
     return KERR_OK;
 }
 
-kerr_t EXT2_TruncateFile(EXT2_VOLUME *volume, uint32_t inode_number)
+kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number)
 {
-    EXT2_INODE inode;
+    ext2_inode_t inode;
 
     if (!volume)
         return KERR_INVAL;
 
-    if (kerr_failed(EXT2_ReadInode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
+    if (kerr_failed(ext2_read_inode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
         return KERR_IO;
 
     /* just set size to 0  blocks remain allocated (simple approach) */

@@ -134,7 +134,7 @@ void *pmm_alloc_page(void)
         }
     }
 
-    return (void *)0;
+    return NULL;
 }
 
 void pmm_free_page(void *address)

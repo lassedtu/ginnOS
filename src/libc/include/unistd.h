@@ -94,7 +94,7 @@ int getcwd(char *buf, size_t size);
 int chdir(const char *path);
 
 /**
- * directory entry structure (matches kernel FS_DIRENT).
+ * directory entry structure (matches kernel fs_dirent_t).
  */
 typedef struct dirent
 {

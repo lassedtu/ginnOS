@@ -36,14 +36,14 @@ static uint8_t map_inode_type(uint16_t mode)
     return FS_TYPE_UNKNOWN;
 }
 
-bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device)
+bool fs_mount(fs_mount_t *mount, block_device_t *device)
 {
     if (!mount || !device)
     {
         return false;
     }
 
-    if (kerr_failed(EXT2_Initialize(&mount->ext2, device)))
+    if (kerr_failed(ext2_initialize(&mount->ext2, device)))
     {
         return false;
     }
@@ -52,7 +52,7 @@ bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device)
     return true;
 }
 
-kerr_t fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file)
+kerr_t fs_open(fs_mount_t *mount, const char *path, fs_file_t *file)
 {
     kerr_t err;
 
@@ -61,7 +61,7 @@ kerr_t fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file)
         return KERR_INVAL;
     }
 
-    err = EXT2_Open(&mount->ext2, path, &file->ext2_file);
+    err = ext2_open(&mount->ext2, path, &file->ext2_file);
     if (kerr_failed(err))
     {
         return err;
@@ -72,60 +72,60 @@ kerr_t fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file)
     return KERR_OK;
 }
 
-kerr_t fs_create(FS_MOUNT *mount, const char *path)
+kerr_t fs_create(fs_mount_t *mount, const char *path)
 {
     if (!mount || !path || !mount->is_mounted)
     {
         return KERR_INVAL;
     }
 
-    return EXT2_CreateFile(&mount->ext2, path);
+    return ext2_create_file(&mount->ext2, path);
 }
 
-kerr_t fs_mkdir(FS_MOUNT *mount, const char *path)
+kerr_t fs_mkdir(fs_mount_t *mount, const char *path)
 {
     if (!mount || !path || !mount->is_mounted)
     {
         return KERR_INVAL;
     }
 
-    return EXT2_CreateDir(&mount->ext2, path);
+    return ext2_create_dir(&mount->ext2, path);
 }
 
-kerr_t fs_remove(FS_MOUNT *mount, const char *path)
+kerr_t fs_remove(fs_mount_t *mount, const char *path)
 {
     if (!mount || !path || !mount->is_mounted)
     {
         return KERR_INVAL;
     }
 
-    return EXT2_RemoveFile(&mount->ext2, path);
+    return ext2_remove_file(&mount->ext2, path);
 }
 
-kerr_t fs_rmdir(FS_MOUNT *mount, const char *path)
+kerr_t fs_rmdir(fs_mount_t *mount, const char *path)
 {
     if (!mount || !path || !mount->is_mounted)
     {
         return KERR_INVAL;
     }
 
-    return EXT2_RemoveDir(&mount->ext2, path);
+    return ext2_remove_dir(&mount->ext2, path);
 }
 
-kerr_t fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path)
+kerr_t fs_rename(fs_mount_t *mount, const char *old_path, const char *new_path)
 {
     if (!mount || !old_path || !new_path || !mount->is_mounted)
     {
         return KERR_INVAL;
     }
 
-    return EXT2_Rename(&mount->ext2, old_path, new_path);
+    return ext2_rename(&mount->ext2, old_path, new_path);
 }
 
-kerr_t fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out)
+kerr_t fs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
 {
     uint32_t inode_number;
-    EXT2_INODE inode;
+    ext2_inode_t inode;
     kerr_t err;
 
     if (!mount || !path || !stat_out || !mount->is_mounted)
@@ -133,13 +133,13 @@ kerr_t fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out)
         return KERR_INVAL;
     }
 
-    err = EXT2_LookupPath(&mount->ext2, path, &inode_number);
+    err = ext2_lookup_path(&mount->ext2, path, &inode_number);
     if (kerr_failed(err))
     {
         return err;
     }
 
-    err = EXT2_ReadInode(&mount->ext2, inode_number, &inode);
+    err = ext2_read_inode(&mount->ext2, inode_number, &inode);
     if (kerr_failed(err))
     {
         return err;
@@ -157,40 +157,40 @@ kerr_t fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out)
     return KERR_OK;
 }
 
-uint32_t fs_read(FS_FILE *file, uint32_t byteCount, void *dataOut)
+uint32_t fs_read(fs_file_t *file, uint32_t byteCount, void *dataOut)
 {
     if (!file || !file->is_open)
     {
         return 0;
     }
 
-    return EXT2_Read(&file->ext2_file, byteCount, dataOut);
+    return ext2_read(&file->ext2_file, byteCount, dataOut);
 }
 
-uint32_t fs_write(FS_FILE *file, uint32_t byteCount, const void *dataIn)
+uint32_t fs_write(fs_file_t *file, uint32_t byteCount, const void *dataIn)
 {
     if (!file || !file->is_open)
     {
         return 0;
     }
 
-    return EXT2_Write(&file->ext2_file, byteCount, dataIn);
+    return ext2_write(&file->ext2_file, byteCount, dataIn);
 }
 
-kerr_t fs_truncate(FS_FILE *file)
+kerr_t fs_truncate(fs_file_t *file)
 {
     if (!file || !file->is_open)
     {
         return KERR_INVAL;
     }
 
-    EXT2_Truncate(&file->ext2_file);
+    ext2_truncate(&file->ext2_file);
     return KERR_OK;
 }
 
-kerr_t fs_read_entry(FS_FILE *file, FS_DIRENT *entryOut)
+kerr_t fs_read_entry(fs_file_t *file, fs_dirent_t *entryOut)
 {
-    EXT2_DIRECTORY_ENTRY ext2_entry;
+    ext2_directory_entry_t ext2_entry;
     kerr_t err;
 
     if (!file || !entryOut || !file->is_open)
@@ -198,7 +198,7 @@ kerr_t fs_read_entry(FS_FILE *file, FS_DIRENT *entryOut)
         return KERR_INVAL;
     }
 
-    err = EXT2_ReadEntry(&file->ext2_file, &ext2_entry);
+    err = ext2_read_entry(&file->ext2_file, &ext2_entry);
     if (kerr_failed(err))
     {
         return err;
@@ -211,19 +211,19 @@ kerr_t fs_read_entry(FS_FILE *file, FS_DIRENT *entryOut)
     return KERR_OK;
 }
 
-void fs_close(FS_FILE *file)
+void fs_close(fs_file_t *file)
 {
     if (!file)
     {
         return;
     }
 
-    EXT2_Close(&file->ext2_file);
+    ext2_close(&file->ext2_file);
     file->is_open = 0;
     file->file_type = FS_TYPE_UNKNOWN;
 }
 
-uint8_t fs_file_type(const FS_FILE *file)
+uint8_t fs_file_type(const fs_file_t *file)
 {
     if (!file)
     {

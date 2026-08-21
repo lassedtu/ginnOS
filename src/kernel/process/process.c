@@ -10,13 +10,13 @@ static process_t proc_table[PROCESS_MAX];
 static uint32_t next_pid = 1;
 
 // pointer to the currently running process.
-static process_t *current_process = (void *)0;
+static process_t *current_process = NULL;
 
 void process_init(void)
 {
     memset(proc_table, 0, sizeof(proc_table));
     next_pid = 1;
-    current_process = (void *)0;
+    current_process = NULL;
 }
 
 process_t *process_create(void)
@@ -40,7 +40,7 @@ process_t *process_create(void)
             void *stack_page = pmm_alloc_page();
             if (!stack_page)
             {
-                return (void *)0;
+                return NULL;
             }
             memset(stack_page, 0, KERNEL_STACK_SIZE);
             proc->kernel_stack = (uint32_t)stack_page;
@@ -52,7 +52,7 @@ process_t *process_create(void)
             if (pd == 0)
             {
                 pmm_free_page(stack_page);
-                return (void *)0;
+                return NULL;
             }
             proc->page_directory = pd;
 
@@ -69,7 +69,7 @@ process_t *process_create(void)
         }
     }
 
-    return (void *)0; /* table full */
+    return NULL; /* table full */
 }
 
 process_t *process_current(void)
@@ -137,7 +137,7 @@ process_t *process_get(uint32_t pid)
 {
     if (pid == PID_NONE)
     {
-        return (void *)0;
+        return NULL;
     }
 
     for (int i = 0; i < PROCESS_MAX; i++)
@@ -149,5 +149,5 @@ process_t *process_get(uint32_t pid)
         }
     }
 
-    return (void *)0;
+    return NULL;
 }

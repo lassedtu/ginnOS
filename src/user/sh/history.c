@@ -64,7 +64,7 @@ int history_count(void)
 const char *history_get(int index)
 {
     if (index < 0 || index >= history_size)
-        return (const char *)0;
+        return NULL;
 
     int real_index = (history_start + index) % HISTORY_MAX;
     return history_buf[real_index];
@@ -73,7 +73,7 @@ const char *history_get(int index)
 const char *history_prev(const char *current)
 {
     if (history_size == 0)
-        return (const char *)0;
+        return NULL;
 
     if (nav_pos == -1)
     {
@@ -89,7 +89,7 @@ const char *history_prev(const char *current)
     else
     {
         // already at the oldest entry
-        return (const char *)0;
+        return NULL;
     }
 
     return history_get(nav_pos);
@@ -98,7 +98,7 @@ const char *history_prev(const char *current)
 const char *history_next(void)
 {
     if (nav_pos == -1)
-        return (const char *)0;
+        return NULL;
 
     nav_pos++;
 

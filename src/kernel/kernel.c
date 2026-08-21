@@ -40,9 +40,9 @@ void cstart(boot_info_t *boot)
 
 void kernel_main(boot_info_t *boot)
 {
-    ATA_DEVICE ata;
-    PARTITION_DEVICE part;
-    FS_MOUNT mount;
+    ata_device_t ata;
+    partition_device_t part;
+    fs_mount_t mount;
 
     hal_initialize();
 
@@ -82,12 +82,12 @@ void kernel_main(boot_info_t *boot)
     // can arrive before this point because the CPU holds IF=0 from boot.
     io_enable_interrupts();
 
-    if (!ATA_Initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
+    if (!ata_initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
     {
         kernel_panic("ATA initialization failed");
     }
 
-    if (!PARTITION_DetectExt2(&part, &ata.block))
+    if (!partition_detect_ext2(&part, &ata.block))
     {
         kernel_panic("EXT2 partition detection failed");
     }
@@ -103,7 +103,7 @@ void kernel_main(boot_info_t *boot)
     }
 
     // launch the userspace shell as the first process
-    const char *argv[] = {"sh", (const char *)0};
+    const char *argv[] = {"sh", NULL};
     int ret = exec_program("/bin/sh", argv);
     if (ret < 0)
     {

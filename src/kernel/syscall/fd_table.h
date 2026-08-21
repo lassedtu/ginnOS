@@ -54,7 +54,7 @@ typedef struct
     fd_type_t type;
     union
     {
-        VFS_FILE file; /* valid when type == FD_TYPE_FILE */
+        vfs_file_t file; /* valid when type == FD_TYPE_FILE */
         struct
         {
             pipe_buf_t *buf; /* shared pipe buffer */
@@ -70,10 +70,10 @@ void fd_table_init(void);
 
 /**
  * allocate a file descriptor for an open VFS file.
- * @param file pointer to a VFS_FILE to copy into the table.
+ * @param file pointer to a vfs_file_t to copy into the table.
  * @return fd number (>= 0) on success, -1 if the table is full.
  */
-int fd_alloc(VFS_FILE *file);
+int fd_alloc(vfs_file_t *file);
 
 /**
  * get the fd entry for a given descriptor number.

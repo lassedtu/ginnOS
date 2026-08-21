@@ -1,6 +1,6 @@
 #include "stdio.h"
 
-static StdioPutCharFn g_stdio_putchar = (StdioPutCharFn)0;
+static StdioPutCharFn g_stdio_putchar = NULL;
 
 void stdio_set_putchar(StdioPutCharFn func)
 {
@@ -42,14 +42,14 @@ typedef struct
     int length; // current length modifier (one of PRINTF_LENGTH_*)
     int radix;  // current numeric base for number formatting (e.g., 10 for decimal, 16 for hexadecimal)
     bool sign;  // flag indicating whether the number is signed (true for signed, false for unsigned)
-} PrintfContext;
+} printf_context_t;
 
 static const char g_HexChars[] = "0123456789abcdef"; // hexadecimal characters for number formatting
 
 /**
  * reset the printf context to its default state.
  */
-static void printf_context_reset(PrintfContext *ctx)
+static void printf_context_reset(printf_context_t *ctx)
 {
     ctx->state = PRINTF_STATE_NORMAL;
     ctx->length = PRINTF_LENGTH_DEFAULT;
@@ -90,7 +90,7 @@ static int *printf_number(int *argp, int length, bool sign, int radix);
 /**
  * handle a format specifier in printf and write the corresponding output.
  */
-static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
+static int *printf_handle_spec(int *argp, printf_context_t *ctx, char spec)
 {
     switch (spec)
     {
@@ -154,7 +154,7 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
 void printf(const char *fmt, ...)
 {
     int *argp = (int *)&fmt;
-    PrintfContext ctx;
+    printf_context_t ctx;
 
     printf_context_reset(&ctx);
 

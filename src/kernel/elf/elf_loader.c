@@ -161,8 +161,8 @@ static void zero_in_process(uint32_t pd_phys, uint32_t vaddr, uint32_t size)
 
 bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
 {
-    VFS_FILE file;
-    VFS_STAT stat;
+    vfs_file_t file;
+    vfs_stat_t stat;
     uint8_t *file_data;
     uint32_t file_size;
     Elf32_Ehdr *ehdr;

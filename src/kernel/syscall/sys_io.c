@@ -241,7 +241,7 @@ int32_t sys_open(struct registers *regs)
         return -3; /* EINVAL */
     }
 
-    VFS_FILE file;
+    vfs_file_t file;
     kerr_t err = vfs_open(resolved, &file);
     if (kerr_failed(err))
     {

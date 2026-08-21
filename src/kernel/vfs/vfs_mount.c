@@ -1,8 +1,8 @@
 #include "vfs.h"
 
-FS_MOUNT *root_mount = 0;
+fs_mount_t *root_mount = NULL;
 
-kerr_t vfs_mount_root(FS_MOUNT *mount)
+kerr_t vfs_mount_root(fs_mount_t *mount)
 {
     if (!mount || !mount->is_mounted)
     {

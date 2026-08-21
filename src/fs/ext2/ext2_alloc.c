@@ -62,19 +62,19 @@ static bool bitmap_find_free(const uint8_t *bitmap, uint32_t bit_count, uint32_t
 
 /**
  * determines the location of a specific inode within the EXT2 volume, including its block group descriptor and byte offset.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param inode_number the inode number to locate (1-based index).
- * @param desc_out pointer to an EXT2_BLOCK_GROUP_DESC structure where the block group descriptor will be stored.
+ * @param desc_out pointer to an ext2_block_group_desc_t structure where the block group descriptor will be stored.
  * @param inode_byte_offset_out pointer to a variable where the byte offset of the inode within the volume will be stored.
  * @param group_out optional pointer to a variable where the block group number will be stored (can be NULL if not needed).
  * @return true if the inode location was successfully determined, false otherwise.
  */
-bool inode_location(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_BLOCK_GROUP_DESC *desc_out, uint32_t *inode_byte_offset_out, uint32_t *group_out)
+bool inode_location(ext2_volume_t *volume, uint32_t inode_number, ext2_block_group_desc_t *desc_out, uint32_t *inode_byte_offset_out, uint32_t *group_out)
 {
     uint32_t zero_based;
     uint32_t group;
     uint32_t index;
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
 
     if (!volume || !inode_number || !desc_out || !inode_byte_offset_out)
     {
@@ -108,14 +108,14 @@ bool inode_location(EXT2_VOLUME *volume, uint32_t inode_number, EXT2_BLOCK_GROUP
 
 /**
  * writes an inode to the EXT2 volume at the specified inode number.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param inode_number the inode number to write to (1-based index).
- * @param inode pointer to the EXT2_INODE structure containing the inode data to be written.
+ * @param inode pointer to the ext2_inode_t structure containing the inode data to be written.
  * @return true if the write operation was successful, false otherwise.
  */
-bool write_inode(EXT2_VOLUME *volume, uint32_t inode_number, const EXT2_INODE *inode)
+bool write_inode(ext2_volume_t *volume, uint32_t inode_number, const ext2_inode_t *inode)
 {
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
     uint32_t inode_byte_offset;
     uint8_t inode_buffer[EXT2_MAX_INODE_SIZE];
 
@@ -130,22 +130,22 @@ bool write_inode(EXT2_VOLUME *volume, uint32_t inode_number, const EXT2_INODE *i
     }
 
     memset(inode_buffer, 0, sizeof(inode_buffer));
-    memcpy(inode_buffer, inode, sizeof(EXT2_INODE));
+    memcpy(inode_buffer, inode, sizeof(ext2_inode_t));
     return write_abs_bytes(volume->disk, inode_byte_offset, volume->inode_size, inode_buffer);
 }
 
 /**
  * updates the free block count, free inode count, and used directory count in both the block group descriptor and the superblock for the specified block group.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param group the block group number to update.
  * @param free_blocks_delta the change in the number of free blocks (positive to increase, negative to decrease).
  * @param free_inodes_delta the change in the number of free inodes (positive to increase, negative to decrease).
  * @param used_dirs_delta the change in the number of used directories (positive to increase, negative to decrease).
  * @return true if the update operation was successful, false otherwise.
  */
-bool update_group_and_super_counts(EXT2_VOLUME *volume, uint32_t group, int32_t free_blocks_delta, int32_t free_inodes_delta, int32_t used_dirs_delta)
+bool update_group_and_super_counts(ext2_volume_t *volume, uint32_t group, int32_t free_blocks_delta, int32_t free_inodes_delta, int32_t used_dirs_delta)
 {
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
     int32_t new_free_blocks;
     int32_t new_free_inodes;
     int32_t new_used_dirs;
@@ -206,11 +206,11 @@ bool update_group_and_super_counts(EXT2_VOLUME *volume, uint32_t group, int32_t 
 
 /**
  * allocates a free inode from the EXT2 volume and returns its inode number.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param inode_number_out pointer to a variable where the allocated inode number will be stored (1-based index).
  * @return true if an inode was successfully allocated and its number is stored in inode_number_out, false if no free inode was available or an error occurred.
  */
-bool alloc_inode(EXT2_VOLUME *volume, uint32_t *inode_number_out)
+bool alloc_inode(ext2_volume_t *volume, uint32_t *inode_number_out)
 {
     uint32_t group;
 
@@ -221,7 +221,7 @@ bool alloc_inode(EXT2_VOLUME *volume, uint32_t *inode_number_out)
 
     for (group = 0; group < volume->block_group_count; group++)
     {
-        EXT2_BLOCK_GROUP_DESC desc;
+        ext2_block_group_desc_t desc;
         uint32_t bit_limit;
         uint32_t start_bit = 0;
         uint32_t free_bit;
@@ -281,13 +281,13 @@ bool alloc_inode(EXT2_VOLUME *volume, uint32_t *inode_number_out)
 
 /**
  * frees an allocated inode in the EXT2 volume, marking it as available for future use.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param inode_number the inode number to free (1-based index).
  * @return true if the inode was successfully freed, false if the inode number was invalid or an error occurred during the operation.
  */
-bool free_inode(EXT2_VOLUME *volume, uint32_t inode_number)
+bool free_inode(ext2_volume_t *volume, uint32_t inode_number)
 {
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
     uint32_t zero_based;
     uint32_t group;
     uint32_t index;
@@ -327,11 +327,11 @@ bool free_inode(EXT2_VOLUME *volume, uint32_t inode_number)
 
 /**
  * allocates a free block from the EXT2 volume and returns its block number.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param block_number_out pointer to a variable where the allocated block number will be stored.
  * @return true if a block was successfully allocated and its number is stored in block_number_out, false if no free block was available or an error occurred.
  */
-bool alloc_block(EXT2_VOLUME *volume, uint32_t *block_number_out)
+bool alloc_block(ext2_volume_t *volume, uint32_t *block_number_out)
 {
     uint32_t group;
 
@@ -342,7 +342,7 @@ bool alloc_block(EXT2_VOLUME *volume, uint32_t *block_number_out)
 
     for (group = 0; group < volume->block_group_count; group++)
     {
-        EXT2_BLOCK_GROUP_DESC desc;
+        ext2_block_group_desc_t desc;
         uint32_t bit_limit;
         uint32_t start_block;
         uint32_t free_bit;
@@ -399,13 +399,13 @@ bool alloc_block(EXT2_VOLUME *volume, uint32_t *block_number_out)
 
 /**
  * frees an allocated block in the EXT2 volume, marking it as available for future use.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
  * @param block_number the block number to free.
  * @return true if the block was successfully freed, false if the block number was invalid or an error occurred during the operation.
  */
-bool free_block(EXT2_VOLUME *volume, uint32_t block_number)
+bool free_block(ext2_volume_t *volume, uint32_t block_number)
 {
-    EXT2_BLOCK_GROUP_DESC desc;
+    ext2_block_group_desc_t desc;
     uint32_t relative;
     uint32_t group;
 
@@ -447,11 +447,11 @@ bool free_block(EXT2_VOLUME *volume, uint32_t block_number)
 
 /**
  * frees all blocks associated with an inode, including direct, single indirect, double indirect, and triple indirect blocks.
- * @param volume pointer to the EXT2_VOLUME structure representing the filesystem volume.
- * @param inode pointer to the EXT2_INODE structure representing the inode whose blocks are to be freed.
+ * @param volume pointer to the ext2_volume_t structure representing the filesystem volume.
+ * @param inode pointer to the ext2_inode_t structure representing the inode whose blocks are to be freed.
  * @return true if all blocks were successfully freed, false if an error occurred during the operation or if the volume or inode pointers were invalid.
  */
-bool free_inode_block_chain(EXT2_VOLUME *volume, EXT2_INODE *inode)
+bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
 {
     uint32_t i;
     uint32_t ptrs_per_block;

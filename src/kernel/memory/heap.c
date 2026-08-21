@@ -94,7 +94,7 @@ void heap_init(void)
     heap_head = (heap_block_t *)heap_start;
     heap_head->size = (heap_end - heap_start) - sizeof(heap_block_t);
     heap_head->free = true;
-    heap_head->next = (void *)0;
+    heap_head->next = NULL;
 
     /* zero the data area */
     memset((uint8_t *)heap_head + sizeof(heap_block_t), 0, heap_head->size);
@@ -146,7 +146,7 @@ static bool heap_expand(uint32_t needed)
     heap_block_t *new_block = (heap_block_t *)expand_start;
     new_block->size = (pages_needed * PAGE_SIZE) - sizeof(heap_block_t);
     new_block->free = true;
-    new_block->next = (void *)0;
+    new_block->next = NULL;
 
     /* find the last block and link to the new one */
     heap_block_t *last = heap_head;
@@ -177,7 +177,7 @@ void *kmalloc(uint32_t size)
 
     if (size == 0)
     {
-        return (void *)0;
+        return NULL;
     }
 
     /* align the requested size to 4 bytes */
@@ -218,7 +218,7 @@ void *kmalloc(uint32_t size)
     }
 
     /* expansion failed or still no fit */
-    return (void *)0;
+    return NULL;
 }
 
 void kfree(void *ptr)

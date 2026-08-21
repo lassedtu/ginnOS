@@ -168,7 +168,7 @@ static pid_t exec_stage(pipeline_stage_t *stage)
     const char *argv[TOKEN_MAX + 1];
     for (int i = 0; i < stage->tokens.count; i++)
         argv[i] = stage->tokens.tokens[i];
-    argv[stage->tokens.count] = (const char *)0;
+    argv[stage->tokens.count] = NULL;
 
     pid_t child = exec(path, argv);
     return child;

@@ -7,10 +7,10 @@
  */
 typedef struct
 {
-    BLOCK_DEVICE block;   // partition block device wrapper.
-    BLOCK_DEVICE *parent; // parent block device backend.
-    uint32_t start_lba;   // starting LBA sector of partition.
-} PARTITION_DEVICE;
+    block_device_t block;   // partition block device wrapper.
+    block_device_t *parent; // parent block device backend.
+    uint32_t start_lba;     // starting LBA sector of partition.
+} partition_device_t;
 
 /**
  * initialize a partition wrapper device around a parent block device.
@@ -19,7 +19,7 @@ typedef struct
  * @param start_lba starting LBA sector of partition.
  * @return true on success, false on failure.
  */
-bool PARTITION_Initialize(PARTITION_DEVICE *part, BLOCK_DEVICE *parent, uint32_t start_lba);
+bool partition_initialize(partition_device_t *part, block_device_t *parent, uint32_t start_lba);
 
 /**
  * detect an EXT2 partition on parent block device and initialize partition wrapper.
@@ -28,4 +28,4 @@ bool PARTITION_Initialize(PARTITION_DEVICE *part, BLOCK_DEVICE *parent, uint32_t
  * @param parent parent block device backend.
  * @return true if an EXT2 partition was found and initialized, false otherwise.
  */
-bool PARTITION_DetectExt2(PARTITION_DEVICE *part, BLOCK_DEVICE *parent);
+bool partition_detect_ext2(partition_device_t *part, block_device_t *parent);
