@@ -131,7 +131,7 @@ bool write_inode(ext2_volume_t *volume, uint32_t inode_number, const ext2_inode_
 
     memset(inode_buffer, 0, sizeof(inode_buffer));
     memcpy(inode_buffer, inode, sizeof(ext2_inode_t));
-    return write_abs_bytes(volume->disk, inode_byte_offset, volume->inode_size, inode_buffer);
+    return write_abs_bytes(volume->disk, inode_byte_offset, volume->inode_size, inode_buffer, volume->buf_sector);
 }
 
 /**
@@ -251,18 +251,18 @@ bool alloc_inode(ext2_volume_t *volume, uint32_t *inode_number_out)
             }
         }
 
-        if (!read_inode_bitmap(volume, group, g_bitmap_buffer))
+        if (!read_inode_bitmap(volume, group, volume->buf_bitmap))
         {
             return false;
         }
 
-        if (!bitmap_find_free(g_bitmap_buffer, bit_limit, start_bit, &free_bit))
+        if (!bitmap_find_free(volume->buf_bitmap, bit_limit, start_bit, &free_bit))
         {
             continue;
         }
 
-        bitmap_set(g_bitmap_buffer, free_bit, true);
-        if (!write_inode_bitmap(volume, group, g_bitmap_buffer))
+        bitmap_set(volume->buf_bitmap, free_bit, true);
+        if (!write_inode_bitmap(volume, group, volume->buf_bitmap))
         {
             return false;
         }
@@ -311,13 +311,13 @@ bool free_inode(ext2_volume_t *volume, uint32_t inode_number)
         return false;
     }
 
-    if (!read_inode_bitmap(volume, group, g_bitmap_buffer))
+    if (!read_inode_bitmap(volume, group, volume->buf_bitmap))
     {
         return false;
     }
 
-    bitmap_set(g_bitmap_buffer, index, false);
-    if (!write_inode_bitmap(volume, group, g_bitmap_buffer))
+    bitmap_set(volume->buf_bitmap, index, false);
+    if (!write_inode_bitmap(volume, group, volume->buf_bitmap))
     {
         return false;
     }
@@ -357,7 +357,7 @@ bool alloc_block(ext2_volume_t *volume, uint32_t *block_number_out)
             continue;
         }
 
-        if (!read_block_bitmap(volume, group, g_bitmap_buffer))
+        if (!read_block_bitmap(volume, group, volume->buf_bitmap))
         {
             return false;
         }
@@ -374,13 +374,13 @@ bool alloc_block(ext2_volume_t *volume, uint32_t *block_number_out)
             bit_limit = volume->block_count - start_block;
         }
 
-        if (!bitmap_find_free(g_bitmap_buffer, bit_limit, 0, &free_bit))
+        if (!bitmap_find_free(volume->buf_bitmap, bit_limit, 0, &free_bit))
         {
             continue;
         }
 
-        bitmap_set(g_bitmap_buffer, free_bit, true);
-        if (!write_block_bitmap(volume, group, g_bitmap_buffer))
+        bitmap_set(volume->buf_bitmap, free_bit, true);
+        if (!write_block_bitmap(volume, group, volume->buf_bitmap))
         {
             return false;
         }
@@ -431,13 +431,13 @@ bool free_block(ext2_volume_t *volume, uint32_t block_number)
         return false;
     }
 
-    if (!read_block_bitmap(volume, group, g_bitmap_buffer))
+    if (!read_block_bitmap(volume, group, volume->buf_bitmap))
     {
         return false;
     }
 
-    bitmap_set(g_bitmap_buffer, relative % volume->blocks_per_group, false);
-    if (!write_block_bitmap(volume, group, g_bitmap_buffer))
+    bitmap_set(volume->buf_bitmap, relative % volume->blocks_per_group, false);
+    if (!write_block_bitmap(volume, group, volume->buf_bitmap))
     {
         return false;
     }
@@ -479,10 +479,10 @@ bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
         uint32_t *entries;
         uint32_t j;
 
-        if (!read_block(volume, inode->i_block[12], g_block_buffer))
+        if (!read_block(volume, inode->i_block[12], volume->buf_block))
             return false;
 
-        entries = (uint32_t *)g_block_buffer;
+        entries = (uint32_t *)volume->buf_block;
         for (j = 0; j < ptrs_per_block; j++)
         {
             if (entries[j] != 0 && !free_block(volume, entries[j]))
@@ -501,10 +501,10 @@ bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
         uint32_t l1;
         uint32_t *l1_entries;
 
-        if (!read_block(volume, inode->i_block[13], g_block_buffer3))
+        if (!read_block(volume, inode->i_block[13], volume->buf_block3))
             return false;
 
-        l1_entries = (uint32_t *)g_block_buffer3;
+        l1_entries = (uint32_t *)volume->buf_block3;
         for (l1 = 0; l1 < ptrs_per_block; l1++)
         {
             if (l1_entries[l1] != 0)
@@ -512,10 +512,10 @@ bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
                 uint32_t *l2_entries;
                 uint32_t l2;
 
-                if (!read_block(volume, l1_entries[l1], g_block_buffer))
+                if (!read_block(volume, l1_entries[l1], volume->buf_block))
                     return false;
 
-                l2_entries = (uint32_t *)g_block_buffer;
+                l2_entries = (uint32_t *)volume->buf_block;
                 for (l2 = 0; l2 < ptrs_per_block; l2++)
                 {
                     if (l2_entries[l2] != 0 && !free_block(volume, l2_entries[l2]))
@@ -539,10 +539,10 @@ bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
         uint32_t *l1_entries;
         uint32_t l1;
 
-        if (!read_block(volume, inode->i_block[14], g_block_buffer4))
+        if (!read_block(volume, inode->i_block[14], volume->buf_block4))
             return false;
 
-        l1_entries = (uint32_t *)g_block_buffer4;
+        l1_entries = (uint32_t *)volume->buf_block4;
         for (l1 = 0; l1 < ptrs_per_block; l1++)
         {
             if (l1_entries[l1] != 0)
@@ -550,10 +550,10 @@ bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
                 uint32_t *l2_entries;
                 uint32_t l2;
 
-                if (!read_block(volume, l1_entries[l1], g_block_buffer3))
+                if (!read_block(volume, l1_entries[l1], volume->buf_block3))
                     return false;
 
-                l2_entries = (uint32_t *)g_block_buffer3;
+                l2_entries = (uint32_t *)volume->buf_block3;
                 for (l2 = 0; l2 < ptrs_per_block; l2++)
                 {
                     if (l2_entries[l2] != 0)
@@ -561,10 +561,10 @@ bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
                         uint32_t *l3_entries;
                         uint32_t l3;
 
-                        if (!read_block(volume, l2_entries[l2], g_block_buffer))
+                        if (!read_block(volume, l2_entries[l2], volume->buf_block))
                             return false;
 
-                        l3_entries = (uint32_t *)g_block_buffer;
+                        l3_entries = (uint32_t *)volume->buf_block;
                         for (l3 = 0; l3 < ptrs_per_block; l3++)
                         {
                             if (l3_entries[l3] != 0 && !free_block(volume, l3_entries[l3]))

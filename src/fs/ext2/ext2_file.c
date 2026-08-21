@@ -30,7 +30,7 @@ static bool read_directory_entry(ext2_file_t *file, ext2_directory_entry_t *entr
             return false;
         }
 
-        if (!read_block(file->volume, physical_block, g_block_buffer))
+        if (!read_block(file->volume, physical_block, file->volume->buf_block))
         {
             return false;
         }
@@ -41,7 +41,7 @@ static bool read_directory_entry(ext2_file_t *file, ext2_directory_entry_t *entr
             continue;
         }
 
-        entry = (ext2_dir_entry_t *)(g_block_buffer + block_offset);
+        entry = (ext2_dir_entry_t *)(file->volume->buf_block + block_offset);
         if (entry->rec_len == 0 || block_offset + entry->rec_len > block_size)
         {
             return false;
@@ -68,7 +68,7 @@ static bool read_directory_entry(ext2_file_t *file, ext2_directory_entry_t *entr
         entryOut->file_type = entry->file_type;
         entryOut->size = 0;
 
-        memcpy(entryOut->name, g_block_buffer + block_offset + header_size, entry->name_len);
+        memcpy(entryOut->name, file->volume->buf_block + block_offset + header_size, entry->name_len);
         entryOut->name[entry->name_len] = 0;
         return true;
     }
@@ -291,14 +291,14 @@ kerr_t ext2_read_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t off
             continue;
         }
 
-        if (!read_block(volume, phys_block, g_block_buffer))
+        if (!read_block(volume, phys_block, volume->buf_block))
         {
             return KERR_IO;
         }
 
         for (j = 0; j < take; j++)
         {
-            out[copied + j] = g_block_buffer[block_offset + j];
+            out[copied + j] = volume->buf_block[block_offset + j];
         }
 
         copied += take;
@@ -687,8 +687,8 @@ static bool assign_data_block(ext2_volume_t *volume, ext2_inode_t *inode, uint32
     }
 
     /* zero the new block on disk */
-    memset(g_block_buffer, 0, volume->block_size);
-    if (!write_block(volume, new_block, g_block_buffer))
+    memset(volume->buf_block, 0, volume->block_size);
+    if (!write_block(volume, new_block, volume->buf_block))
     {
         return false;
     }
@@ -739,16 +739,16 @@ kerr_t ext2_write_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t of
         }
 
         /* read the existing block (for partial block writes) */
-        if (!read_block(volume, phys_block, g_block_buffer))
+        if (!read_block(volume, phys_block, volume->buf_block))
         {
             return KERR_IO;
         }
 
         /* copy user data into the block buffer */
-        memcpy(g_block_buffer + block_offset, src + written, chunk);
+        memcpy(volume->buf_block + block_offset, src + written, chunk);
 
         /* write the block back */
-        if (!write_block(volume, phys_block, g_block_buffer))
+        if (!write_block(volume, phys_block, volume->buf_block))
         {
             return KERR_IO;
         }

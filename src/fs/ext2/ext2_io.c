@@ -1,23 +1,15 @@
 #include "ext2_internal.h"
 
-// global buffer definitions
-uint8_t g_sector_buffer[EXT2_SECTOR_SIZE];
-uint8_t g_block_buffer[EXT2_MAX_BLOCK_SIZE];
-uint8_t g_block_buffer2[EXT2_MAX_BLOCK_SIZE]; // scratch for single-indirect block
-uint8_t g_block_buffer3[EXT2_MAX_BLOCK_SIZE]; // scratch for double-indirect block (first level)
-uint8_t g_block_buffer4[EXT2_MAX_BLOCK_SIZE]; // scratch for triple-indirect block (first level)
-uint8_t g_inode_buffer[EXT2_MAX_INODE_SIZE];
-uint8_t g_bitmap_buffer[EXT2_MAX_BLOCK_SIZE];
-
 /**
  * reads bytes from the disk at the specified absolute byte offset and size into the provided output buffer.
  * @param disk pointer to the block device representing the disk.
  * @param byte_offset the absolute byte offset on the disk to start reading from.
  * @param size the number of bytes to read.
  * @param out pointer to the output buffer where the read bytes will be stored.
+ * @param sector_buf scratch buffer for partial-sector reads (must be EXT2_SECTOR_SIZE bytes).
  * @return true if the read operation was successful, false otherwise.
  */
-bool read_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, void *out)
+bool read_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, void *out, uint8_t *sector_buf)
 {
     uint8_t *dst = (uint8_t *)out;
 
@@ -27,12 +19,12 @@ bool read_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, v
         uint32_t offset = byte_offset % EXT2_SECTOR_SIZE;
         uint32_t chunk = EXT2_MIN(EXT2_SECTOR_SIZE - offset, size);
 
-        if (!block_device_read(disk, lba, 1, g_sector_buffer))
+        if (!block_device_read(disk, lba, 1, sector_buf))
         {
             return false;
         }
 
-        memcpy(dst, g_sector_buffer + offset, chunk);
+        memcpy(dst, sector_buf + offset, chunk);
 
         dst += chunk;
         byte_offset += chunk;
@@ -80,7 +72,7 @@ bool read_group_desc(ext2_volume_t *volume, uint32_t group, ext2_block_group_des
 
     bgdt_byte = volume->bgdt_start_block * volume->block_size;
     desc_offset = group * (uint32_t)sizeof(ext2_block_group_desc_t);
-    return read_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(ext2_block_group_desc_t), out_desc);
+    return read_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(ext2_block_group_desc_t), out_desc, volume->buf_sector);
 }
 
 /**
@@ -89,9 +81,10 @@ bool read_group_desc(ext2_volume_t *volume, uint32_t group, ext2_block_group_des
  * @param byte_offset the absolute byte offset on the disk to start writing to.
  * @param size the number of bytes to write.
  * @param in pointer to the input buffer containing the bytes to be written.
+ * @param sector_buf scratch buffer for partial-sector read-modify-write (must be EXT2_SECTOR_SIZE bytes).
  * @return true if the write operation was successful, false otherwise.
  */
-bool write_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, const void *in)
+bool write_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, const void *in, uint8_t *sector_buf)
 {
     const uint8_t *src = (const uint8_t *)in;
 
@@ -115,14 +108,14 @@ bool write_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, 
         }
         else
         {
-            if (!block_device_read(disk, lba, 1, g_sector_buffer))
+            if (!block_device_read(disk, lba, 1, sector_buf))
             {
                 return false;
             }
 
-            memcpy(g_sector_buffer + offset, src, chunk);
+            memcpy(sector_buf + offset, src, chunk);
 
-            if (!block_device_write(disk, lba, 1, g_sector_buffer))
+            if (!block_device_write(disk, lba, 1, sector_buf))
             {
                 return false;
             }
@@ -172,7 +165,7 @@ bool write_group_desc(ext2_volume_t *volume, uint32_t group, const ext2_block_gr
 
     bgdt_byte = volume->bgdt_start_block * volume->block_size;
     desc_offset = group * (uint32_t)sizeof(ext2_block_group_desc_t);
-    return write_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(ext2_block_group_desc_t), desc);
+    return write_abs_bytes(volume->disk, bgdt_byte + desc_offset, (uint32_t)sizeof(ext2_block_group_desc_t), desc, volume->buf_sector);
 }
 
 /**
@@ -187,7 +180,7 @@ bool write_superblock(ext2_volume_t *volume)
         return false;
     }
 
-    return write_abs_bytes(volume->disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(ext2_superblock_t), &volume->superblock);
+    return write_abs_bytes(volume->disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(ext2_superblock_t), &volume->superblock, volume->buf_sector);
 }
 
 /**

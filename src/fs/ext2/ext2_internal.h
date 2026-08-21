@@ -10,15 +10,6 @@
 #define EXT2_MIN(a, b) ((a) < (b) ? (a) : (b))
 #define OFFSETOF(type, member) ((uint32_t)&(((type *)0)->member))
 
-// global buffers (defined in ext2_io.c)
-extern uint8_t g_sector_buffer[EXT2_SECTOR_SIZE];
-extern uint8_t g_block_buffer[EXT2_MAX_BLOCK_SIZE];
-extern uint8_t g_block_buffer2[EXT2_MAX_BLOCK_SIZE];
-extern uint8_t g_block_buffer3[EXT2_MAX_BLOCK_SIZE];
-extern uint8_t g_block_buffer4[EXT2_MAX_BLOCK_SIZE];
-extern uint8_t g_inode_buffer[EXT2_MAX_INODE_SIZE];
-extern uint8_t g_bitmap_buffer[EXT2_MAX_BLOCK_SIZE];
-
 // inline utilities
 static inline uint32_t ext2_align4(uint32_t value)
 {
@@ -31,10 +22,10 @@ static inline uint32_t ext2_dir_entry_size(uint32_t name_len)
 }
 
 // ext2_io.c
-bool read_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, void *out);
+bool read_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, void *out, uint8_t *sector_buf);
 bool read_block(ext2_volume_t *volume, uint32_t block, void *out);
 bool read_group_desc(ext2_volume_t *volume, uint32_t group, ext2_block_group_desc_t *out_desc);
-bool write_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, const void *in);
+bool write_abs_bytes(block_device_t *disk, uint32_t byte_offset, uint32_t size, const void *in, uint8_t *sector_buf);
 bool write_block(ext2_volume_t *volume, uint32_t block, const void *in);
 bool write_group_desc(ext2_volume_t *volume, uint32_t group, const ext2_block_group_desc_t *desc);
 bool write_superblock(ext2_volume_t *volume);

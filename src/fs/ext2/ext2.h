@@ -123,6 +123,15 @@ typedef struct
     uint32_t blocks_per_group;         // number of blocks in each block group (from s_blocks_per_group)
     uint32_t inodes_per_group;         // number of inodes in each block group (from s_inodes_per_group)
     uint32_t bgdt_start_block;         // block number of the starting block of the block group descriptor table (calculated as first_data_block + 1)
+
+    // heap-allocated scratch buffers (allocated during ext2_initialize)
+    uint8_t *buf_sector;               // sector-sized I/O buffer (EXT2_SECTOR_SIZE bytes)
+    uint8_t *buf_block;                // general block buffer (block_size bytes)
+    uint8_t *buf_block2;               // scratch for single-indirect resolution
+    uint8_t *buf_block3;               // scratch for double-indirect resolution
+    uint8_t *buf_block4;               // scratch for triple-indirect resolution
+    uint8_t *buf_inode;                // inode read buffer (inode_size bytes)
+    uint8_t *buf_bitmap;               // bitmap I/O buffer (block_size bytes)
 } ext2_volume_t;
 
 typedef struct

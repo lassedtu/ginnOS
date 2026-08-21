@@ -85,14 +85,14 @@ kerr_t find_in_directory(ext2_volume_t *volume, uint32_t dir_inode_number, const
             continue;
         }
 
-        if (!read_block(volume, data_block, g_block_buffer))
+        if (!read_block(volume, data_block, volume->buf_block))
         {
             return KERR_IO;
         }
 
         while (offset + header_size <= volume->block_size)
         {
-            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(g_block_buffer + offset);
+            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(volume->buf_block + offset);
             uint32_t min_size = header_size + entry->name_len;
             const char *entry_name;
 
@@ -101,7 +101,7 @@ kerr_t find_in_directory(ext2_volume_t *volume, uint32_t dir_inode_number, const
                 return KERR_IO;
             }
 
-            entry_name = (const char *)(g_block_buffer + offset + header_size);
+            entry_name = (const char *)(volume->buf_block + offset + header_size);
             if (entry->inode != 0 && name_len == entry->name_len && memcmp(name, entry_name, name_len) == 0)
             {
                 *inode_out = entry->inode;
@@ -147,10 +147,10 @@ bool resolve_data_block(ext2_volume_t *volume, const ext2_inode_t *inode, uint32
             return true;
         }
 
-        if (!read_block(volume, indirect, g_block_buffer2))
+        if (!read_block(volume, indirect, volume->buf_block2))
             return false;
 
-        *physical_block_out = ((uint32_t *)g_block_buffer2)[logical_block_index];
+        *physical_block_out = ((uint32_t *)volume->buf_block2)[logical_block_index];
         return true;
     }
 
@@ -170,20 +170,20 @@ bool resolve_data_block(ext2_volume_t *volume, const ext2_inode_t *inode, uint32
             return true;
         }
 
-        if (!read_block(volume, inode->i_block[13], g_block_buffer3))
+        if (!read_block(volume, inode->i_block[13], volume->buf_block3))
             return false;
 
-        l1_block = ((uint32_t *)g_block_buffer3)[l1_index];
+        l1_block = ((uint32_t *)volume->buf_block3)[l1_index];
         if (l1_block == 0)
         {
             *physical_block_out = 0;
             return true;
         }
 
-        if (!read_block(volume, l1_block, g_block_buffer2))
+        if (!read_block(volume, l1_block, volume->buf_block2))
             return false;
 
-        l2_block = ((uint32_t *)g_block_buffer2)[l2_index];
+        l2_block = ((uint32_t *)volume->buf_block2)[l2_index];
         *physical_block_out = l2_block;
         return true;
     }
@@ -206,30 +206,30 @@ bool resolve_data_block(ext2_volume_t *volume, const ext2_inode_t *inode, uint32
             return true;
         }
 
-        if (!read_block(volume, inode->i_block[14], g_block_buffer4))
+        if (!read_block(volume, inode->i_block[14], volume->buf_block4))
             return false;
 
-        l1_block = ((uint32_t *)g_block_buffer4)[l1_index];
+        l1_block = ((uint32_t *)volume->buf_block4)[l1_index];
         if (l1_block == 0)
         {
             *physical_block_out = 0;
             return true;
         }
 
-        if (!read_block(volume, l1_block, g_block_buffer3))
+        if (!read_block(volume, l1_block, volume->buf_block3))
             return false;
 
-        l2_block = ((uint32_t *)g_block_buffer3)[l2_index];
+        l2_block = ((uint32_t *)volume->buf_block3)[l2_index];
         if (l2_block == 0)
         {
             *physical_block_out = 0;
             return true;
         }
 
-        if (!read_block(volume, l2_block, g_block_buffer2))
+        if (!read_block(volume, l2_block, volume->buf_block2))
             return false;
 
-        l3_block = ((uint32_t *)g_block_buffer2)[l3_index];
+        l3_block = ((uint32_t *)volume->buf_block2)[l3_index];
         *physical_block_out = l3_block;
         return true;
     }
@@ -263,12 +263,12 @@ kerr_t ext2_read_inode(ext2_volume_t *volume, uint32_t inode_number, ext2_inode_
     }
 
     inode_byte_offset = (bgd.bg_inode_table * volume->block_size) + (index * volume->inode_size);
-    if (!read_abs_bytes(volume->disk, inode_byte_offset, volume->inode_size, g_inode_buffer))
+    if (!read_abs_bytes(volume->disk, inode_byte_offset, volume->inode_size, volume->buf_inode, volume->buf_sector))
     {
         return KERR_IO;
     }
 
-    memcpy(inode_out, g_inode_buffer, (uint32_t)sizeof(ext2_inode_t));
+    memcpy(inode_out, volume->buf_inode, (uint32_t)sizeof(ext2_inode_t));
     return KERR_OK;
 }
 
@@ -298,14 +298,14 @@ kerr_t ext2_list_directory(ext2_volume_t *volume, uint32_t inode_number)
             continue;
         }
 
-        if (!read_block(volume, data_block, g_block_buffer))
+        if (!read_block(volume, data_block, volume->buf_block))
         {
             return KERR_IO;
         }
 
         while (offset + header_size <= volume->block_size)
         {
-            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(g_block_buffer + offset);
+            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(volume->buf_block + offset);
             uint32_t min_size = header_size + entry->name_len;
 
             if (entry->rec_len < min_size || entry->rec_len == 0 || offset + entry->rec_len > volume->block_size)
@@ -316,7 +316,7 @@ kerr_t ext2_list_directory(ext2_volume_t *volume, uint32_t inode_number)
             if (entry->inode != 0 && entry->name_len > 0 && entry->name_len < 240)
             {
                 char name[240];
-                const char *src = (const char *)(g_block_buffer + offset + header_size);
+                const char *src = (const char *)(volume->buf_block + offset + header_size);
 
                 memcpy(name, src, entry->name_len);
                 name[entry->name_len] = 0;

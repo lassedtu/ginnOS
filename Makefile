@@ -36,7 +36,7 @@ COMMON_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Os \
                  -fno-unwind-tables -fno-asynchronous-unwind-tables \
                  -ffunction-sections -fdata-sections -fomit-frame-pointer
 
-STAGE2_CFLAGS := $(COMMON_CFLAGS)
+STAGE2_CFLAGS := $(COMMON_CFLAGS) -DEXT2_STATIC_BUFFERS
 
 # debug build overrides (make debug)
 ifeq ($(BUILD_MODE),debug)

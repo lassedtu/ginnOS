@@ -119,14 +119,14 @@ bool find_directory_entry(ext2_volume_t *volume, uint32_t dir_inode_number, cons
             continue;
         }
 
-        if (!read_block(volume, data_block, g_block_buffer))
+        if (!read_block(volume, data_block, volume->buf_block))
         {
             return false;
         }
 
         while (offset + header_size <= volume->block_size)
         {
-            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(g_block_buffer + offset);
+            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(volume->buf_block + offset);
             uint32_t min_size = header_size + entry->name_len;
             const char *entry_name;
 
@@ -135,7 +135,7 @@ bool find_directory_entry(ext2_volume_t *volume, uint32_t dir_inode_number, cons
                 return false;
             }
 
-            entry_name = (const char *)(g_block_buffer + offset + header_size);
+            entry_name = (const char *)(volume->buf_block + offset + header_size);
             if (entry->inode != 0 && name_len == entry->name_len && memcmp(name, entry_name, name_len) == 0)
             {
                 *block_index_out = block_index;
@@ -182,14 +182,14 @@ bool append_or_replace_directory_entry(ext2_volume_t *volume, uint32_t parent_in
             continue;
         }
 
-        if (!read_block(volume, data_block, g_block_buffer))
+        if (!read_block(volume, data_block, volume->buf_block))
         {
             return false;
         }
 
         while (cursor + header_size <= volume->block_size)
         {
-            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(g_block_buffer + cursor);
+            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(volume->buf_block + cursor);
             uint32_t used = ext2_dir_entry_size(entry->name_len);
             uint32_t available;
 
@@ -211,12 +211,12 @@ bool append_or_replace_directory_entry(ext2_volume_t *volume, uint32_t parent_in
                     new_entry->name_len = (uint8_t)name_len;
                     new_entry->file_type = file_type;
                     memcpy((uint8_t *)new_entry + header_size, name, name_len);
-                    return write_block(volume, data_block, g_block_buffer);
+                    return write_block(volume, data_block, volume->buf_block);
                 }
             }
             else if (available >= used + needed)
             {
-                ext2_dir_entry_t *new_entry = (ext2_dir_entry_t *)(g_block_buffer + cursor + used);
+                ext2_dir_entry_t *new_entry = (ext2_dir_entry_t *)(volume->buf_block + cursor + used);
                 uint32_t remaining = available - used;
 
                 entry->rec_len = (uint16_t)used;
@@ -226,7 +226,7 @@ bool append_or_replace_directory_entry(ext2_volume_t *volume, uint32_t parent_in
                 new_entry->name_len = (uint8_t)name_len;
                 new_entry->file_type = file_type;
                 memcpy((uint8_t *)new_entry + header_size, name, name_len);
-                return write_block(volume, data_block, g_block_buffer);
+                return write_block(volume, data_block, volume->buf_block);
             }
 
             cursor += entry->rec_len;
@@ -245,8 +245,8 @@ bool append_or_replace_directory_entry(ext2_volume_t *volume, uint32_t parent_in
                 return false;
             }
 
-            memset(g_block_buffer, 0, volume->block_size);
-            entry = (ext2_dir_entry_t *)g_block_buffer;
+            memset(volume->buf_block, 0, volume->block_size);
+            entry = (ext2_dir_entry_t *)volume->buf_block;
             entry->inode = child_inode_number;
             entry->rec_len = (uint16_t)volume->block_size;
             entry->name_len = (uint8_t)name_len;
@@ -256,7 +256,7 @@ bool append_or_replace_directory_entry(ext2_volume_t *volume, uint32_t parent_in
             parent_inode->i_block[block_index] = new_block;
             parent_inode->i_size += volume->block_size;
             parent_inode->i_blocks += volume->sectors_per_block;
-            return write_block(volume, new_block, g_block_buffer) && write_inode(volume, parent_inode_number, parent_inode);
+            return write_block(volume, new_block, volume->buf_block) && write_inode(volume, parent_inode_number, parent_inode);
         }
     }
 
@@ -297,7 +297,7 @@ bool update_directory_entry_name(ext2_volume_t *volume, uint32_t dir_inode_numbe
         return false;
     }
 
-    if (!read_block(volume, dir_inode.i_block[block_index], g_block_buffer))
+    if (!read_block(volume, dir_inode.i_block[block_index], volume->buf_block))
     {
         return false;
     }
@@ -307,10 +307,10 @@ bool update_directory_entry_name(ext2_volume_t *volume, uint32_t dir_inode_numbe
         return false;
     }
 
-    ((ext2_dir_entry_t *)(g_block_buffer + entry_offset))->name_len = (uint8_t)new_name_len;
-    ((ext2_dir_entry_t *)(g_block_buffer + entry_offset))->file_type = entry.file_type;
-    memcpy(g_block_buffer + entry_offset + header_size, new_name, new_name_len);
-    return write_block(volume, dir_inode.i_block[block_index], g_block_buffer);
+    ((ext2_dir_entry_t *)(volume->buf_block + entry_offset))->name_len = (uint8_t)new_name_len;
+    ((ext2_dir_entry_t *)(volume->buf_block + entry_offset))->file_type = entry.file_type;
+    memcpy(volume->buf_block + entry_offset + header_size, new_name, new_name_len);
+    return write_block(volume, dir_inode.i_block[block_index], volume->buf_block);
 }
 
 /**
@@ -340,14 +340,14 @@ bool directory_is_empty(ext2_volume_t *volume, uint32_t inode_number)
             continue;
         }
 
-        if (!read_block(volume, data_block, g_block_buffer))
+        if (!read_block(volume, data_block, volume->buf_block))
         {
             return false;
         }
 
         while (offset + header_size <= volume->block_size)
         {
-            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(g_block_buffer + offset);
+            ext2_dir_entry_t *entry = (ext2_dir_entry_t *)(volume->buf_block + offset);
             uint32_t min_size = header_size + entry->name_len;
 
             if (entry->rec_len < min_size || entry->rec_len == 0 || offset + entry->rec_len > volume->block_size)
@@ -357,7 +357,7 @@ bool directory_is_empty(ext2_volume_t *volume, uint32_t inode_number)
 
             if (entry->inode != 0)
             {
-                const char *entry_name = (const char *)(g_block_buffer + offset + header_size);
+                const char *entry_name = (const char *)(volume->buf_block + offset + header_size);
 
                 if (!(entry->name_len == 1u && entry_name[0] == '.') && !(entry->name_len == 2u && entry_name[0] == '.' && entry_name[1] == '.'))
                 {
@@ -395,12 +395,12 @@ bool update_directory_parent_link(ext2_volume_t *volume, uint32_t dir_inode_numb
         return false;
     }
 
-    if (!read_block(volume, dir_inode.i_block[0], g_block_buffer))
+    if (!read_block(volume, dir_inode.i_block[0], volume->buf_block))
     {
         return false;
     }
 
-    entry = (ext2_dir_entry_t *)(g_block_buffer + ext2_dir_entry_size(1u));
+    entry = (ext2_dir_entry_t *)(volume->buf_block + ext2_dir_entry_size(1u));
     if (entry->name_len != 2u)
     {
         return false;
@@ -412,7 +412,7 @@ bool update_directory_parent_link(ext2_volume_t *volume, uint32_t dir_inode_numb
     }
 
     entry->inode = parent_inode_number;
-    return write_block(volume, dir_inode.i_block[0], g_block_buffer);
+    return write_block(volume, dir_inode.i_block[0], volume->buf_block);
 }
 
 /**
@@ -440,17 +440,17 @@ bool remove_directory_entry(ext2_volume_t *volume, uint32_t dir_inode_number, co
         return false;
     }
 
-    if (!read_block(volume, dir_inode.i_block[block_index], g_block_buffer))
+    if (!read_block(volume, dir_inode.i_block[block_index], volume->buf_block))
     {
         return false;
     }
 
-    entry = *(ext2_dir_entry_t *)(g_block_buffer + entry_offset);
+    entry = *(ext2_dir_entry_t *)(volume->buf_block + entry_offset);
     entry.inode = 0;
     entry.name_len = 0;
     entry.file_type = 0;
-    memcpy(g_block_buffer + entry_offset, &entry, (uint32_t)sizeof(ext2_dir_entry_t));
-    return write_block(volume, dir_inode.i_block[block_index], g_block_buffer);
+    memcpy(volume->buf_block + entry_offset, &entry, (uint32_t)sizeof(ext2_dir_entry_t));
+    return write_block(volume, dir_inode.i_block[block_index], volume->buf_block);
 }
 
 /**
@@ -512,22 +512,22 @@ bool initialize_directory_block(ext2_volume_t *volume, uint32_t inode_number, ui
         return false;
     }
 
-    memset(g_block_buffer, 0, volume->block_size);
-    dot = (ext2_dir_entry_t *)g_block_buffer;
+    memset(volume->buf_block, 0, volume->block_size);
+    dot = (ext2_dir_entry_t *)volume->buf_block;
     dot->inode = inode_number;
     dot->rec_len = (uint16_t)dot_size;
     dot->name_len = 1u;
     dot->file_type = EXT2_FT_DIR;
     memcpy((uint8_t *)dot + header_size, ".", 1u);
 
-    dotdot = (ext2_dir_entry_t *)(g_block_buffer + dot_size);
+    dotdot = (ext2_dir_entry_t *)(volume->buf_block + dot_size);
     dotdot->inode = parent_inode_number;
     dotdot->rec_len = (uint16_t)(volume->block_size - dot_size);
     dotdot->name_len = 2u;
     dotdot->file_type = EXT2_FT_DIR;
     memcpy((uint8_t *)dotdot + header_size, "..", 2u);
 
-    return write_block(volume, block_number, g_block_buffer);
+    return write_block(volume, block_number, volume->buf_block);
 }
 
 /**

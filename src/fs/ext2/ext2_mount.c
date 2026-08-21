@@ -1,16 +1,21 @@
 #include "ext2_internal.h"
 
+#ifndef EXT2_STATIC_BUFFERS
+#include "kernel/memory/heap.h"
+#endif
+
 kerr_t ext2_initialize(ext2_volume_t *volume, block_device_t *disk)
 {
     ext2_superblock_t sb;
     uint32_t unsupported;
+    uint8_t boot_sector_buf[EXT2_SECTOR_SIZE];
 
     if (!volume || !disk)
     {
         return KERR_INVAL;
     }
 
-    if (!read_abs_bytes(disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(ext2_superblock_t), &sb))
+    if (!read_abs_bytes(disk, EXT2_SUPERBLOCK_OFFSET, (uint32_t)sizeof(ext2_superblock_t), &sb, boot_sector_buf))
     {
         return KERR_IO;
     }
@@ -65,6 +70,41 @@ kerr_t ext2_initialize(ext2_volume_t *volume, block_device_t *disk)
     {
         return KERR_INVAL;
     }
+
+    // allocate per-volume scratch buffers
+#ifdef EXT2_STATIC_BUFFERS
+    // bootloader path: use static buffers (no heap available)
+    static uint8_t s_sector[EXT2_SECTOR_SIZE];
+    static uint8_t s_block[EXT2_MAX_BLOCK_SIZE];
+    static uint8_t s_block2[EXT2_MAX_BLOCK_SIZE];
+    static uint8_t s_block3[EXT2_MAX_BLOCK_SIZE];
+    static uint8_t s_block4[EXT2_MAX_BLOCK_SIZE];
+    static uint8_t s_inode[EXT2_MAX_INODE_SIZE];
+    static uint8_t s_bitmap[EXT2_MAX_BLOCK_SIZE];
+    volume->buf_sector = s_sector;
+    volume->buf_block  = s_block;
+    volume->buf_block2 = s_block2;
+    volume->buf_block3 = s_block3;
+    volume->buf_block4 = s_block4;
+    volume->buf_inode  = s_inode;
+    volume->buf_bitmap = s_bitmap;
+#else
+    // kernel path: heap-allocate scratch buffers
+    volume->buf_sector = (uint8_t *)kmalloc(EXT2_SECTOR_SIZE);
+    volume->buf_block  = (uint8_t *)kmalloc(volume->block_size);
+    volume->buf_block2 = (uint8_t *)kmalloc(volume->block_size);
+    volume->buf_block3 = (uint8_t *)kmalloc(volume->block_size);
+    volume->buf_block4 = (uint8_t *)kmalloc(volume->block_size);
+    volume->buf_inode  = (uint8_t *)kmalloc(volume->inode_size);
+    volume->buf_bitmap = (uint8_t *)kmalloc(volume->block_size);
+
+    if (!volume->buf_sector || !volume->buf_block || !volume->buf_block2 ||
+        !volume->buf_block3 || !volume->buf_block4 || !volume->buf_inode ||
+        !volume->buf_bitmap)
+    {
+        return KERR_NOMEM;
+    }
+#endif
 
     return KERR_OK;
 }
