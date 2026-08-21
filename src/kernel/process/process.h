@@ -43,6 +43,11 @@ typedef struct process
     uint32_t wait_for_pid;  // PID this process is waiting for (0 = not waiting)
     char **argv;            // kernel-heap copy of argv (freed after first schedule)
     uint8_t tty_raw;        // 0 = cooked (line-buffered), 1 = raw (event-based)
+
+    // intrusive doubly-linked list for the scheduler ready queue.
+    struct process *ready_next;
+    struct process *ready_prev;
+
     char cwd[PATH_MAX];     // current working directory
     fd_entry_t fds[FD_MAX]; // per-process file descriptor table
 } process_t;
