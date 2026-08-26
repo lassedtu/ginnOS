@@ -221,8 +221,6 @@ void *realloc(void *ptr, size_t size)
     return new_ptr;
 }
 
-/* ─── Other stdlib functions ─────────────────────────────────────────────── */
-
 int atoi(const char *s)
 {
     int result = 0;
