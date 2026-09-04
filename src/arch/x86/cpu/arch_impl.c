@@ -1,6 +1,8 @@
 #include "arch/arch.h"
+#include "arch/arch.h"
 #include "arch/x86/cpu/io.h"
 #include "arch/x86/cpu/gdt.h"
+#include "arch/x86/cpu/paging.h"
 
 void arch_disable_interrupts(void)
 {
@@ -60,7 +62,8 @@ uint32_t arch_get_stack_pointer(void)
 
 void arch_switch_address_space(uint32_t page_table_phys)
 {
-    __asm__ volatile("mov %0, %%cr3" : : "r"(page_table_phys) : "memory");
+    // defer to the paging layer so CR3 loading lives in exactly one place.
+    paging_switch_directory(page_table_phys);
 }
 
 void arch_jump_to_usermode(uint32_t entry, uint32_t user_esp)

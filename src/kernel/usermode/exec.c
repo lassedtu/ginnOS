@@ -149,8 +149,8 @@ int exec_program(const char *path, const char **argv)
         child->state = PROC_STATE_RUNNING;
         process_set_current(child);
 
-        // switch to the child's page directory
-        paging_switch_directory(child->page_directory);
+        // switch to the child's address space
+        arch_switch_address_space(child->page_directory);
 
         int code = kernel_setjmp(exec_jmp_buf);
         if (code != 0)
@@ -158,8 +158,8 @@ int exec_program(const char *path, const char **argv)
             // returned from usermode_exit, restore kernel segments
             arch_reload_segments();
 
-            // switch back to kernel page directory
-            paging_switch_directory(paging_directory_address());
+            // switch back to the kernel address space
+            arch_switch_address_space(paging_directory_address());
 
             int exit_code = code - 1;
             argv_free(child->argv);

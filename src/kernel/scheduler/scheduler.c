@@ -2,7 +2,6 @@
 #include "kernel/process/process.h"
 #include "arch/arch.h"
 #include "arch/x86/cpu/gdt.h"
-#include "arch/x86/cpu/paging.h"
 #include "common/memory.h"
 
 /**
@@ -222,10 +221,10 @@ static void schedule(void)
     // update TSS kernel stack to the new process's kernel stack top
     tss_set_kernel_stack(next->kernel_stack + KERNEL_STACK_SIZE);
 
-    // switch to the new process's page directory
+    // switch to the new process's address space
     if (next->page_directory)
     {
-        paging_switch_directory(next->page_directory);
+        arch_switch_address_space(next->page_directory);
     }
 
     // reset time slice

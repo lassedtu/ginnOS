@@ -1,6 +1,6 @@
 #include "usermode.h"
 
-#include "arch/x86/cpu/paging.h"
+#include "arch/arch.h"
 #include "kernel/process/process.h"
 #include "kernel/panic.h"
 #include "common/stdint.h"
@@ -19,8 +19,8 @@ static void process_entry_trampoline(void)
         kernel_panic("trampoline: no current process");
     }
 
-    // switch to this process's page directory
-    paging_switch_directory(proc->page_directory);
+    // switch to this process's address space
+    arch_switch_address_space(proc->page_directory);
 
     uint32_t entry = proc->entry;
     const char **argv = (const char **)proc->argv;
