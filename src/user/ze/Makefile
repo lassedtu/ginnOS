@@ -30,7 +30,7 @@ OBJDIR  := $(BUILD)/$(PROG)
 TARGET  := $(BUILD)/bin/$(PROG)
 
 # Core sources (from zen-editor/src/)
-CORE_SRCS := buffer.c command.c cursor.c editor.c keymap.c main.c renderer.c
+CORE_SRCS := buffer.c command.c cursor.c editor.c keymap.c main.c renderer.c undo.c
 
 # Platform sources (from zen-editor/platforms/ginnos/)
 PLAT_SRCS := terminal.c fs.c
