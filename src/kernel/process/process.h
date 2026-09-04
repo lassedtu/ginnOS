@@ -48,6 +48,12 @@ typedef struct process
     struct process *ready_next;
     struct process *ready_prev;
 
+    // intrusive singly-linked list for a wait queue (Phase L3).
+    // valid only while state == PROC_STATE_BLOCKED and the process sits
+    // on some wait_queue_t. separate from the ready links so a process is
+    // never on both lists at once.
+    struct process *wait_next;
+
     char cwd[PATH_MAX];     // current working directory
     fd_entry_t fds[FD_MAX]; // per-process file descriptor table
 } process_t;

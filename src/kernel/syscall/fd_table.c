@@ -87,9 +87,20 @@ int fd_free(int fd)
         pipe_dir_t dir = proc->fds[fd].pipe.dir;
 
         if (dir == PIPE_READ)
+        {
             buf->read_refs--;
+            // last reader gone: wake blocked writers so they see EPIPE
+            // instead of waiting forever for space that will never be read.
+            if (buf->read_refs <= 0)
+                wait_queue_wake_all(&buf->writers);
+        }
         else
+        {
             buf->write_refs--;
+            // last writer gone: wake blocked readers so they observe EOF.
+            if (buf->write_refs <= 0)
+                wait_queue_wake_all(&buf->readers);
+        }
 
         buf->ref_count--;
         if (buf->ref_count <= 0)
@@ -112,6 +123,8 @@ pipe_buf_t *pipe_alloc(void)
             pipe_pool[i].read_refs = 1;
             pipe_pool[i].write_refs = 1;
             pipe_pool[i].ref_count = 2; // read end + write end
+            wait_queue_init(&pipe_pool[i].readers);
+            wait_queue_init(&pipe_pool[i].writers);
             return &pipe_pool[i];
         }
     }

@@ -89,7 +89,11 @@ void process_destroy(process_t *proc)
         return;
     }
 
-    // close all open file descriptors (including pipes and fds 0-2)
+    // close all open file descriptors (including pipes and fds 0-2).
+    // note: this may run for a process that isn't the current one (a parent
+    // reaping a zombie child), so we can't use fd_free() here — it operates
+    // on process_current(). the pipe close logic is mirrored inline, plus a
+    // wake of the opposite end so no peer blocks forever on a dead process.
     for (int i = 0; i < FD_MAX; i++)
     {
         if (proc->fds[i].type == FD_TYPE_FILE)
@@ -103,9 +107,17 @@ void process_destroy(process_t *proc)
             pipe_dir_t dir = proc->fds[i].pipe.dir;
 
             if (dir == PIPE_READ)
+            {
                 buf->read_refs--;
+                if (buf->read_refs <= 0)
+                    wait_queue_wake_all(&buf->writers);
+            }
             else
+            {
                 buf->write_refs--;
+                if (buf->write_refs <= 0)
+                    wait_queue_wake_all(&buf->readers);
+            }
 
             buf->ref_count--;
             if (buf->ref_count <= 0)

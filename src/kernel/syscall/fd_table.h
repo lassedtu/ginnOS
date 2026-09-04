@@ -2,6 +2,7 @@
 
 #include "common/stdint.h"
 #include "kernel/vfs/vfs.h"
+#include "kernel/sync/wait_queue.h"
 
 // maximum number of file descriptors per process.
 #define FD_MAX 16
@@ -38,6 +39,9 @@ typedef struct pipe_buf
     int read_refs;      // number of open read-end file descriptors
     int write_refs;     // number of open write-end file descriptors
     int ref_count;      // total fd entries referencing this pipe
+
+    wait_queue_t readers; // readers blocked waiting for data
+    wait_queue_t writers; // writers blocked waiting for free space
 } pipe_buf_t;
 
 /**

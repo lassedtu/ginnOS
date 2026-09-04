@@ -2,7 +2,7 @@
 #include "syscall.h"
 #include "fd_table.h"
 
-#include "arch/arch.h"
+#include "kernel/sync/wait_queue.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/console/console.h"
 #include "kernel/process/process.h"
@@ -61,18 +61,22 @@ int32_t sys_write(struct registers *regs)
         if (entry->pipe.dir != PIPE_WRITE)
             return -3; /* EINVAL */
 
-        /* if read end is closed, broken pipe */
-        if (pb->read_refs <= 0)
-            return -7; /* EPIPE */
-
-        /* write as many bytes as fit into the buffer */
+        /* write every byte, blocking whenever the buffer fills up */
         uint32_t written = 0;
         while (written < count)
         {
+            /* if all read ends are gone, the pipe is broken. report a
+             * short count if we already wrote some, else EPIPE. */
+            if (pb->read_refs <= 0)
+                return written > 0 ? (int32_t)written : -7; /* EPIPE */
+
             if (pb->count >= PIPE_BUF_SIZE)
             {
-                /* buffer full. for now, return short write */
-                break;
+                /* buffer full: sleep until a reader drains some space.
+                 * wake any reader first so it can make progress. */
+                wait_queue_wake_one(&pb->readers);
+                wait_queue_block(&pb->writers);
+                continue;
             }
 
             pb->data[pb->write_pos] = buf[written];
@@ -80,6 +84,9 @@ int32_t sys_write(struct registers *regs)
             pb->count++;
             written++;
         }
+
+        /* data available: wake a blocked reader */
+        wait_queue_wake_one(&pb->readers);
 
         return (int32_t)written;
     }
@@ -191,7 +198,7 @@ int32_t sys_read(struct registers *regs)
         if (entry->pipe.dir != PIPE_READ)
             return -2; /* EBADF */
 
-        /* block until data is available or write end is closed */
+        /* block until data is available or all write ends are closed */
         while (pb->count == 0)
         {
             if (pb->write_refs <= 0)
@@ -199,8 +206,8 @@ int32_t sys_read(struct registers *regs)
                 /* all write ends closed + buffer empty = EOF */
                 return 0;
             }
-            /* yield and try again (busy-wait with halt for now) */
-            arch_halt();
+            /* sleep until a writer adds data or closes the pipe */
+            wait_queue_block(&pb->readers);
         }
 
         /* read as many bytes as available (up to count) */
@@ -211,6 +218,9 @@ int32_t sys_read(struct registers *regs)
             pb->read_pos = (pb->read_pos + 1) % PIPE_BUF_SIZE;
         }
         pb->count -= to_read;
+
+        /* freed space: wake a writer that may be waiting to continue */
+        wait_queue_wake_one(&pb->writers);
 
         return (int32_t)to_read;
     }
