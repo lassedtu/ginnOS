@@ -57,10 +57,72 @@ void arch_halt_forever(void) __attribute__((noreturn));
 uint32_t arch_get_stack_pointer(void);
 
 /**
- * switch the active address space (page directory / page table root).
- * @param page_table_phys physical address of the new page table root.
+ * an address space handle. opaque to portable code: it identifies a page
+ * table root but says nothing about the underlying paging structure, so
+ * the same kernel code works whether the arch uses 2-level, 4-level, or
+ * some other table layout.
  */
-void arch_switch_address_space(uint32_t page_table_phys);
+typedef uint32_t addr_space_t;
+
+/**
+ * sentinel handle meaning "no address space".
+ */
+#define ADDR_SPACE_NONE ((addr_space_t)0)
+
+/* page protection flags for arch_map_page(), architecture-neutral. */
+#define MMU_FLAG_PRESENT (1u << 0) // the mapping is valid
+#define MMU_FLAG_WRITE   (1u << 1) // writable
+#define MMU_FLAG_USER    (1u << 2) // reachable from ring 3 / user mode
+
+/* common combination: a writable page owned by a user process. */
+#define MMU_USER_RW (MMU_FLAG_PRESENT | MMU_FLAG_WRITE | MMU_FLAG_USER)
+
+/**
+ * return the handle for the kernel's own address space.
+ * useful when there is no current process to borrow one from.
+ */
+addr_space_t arch_kernel_address_space(void);
+
+/**
+ * create a new address space that shares the kernel mappings.
+ * user regions start empty; map them in with arch_map_page().
+ * @return the new handle, or ADDR_SPACE_NONE on failure.
+ */
+addr_space_t arch_create_address_space(void);
+
+/**
+ * tear down an address space created with arch_create_address_space(),
+ * freeing its user page tables and mapped frames. the kernel address
+ * space and ADDR_SPACE_NONE are ignored.
+ * @param as the address space to destroy.
+ */
+void arch_destroy_address_space(addr_space_t as);
+
+/**
+ * map one page into a given address space.
+ * @param as the target address space.
+ * @param virt page-aligned virtual address.
+ * @param phys page-aligned physical frame.
+ * @param flags MMU_FLAG_* bits describing the mapping.
+ * @return 0 on success, -1 on failure.
+ */
+int arch_map_page(addr_space_t as, uint32_t virt, uint32_t phys, uint32_t flags);
+
+/**
+ * translate a virtual address to its physical address within a given
+ * address space. lets the kernel reach a process's memory without
+ * switching to it (e.g. to stage argv or an ELF image before the swap).
+ * @param as the address space to walk.
+ * @param virt the virtual address to translate.
+ * @return the physical address, or 0 if the page is not mapped.
+ */
+uint32_t arch_translate_in(addr_space_t as, uint32_t virt);
+
+/**
+ * switch the active address space.
+ * @param as the address space to make current.
+ */
+void arch_switch_address_space(addr_space_t as);
 
 /**
  * drop to usermode (ring 3) and begin executing at entry with the given stack.

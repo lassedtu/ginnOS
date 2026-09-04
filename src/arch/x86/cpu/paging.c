@@ -209,6 +209,28 @@ uint32_t paging_get_physical(uint32_t virt)
     return PAGE_FRAME(table[tbl_index]) | (virt & 0xFFF);
 }
 
+uint32_t paging_get_physical_in(uint32_t pd_phys, uint32_t virt)
+{
+    uint32_t *dir = (uint32_t *)pd_phys;
+    uint32_t dir_index = PAGE_DIR_INDEX(virt);
+    uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
+    uint32_t *table;
+
+    if (!(dir[dir_index] & PDE_PRESENT))
+    {
+        return 0;
+    }
+
+    table = (uint32_t *)PAGE_FRAME(dir[dir_index]);
+
+    if (!(table[tbl_index] & PTE_PRESENT))
+    {
+        return 0;
+    }
+
+    return PAGE_FRAME(table[tbl_index]) | (virt & 0xFFF);
+}
+
 uint32_t paging_directory_address(void)
 {
     return kernel_directory_phys;

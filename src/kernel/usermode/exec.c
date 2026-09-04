@@ -2,7 +2,6 @@
 
 #include "arch/arch.h"
 #include "arch/x86/cpu/gdt.h"
-#include "arch/x86/cpu/paging.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/heap.h"
 #include "kernel/elf/elf_loader.h"
@@ -159,7 +158,7 @@ int exec_program(const char *path, const char **argv)
             arch_reload_segments();
 
             // switch back to the kernel address space
-            arch_switch_address_space(paging_directory_address());
+            arch_switch_address_space(arch_kernel_address_space());
 
             int exit_code = code - 1;
             argv_free(child->argv);

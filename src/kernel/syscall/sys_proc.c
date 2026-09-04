@@ -6,7 +6,8 @@
 #include "kernel/process/process.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/memory/pmm.h"
-#include "arch/x86/cpu/paging.h"
+#include "kernel/memory/pmm_layout.h"
+#include "arch/arch.h"
 #include "common/memory.h"
 #include "common/string.h"
 
@@ -165,7 +166,7 @@ int32_t sys_sbrk(struct registers *regs)
     uint32_t page = old_brk & ~(PAGE_SIZE - 1);
     uint32_t end = (new_brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     process_t *proc = process_current();
-    uint32_t pd = proc ? proc->page_directory : paging_directory_address();
+    uint32_t pd = proc ? proc->page_directory : arch_kernel_address_space();
 
     for (; page < end; page += PAGE_SIZE)
     {
@@ -176,7 +177,7 @@ int32_t sys_sbrk(struct registers *regs)
         }
 
         memset(frame, 0, PAGE_SIZE);
-        paging_map_in(pd, page, (uint32_t)frame, PTE_USER_RW);
+        arch_map_page(pd, page, (uint32_t)frame, MMU_USER_RW);
     }
 
     usermode_set_brk(new_brk);

@@ -94,6 +94,16 @@ void paging_unmap(uint32_t virt);
 uint32_t paging_get_physical(uint32_t virt);
 
 /**
+ * translate a virtual address to its physical address within a specific
+ * page directory (not necessarily the active one). walks the given
+ * directory directly, so it works for a process that is not current.
+ * @param pd_phys physical address of the page directory to walk.
+ * @param virt virtual address to translate.
+ * @return physical address, or 0 if the page is not mapped.
+ */
+uint32_t paging_get_physical_in(uint32_t pd_phys, uint32_t virt);
+
+/**
  * return the physical address of the kernel page directory.
  * only valid after paging_init() has been called.
  */

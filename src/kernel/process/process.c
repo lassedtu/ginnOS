@@ -1,6 +1,6 @@
 #include "process.h"
 #include "kernel/memory/pmm.h"
-#include "arch/x86/cpu/paging.h"
+#include "arch/arch.h"
 #include "common/memory.h"
 
 // the process table fixed array of PCBs.
@@ -47,9 +47,9 @@ process_t *process_create(void)
             // ESP starts at the top of the stack (grows downward)
             proc->kernel_esp = (uint32_t)stack_page + KERNEL_STACK_SIZE;
 
-            // allocate a per-process page directory (clone kernel mappings)
-            uint32_t pd = paging_clone_directory();
-            if (pd == 0)
+            // allocate a per-process address space (shares kernel mappings)
+            uint32_t pd = arch_create_address_space();
+            if (pd == ADDR_SPACE_NONE)
             {
                 pmm_free_page(stack_page);
                 return NULL;
@@ -134,10 +134,10 @@ void process_destroy(process_t *proc)
         proc->kernel_stack = 0;
     }
 
-    // free the per-process page directory (and user page tables/frames)
+    // free the per-process address space (and user page tables/frames)
     if (proc->page_directory)
     {
-        paging_free_directory(proc->page_directory);
+        arch_destroy_address_space(proc->page_directory);
         proc->page_directory = 0;
     }
 

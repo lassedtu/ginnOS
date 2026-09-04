@@ -4,7 +4,7 @@
 #include "kernel/vfs/vfs.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/heap.h"
-#include "arch/x86/cpu/paging.h"
+#include "arch/arch.h"
 #include "common/memory.h"
 
 #define PAGE_SIZE 4096u
@@ -78,41 +78,15 @@ static bool map_user_range(uint32_t pd_phys, uint32_t vaddr_start, uint32_t vadd
         }
 
         memset(frame, 0, PAGE_SIZE);
-        paging_map_in(pd_phys, page, (uint32_t)frame, PTE_USER_RW);
+        arch_map_page(pd_phys, page, (uint32_t)frame, MMU_USER_RW);
     }
 
     return true;
 }
 
 /**
- * translate a virtual address through a given page directory.
- * used to find the physical frame backing a virtual address in a
- * process's address space (for copying data before switching to it).
- */
-static uint32_t pd_get_physical(uint32_t pd_phys, uint32_t virt)
-{
-    uint32_t *dir = (uint32_t *)pd_phys;
-    uint32_t dir_index = (virt >> 22) & 0x3FF;
-    uint32_t tbl_index = (virt >> 12) & 0x3FF;
-
-    if (!(dir[dir_index] & PTE_PRESENT))
-    {
-        return 0;
-    }
-
-    uint32_t *table = (uint32_t *)(dir[dir_index] & 0xFFFFF000u);
-
-    if (!(table[tbl_index] & PTE_PRESENT))
-    {
-        return 0;
-    }
-
-    return (table[tbl_index] & 0xFFFFF000u) | (virt & 0xFFF);
-}
-
-/**
  * copy data into a process's virtual address space.
- * resolves each page through the process's page directory and writes
+ * resolves each page through the process's address space and writes
  * to the physical frame via identity mapping.
  */
 static void copy_to_process(uint32_t pd_phys, uint32_t vaddr, const void *src, uint32_t size)
@@ -121,7 +95,7 @@ static void copy_to_process(uint32_t pd_phys, uint32_t vaddr, const void *src, u
 
     while (size > 0)
     {
-        uint32_t phys = pd_get_physical(pd_phys, vaddr);
+        uint32_t phys = arch_translate_in(pd_phys, vaddr);
         uint32_t offset_in_page = vaddr & (PAGE_SIZE - 1);
         uint32_t chunk = PAGE_SIZE - offset_in_page;
         if (chunk > size)
@@ -144,7 +118,7 @@ static void zero_in_process(uint32_t pd_phys, uint32_t vaddr, uint32_t size)
 {
     while (size > 0)
     {
-        uint32_t phys = pd_get_physical(pd_phys, vaddr);
+        uint32_t phys = arch_translate_in(pd_phys, vaddr);
         uint32_t offset_in_page = vaddr & (PAGE_SIZE - 1);
         uint32_t chunk = PAGE_SIZE - offset_in_page;
         if (chunk > size)
