@@ -16,6 +16,7 @@
 #include "drivers/keyboard/keyboard.h"
 
 #include "console/console.h"
+#include "klog/klog.h"
 #include "memory/kernel_layout.h"
 #include "memory/pmm.h"
 #include "memory/pmm_layout.h"
@@ -43,6 +44,12 @@ void kernel_main(boot_info_t *boot)
     ata_device_t ata;
     partition_device_t part;
     fs_mount_t mount;
+
+    // bring up serial logging first: it needs no interrupts and works before
+    // the VGA console, so boot diagnostics are visible over QEMU -serial even
+    // if later init faults.
+    klog_init();
+    KLOG_INFO("kernel: entered 32-bit C main");
 
     hal_initialize();
 
@@ -74,6 +81,7 @@ void kernel_main(boot_info_t *boot)
     process_init();
 
     scheduler_init();
+    KLOG_INFO("kernel: subsystems up (pmm, heap, paging, syscalls, scheduler)");
 
     // enable hardware interrupts (STI).
     // hal_initialize() has fully installed all exception handlers (vectors 0–31),
@@ -102,6 +110,8 @@ void kernel_main(boot_info_t *boot)
         kernel_panic("VFS root mount failed");
     }
 
+    KLOG_INFO("kernel: root filesystem mounted, launching /bin/sh");
+
     // launch the userspace shell as the first process
     const char *argv[] = {"sh", NULL};
     int ret = exec_program("/bin/sh", argv);
@@ -111,6 +121,7 @@ void kernel_main(boot_info_t *boot)
     }
 
     // shell exited. halt
+    KLOG_WARN("kernel: shell exited with code %d, system halted", ret);
     printf("Shell exited with code %d. System halted.\r\n", ret);
     for (;;)
         ;
