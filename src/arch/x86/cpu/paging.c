@@ -11,6 +11,8 @@
 extern void paging_flush(uint32_t page_directory_phys);
 extern void paging_invalidate(uint32_t virtual_address);
 extern uint32_t paging_read_cr2(void);
+extern uint32_t paging_read_cr0(void);
+extern void paging_load_cr3(uint32_t page_directory_phys);
 
 #define PF_PRESENT 0x01u        /* 0 = not-present page, 1 = protection violation */
 #define PF_WRITE 0x02u          /* 0 = read access, 1 = write access */
@@ -219,9 +221,8 @@ uint32_t paging_table_count(void)
 
 bool paging_is_enabled(void)
 {
-    uint32_t cr0;
-    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
-    return (cr0 & 0x80000000u) != 0;
+    // bit 31 of CR0 is the paging-enable (PG) flag.
+    return (paging_read_cr0() & 0x80000000u) != 0;
 }
 
 // index boundary: entries 0–767 are user space, 768–1023 are kernel.
@@ -346,5 +347,6 @@ bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flag
 
 void paging_switch_directory(uint32_t pd_phys)
 {
-    __asm__ volatile("mov %0, %%cr3" : : "r"(pd_phys) : "memory");
+    // paging is already enabled here, so only CR3 changes; CR0 is left alone.
+    paging_load_cr3(pd_phys);
 }
