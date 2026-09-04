@@ -2,8 +2,9 @@
 
 /**
  * initialize the hardware abstraction layer.
- * sets up the GDT, IDT, ISR, and IRQ subsystems in the correct order.
- * after this call, hardware interrupts are enabled and the interrupt
- * subsystem is fully operational.
+ * brings up the arch's interrupt and device machinery in the correct order
+ * (on x86: GDT, IDT, ISR, exceptions, PIC/IRQ, then the timer and keyboard).
+ * interrupts are left disabled; the caller enables them once every handler
+ * is in place. each architecture provides its own implementation.
  */
 void hal_initialize(void);
