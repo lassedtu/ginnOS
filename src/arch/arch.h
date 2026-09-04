@@ -23,6 +23,23 @@ void arch_disable_interrupts(void);
 void arch_enable_interrupts(void);
 
 /**
+ * disable interrupts and return the prior interrupt state.
+ * the return value is opaque and meant only to be handed back to
+ * arch_irq_restore(). use this instead of arch_disable_interrupts()
+ * when a critical section may nest inside another one.
+ * @return the interrupt state as it was before disabling.
+ */
+uint32_t arch_irq_save(void);
+
+/**
+ * restore a previously saved interrupt state.
+ * re-enables interrupts only if they were enabled when the matching
+ * arch_irq_save() ran, so nested critical sections stay correct.
+ * @param flags the value returned by arch_irq_save().
+ */
+void arch_irq_restore(uint32_t flags);
+
+/**
  * halt the cpu until the next interrupt arrives.
  * interrupts must be enabled before calling this.
  */

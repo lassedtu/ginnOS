@@ -12,6 +12,32 @@ void arch_enable_interrupts(void)
     io_enable_interrupts();
 }
 
+uint32_t arch_irq_save(void)
+{
+    uint32_t flags;
+
+    // push EFLAGS, pop it into flags, then mask interrupts. the saved
+    // copy still reflects the interrupt-enable bit as it was on entry.
+    __asm__ volatile("pushf\n"
+                     "pop %0\n"
+                     "cli\n"
+                     : "=r"(flags)
+                     :
+                     : "memory");
+    return flags;
+}
+
+void arch_irq_restore(uint32_t flags)
+{
+    // restore the whole EFLAGS word; this puts the interrupt-enable bit
+    // back to its saved value rather than unconditionally enabling it.
+    __asm__ volatile("push %0\n"
+                     "popf\n"
+                     :
+                     : "r"(flags)
+                     : "memory", "cc");
+}
+
 void arch_halt(void)
 {
     __asm__ __volatile__("hlt");
