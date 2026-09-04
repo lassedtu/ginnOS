@@ -9,7 +9,7 @@
 #include "vfs/vfs.h"
 
 #include "common/stdio.h"
-#include "arch/x86/cpu/io.h"
+#include "arch/arch.h"
 
 #include "drivers/disk/ata.h"
 #include "drivers/disk/partition.h"
@@ -88,7 +88,7 @@ void kernel_main(boot_info_t *boot)
     // IRQ handlers (vectors 32–47), and device driver handlers. Every gate that
     // can fire is now present and backed by a registered handler. No interrupt
     // can arrive before this point because the CPU holds IF=0 from boot.
-    io_enable_interrupts();
+    arch_enable_interrupts();
 
     if (!ata_initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
     {
