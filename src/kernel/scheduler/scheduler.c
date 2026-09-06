@@ -1,14 +1,9 @@
 #include "scheduler.h"
 #include "kernel/process/process.h"
 #include "arch/arch.h"
+#include "arch/arch_context.h"
 #include "arch/x86/cpu/gdt.h"
 #include "common/memory.h"
-
-/**
- * context_switch defined in context_switch.asm.
- * saves current state on old stack, switches to new stack.
- */
-extern void context_switch(uint32_t *old_esp, uint32_t new_esp);
 
 // doubly-linked intrusive ready queue (head and tail).
 static process_t *queue_head;
@@ -141,15 +136,8 @@ void scheduler_init(void)
     idle_proc.kernel_stack = (uint32_t)idle_stack;
     idle_proc.kernel_esp = (uint32_t)idle_stack + KERNEL_STACK_SIZE;
 
-    // set up the idle process kernel stack so context_switch can enter idle_entry.
-    // push a fake return address for the context switch to "return" into.
-    uint32_t *sp = (uint32_t *)(idle_stack + KERNEL_STACK_SIZE);
-    *(--sp) = (uint32_t)idle_entry; // eip (return address)
-    *(--sp) = 0;                    // ebp
-    *(--sp) = 0;                    // ebx
-    *(--sp) = 0;                    // esi
-    *(--sp) = 0;                    // edi
-    idle_proc.kernel_esp = (uint32_t)sp;
+    // prime the idle stack so the first switch into it runs idle_entry.
+    arch_setup_initial_stack(&idle_proc, idle_entry);
 }
 
 void scheduler_ready(process_t *proc)
@@ -233,13 +221,13 @@ static void schedule(void)
     // perform the context switch
     if (current)
     {
-        context_switch(&current->kernel_esp, next->kernel_esp);
+        arch_context_switch(&current->kernel_esp, next->kernel_esp);
     }
     else
     {
         // no previous context to save (first schedule call)
         uint32_t dummy_esp;
-        context_switch(&dummy_esp, next->kernel_esp);
+        arch_context_switch(&dummy_esp, next->kernel_esp);
     }
 }
 

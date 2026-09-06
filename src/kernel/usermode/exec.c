@@ -17,7 +17,6 @@ typedef uint32_t kernel_jmp_buf[6];
 
 extern int kernel_setjmp(kernel_jmp_buf buf);
 extern void kernel_longjmp(kernel_jmp_buf buf, int val) __attribute__((noreturn));
-extern void context_switch(uint32_t *old_esp, uint32_t new_esp);
 
 // saved context for returning from userspace to exec_program's caller.
 // used ONLY for kernel-shell synchronous exec (no current process).
