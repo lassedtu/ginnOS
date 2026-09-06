@@ -1,8 +1,7 @@
 #include "pit.h"
 
 #include "arch/x86/cpu/io.h"
-#include "arch/x86/cpu/irq.h"
-#include "arch/x86/cpu/pic.h"
+#include "arch/arch_irq.h"
 #include "kernel/scheduler/scheduler.h"
 
 enum
@@ -26,9 +25,10 @@ static volatile uint64_t ticks = 0; // number of PIT interrupts since initializa
  * PIT interrupt handler
  * increments the tick count and notifies the scheduler.
  */
-static void pit_irq_handler(struct registers *regs)
+static void pit_irq_handler(uint32_t irq, trap_frame_t *frame)
 {
-    (void)regs;
+    (void)irq;
+    (void)frame;
 
     ticks++;
     scheduler_tick();
@@ -51,10 +51,10 @@ void pit_initialize(uint32_t frequency)
     divisor = (uint16_t)raw_divisor;
 
     // register IRQ0 handler
-    irq_register_handler(0, pit_irq_handler);
+    arch_irq_register(0, pit_irq_handler);
 
-    // enable IRQ0 on PIC
-    pic_unmask(0);
+    // enable IRQ0 (timer)
+    arch_irq_enable(0);
 
     uint8_t command =
         PIT_COMMAND_CHANNEL0 |

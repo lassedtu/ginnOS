@@ -9,10 +9,8 @@
 #include "keyboard_layout.h"
 
 #include "arch/arch.h"
-#include "arch/x86/cpu/irq.h"
-#include "arch/x86/cpu/isr.h"
+#include "arch/arch_irq.h"
 #include "arch/x86/cpu/io.h"
-#include "arch/x86/cpu/pic.h"
 #include "common/stdint.h"
 
 #define KEYBOARD_BUFFER_SIZE 128 // number of events the ring buffer can hold
@@ -94,9 +92,10 @@ static void keyboard_buffer_push(keyboard_event_t event)
 /**
  * keyboard IRQ handler.
  */
-static void keyboard_irq_handler(struct registers *regs)
+static void keyboard_irq_handler(uint32_t irq, trap_frame_t *frame)
 {
-    (void)regs;
+    (void)irq;
+    (void)frame;
 
     uint8_t scancode = io_inb(0x60);
     const keyboard_layout_t *layout = keyboard_get_layout();
@@ -318,6 +317,6 @@ uint32_t keyboard_dropped_count(void)
 
 void keyboard_initialize(void)
 {
-    irq_register_handler(1, keyboard_irq_handler);
-    pic_unmask(1);
+    arch_irq_register(1, keyboard_irq_handler);
+    arch_irq_enable(1);
 }
