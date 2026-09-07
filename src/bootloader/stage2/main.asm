@@ -11,7 +11,11 @@ BITS 16
 %define BOOT_INFO_MEMORY_MAP_REGIONS    8
 %define MEMORY_REGION_SIZE              20
 %define MEMORY_MAP_MAX_REGIONS          32
-%define BOOT_INFO_TOTAL_SIZE            (BOOT_INFO_MEMORY_MAP_REGIONS + MEMORY_MAP_MAX_REGIONS * MEMORY_REGION_SIZE)
+; trailing arch-neutral fields the BIOS boot path does not fill:
+; framebuffer_addr + width + height + cmdline = 4 x 4 bytes. reserved (and
+; therefore zeroed below) so the kernel reads 0/NULL, matching boot_info_t.
+%define BOOT_INFO_TRAILER_SIZE          16
+%define BOOT_INFO_TOTAL_SIZE            (BOOT_INFO_MEMORY_MAP_REGIONS + MEMORY_MAP_MAX_REGIONS * MEMORY_REGION_SIZE + BOOT_INFO_TRAILER_SIZE)
 %define E820_SIGNATURE                  0x534D4150
 
 section .text
