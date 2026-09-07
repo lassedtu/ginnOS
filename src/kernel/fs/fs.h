@@ -16,29 +16,63 @@ enum
 };
 
 /**
+ * filesystem operations vtable.
+ *
+ * each filesystem type (ext2 today; procfs/tmpfs/FAT32 later) provides one of
+ * these so the generic fs_* layer never names a concrete filesystem. a mount
+ * points at its filesystem's ops; every open file carries the same pointer so
+ * file-level calls dispatch without consulting the mount again.
+ *
+ * mount is the only entry point that is not in the vtable: fs_mount() selects
+ * the filesystem (currently always ext2) and installs its ops.
+ */
+typedef struct fs_mount fs_mount_t;
+typedef struct fs_file fs_file_t;
+typedef struct fs_dirent fs_dirent_t;
+typedef struct fs_stat fs_stat_t;
+
+typedef struct
+{
+    kerr_t (*open)(fs_mount_t *mount, const char *path, fs_file_t *file);
+    kerr_t (*create)(fs_mount_t *mount, const char *path);
+    kerr_t (*mkdir)(fs_mount_t *mount, const char *path);
+    kerr_t (*remove)(fs_mount_t *mount, const char *path);
+    kerr_t (*rmdir)(fs_mount_t *mount, const char *path);
+    kerr_t (*rename)(fs_mount_t *mount, const char *old_path, const char *new_path);
+    kerr_t (*stat)(fs_mount_t *mount, const char *path, fs_stat_t *stat_out);
+
+    uint32_t (*read)(fs_file_t *file, uint32_t byte_count, void *data_out);
+    uint32_t (*write)(fs_file_t *file, uint32_t byte_count, const void *data_in);
+    kerr_t (*truncate)(fs_file_t *file);
+    kerr_t (*read_entry)(fs_file_t *file, fs_dirent_t *entry_out);
+    void (*close)(fs_file_t *file);
+} fs_ops_t;
+
+/**
  * directory entry structure for reading directory contents.
  */
-typedef struct
+struct fs_dirent
 {
     uint32_t inode;    // inode number of the file or directory
     uint8_t file_type; // type of the file
     uint32_t size;     // size of the file in bytes
     char name[EXT2_NAME_MAX]; // null-terminated name of the file or directory (max 255 characters)
-} fs_dirent_t;
+};
 
 /**
  * filesystem mount structure representing a mounted filesystem.
  */
-typedef struct
+struct fs_mount
 {
+    const fs_ops_t *ops;  // filesystem operations vtable (set by fs_mount)
     ext2_volume_t ext2;   // embedded ext2_volume_t representing the mounted filesystem (not a pointer)
     uint8_t is_mounted; // flag indicating whether the filesystem is successfully mounted (1 for mounted, 0 for not mounted)
-} fs_mount_t;
+};
 
 /**
  * filesystem metadata structure returned by stat.
  */
-typedef struct
+struct fs_stat
 {
     uint32_t inode;
     uint8_t file_type;
@@ -49,17 +83,18 @@ typedef struct
     uint32_t atime;
     uint32_t mtime;
     uint32_t ctime;
-} fs_stat_t;
+};
 
 /**
  * file handle structure representing an open file or directory.
  */
-typedef struct
+struct fs_file
 {
+    const fs_ops_t *ops;   // vtable of the filesystem this file belongs to
     ext2_file_t ext2_file; // embedded ext2_file_t representing the open file or directory (not a pointer)
     uint8_t file_type;   // type of the file (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN)
     uint8_t is_open;     // flag indicating whether the file is open (1 for open, 0 for closed)
-} fs_file_t;
+};
 
 /**
  * mount a filesystem on a block device.
