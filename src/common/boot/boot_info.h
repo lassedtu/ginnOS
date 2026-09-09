@@ -15,12 +15,12 @@
  */
 typedef struct
 {
-    // --- shared with stage2 assembly (do not reorder) ---
+    // shared with stage2 assembly (do not reorder)
     uint8_t boot_drive;      // x86/BIOS drive number the system booted from (e.g. 0x80).
     uint8_t _reserved[3];    // alignment padding, zeroed.
     memory_map_t memory_map; // physical memory regions reported by the boot protocol.
 
-    // --- arch-neutral, filled when the boot protocol provides them ---
+    // arch-neutral, filled when the boot protocol provides them
     uint32_t framebuffer_addr;   // physical address of a linear framebuffer, or 0 if none.
     uint32_t framebuffer_width;  // framebuffer width in pixels (valid when addr != 0).
     uint32_t framebuffer_height; // framebuffer height in pixels (valid when addr != 0).
