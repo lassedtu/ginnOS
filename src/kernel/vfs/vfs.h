@@ -3,6 +3,9 @@
 #include "common/error.h"
 #include "kernel/fs/fs.h"
 
+// maximum length of an absolute path (including the null terminator).
+#define VFS_PATH_MAX 256
+
 typedef fs_stat_t vfs_stat_t;
 
 /**
@@ -17,10 +20,37 @@ typedef struct
 
 /**
  * mount a filesystem as the root filesystem.
+ * convenience wrapper for vfs_mount("/", mount).
  * @param mount pointer to the filesystem mount structure to be used as the root filesystem.
  * @return KERR_OK on success, or an error code on failure.
  */
 kerr_t vfs_mount_root(fs_mount_t *mount);
+
+/**
+ * mount a filesystem at a path prefix.
+ * a later, more specific prefix takes precedence over a shorter one during
+ * path resolution (e.g. "/dev" wins over "/"). remounting an existing prefix
+ * replaces its backing filesystem.
+ * @param prefix absolute mount point, e.g. "/" or "/dev".
+ * @param mount the filesystem to mount there (must already be mounted).
+ * @return KERR_OK on success, KERR_INVAL on bad input, KERR_NOSPC if full.
+ */
+kerr_t vfs_mount(const char *prefix, fs_mount_t *mount);
+
+/**
+ * unmount the filesystem at an exact path prefix.
+ * @param prefix the mount point to remove.
+ * @return KERR_OK on success, KERR_NOENT if nothing is mounted there.
+ */
+kerr_t vfs_umount(const char *prefix);
+
+/**
+ * find the mounted filesystem responsible for an absolute path.
+ * returns the mount whose prefix is the longest match for path.
+ * @param path absolute path to resolve.
+ * @return the backing mount, or NULL if no filesystem covers the path.
+ */
+fs_mount_t *vfs_resolve_mount(const char *path);
 
 /**
  * open a file or directory by absolute path in the virtual file system.

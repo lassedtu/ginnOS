@@ -2,17 +2,19 @@
 
 #include "common/string.h"
 
-extern fs_mount_t *root_mount;
-
 kerr_t vfs_open(
     const char *path,
     vfs_file_t *file)
 {
-    if (!root_mount || !file || !path)
+    if (!file || !path)
+        return KERR_INVAL;
+
+    fs_mount_t *mount = vfs_resolve_mount(path);
+    if (!mount)
         return KERR_INVAL;
 
     kerr_t err = fs_open(
-            root_mount,
+            mount,
             path,
             &file->file);
     if (kerr_failed(err))
@@ -21,68 +23,111 @@ kerr_t vfs_open(
         return err;
     }
 
-    file->mount = root_mount;
+    file->mount = mount;
     return KERR_OK;
 }
 
 kerr_t vfs_create(const char *path)
 {
-    if (!root_mount || !path)
+    if (!path)
     {
         return KERR_INVAL;
     }
 
-    return fs_create(root_mount, path);
+    fs_mount_t *mount = vfs_resolve_mount(path);
+    if (!mount)
+    {
+        return KERR_INVAL;
+    }
+
+    return fs_create(mount, path);
 }
 
 kerr_t vfs_mkdir(const char *path)
 {
-    if (!root_mount || !path)
+    if (!path)
     {
         return KERR_INVAL;
     }
 
-    return fs_mkdir(root_mount, path);
+    fs_mount_t *mount = vfs_resolve_mount(path);
+    if (!mount)
+    {
+        return KERR_INVAL;
+    }
+
+    return fs_mkdir(mount, path);
 }
 
 kerr_t vfs_remove(const char *path)
 {
-    if (!root_mount || !path)
+    if (!path)
     {
         return KERR_INVAL;
     }
 
-    return fs_remove(root_mount, path);
+    fs_mount_t *mount = vfs_resolve_mount(path);
+    if (!mount)
+    {
+        return KERR_INVAL;
+    }
+
+    return fs_remove(mount, path);
 }
 
 kerr_t vfs_rmdir(const char *path)
 {
-    if (!root_mount || !path)
+    if (!path)
     {
         return KERR_INVAL;
     }
 
-    return fs_rmdir(root_mount, path);
+    fs_mount_t *mount = vfs_resolve_mount(path);
+    if (!mount)
+    {
+        return KERR_INVAL;
+    }
+
+    return fs_rmdir(mount, path);
 }
 
 kerr_t vfs_rename(const char *old_path, const char *new_path)
 {
-    if (!root_mount || !old_path || !new_path)
+    if (!old_path || !new_path)
     {
         return KERR_INVAL;
     }
 
-    return fs_rename(root_mount, old_path, new_path);
+    fs_mount_t *mount = vfs_resolve_mount(old_path);
+    if (!mount)
+    {
+        return KERR_INVAL;
+    }
+
+    // rename across different mounts is not supported: both paths must
+    // resolve to the same filesystem.
+    if (vfs_resolve_mount(new_path) != mount)
+    {
+        return KERR_INVAL;
+    }
+
+    return fs_rename(mount, old_path, new_path);
 }
 
 kerr_t vfs_stat(const char *path, vfs_stat_t *stat_out)
 {
-    if (!root_mount || !path || !stat_out)
+    if (!path || !stat_out)
     {
         return KERR_INVAL;
     }
 
-    return fs_stat(root_mount, path, stat_out);
+    fs_mount_t *mount = vfs_resolve_mount(path);
+    if (!mount)
+    {
+        return KERR_INVAL;
+    }
+
+    return fs_stat(mount, path, stat_out);
 }
 
 uint32_t vfs_read(
