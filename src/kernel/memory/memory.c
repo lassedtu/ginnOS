@@ -10,6 +10,16 @@ _Static_assert(__builtin_offsetof(boot_info_t, memory_map) == 4, "memory_map @ 4
 _Static_assert(__builtin_offsetof(memory_map_t, regions) == 4, "regions @ 4");
 _Static_assert(sizeof(memory_region_t) == 20, "region is 20 bytes");
 
+// framebuffer fields the stage2 VBE path writes by offset (main.asm). these
+// come after the memory map, so the shared prefix above is unaffected.
+_Static_assert(__builtin_offsetof(boot_info_t, framebuffer_addr) == 648, "fb_addr @ 648");
+_Static_assert(__builtin_offsetof(boot_info_t, framebuffer_width) == 652, "fb_width @ 652");
+_Static_assert(__builtin_offsetof(boot_info_t, framebuffer_height) == 656, "fb_height @ 656");
+_Static_assert(__builtin_offsetof(boot_info_t, framebuffer_pitch) == 664, "fb_pitch @ 664");
+_Static_assert(__builtin_offsetof(boot_info_t, framebuffer_bpp) == 668, "fb_bpp @ 668");
+_Static_assert(__builtin_offsetof(boot_info_t, framebuffer_type) == 669, "fb_type @ 669");
+_Static_assert(__builtin_offsetof(boot_info_t, framebuffer_red_size) == 670, "fb_red_size @ 670");
+
 void memory_print_map(boot_info_t *boot)
 {
     uint32_t i;

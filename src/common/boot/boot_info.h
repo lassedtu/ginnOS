@@ -26,4 +26,19 @@ typedef struct
     uint32_t framebuffer_height; // framebuffer height in pixels (valid when addr != 0).
     const char *cmdline;         // NUL-terminated boot command line, or NULL if none.
 
+    // framebuffer pixel format (valid when framebuffer_type != 0). the channel
+    // size/shift pairs describe how r/g/b sit inside a pixel, so the driver can
+    // compose pixels for whatever layout VBE reports instead of assuming
+    // 0x00RRGGBB. all zero when there is no framebuffer.
+    uint32_t framebuffer_pitch;      // bytes per scanline (may exceed width * bpp/8).
+    uint8_t framebuffer_bpp;         // bits per pixel (e.g. 32).
+    uint8_t framebuffer_type;        // 0 = none/text, 1 = RGB linear framebuffer.
+    uint8_t framebuffer_red_size;    // red channel bit width.
+    uint8_t framebuffer_red_shift;   // red channel low bit position.
+    uint8_t framebuffer_green_size;  // green channel bit width.
+    uint8_t framebuffer_green_shift; // green channel low bit position.
+    uint8_t framebuffer_blue_size;   // blue channel bit width.
+    uint8_t framebuffer_blue_shift;  // blue channel low bit position.
+    uint8_t _fb_pad[2];              // pad to a 4-byte boundary, zeroed.
+
 } boot_info_t;
