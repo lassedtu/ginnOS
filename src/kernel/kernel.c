@@ -17,6 +17,7 @@
 
 #include "console/console.h"
 #include "kernel/device/device.h"
+#include "drivers/video/fb/fb.h"
 #include "common/string.h"
 #include "klog/klog.h"
 #include "memory/kernel_layout.h"
@@ -80,6 +81,10 @@ void kernel_main(boot_info_t *boot)
     heap_init();
 
     paging_init();
+
+    // bring up the linear framebuffer (if the bootloader set a graphics mode).
+    // must follow paging_init: the LFB lives above identity-mapped RAM.
+    fb_init(boot);
 
     syscall_initialize();
 
