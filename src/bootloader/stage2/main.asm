@@ -211,9 +211,12 @@ set_video_mode:
     popa
     ret
 
-; preferred 32bpp linear modes, highest first, terminated by 0xFFFF.
-; 0x118 = 1024x768x32, 0x115 = 800x600x32, 0x112 = 640x480x32.
+; preferred direct-colour linear modes, highest first, terminated by 0xFFFF.
+; 0x11B = 1280x1024, 0x118 = 1024x768, 0x115 = 800x600, 0x112 = 640x480.
+; each is validated (linear + 24/32bpp) before use, so unavailable modes are
+; skipped and we fall back to a smaller one.
 vbe_mode_list:
+    dw 0x11B
     dw 0x118
     dw 0x115
     dw 0x112
