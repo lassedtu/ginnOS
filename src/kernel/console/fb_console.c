@@ -14,15 +14,16 @@
  * live struct rather than a compile-time constant like the VGA one.
  */
 
-// default look: light grey on near-black, matching the old text console feel.
-#define FB_DEFAULT_FG 0x00CCCCCC
+// default background for the framebuffer console (near-black). the foreground
+// and per-character colours come from the tty's ANSI palette.
 #define FB_DEFAULT_BG 0x00000000
 
 static tty_backend_t fb_backend;
 
 static void fb_be_put_at(char c, uint8_t row, uint8_t col)
 {
-    fb_text_draw_glyph(row, col, c, FB_DEFAULT_FG, FB_DEFAULT_BG);
+    // draw with the tty's active colours (set via fb_be_set_colors).
+    fb_text_put(row, col, c);
 }
 
 static void fb_be_scroll(void)
@@ -45,6 +46,16 @@ static void fb_be_get_cursor(uint8_t *row, uint8_t *col)
     fb_text_get_cursor(row, col);
 }
 
+static void fb_be_set_colors(uint8_t fg, uint8_t bg)
+{
+    fb_text_set_colors(fg, bg);
+}
+
+static void fb_be_draw_cursor(uint8_t row, uint8_t col, bool visible)
+{
+    fb_text_draw_cursor(row, col, visible);
+}
+
 const tty_backend_t *fb_console_backend(void)
 {
     // bring up the text grid (native scale, small margin), then describe it to
@@ -57,6 +68,8 @@ const tty_backend_t *fb_console_backend(void)
     fb_backend.clear = fb_be_clear;
     fb_backend.set_cursor = fb_be_set_cursor;
     fb_backend.get_cursor = fb_be_get_cursor;
+    fb_backend.set_colors = fb_be_set_colors;
+    fb_backend.draw_cursor = fb_be_draw_cursor;
     fb_backend.rows = fb_text_rows();
     fb_backend.cols = fb_text_cols();
 

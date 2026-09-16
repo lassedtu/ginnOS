@@ -37,6 +37,25 @@ uint8_t fb_text_cols(void);
 void fb_text_draw_glyph(uint8_t row, uint8_t col, char ch, uint32_t fg, uint32_t bg);
 
 /**
+ * set the active foreground/background as ANSI colour indices (0-15). glyphs
+ * drawn via fb_text_put use these until changed.
+ */
+void fb_text_set_colors(uint8_t fg, uint8_t bg);
+
+/**
+ * draw a glyph at a cell using the active ANSI colours (set via
+ * fb_text_set_colors). this is what the tty backend calls.
+ */
+void fb_text_put(uint8_t row, uint8_t col, char ch);
+
+/**
+ * draw or erase the software caret at a cell. when erasing, the cell is
+ * repainted with the active background so the underlying glyph is preserved
+ * by a subsequent redraw. drawn as an underline near the cell bottom.
+ */
+void fb_text_draw_cursor(uint8_t row, uint8_t col, bool visible);
+
+/**
  * clear the whole grid to the current background colour.
  */
 void fb_text_clear(void);

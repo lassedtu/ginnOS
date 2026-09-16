@@ -20,6 +20,29 @@ static uint8_t cursor_col;
 
 static uint32_t default_bg; // packed background pixel
 
+// 16-entry ANSI palette as 0x00RRGGBB. indices 0-7 normal, 8-15 bright.
+static const uint32_t ansi_palette[16] = {
+    0x00000000, // 0 black
+    0x00CD0000, // 1 red
+    0x0000CD00, // 2 green
+    0x00CDCD00, // 3 yellow
+    0x000000EE, // 4 blue
+    0x00CD00CD, // 5 magenta
+    0x0000CDCD, // 6 cyan
+    0x00CCCCCC, // 7 light grey
+    0x00555555, // 8 dark grey
+    0x00FF5555, // 9 bright red
+    0x0055FF55, // 10 bright green
+    0x00FFFF55, // 11 bright yellow
+    0x005555FF, // 12 bright blue
+    0x00FF55FF, // 13 bright magenta
+    0x0055FFFF, // 14 bright cyan
+    0x00FFFFFF, // 15 white
+};
+
+static uint32_t active_fg = 0x00CCCCCC; // active foreground (0x00RRGGBB)
+static uint32_t active_bg = 0x00000000; // active background (0x00RRGGBB)
+
 /**
  * convert a 0x00RRGGBB colour to a framebuffer-packed pixel.
  */
@@ -145,4 +168,34 @@ void fb_text_get_cursor(uint8_t *row, uint8_t *col)
 {
     *row = cursor_row;
     *col = cursor_col;
+}
+
+void fb_text_set_colors(uint8_t fg, uint8_t bg)
+{
+    active_fg = ansi_palette[fg & 0x0F];
+    active_bg = ansi_palette[bg & 0x0F];
+}
+
+void fb_text_put(uint8_t row, uint8_t col, char ch)
+{
+    fb_text_draw_glyph(row, col, ch, active_fg, active_bg);
+}
+
+void fb_text_draw_cursor(uint8_t row, uint8_t col, bool visible)
+{
+    if (row >= grid_rows || col >= grid_cols)
+    {
+        return;
+    }
+
+    uint32_t px = origin_x + (uint32_t)col * cell_w;
+    // an underline caret occupying the bottom two (scaled) scanlines of the cell.
+    uint32_t bar_h = 2 * scale_f;
+    uint32_t py = origin_y + (uint32_t)row * cell_h + cell_h - bar_h;
+
+    uint32_t colour = visible ? fb_pack_rgb((uint8_t)((active_fg >> 16) & 0xFF),
+                                            (uint8_t)((active_fg >> 8) & 0xFF),
+                                            (uint8_t)(active_fg & 0xFF))
+                              : default_bg;
+    fb_fill_rect(px, py, cell_w, bar_h, colour);
 }

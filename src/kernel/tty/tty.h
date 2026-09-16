@@ -24,8 +24,16 @@
 #define TTY_MODE_COOKED 0 // line-buffered, editable input
 #define TTY_MODE_RAW    1 // raw byte/event input, no editing
 
+// ANSI colour indices 0-7 (normal) and 8-15 (bright). the backend maps these
+// to its own representation. defaults match a light-grey-on-black console.
+#define TTY_COLOR_DEFAULT_FG 7 // light grey
+#define TTY_COLOR_DEFAULT_BG 0 // black
+
 /**
- * character-cell backend a tty draws onto. every field is required.
+ * character-cell backend a tty draws onto. put_at/scroll/clear/set_cursor/
+ * get_cursor/rows/cols are required; set_colors and draw_cursor are optional
+ * (NULL is fine) so a backend that has no notion of colour or needs no
+ * software caret can omit them.
  * coordinates are zero-based (row, col); the backend defines its own bounds.
  */
 typedef struct
@@ -35,6 +43,12 @@ typedef struct
     void (*clear)(void);                              // clear screen, cursor home
     void (*set_cursor)(uint8_t row, uint8_t col);     // move the cursor
     void (*get_cursor)(uint8_t *row, uint8_t *col);   // read the cursor
+    // set the fg/bg used by subsequent put_at calls, as ANSI colour indices
+    // (0-15). optional; NULL means the backend is monochrome.
+    void (*set_colors)(uint8_t fg, uint8_t bg);
+    // draw (or erase) a caret at a cell. optional; NULL means the backend has
+    // its own cursor (e.g. VGA hardware cursor).
+    void (*draw_cursor)(uint8_t row, uint8_t col, bool visible);
     uint8_t rows;                                     // backend height in cells
     uint8_t cols;                                     // backend width in cells
 } tty_backend_t;
@@ -59,6 +73,9 @@ typedef struct
     int csi_param_count;          // how many parameters have been separated
     int csi_current_param;        // parameter currently being accumulated
     uint8_t mode;                 // TTY_MODE_COOKED or TTY_MODE_RAW
+    uint8_t fg;                   // current foreground ANSI colour index (0-15)
+    uint8_t bg;                   // current background ANSI colour index (0-15)
+    bool bold;                    // bold/bright attribute (brightens fg)
 } tty_t;
 
 /**
