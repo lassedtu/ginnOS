@@ -18,7 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define NUM_BALLS 5
+#define NUM_BALLS 10
 
 typedef struct
 {
@@ -100,10 +100,11 @@ static void ramp_color(int f, int threshold, uint8_t *r, uint8_t *g, uint8_t *b)
     }
 }
 
-// crude frame-pacing delay (no sleep syscall yet). tuned for QEMU.
+// small frame-pacing delay (no sleep syscall yet). kept short: under emulation
+// the render is already the bulk of a frame, so a big delay only adds lag.
 static void delay(void)
 {
-    for (volatile unsigned int i = 0; i < 3000000u; i++)
+    for (volatile unsigned int i = 0; i < 500000u; i++)
     {
     }
 }
@@ -145,10 +146,11 @@ int main(int argc, char **argv)
     const int threshold = 220;
 
     // to keep it fast we compute the field on a coarse grid and fill blocks.
-    const int step = 2;
+    // 4x4 sampling cuts the per-frame field work ~4x versus per-pixel, which
+    // matters a lot under i386 emulation; blobs are smooth so it stays clean.
+    const int step = 4;
 
-    printf("metaballs: running (%s mode) - press q to quit\n",
-           color_mode ? "color" : "white");
+    printf("metaballs: running (%s mode) - press q to quit\n", color_mode ? "color" : "white");
 
     for (;;)
     {
@@ -227,8 +229,7 @@ int main(int argc, char **argv)
                 else
                 {
                     // white where inside the blob, black otherwise.
-                    px = (field >= threshold) ? pack(&fb, 255, 255, 255)
-                                              : pack(&fb, 0, 0, 0);
+                    px = (field >= threshold) ? pack(&fb, 255, 255, 255) : pack(&fb, 0, 0, 0);
                 }
 
                 // fill the step x step block for this sample.
