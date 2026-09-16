@@ -16,6 +16,8 @@
 #include "drivers/keyboard/keyboard.h"
 
 #include "console/console.h"
+#include "kernel/device/device.h"
+#include "common/string.h"
 #include "klog/klog.h"
 #include "memory/kernel_layout.h"
 #include "memory/pmm.h"
@@ -50,6 +52,9 @@ void kernel_main(boot_info_t *boot)
     // if later init faults.
     klog_init();
     KLOG_INFO("kernel: entered 32-bit C main");
+
+    // set up the device registry before any driver init tries to register.
+    device_registry_init();
 
     hal_initialize();
 
@@ -95,10 +100,28 @@ void kernel_main(boot_info_t *boot)
         kernel_panic("ATA initialization failed");
     }
 
+    // register the disk with the device model. ata/part live for the lifetime
+    // of the kernel (kernel_main never returns), so pointing at them is safe.
+    static device_t disk_device;
+    strncpy(disk_device.name, "hda", DEVICE_NAME_MAX - 1);
+    disk_device.name[DEVICE_NAME_MAX - 1] = '\0';
+    disk_device.type = DEVICE_TYPE_BLOCK;
+    disk_device.ops = NULL;
+    disk_device.driver_data = &ata.block;
+    device_register(&disk_device);
+
     if (!partition_detect_ext2(&part, &ata.block))
     {
         kernel_panic("EXT2 partition detection failed");
     }
+
+    static device_t part_device;
+    strncpy(part_device.name, "hda1", DEVICE_NAME_MAX - 1);
+    part_device.name[DEVICE_NAME_MAX - 1] = '\0';
+    part_device.type = DEVICE_TYPE_BLOCK;
+    part_device.ops = NULL;
+    part_device.driver_data = &part.block;
+    device_register(&part_device);
 
     if (!fs_mount(&mount, &part.block))
     {

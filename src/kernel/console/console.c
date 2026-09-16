@@ -1,8 +1,10 @@
 #include "console.h"
 
 #include "kernel/tty/tty.h"
+#include "kernel/device/device.h"
 #include "drivers/video/vga/vga.h"
 #include "drivers/keyboard/keyboard.h"
+#include "common/string.h"
 
 /**
  * @file console.c
@@ -35,6 +37,15 @@ void console_initialize(void)
 {
     vga_initialize();
     tty_init(&console_tty, &vga_backend);
+
+    // announce the console to the device registry.
+    static device_t console_device;
+    strncpy(console_device.name, "tty0", DEVICE_NAME_MAX - 1);
+    console_device.name[DEVICE_NAME_MAX - 1] = '\0';
+    console_device.type = DEVICE_TYPE_CHAR;
+    console_device.ops = 0;
+    console_device.driver_data = &console_tty;
+    device_register(&console_device);
 }
 
 void console_putchar(char c)

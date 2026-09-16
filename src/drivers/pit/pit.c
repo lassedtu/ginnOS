@@ -2,7 +2,9 @@
 
 #include "arch/x86/cpu/io.h"
 #include "kernel/irq/irq.h"
+#include "kernel/device/device.h"
 #include "kernel/scheduler/scheduler.h"
+#include "common/string.h"
 
 enum
 {
@@ -63,6 +65,15 @@ void pit_initialize(uint32_t frequency)
 
     io_outb(PIT_CHANNEL0_DATA, divisor & 0xFF);
     io_outb(PIT_CHANNEL0_DATA, divisor >> 8);
+
+    // announce ourselves to the device registry.
+    static device_t pit_device;
+    strncpy(pit_device.name, "pit", DEVICE_NAME_MAX - 1);
+    pit_device.name[DEVICE_NAME_MAX - 1] = '\0';
+    pit_device.type = DEVICE_TYPE_TIMER;
+    pit_device.ops = 0;
+    pit_device.driver_data = 0;
+    device_register(&pit_device);
 }
 
 /**
