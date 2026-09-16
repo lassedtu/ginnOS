@@ -2,16 +2,64 @@
 
 #include "arch/x86/cpu/paging.h"
 #include "kernel/device/device.h"
+#include "kernel/memory/heap.h"
 #include "common/memory.h"
 #include "common/string.h"
 
 /**
  * @file fb.c
  * @brief linear framebuffer driver implementation.
+ *
+ * drawing is double-buffered: ops render into a RAM back buffer and mark the
+ * touched scanlines dirty; fb_flush() copies just those rows out to the slow,
+ * uncached linear framebuffer. if the back buffer can't be allocated the
+ * driver falls back to writing the LFB directly (draw_target == fb.addr) and
+ * fb_flush becomes a no-op.
  */
 
 static fb_info_t fb;
 static bool fb_ready;
+
+// where drawing lands: the back buffer when double-buffered, else the LFB.
+static uint8_t *draw_target;
+static uint8_t *back_buffer;
+
+// dirty scanline range [dirty_top, dirty_bottom) pending flush; empty when
+// dirty_top >= dirty_bottom.
+static uint32_t dirty_top;
+static uint32_t dirty_bottom;
+
+/**
+ * mark scanlines [y, y+h) as needing a flush to the visible framebuffer.
+ */
+static void mark_dirty(uint32_t y, uint32_t h)
+{
+    if (!back_buffer)
+    {
+        return;
+    }
+    uint32_t bottom = y + h;
+    if (bottom > fb.height)
+    {
+        bottom = fb.height;
+    }
+    if (dirty_top >= dirty_bottom)
+    {
+        dirty_top = y;
+        dirty_bottom = bottom;
+    }
+    else
+    {
+        if (y < dirty_top)
+        {
+            dirty_top = y;
+        }
+        if (bottom > dirty_bottom)
+        {
+            dirty_bottom = bottom;
+        }
+    }
+}
 
 /**
  * map the framebuffer's physical range into the kernel address space.
@@ -59,6 +107,14 @@ bool fb_init(const boot_info_t *boot)
     }
 
     map_framebuffer(boot->framebuffer_addr, fb.height * fb.pitch);
+
+    // try to allocate a RAM back buffer for double buffering. on failure we
+    // simply draw straight to the LFB (draw_target == fb.addr).
+    uint32_t fb_bytes = fb.height * fb.pitch;
+    back_buffer = (uint8_t *)kmalloc(fb_bytes);
+    draw_target = back_buffer ? back_buffer : fb.addr;
+    dirty_top = 0;
+    dirty_bottom = 0;
 
     fb_ready = true;
 
@@ -112,14 +168,14 @@ static inline void store_pixel(uint32_t offset, uint32_t pixel)
 {
     if (fb.bytes_pp == 4)
     {
-        *(uint32_t *)(fb.addr + offset) = pixel;
+        *(uint32_t *)(draw_target + offset) = pixel;
     }
     else
     {
         // 24-bpp: write three bytes, low-to-high.
-        fb.addr[offset + 0] = (uint8_t)(pixel & 0xFF);
-        fb.addr[offset + 1] = (uint8_t)((pixel >> 8) & 0xFF);
-        fb.addr[offset + 2] = (uint8_t)((pixel >> 16) & 0xFF);
+        draw_target[offset + 0] = (uint8_t)(pixel & 0xFF);
+        draw_target[offset + 1] = (uint8_t)((pixel >> 8) & 0xFF);
+        draw_target[offset + 2] = (uint8_t)((pixel >> 16) & 0xFF);
     }
 }
 
@@ -131,6 +187,7 @@ void fb_put_pixel(uint32_t x, uint32_t y, uint32_t pixel)
     }
 
     store_pixel(y * fb.pitch + x * fb.bytes_pp, pixel);
+    mark_dirty(y, 1);
 }
 
 void fb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t pixel)
@@ -163,6 +220,8 @@ void fb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t pixel
             offset += fb.bytes_pp;
         }
     }
+
+    mark_dirty(y, h);
 }
 
 void fb_clear(uint32_t pixel)
@@ -188,8 +247,26 @@ void fb_copy_rect(uint32_t dst_x, uint32_t dst_y,
     // how the terminal scrolls.
     for (uint32_t row = 0; row < h; row++)
     {
-        uint8_t *dst = fb.addr + (dst_y + row) * fb.pitch + dst_x * fb.bytes_pp;
-        uint8_t *src = fb.addr + (src_y + row) * fb.pitch + src_x * fb.bytes_pp;
+        uint8_t *dst = draw_target + (dst_y + row) * fb.pitch + dst_x * fb.bytes_pp;
+        uint8_t *src = draw_target + (src_y + row) * fb.pitch + src_x * fb.bytes_pp;
         memcpy(dst, src, w * fb.bytes_pp);
     }
+
+    mark_dirty(dst_y, h);
+}
+
+void fb_flush(void)
+{
+    if (!fb_ready || !back_buffer || dirty_top >= dirty_bottom)
+    {
+        return;
+    }
+
+    // copy the dirty scanline span from the back buffer to the LFB in one go.
+    uint32_t offset = dirty_top * fb.pitch;
+    uint32_t bytes = (dirty_bottom - dirty_top) * fb.pitch;
+    memcpy(fb.addr + offset, back_buffer + offset, bytes);
+
+    dirty_top = 0;
+    dirty_bottom = 0;
 }

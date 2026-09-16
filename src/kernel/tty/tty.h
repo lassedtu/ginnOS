@@ -49,6 +49,9 @@ typedef struct
     // draw (or erase) a caret at a cell. optional; NULL means the backend has
     // its own cursor (e.g. VGA hardware cursor).
     void (*draw_cursor)(uint8_t row, uint8_t col, bool visible);
+    // push buffered drawing to the display. optional; NULL means the backend
+    // draws directly (e.g. VGA text buffer, or an unbuffered framebuffer).
+    void (*flush)(void);
     uint8_t rows;                                     // backend height in cells
     uint8_t cols;                                     // backend width in cells
 } tty_backend_t;

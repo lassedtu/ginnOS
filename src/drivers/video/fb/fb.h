@@ -83,3 +83,13 @@ void fb_clear(uint32_t pixel);
  */
 void fb_copy_rect(uint32_t dst_x, uint32_t dst_y, uint32_t src_x, uint32_t src_y, uint32_t w,
                   uint32_t h);
+
+/**
+ * push all pending drawing to the visible framebuffer.
+ *
+ * when a back buffer is in use, drawing ops render into RAM and mark dirty
+ * scanlines; this copies the dirty range out to the (slow, uncached) linear
+ * framebuffer in one pass. cheap to call after every batch of output. a no-op
+ * when running unbuffered.
+ */
+void fb_flush(void);

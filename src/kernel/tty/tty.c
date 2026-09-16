@@ -412,6 +412,11 @@ void tty_putchar(tty_t *tty, char c)
         be->get_cursor(&row, &col);
         be->draw_cursor(row, col, true);
     }
+
+    if (be->flush)
+    {
+        be->flush();
+    }
 }
 
 void tty_write(tty_t *tty, const char *str)

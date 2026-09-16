@@ -56,6 +56,11 @@ static void fb_be_draw_cursor(uint8_t row, uint8_t col, bool visible)
     fb_text_draw_cursor(row, col, visible);
 }
 
+static void fb_be_flush(void)
+{
+    fb_flush();
+}
+
 const tty_backend_t *fb_console_backend(void)
 {
     // bring up the text grid (native scale, small margin), then describe it to
@@ -70,8 +75,12 @@ const tty_backend_t *fb_console_backend(void)
     fb_backend.get_cursor = fb_be_get_cursor;
     fb_backend.set_colors = fb_be_set_colors;
     fb_backend.draw_cursor = fb_be_draw_cursor;
+    fb_backend.flush = fb_be_flush;
     fb_backend.rows = fb_text_rows();
     fb_backend.cols = fb_text_cols();
+
+    // the init-time clear rendered into the back buffer; push it to screen.
+    fb_flush();
 
     return &fb_backend;
 }
