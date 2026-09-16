@@ -1,4 +1,4 @@
-# Makefile for ze (zen editor) — ginnOS userspace build
+# Makefile for ze (zen editor) ginnOS userspace build
 #
 # Builds ze from the zen-editor source tree (included as a git submodule).
 # After cloning ginnOS, run: git submodule update --init
