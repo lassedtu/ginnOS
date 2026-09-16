@@ -1,11 +1,15 @@
 ; paging assembly helpers for x86.
-; provides CR3 load, TLB invalidation, and CR2 read.
+; keeps every raw control-register access in one place so the portable
+; paging.c never has to reach for inline assembly. provides CR3 load/switch,
+; CR0 read, TLB invalidation, and CR2 read.
 
 BITS 32
 
 global paging_flush
 global paging_invalidate
 global paging_read_cr2
+global paging_read_cr0
+global paging_load_cr3
 
 
 ; void paging_flush(uint32_t page_directory_phys)
@@ -42,5 +46,29 @@ paging_invalidate:
 paging_read_cr2:
 
     mov eax, cr2        ; read faulting address
+
+    ret
+
+
+; uint32_t paging_read_cr0(void)
+; returns the current value of CR0 (so callers can test the PG bit).
+
+paging_read_cr0:
+
+    mov eax, cr0        ; read current CR0
+
+    ret
+
+
+; void paging_load_cr3(uint32_t page_directory_phys)
+; swaps the active page directory without touching CR0. use this to change
+; address spaces once paging is already on; paging_flush is only for the
+; initial enable, since it also sets the PG bit.
+
+paging_load_cr3:
+
+    mov eax, [esp + 4]  ; page directory physical address
+
+    mov cr3, eax        ; load page directory into CR3
 
     ret

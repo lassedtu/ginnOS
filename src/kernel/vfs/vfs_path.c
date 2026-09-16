@@ -1,8 +1,9 @@
 #include "vfs.h"
 
-#include "../../common/string.h"
+#include "common/string.h"
 
-static FS_MOUNT *root_mount = 0; // pointer to the root filesystem mount structure, initialized during kernel startup
+// maximum depth of path components supported during normalization.
+#define VFS_MAX_PATH_COMPONENTS 128
 
 /**
  * normalize an absolute path by resolving '.' and '..' components.
@@ -19,7 +20,7 @@ static bool vfs_normalize_absolute_path(
     uint32_t i;
     uint32_t out_pos;
     uint32_t depth;
-    uint32_t component_start[128];
+    uint32_t component_start[VFS_MAX_PATH_COMPONENTS];
 
     if (!input || !output || size < 2)
     {
@@ -83,7 +84,7 @@ static bool vfs_normalize_absolute_path(
             continue;
         }
 
-        if (depth >= (uint32_t)(sizeof(component_start) / sizeof(component_start[0])))
+        if (depth >= VFS_MAX_PATH_COMPONENTS)
         {
             return false;
         }
@@ -114,98 +115,6 @@ static bool vfs_normalize_absolute_path(
     }
 
     return true;
-}
-
-bool vfs_mount_root(FS_MOUNT *mount)
-{
-    if (!mount || !mount->is_mounted)
-    {
-        return false;
-    }
-
-    root_mount = mount;
-
-    return true;
-}
-
-bool vfs_open(
-    const char *path,
-    VFS_FILE *file)
-{
-    if (!root_mount || !file || !path)
-        return false;
-
-    if (!fs_open(
-            root_mount,
-            path,
-            &file->file))
-    {
-        file->mount = 0;
-        return false;
-    }
-
-    file->mount = root_mount;
-    return true;
-}
-
-bool vfs_create(const char *path)
-{
-    if (!root_mount || !path)
-    {
-        return false;
-    }
-
-    return fs_create(root_mount, path);
-}
-
-bool vfs_mkdir(const char *path)
-{
-    if (!root_mount || !path)
-    {
-        return false;
-    }
-
-    return fs_mkdir(root_mount, path);
-}
-
-bool vfs_remove(const char *path)
-{
-    if (!root_mount || !path)
-    {
-        return false;
-    }
-
-    return fs_remove(root_mount, path);
-}
-
-bool vfs_rmdir(const char *path)
-{
-    if (!root_mount || !path)
-    {
-        return false;
-    }
-
-    return fs_rmdir(root_mount, path);
-}
-
-bool vfs_rename(const char *old_path, const char *new_path)
-{
-    if (!root_mount || !old_path || !new_path)
-    {
-        return false;
-    }
-
-    return fs_rename(root_mount, old_path, new_path);
-}
-
-VFS_STATUS vfs_stat(const char *path, VFS_STAT *stat_out)
-{
-    if (!root_mount || !path || !stat_out)
-    {
-        return VFS_IO_ERROR;
-    }
-
-    return (VFS_STATUS)fs_stat(root_mount, path, stat_out);
 }
 
 bool vfs_resolve_path(
@@ -372,81 +281,4 @@ bool vfs_join_path(
 
     out[pos] = '\0';
     return true;
-}
-
-uint32_t vfs_read(
-    VFS_FILE *file,
-    uint32_t size,
-    void *buffer)
-{
-    if (!file || !file->mount)
-    {
-        return 0;
-    }
-
-    return fs_read(
-        &file->file,
-        size,
-        buffer);
-}
-
-uint32_t vfs_write(
-    VFS_FILE *file,
-    uint32_t size,
-    const void *buffer)
-{
-    if (!file || !file->mount)
-    {
-        return 0;
-    }
-
-    return fs_write(
-        &file->file,
-        size,
-        buffer);
-}
-
-bool vfs_truncate(VFS_FILE *file)
-{
-    if (!file || !file->mount)
-    {
-        return false;
-    }
-
-    return fs_truncate(&file->file);
-}
-
-bool vfs_read_entry(
-    VFS_FILE *file,
-    FS_DIRENT *entryOut)
-{
-    if (!file || !file->mount || !entryOut)
-    {
-        return false;
-    }
-
-    return fs_read_entry(&file->file, entryOut);
-}
-
-void vfs_close(
-    VFS_FILE *file)
-{
-    if (!file)
-    {
-        return;
-    }
-
-    fs_close(&file->file);
-    file->mount = 0;
-}
-
-uint8_t vfs_file_type(
-    VFS_FILE *file)
-{
-    if (!file || !file->mount)
-    {
-        return FS_TYPE_UNKNOWN;
-    }
-
-    return fs_file_type(&file->file);
 }

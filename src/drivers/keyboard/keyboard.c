@@ -8,11 +8,12 @@
 #include "keyboard.h"
 #include "keyboard_layout.h"
 
-#include "../../arch/x86/cpu/irq.h"
-#include "../../arch/x86/cpu/isr.h"
-#include "../../arch/x86/cpu/io.h"
-#include "../../arch/x86/cpu/pic.h"
-#include "../../common/stdint.h"
+#include "arch/arch.h"
+#include "kernel/irq/irq.h"
+#include "kernel/device/device.h"
+#include "arch/x86/cpu/io.h"
+#include "common/stdint.h"
+#include "common/string.h"
 
 #define KEYBOARD_BUFFER_SIZE 128 // number of events the ring buffer can hold
 
@@ -93,9 +94,10 @@ static void keyboard_buffer_push(keyboard_event_t event)
 /**
  * keyboard IRQ handler.
  */
-static void keyboard_irq_handler(struct registers *regs)
+static void keyboard_irq_handler(uint32_t irq, trap_frame_t *frame)
 {
-    (void)regs;
+    (void)irq;
+    (void)frame;
 
     uint8_t scancode = io_inb(0x60);
     const keyboard_layout_t *layout = keyboard_get_layout();
@@ -280,7 +282,7 @@ int keyboard_read_event(keyboard_event_t *event_out)
 void keyboard_wait_event(keyboard_event_t *event_out)
 {
     while (!keyboard_available())
-        __asm__ __volatile__("hlt");
+        arch_halt();
 
     keyboard_read_event(event_out);
 }
@@ -317,6 +319,15 @@ uint32_t keyboard_dropped_count(void)
 
 void keyboard_initialize(void)
 {
-    irq_register_handler(1, keyboard_irq_handler);
-    pic_unmask(1);
+    // register the keyboard handler on IRQ1; irq_request unmasks the line.
+    irq_request(1, keyboard_irq_handler, IRQ_FLAG_NONE, "keyboard");
+
+    // announce ourselves to the device registry.
+    static device_t keyboard_device;
+    strncpy(keyboard_device.name, "kbd", DEVICE_NAME_MAX - 1);
+    keyboard_device.name[DEVICE_NAME_MAX - 1] = '\0';
+    keyboard_device.type = DEVICE_TYPE_INPUT;
+    keyboard_device.ops = 0;
+    keyboard_device.driver_data = 0;
+    device_register(&keyboard_device);
 }

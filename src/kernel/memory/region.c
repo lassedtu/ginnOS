@@ -1,7 +1,7 @@
 #include "region.h"
 
-#include "../panic.h"
-#include "../../common/stdio.h"
+#include "kernel/panic.h"
+#include "common/stdio.h"
 
 static region_entry_t region_table[REGION_TABLE_MAX];
 static uint32_t region_table_count = 0;

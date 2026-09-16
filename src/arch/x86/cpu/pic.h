@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../../common/stdint.h"
+#include "common/stdint.h"
 
 /**
  * configure the 8259A PIC.

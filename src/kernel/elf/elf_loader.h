@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../common/stdint.h"
+#include "common/stdint.h"
 
 // result of a failed ELF load.
 #define ELF_LOAD_FAILED 0

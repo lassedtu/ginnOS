@@ -1,0 +1,4 @@
+# aarch64 architecture port (not yet implemented)
+
+this directory will contain the aarch64 implementation of
+the arch-neutral interface defined in src/arch/arch.h.

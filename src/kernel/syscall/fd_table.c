@@ -1,6 +1,6 @@
 #include "fd_table.h"
-#include "../process/process.h"
-#include "../../common/memory.h"
+#include "kernel/process/process.h"
+#include "common/memory.h"
 
 // system-wide pipe buffer pool
 static pipe_buf_t pipe_pool[PIPE_MAX];
@@ -16,7 +16,7 @@ void fd_table_init(void)
     }
 }
 
-int fd_alloc(VFS_FILE *file)
+int fd_alloc(vfs_file_t *file)
 {
     process_t *proc = process_current();
     if (!proc)
@@ -43,17 +43,17 @@ fd_entry_t *fd_get(int fd)
     process_t *proc = process_current();
     if (!proc)
     {
-        return (void *)0;
+        return NULL;
     }
 
     if (fd < 0 || fd >= FD_MAX)
     {
-        return (void *)0;
+        return NULL;
     }
 
     if (proc->fds[fd].type == FD_TYPE_NONE)
     {
-        return (void *)0;
+        return NULL;
     }
 
     return &proc->fds[fd];
@@ -87,9 +87,20 @@ int fd_free(int fd)
         pipe_dir_t dir = proc->fds[fd].pipe.dir;
 
         if (dir == PIPE_READ)
+        {
             buf->read_refs--;
+            // last reader gone: wake blocked writers so they see EPIPE
+            // instead of waiting forever for space that will never be read.
+            if (buf->read_refs <= 0)
+                wait_queue_wake_all(&buf->writers);
+        }
         else
+        {
             buf->write_refs--;
+            // last writer gone: wake blocked readers so they observe EOF.
+            if (buf->write_refs <= 0)
+                wait_queue_wake_all(&buf->readers);
+        }
 
         buf->ref_count--;
         if (buf->ref_count <= 0)
@@ -112,10 +123,12 @@ pipe_buf_t *pipe_alloc(void)
             pipe_pool[i].read_refs = 1;
             pipe_pool[i].write_refs = 1;
             pipe_pool[i].ref_count = 2; // read end + write end
+            wait_queue_init(&pipe_pool[i].readers);
+            wait_queue_init(&pipe_pool[i].writers);
             return &pipe_pool[i];
         }
     }
-    return (void *)0;
+    return NULL;
 }
 
 void pipe_release(pipe_buf_t *buf)

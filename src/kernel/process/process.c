@@ -1,7 +1,7 @@
 #include "process.h"
-#include "../memory/pmm.h"
-#include "../../arch/x86/cpu/paging.h"
-#include "../../common/memory.h"
+#include "kernel/memory/pmm.h"
+#include "arch/arch.h"
+#include "common/memory.h"
 
 // the process table fixed array of PCBs.
 static process_t proc_table[PROCESS_MAX];
@@ -10,13 +10,13 @@ static process_t proc_table[PROCESS_MAX];
 static uint32_t next_pid = 1;
 
 // pointer to the currently running process.
-static process_t *current_process = (void *)0;
+static process_t *current_process = NULL;
 
 void process_init(void)
 {
     memset(proc_table, 0, sizeof(proc_table));
     next_pid = 1;
-    current_process = (void *)0;
+    current_process = NULL;
 }
 
 process_t *process_create(void)
@@ -40,19 +40,19 @@ process_t *process_create(void)
             void *stack_page = pmm_alloc_page();
             if (!stack_page)
             {
-                return (void *)0;
+                return NULL;
             }
             memset(stack_page, 0, KERNEL_STACK_SIZE);
             proc->kernel_stack = (uint32_t)stack_page;
             // ESP starts at the top of the stack (grows downward)
             proc->kernel_esp = (uint32_t)stack_page + KERNEL_STACK_SIZE;
 
-            // allocate a per-process page directory (clone kernel mappings)
-            uint32_t pd = paging_clone_directory();
-            if (pd == 0)
+            // allocate a per-process address space (shares kernel mappings)
+            uint32_t pd = arch_create_address_space();
+            if (pd == ADDR_SPACE_NONE)
             {
                 pmm_free_page(stack_page);
-                return (void *)0;
+                return NULL;
             }
             proc->page_directory = pd;
 
@@ -69,7 +69,7 @@ process_t *process_create(void)
         }
     }
 
-    return (void *)0; /* table full */
+    return NULL; /* table full */
 }
 
 process_t *process_current(void)
@@ -89,7 +89,11 @@ void process_destroy(process_t *proc)
         return;
     }
 
-    // close all open file descriptors (including pipes and fds 0-2)
+    // close all open file descriptors (including pipes and fds 0-2).
+    // note: this may run for a process that isn't the current one (a parent
+    // reaping a zombie child), so we can't use fd_free() here — it operates
+    // on process_current(). the pipe close logic is mirrored inline, plus a
+    // wake of the opposite end so no peer blocks forever on a dead process.
     for (int i = 0; i < FD_MAX; i++)
     {
         if (proc->fds[i].type == FD_TYPE_FILE)
@@ -103,9 +107,17 @@ void process_destroy(process_t *proc)
             pipe_dir_t dir = proc->fds[i].pipe.dir;
 
             if (dir == PIPE_READ)
+            {
                 buf->read_refs--;
+                if (buf->read_refs <= 0)
+                    wait_queue_wake_all(&buf->writers);
+            }
             else
+            {
                 buf->write_refs--;
+                if (buf->write_refs <= 0)
+                    wait_queue_wake_all(&buf->readers);
+            }
 
             buf->ref_count--;
             if (buf->ref_count <= 0)
@@ -122,10 +134,10 @@ void process_destroy(process_t *proc)
         proc->kernel_stack = 0;
     }
 
-    // free the per-process page directory (and user page tables/frames)
+    // free the per-process address space (and user page tables/frames)
     if (proc->page_directory)
     {
-        paging_free_directory(proc->page_directory);
+        arch_destroy_address_space(proc->page_directory);
         proc->page_directory = 0;
     }
 
@@ -137,7 +149,7 @@ process_t *process_get(uint32_t pid)
 {
     if (pid == PID_NONE)
     {
-        return (void *)0;
+        return NULL;
     }
 
     for (int i = 0; i < PROCESS_MAX; i++)
@@ -149,5 +161,5 @@ process_t *process_get(uint32_t pid)
         }
     }
 
-    return (void *)0;
+    return NULL;
 }

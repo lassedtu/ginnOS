@@ -2,9 +2,9 @@
 
 #include "pmm_layout.h"
 #include "region.h"
-#include "../panic.h"
-#include "../../common/memory.h"
-#include "../../common/stdio.h"
+#include "kernel/panic.h"
+#include "common/memory.h"
+#include "common/stdio.h"
 
 /**
  * bitmap where each bit represents a 4 KiB page frame.
@@ -134,7 +134,7 @@ void *pmm_alloc_page(void)
         }
     }
 
-    return (void *)0;
+    return NULL;
 }
 
 void pmm_free_page(void *address)

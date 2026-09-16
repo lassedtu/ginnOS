@@ -1,6 +1,6 @@
 #include "idt.h"
-#include "../../../common/stdint.h"
-#include "../../../kernel/assert.h"
+#include "common/stdint.h"
+#include "kernel/assert.h"
 
 /**
  * IDT entry structure.

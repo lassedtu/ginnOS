@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../common/stdint.h"
+#include "common/stdint.h"
 
 // syscall vector number (int 0x80)
 #define SYSCALL_VECTOR 0x80

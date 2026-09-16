@@ -1,16 +1,18 @@
 #include "paging.h"
 #include "isr.h"
 
-#include "../../../common/memory.h"
-#include "../../../common/stdio.h"
-#include "../../../kernel/memory/pmm.h"
-#include "../../../kernel/memory/pmm_layout.h"
-#include "../../../kernel/memory/region.h"
-#include "../../../kernel/panic.h"
+#include "common/memory.h"
+#include "common/stdio.h"
+#include "kernel/memory/pmm.h"
+#include "kernel/memory/pmm_layout.h"
+#include "kernel/memory/region.h"
+#include "kernel/panic.h"
 
 extern void paging_flush(uint32_t page_directory_phys);
 extern void paging_invalidate(uint32_t virtual_address);
 extern uint32_t paging_read_cr2(void);
+extern uint32_t paging_read_cr0(void);
+extern void paging_load_cr3(uint32_t page_directory_phys);
 
 #define PF_PRESENT 0x01u        /* 0 = not-present page, 1 = protection violation */
 #define PF_WRITE 0x02u          /* 0 = read access, 1 = write access */
@@ -207,6 +209,28 @@ uint32_t paging_get_physical(uint32_t virt)
     return PAGE_FRAME(table[tbl_index]) | (virt & 0xFFF);
 }
 
+uint32_t paging_get_physical_in(uint32_t pd_phys, uint32_t virt)
+{
+    uint32_t *dir = (uint32_t *)pd_phys;
+    uint32_t dir_index = PAGE_DIR_INDEX(virt);
+    uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
+    uint32_t *table;
+
+    if (!(dir[dir_index] & PDE_PRESENT))
+    {
+        return 0;
+    }
+
+    table = (uint32_t *)PAGE_FRAME(dir[dir_index]);
+
+    if (!(table[tbl_index] & PTE_PRESENT))
+    {
+        return 0;
+    }
+
+    return PAGE_FRAME(table[tbl_index]) | (virt & 0xFFF);
+}
+
 uint32_t paging_directory_address(void)
 {
     return kernel_directory_phys;
@@ -219,9 +243,8 @@ uint32_t paging_table_count(void)
 
 bool paging_is_enabled(void)
 {
-    uint32_t cr0;
-    __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
-    return (cr0 & 0x80000000u) != 0;
+    // bit 31 of CR0 is the paging-enable (PG) flag.
+    return (paging_read_cr0() & 0x80000000u) != 0;
 }
 
 // index boundary: entries 0–767 are user space, 768–1023 are kernel.
@@ -346,5 +369,6 @@ bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flag
 
 void paging_switch_directory(uint32_t pd_phys)
 {
-    __asm__ volatile("mov %0, %%cr3" : : "r"(pd_phys) : "memory");
+    // paging is already enabled here, so only CR3 changes; CR0 is left alone.
+    paging_load_cr3(pd_phys);
 }

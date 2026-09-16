@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../../common/stdint.h"
+#include "common/stdint.h"
 
 /**
  * saved register state pushed onto the stack by ISR stubs.

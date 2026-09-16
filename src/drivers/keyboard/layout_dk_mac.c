@@ -4,7 +4,7 @@
  */
 
 #include "keyboard_layout.h"
-#include "../../common/memory.h"
+#include "common/memory.h"
 
 // PS/2 scan code set 1 key positions:
 // 0x01=Esc  0x02=1  0x03=2  0x04=3  0x05=4  0x06=5  0x07=6  0x08=7

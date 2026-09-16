@@ -5,15 +5,16 @@
 /**
  * read blocks from a partition.
  */
-static bool partition_block_read(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, void *dest)
+static bool partition_block_read(block_device_t *device, uint32_t startBlock, uint8_t blockCount,
+                                 void *dest)
 {
-    PARTITION_DEVICE *part;
+    partition_device_t *part;
     if (!device || !device->context)
     {
         return false;
     }
 
-    part = (PARTITION_DEVICE *)device->context;
+    part = (partition_device_t *)device->context;
     if (!part->parent)
     {
         return false;
@@ -25,15 +26,16 @@ static bool partition_block_read(BLOCK_DEVICE *device, uint32_t startBlock, uint
 /**
  * write blocks to a partition.
  */
-static bool partition_block_write(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, const void *src)
+static bool partition_block_write(block_device_t *device, uint32_t startBlock, uint8_t blockCount,
+                                  const void *src)
 {
-    PARTITION_DEVICE *part;
+    partition_device_t *part;
     if (!device || !device->context)
     {
         return false;
     }
 
-    part = (PARTITION_DEVICE *)device->context;
+    part = (partition_device_t *)device->context;
     if (!part->parent)
     {
         return false;
@@ -42,7 +44,47 @@ static bool partition_block_write(BLOCK_DEVICE *device, uint32_t startBlock, uin
     return block_device_write(part->parent, part->start_lba + startBlock, blockCount, src);
 }
 
-bool PARTITION_Initialize(PARTITION_DEVICE *part, BLOCK_DEVICE *parent, uint32_t start_lba)
+/**
+ * flush the partition by flushing its parent device.
+ */
+static bool partition_block_flush(block_device_t *device)
+{
+    partition_device_t *part;
+    if (!device || !device->context)
+    {
+        return false;
+    }
+
+    part = (partition_device_t *)device->context;
+    if (!part->parent)
+    {
+        return false;
+    }
+
+    return block_device_flush(part->parent);
+}
+
+/**
+ * trim a range on the partition, translated into the parent's LBA space.
+ */
+static bool partition_block_trim(block_device_t *device, uint32_t startBlock, uint32_t blockCount)
+{
+    partition_device_t *part;
+    if (!device || !device->context)
+    {
+        return false;
+    }
+
+    part = (partition_device_t *)device->context;
+    if (!part->parent)
+    {
+        return false;
+    }
+
+    return block_device_trim(part->parent, part->start_lba + startBlock, blockCount);
+}
+
+bool partition_initialize(partition_device_t *part, block_device_t *parent, uint32_t start_lba)
 {
     if (!part || !parent)
     {
@@ -52,16 +94,25 @@ bool PARTITION_Initialize(PARTITION_DEVICE *part, BLOCK_DEVICE *parent, uint32_t
     part->parent = parent;
     part->start_lba = start_lba;
     part->block.bytes_per_block = parent->bytes_per_block;
+    // best-effort size: whatever of the parent lies past our start. the exact
+    // partition length isn't parsed here, so this is an upper bound.
+    part->block.total_blocks = (parent->total_blocks > start_lba)
+                                   ? (parent->total_blocks - start_lba)
+                                   : 0;
     part->block.context = part;
     part->block.read_blocks = partition_block_read;
     part->block.write_blocks = partition_block_write;
+    // forward cache/trim hints to the parent so callers can treat a partition
+    // like any other block device.
+    part->block.flush = partition_block_flush;
+    part->block.trim = partition_block_trim;
     return true;
 }
 
 /**
  * check if an EXT2 superblock exists at the given LBA on the parent block device.
  */
-static bool check_ext2_at_lba(BLOCK_DEVICE *parent, uint32_t lba)
+static bool check_ext2_at_lba(block_device_t *parent, uint32_t lba)
 {
     uint8_t buf[512];
     uint16_t magic;
@@ -77,7 +128,7 @@ static bool check_ext2_at_lba(BLOCK_DEVICE *parent, uint32_t lba)
     return magic == EXT2_SUPERBLOCK_MAGIC;
 }
 
-bool PARTITION_DetectExt2(PARTITION_DEVICE *part, BLOCK_DEVICE *parent)
+bool partition_detect_ext2(partition_device_t *part, block_device_t *parent)
 {
     uint8_t sector0[512];
     uint32_t mbr_lba;
@@ -90,33 +141,31 @@ bool PARTITION_DetectExt2(PARTITION_DEVICE *part, BLOCK_DEVICE *parent)
     // check MBR partition table at sector 0
     if (block_device_read(parent, 0, 1, sector0))
     {
-        mbr_lba = (uint32_t)sector0[0x1BE + 8] |
-                  ((uint32_t)sector0[0x1BE + 9] << 8) |
-                  ((uint32_t)sector0[0x1BE + 10] << 16) |
-                  ((uint32_t)sector0[0x1BE + 11] << 24);
+        mbr_lba = (uint32_t)sector0[0x1BE + 8] | ((uint32_t)sector0[0x1BE + 9] << 8) |
+                  ((uint32_t)sector0[0x1BE + 10] << 16) | ((uint32_t)sector0[0x1BE + 11] << 24);
 
         if (mbr_lba > 0 && check_ext2_at_lba(parent, mbr_lba))
         {
-            return PARTITION_Initialize(part, parent, mbr_lba);
+            return partition_initialize(part, parent, mbr_lba);
         }
     }
 
     // check candidate LBAs: 63 (standard MBR offset), 2048 (1MB alignment), 0 (raw)
     if (check_ext2_at_lba(parent, 63u))
     {
-        return PARTITION_Initialize(part, parent, 63u);
+        return partition_initialize(part, parent, 63u);
     }
 
     if (check_ext2_at_lba(parent, 2048u))
     {
-        return PARTITION_Initialize(part, parent, 2048u);
+        return partition_initialize(part, parent, 2048u);
     }
 
     if (check_ext2_at_lba(parent, 0u))
     {
-        return PARTITION_Initialize(part, parent, 0u);
+        return partition_initialize(part, parent, 0u);
     }
 
     // fallback: initialize at offset 0
-    return PARTITION_Initialize(part, parent, 0u);
+    return partition_initialize(part, parent, 0u);
 }

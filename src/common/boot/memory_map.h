@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../stdint.h"
+#include "common/stdint.h"
 
 /**
  * structure representing a single memory region in the system's memory map.

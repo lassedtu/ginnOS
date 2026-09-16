@@ -1,8 +1,9 @@
 #pragma once
 
-#include "../../common/stdint.h"
-#include "../../drivers/disk/block_device.h"
-#include "../../fs/ext2/ext2.h"
+#include "common/stdint.h"
+#include "common/error.h"
+#include "drivers/disk/block_device.h"
+#include "fs/ext2/ext2.h"
 
 /**
  * file system types
@@ -15,40 +16,63 @@ enum
 };
 
 /**
- * filesystem operation status codes.
+ * filesystem operations vtable.
+ *
+ * each filesystem type (ext2 today; procfs/tmpfs/FAT32 later) provides one of
+ * these so the generic fs_* layer never names a concrete filesystem. a mount
+ * points at its filesystem's ops; every open file carries the same pointer so
+ * file-level calls dispatch without consulting the mount again.
+ *
+ * mount is the only entry point that is not in the vtable: fs_mount() selects
+ * the filesystem (currently always ext2) and installs its ops.
  */
-typedef enum
+typedef struct fs_mount fs_mount_t;
+typedef struct fs_file fs_file_t;
+typedef struct fs_dirent fs_dirent_t;
+typedef struct fs_stat fs_stat_t;
+
+typedef struct
 {
-    FS_OK = 0,                // operation completed successfully
-    FS_NOT_FOUND = 1,         // file or directory not found
-    FS_PERMISSION_DENIED = 2, // permission denied for the operation
-    FS_IO_ERROR = 3,          // I/O error occurred during the operation
-} FS_STATUS;
+    kerr_t (*open)(fs_mount_t *mount, const char *path, fs_file_t *file);
+    kerr_t (*create)(fs_mount_t *mount, const char *path);
+    kerr_t (*mkdir)(fs_mount_t *mount, const char *path);
+    kerr_t (*remove)(fs_mount_t *mount, const char *path);
+    kerr_t (*rmdir)(fs_mount_t *mount, const char *path);
+    kerr_t (*rename)(fs_mount_t *mount, const char *old_path, const char *new_path);
+    kerr_t (*stat)(fs_mount_t *mount, const char *path, fs_stat_t *stat_out);
+
+    uint32_t (*read)(fs_file_t *file, uint32_t byte_count, void *data_out);
+    uint32_t (*write)(fs_file_t *file, uint32_t byte_count, const void *data_in);
+    kerr_t (*truncate)(fs_file_t *file);
+    kerr_t (*read_entry)(fs_file_t *file, fs_dirent_t *entry_out);
+    void (*close)(fs_file_t *file);
+} fs_ops_t;
 
 /**
  * directory entry structure for reading directory contents.
  */
-typedef struct
+struct fs_dirent
 {
     uint32_t inode;    // inode number of the file or directory
     uint8_t file_type; // type of the file
     uint32_t size;     // size of the file in bytes
-    char name[256];    // null-terminated name of the file or directory (max 255 characters)
-} FS_DIRENT;
+    char name[EXT2_NAME_MAX]; // null-terminated name of the file or directory (max 255 characters)
+};
 
 /**
  * filesystem mount structure representing a mounted filesystem.
  */
-typedef struct
+struct fs_mount
 {
-    EXT2_VOLUME ext2;   // embedded EXT2_VOLUME representing the mounted filesystem (not a pointer)
+    const fs_ops_t *ops;  // filesystem operations vtable (set by fs_mount)
+    ext2_volume_t ext2;   // embedded ext2_volume_t representing the mounted filesystem (not a pointer)
     uint8_t is_mounted; // flag indicating whether the filesystem is successfully mounted (1 for mounted, 0 for not mounted)
-} FS_MOUNT;
+};
 
 /**
  * filesystem metadata structure returned by stat.
  */
-typedef struct
+struct fs_stat
 {
     uint32_t inode;
     uint8_t file_type;
@@ -59,17 +83,18 @@ typedef struct
     uint32_t atime;
     uint32_t mtime;
     uint32_t ctime;
-} FS_STAT;
+};
 
 /**
  * file handle structure representing an open file or directory.
  */
-typedef struct
+struct fs_file
 {
-    EXT2_FILE ext2_file; // embedded EXT2_FILE representing the open file or directory (not a pointer)
+    const fs_ops_t *ops;   // vtable of the filesystem this file belongs to
+    ext2_file_t ext2_file; // embedded ext2_file_t representing the open file or directory (not a pointer)
     uint8_t file_type;   // type of the file (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN)
     uint8_t is_open;     // flag indicating whether the file is open (1 for open, 0 for closed)
-} FS_FILE;
+};
 
 /**
  * mount a filesystem on a block device.
@@ -77,66 +102,66 @@ typedef struct
  * @param device initialized block device backend.
  * @return true on success. false on failure.
  */
-bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device);
+bool fs_mount(fs_mount_t *mount, block_device_t *device);
 
 /**
  * open a file or directory by absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the file or directory.
  * @param file output file handle.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file);
+kerr_t fs_open(fs_mount_t *mount, const char *path, fs_file_t *file);
 
 /**
  * create a regular file at an absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the new file.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_create(FS_MOUNT *mount, const char *path);
+kerr_t fs_create(fs_mount_t *mount, const char *path);
 
 /**
  * create a directory at an absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the new directory.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_mkdir(FS_MOUNT *mount, const char *path);
+kerr_t fs_mkdir(fs_mount_t *mount, const char *path);
 
 /**
  * remove a file at an absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the file to remove.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_remove(FS_MOUNT *mount, const char *path);
+kerr_t fs_remove(fs_mount_t *mount, const char *path);
 
 /**
  * remove a directory at an absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the directory to remove.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_rmdir(FS_MOUNT *mount, const char *path);
+kerr_t fs_rmdir(fs_mount_t *mount, const char *path);
 
 /**
  * rename a file or directory.
  * @param mount initialized filesystem mount.
  * @param old_path absolute path to the existing file or directory.
  * @param new_path absolute path to the new name for the file or directory.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path);
+kerr_t fs_rename(fs_mount_t *mount, const char *old_path, const char *new_path);
 
 /**
  * stat a file or directory by absolute path.
  * @param mount initialized filesystem mount.
  * @param path absolute path to the file or directory.
  * @param stat_out output stat structure.
- * @return FS_OK on success, or an error code on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-FS_STATUS fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out);
+kerr_t fs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out);
 
 /**
  * read bytes from an open file into a buffer.
@@ -145,7 +170,7 @@ FS_STATUS fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out);
  * @param dataOut destination buffer.
  * @return number of bytes actually read.
  */
-uint32_t fs_read(FS_FILE *file, uint32_t byteCount, void *dataOut);
+uint32_t fs_read(fs_file_t *file, uint32_t byteCount, void *dataOut);
 
 /**
  * write bytes to an open file.
@@ -154,33 +179,33 @@ uint32_t fs_read(FS_FILE *file, uint32_t byteCount, void *dataOut);
  * @param dataIn source buffer.
  * @return number of bytes actually written, or 0 on failure.
  */
-uint32_t fs_write(FS_FILE *file, uint32_t byteCount, const void *dataIn);
+uint32_t fs_write(fs_file_t *file, uint32_t byteCount, const void *dataIn);
 
 /**
  * truncate an open file to zero length.
  * @param file open file handle.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_truncate(FS_FILE *file);
+kerr_t fs_truncate(fs_file_t *file);
 
 /**
  * read a directory entry from an open directory file.
  * @param file open directory file handle.
  * @param entryOut output directory entry.
- * @return true on success. false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool fs_read_entry(FS_FILE *file, FS_DIRENT *entryOut);
+kerr_t fs_read_entry(fs_file_t *file, fs_dirent_t *entryOut);
 
 /**
  * close an open file or directory.
  * @param file open file handle to close.
  * @return void
  */
-void fs_close(FS_FILE *file);
+void fs_close(fs_file_t *file);
 
 /**
  * get the type of an open file or directory.
  * @param file open file handle.
  * @return file type (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN).
  */
-uint8_t fs_file_type(const FS_FILE *file);
+uint8_t fs_file_type(const fs_file_t *file);

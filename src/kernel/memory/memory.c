@@ -1,6 +1,14 @@
-#include "../../common/stdint.h"
-#include "../../common/stdio.h"
-#include "../../common/boot/boot_info.h"
+#include "common/stdint.h"
+#include "common/stdio.h"
+#include "common/boot/boot_info.h"
+
+// lock the layout that stage2 assembly fills in by hand (main.asm). if any of
+// these ever fail, the asm offsets and the C struct have drifted apart and the
+// kernel would read the memory map from the wrong place.
+_Static_assert(__builtin_offsetof(boot_info_t, boot_drive) == 0, "boot_drive @ 0");
+_Static_assert(__builtin_offsetof(boot_info_t, memory_map) == 4, "memory_map @ 4");
+_Static_assert(__builtin_offsetof(memory_map_t, regions) == 4, "regions @ 4");
+_Static_assert(sizeof(memory_region_t) == 20, "region is 20 bytes");
 
 void memory_print_map(boot_info_t *boot)
 {

@@ -1,64 +1,26 @@
 #include "fs.h"
-#include "../../common/memory.h"
+#include "ext2_ops.h"
 
 /**
- * map EXT2 file type to FS file type.
- * @param ext2_type EXT2 file type value.
- * @return corresponding FS file type value.
+ * @file fs.c
+ * @brief generic filesystem layer.
+ *
+ * fs_* dispatches through the mounted filesystem's operations vtable
+ * (fs_ops_t) and never names a concrete filesystem. fs_mount() is the one
+ * place that picks a filesystem implementation; today that is always ext2,
+ * but adding another means providing its own fs_ops_t and selecting it here.
  */
-static uint8_t map_ext2_file_type(uint8_t ext2_type)
-{
-    if (ext2_type == EXT2_FT_REG_FILE)
-    {
-        return FS_TYPE_FILE;
-    }
 
-    if (ext2_type == EXT2_FT_DIR)
-    {
-        return FS_TYPE_DIR;
-    }
-
-    return FS_TYPE_UNKNOWN;
-}
-
-static uint8_t map_inode_type(uint16_t mode)
-{
-    if ((mode & EXT2_S_IFMT) == EXT2_S_IFREG)
-    {
-        return FS_TYPE_FILE;
-    }
-
-    if ((mode & EXT2_S_IFMT) == EXT2_S_IFDIR)
-    {
-        return FS_TYPE_DIR;
-    }
-
-    return FS_TYPE_UNKNOWN;
-}
-
-static FS_STATUS map_ext2_status(EXT2_STATUS status)
-{
-    switch (status)
-    {
-    case EXT2_OK:
-        return FS_OK;
-    case EXT2_NOT_FOUND:
-        return FS_NOT_FOUND;
-    case EXT2_PERMISSION_DENIED:
-        return FS_PERMISSION_DENIED;
-    default:
-        return FS_IO_ERROR;
-    }
-}
-
-bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device)
+bool fs_mount(fs_mount_t *mount, block_device_t *device)
 {
     if (!mount || !device)
     {
         return false;
     }
 
-    if (!EXT2_Initialize(&mount->ext2, device))
+    // ext2 is the only filesystem for now; this is where a future mount would
+    // probe the device and choose between ext2/FAT32/etc.
+    if (kerr_failed(ext2_ops_mount(mount, device)))
     {
         return false;
     }
@@ -67,172 +29,141 @@ bool fs_mount(FS_MOUNT *mount, BLOCK_DEVICE *device)
     return true;
 }
 
-bool fs_open(FS_MOUNT *mount, const char *path, FS_FILE *file)
+kerr_t fs_open(fs_mount_t *mount, const char *path, fs_file_t *file)
 {
+    kerr_t err;
+
     if (!mount || !file || !path || !mount->is_mounted)
     {
-        return false;
+        return KERR_INVAL;
     }
 
-    if (!EXT2_Open(&mount->ext2, path, &file->ext2_file))
+    err = mount->ops->open(mount, path, file);
+    if (kerr_failed(err))
     {
-        return false;
+        return err;
     }
 
-    file->file_type = map_ext2_file_type(file->ext2_file.file_type);
+    // remember which filesystem this file lives on so file-level calls
+    // dispatch without needing the mount again.
+    file->ops = mount->ops;
     file->is_open = 1;
-    return true;
+    return KERR_OK;
 }
 
-bool fs_create(FS_MOUNT *mount, const char *path)
+kerr_t fs_create(fs_mount_t *mount, const char *path)
 {
     if (!mount || !path || !mount->is_mounted)
     {
-        return false;
+        return KERR_INVAL;
     }
 
-    return EXT2_CreateFile(&mount->ext2, path);
+    return mount->ops->create(mount, path);
 }
 
-bool fs_mkdir(FS_MOUNT *mount, const char *path)
+kerr_t fs_mkdir(fs_mount_t *mount, const char *path)
 {
     if (!mount || !path || !mount->is_mounted)
     {
-        return false;
+        return KERR_INVAL;
     }
 
-    return EXT2_CreateDir(&mount->ext2, path);
+    return mount->ops->mkdir(mount, path);
 }
 
-bool fs_remove(FS_MOUNT *mount, const char *path)
+kerr_t fs_remove(fs_mount_t *mount, const char *path)
 {
     if (!mount || !path || !mount->is_mounted)
     {
-        return false;
+        return KERR_INVAL;
     }
 
-    return EXT2_RemoveFile(&mount->ext2, path);
+    return mount->ops->remove(mount, path);
 }
 
-bool fs_rmdir(FS_MOUNT *mount, const char *path)
+kerr_t fs_rmdir(fs_mount_t *mount, const char *path)
 {
     if (!mount || !path || !mount->is_mounted)
     {
-        return false;
+        return KERR_INVAL;
     }
 
-    return EXT2_RemoveDir(&mount->ext2, path);
+    return mount->ops->rmdir(mount, path);
 }
 
-bool fs_rename(FS_MOUNT *mount, const char *old_path, const char *new_path)
+kerr_t fs_rename(fs_mount_t *mount, const char *old_path, const char *new_path)
 {
     if (!mount || !old_path || !new_path || !mount->is_mounted)
     {
-        return false;
+        return KERR_INVAL;
     }
 
-    return EXT2_Rename(&mount->ext2, old_path, new_path);
+    return mount->ops->rename(mount, old_path, new_path);
 }
 
-FS_STATUS fs_stat(FS_MOUNT *mount, const char *path, FS_STAT *stat_out)
+kerr_t fs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
 {
-    uint32_t inode_number;
-    EXT2_INODE inode;
-    EXT2_STATUS lookup_status;
-
     if (!mount || !path || !stat_out || !mount->is_mounted)
     {
-        return FS_IO_ERROR;
+        return KERR_INVAL;
     }
 
-    lookup_status = EXT2_LookupPath(&mount->ext2, path, &inode_number);
-    if (lookup_status != EXT2_OK)
-    {
-        return map_ext2_status(lookup_status);
-    }
-
-    if (!EXT2_ReadInode(&mount->ext2, inode_number, &inode))
-    {
-        return FS_IO_ERROR;
-    }
-
-    stat_out->inode = inode_number;
-    stat_out->file_type = map_inode_type(inode.i_mode);
-    stat_out->mode = inode.i_mode;
-    stat_out->links_count = inode.i_links_count;
-    stat_out->size = inode.i_size;
-    stat_out->blocks = inode.i_blocks;
-    stat_out->atime = inode.i_atime;
-    stat_out->mtime = inode.i_mtime;
-    stat_out->ctime = inode.i_ctime;
-    return FS_OK;
+    return mount->ops->stat(mount, path, stat_out);
 }
 
-uint32_t fs_read(FS_FILE *file, uint32_t byteCount, void *dataOut)
+uint32_t fs_read(fs_file_t *file, uint32_t byteCount, void *dataOut)
 {
     if (!file || !file->is_open)
     {
         return 0;
     }
 
-    return EXT2_Read(&file->ext2_file, byteCount, dataOut);
+    return file->ops->read(file, byteCount, dataOut);
 }
 
-uint32_t fs_write(FS_FILE *file, uint32_t byteCount, const void *dataIn)
+uint32_t fs_write(fs_file_t *file, uint32_t byteCount, const void *dataIn)
 {
     if (!file || !file->is_open)
     {
         return 0;
     }
 
-    return EXT2_Write(&file->ext2_file, byteCount, dataIn);
+    return file->ops->write(file, byteCount, dataIn);
 }
 
-bool fs_truncate(FS_FILE *file)
+kerr_t fs_truncate(fs_file_t *file)
 {
     if (!file || !file->is_open)
     {
-        return false;
+        return KERR_INVAL;
     }
 
-    EXT2_Truncate(&file->ext2_file);
-    return true;
+    return file->ops->truncate(file);
 }
 
-bool fs_read_entry(FS_FILE *file, FS_DIRENT *entryOut)
+kerr_t fs_read_entry(fs_file_t *file, fs_dirent_t *entryOut)
 {
-    EXT2_DIRECTORY_ENTRY ext2_entry;
-
     if (!file || !entryOut || !file->is_open)
     {
-        return false;
+        return KERR_INVAL;
     }
 
-    if (!EXT2_ReadEntry(&file->ext2_file, &ext2_entry))
-    {
-        return false;
-    }
-
-    entryOut->inode = ext2_entry.inode;
-    entryOut->file_type = map_ext2_file_type(ext2_entry.file_type);
-    entryOut->size = ext2_entry.size;
-    memcpy(entryOut->name, ext2_entry.name, sizeof(entryOut->name));
-    return true;
+    return file->ops->read_entry(file, entryOut);
 }
 
-void fs_close(FS_FILE *file)
+void fs_close(fs_file_t *file)
 {
-    if (!file)
+    if (!file || !file->is_open)
     {
         return;
     }
 
-    EXT2_Close(&file->ext2_file);
+    file->ops->close(file);
     file->is_open = 0;
     file->file_type = FS_TYPE_UNKNOWN;
 }
 
-uint8_t fs_file_type(const FS_FILE *file)
+uint8_t fs_file_type(const fs_file_t *file)
 {
     if (!file)
     {

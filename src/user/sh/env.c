@@ -75,13 +75,13 @@ int env_set(const char *key, const char *value)
 const char *env_get(const char *key)
 {
     if (!key)
-        return (const char *)0;
+        return NULL;
 
     int idx = env_find(key);
     if (idx >= 0)
         return env_table[idx].value;
 
-    return (const char *)0;
+    return NULL;
 }
 
 int env_unset(const char *key)

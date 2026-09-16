@@ -1,6 +1,6 @@
-#include "../include/stdio.h"
-#include "../include/unistd.h"
-#include "../include/string.h"
+#include "stdio.h"
+#include "unistd.h"
+#include "string.h"
 
 /**
  * @file stdio.c

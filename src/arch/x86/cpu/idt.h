@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../../common/stdint.h"
+#include "common/stdint.h"
 
 /**
  * IDT gate type and attribute flags.

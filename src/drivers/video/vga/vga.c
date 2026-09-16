@@ -1,6 +1,6 @@
 #include "vga.h"
 
-#include "../../../arch/x86/cpu/io.h"
+#include "arch/x86/cpu/io.h"
 
 #define VGA_TEXT_BUFFER ((volatile uint16_t *)0xB8000)
 

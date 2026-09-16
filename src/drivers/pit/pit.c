@@ -1,9 +1,10 @@
 #include "pit.h"
 
-#include "../../arch/x86/cpu/io.h"
-#include "../../arch/x86/cpu/irq.h"
-#include "../../arch/x86/cpu/pic.h"
-#include "../../kernel/scheduler/scheduler.h"
+#include "arch/x86/cpu/io.h"
+#include "kernel/irq/irq.h"
+#include "kernel/device/device.h"
+#include "kernel/scheduler/scheduler.h"
+#include "common/string.h"
 
 enum
 {
@@ -26,9 +27,10 @@ static volatile uint64_t ticks = 0; // number of PIT interrupts since initializa
  * PIT interrupt handler
  * increments the tick count and notifies the scheduler.
  */
-static void pit_irq_handler(struct registers *regs)
+static void pit_irq_handler(uint32_t irq, trap_frame_t *frame)
 {
-    (void)regs;
+    (void)irq;
+    (void)frame;
 
     ticks++;
     scheduler_tick();
@@ -40,7 +42,7 @@ void pit_initialize(uint32_t frequency)
 
     if (frequency == 0)
     {
-        frequency = 100;
+        frequency = PIT_FREQUENCY_HZ;
     }
 
     /* if frequency is very small (e.g. 1 Hz), PIT_INPUT_FREQUENCY / frequency
@@ -50,11 +52,8 @@ void pit_initialize(uint32_t frequency)
         raw_divisor = 0xFFFF;
     divisor = (uint16_t)raw_divisor;
 
-    // register IRQ0 handler
-    irq_register_handler(0, pit_irq_handler);
-
-    // enable IRQ0 on PIC
-    pic_unmask(0);
+    // register the timer handler on IRQ0; irq_request unmasks the line.
+    irq_request(0, pit_irq_handler, IRQ_FLAG_NONE, "pit");
 
     uint8_t command =
         PIT_COMMAND_CHANNEL0 |
@@ -66,6 +65,15 @@ void pit_initialize(uint32_t frequency)
 
     io_outb(PIT_CHANNEL0_DATA, divisor & 0xFF);
     io_outb(PIT_CHANNEL0_DATA, divisor >> 8);
+
+    // announce ourselves to the device registry.
+    static device_t pit_device;
+    strncpy(pit_device.name, "pit", DEVICE_NAME_MAX - 1);
+    pit_device.name[DEVICE_NAME_MAX - 1] = '\0';
+    pit_device.type = DEVICE_TYPE_TIMER;
+    pit_device.ops = 0;
+    pit_device.driver_data = 0;
+    device_register(&pit_device);
 }
 
 /**

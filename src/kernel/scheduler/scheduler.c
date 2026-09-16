@@ -1,69 +1,143 @@
 #include "scheduler.h"
-#include "../process/process.h"
-#include "../../arch/x86/cpu/gdt.h"
-#include "../../arch/x86/cpu/paging.h"
-#include "../../common/memory.h"
+#include "kernel/process/process.h"
+#include "arch/arch.h"
+#include "arch/arch_context.h"
+#include "arch/x86/cpu/gdt.h"
+#include "common/memory.h"
 
-/**
- * context_switch defined in context_switch.asm.
- * saves current state on old stack, switches to new stack.
- */
-extern void context_switch(uint32_t *old_esp, uint32_t new_esp);
-
-// simple circular ready queue (ring buffer of process pointers).
-#define READY_QUEUE_SIZE PROCESS_MAX
-
-static process_t *ready_queue[READY_QUEUE_SIZE];
-static int queue_head = 0; // next slot to dequeue from
-static int queue_tail = 0; // next slot to enqueue into
-static int queue_count = 0;
+// doubly-linked intrusive ready queue (head and tail).
+static process_t *queue_head;
+static process_t *queue_tail;
+static uint32_t queue_count;
 
 // remaining ticks before forcing a context switch.
-static uint32_t ticks_remaining = SCHED_TIME_SLICE;
+static uint32_t ticks_remaining;
 
 // flag: scheduler is active (set after first process is scheduled).
-static int scheduler_active = 0;
+static int scheduler_active;
+
+// idle process: runs when no other process is ready.
+static process_t idle_proc;
+static uint8_t idle_stack[KERNEL_STACK_SIZE] __attribute__((aligned(4)));
 
 /**
- * enqueue a process into the ready queue.
+ * idle loop: halts the CPU until the next interrupt.
+ * runs as a regular scheduled process with the lowest implicit priority
+ * (it's only selected when the ready queue is empty).
+ */
+static void idle_entry(void)
+{
+    for (;;)
+    {
+        arch_enable_interrupts();
+        arch_halt();
+    }
+}
+
+/**
+ * append a process to the tail of the ready queue.
  */
 static void queue_push(process_t *proc)
 {
-    if (queue_count >= READY_QUEUE_SIZE)
+    proc->ready_next = NULL;
+    proc->ready_prev = queue_tail;
+
+    if (queue_tail)
     {
-        return; // queue full drop silently
+        queue_tail->ready_next = proc;
+    }
+    else
+    {
+        queue_head = proc;
     }
 
-    ready_queue[queue_tail] = proc;
-    queue_tail = (queue_tail + 1) % READY_QUEUE_SIZE;
+    queue_tail = proc;
     queue_count++;
 }
 
 /**
- * dequeue the next process from the ready queue.
+ * remove and return the process at the head of the ready queue.
  * @return process pointer, or NULL if queue is empty.
  */
 static process_t *queue_pop(void)
 {
-    if (queue_count == 0)
+    if (!queue_head)
     {
-        return (void *)0;
+        return NULL;
     }
 
-    process_t *proc = ready_queue[queue_head];
-    queue_head = (queue_head + 1) % READY_QUEUE_SIZE;
+    process_t *proc = queue_head;
+    queue_head = proc->ready_next;
+
+    if (queue_head)
+    {
+        queue_head->ready_prev = NULL;
+    }
+    else
+    {
+        queue_tail = NULL;
+    }
+
+    proc->ready_next = NULL;
+    proc->ready_prev = NULL;
     queue_count--;
     return proc;
 }
 
+/**
+ * remove a specific process from anywhere in the ready queue.
+ * O(1) since we have prev/next pointers.
+ */
+static void queue_remove(process_t *proc)
+{
+    if (proc->ready_prev)
+    {
+        proc->ready_prev->ready_next = proc->ready_next;
+    }
+    else
+    {
+        queue_head = proc->ready_next;
+    }
+
+    if (proc->ready_next)
+    {
+        proc->ready_next->ready_prev = proc->ready_prev;
+    }
+    else
+    {
+        queue_tail = proc->ready_prev;
+    }
+
+    proc->ready_next = NULL;
+    proc->ready_prev = NULL;
+    queue_count--;
+}
+
+/**
+ * check whether a process is currently in the ready queue.
+ */
+static bool queue_contains(process_t *proc)
+{
+    return proc == queue_head || proc->ready_prev != NULL || proc->ready_next != NULL;
+}
+
 void scheduler_init(void)
 {
-    memset(ready_queue, 0, sizeof(ready_queue));
-    queue_head = 0;
-    queue_tail = 0;
+    queue_head = NULL;
+    queue_tail = NULL;
     queue_count = 0;
     ticks_remaining = SCHED_TIME_SLICE;
     scheduler_active = 0;
+
+    // set up the idle process (never goes through process_create)
+    memset(&idle_proc, 0, sizeof(idle_proc));
+    idle_proc.pid = 0;
+    idle_proc.state = PROC_STATE_READY;
+    idle_proc.kernel_stack = (uint32_t)idle_stack;
+    idle_proc.kernel_esp = (uint32_t)idle_stack + KERNEL_STACK_SIZE;
+
+    // prime the idle stack so the first switch into it runs idle_entry.
+    arch_setup_initial_stack(&idle_proc, idle_entry);
 }
 
 void scheduler_ready(process_t *proc)
@@ -84,29 +158,12 @@ void scheduler_ready(process_t *proc)
 
 void scheduler_remove(process_t *proc)
 {
-    if (!proc)
+    if (!proc || !queue_contains(proc))
     {
         return;
     }
 
-    // scan the queue and remove the process
-    int new_count = 0;
-    int read = queue_head;
-
-    for (int i = 0; i < queue_count; i++)
-    {
-        int idx = (read + i) % READY_QUEUE_SIZE;
-        if (ready_queue[idx] != proc)
-        {
-            ready_queue[new_count] = ready_queue[idx];
-            new_count++;
-        }
-    }
-
-    // compact the queue
-    queue_head = 0;
-    queue_tail = new_count;
-    queue_count = new_count;
+    queue_remove(proc);
 }
 
 /**
@@ -119,16 +176,30 @@ static void schedule(void)
 
     if (!next)
     {
-        // no other process ready continue running current
-        ticks_remaining = SCHED_TIME_SLICE;
-        return;
+        if (current && current != &idle_proc && current->state == PROC_STATE_RUNNING)
+        {
+            // current is the only runnable process, keep it running
+            ticks_remaining = SCHED_TIME_SLICE;
+            return;
+        }
+
+        // nothing runnable, switch to idle
+        next = &idle_proc;
     }
 
-    if (current && current->state == PROC_STATE_RUNNING)
+    if (current && current != &idle_proc && current->state == PROC_STATE_RUNNING)
     {
-        // current process is still runnable put it back in the queue
+        // current process is still runnable, put it back in the queue
         current->state = PROC_STATE_READY;
         queue_push(current);
+    }
+
+    if (next == current)
+    {
+        // popped ourselves, no actual switch needed
+        next->state = PROC_STATE_RUNNING;
+        ticks_remaining = SCHED_TIME_SLICE;
+        return;
     }
 
     // switch to the next process
@@ -138,10 +209,10 @@ static void schedule(void)
     // update TSS kernel stack to the new process's kernel stack top
     tss_set_kernel_stack(next->kernel_stack + KERNEL_STACK_SIZE);
 
-    // switch to the new process's page directory
+    // switch to the new process's address space
     if (next->page_directory)
     {
-        paging_switch_directory(next->page_directory);
+        arch_switch_address_space(next->page_directory);
     }
 
     // reset time slice
@@ -150,14 +221,13 @@ static void schedule(void)
     // perform the context switch
     if (current)
     {
-        context_switch(&current->kernel_esp, next->kernel_esp);
+        arch_context_switch(&current->kernel_esp, next->kernel_esp);
     }
     else
     {
         // no previous context to save (first schedule call)
-        // just load the new context by switching from a dummy
         uint32_t dummy_esp;
-        context_switch(&dummy_esp, next->kernel_esp);
+        arch_context_switch(&dummy_esp, next->kernel_esp);
     }
 }
 

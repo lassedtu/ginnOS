@@ -1,0 +1,4 @@
+# x86_64 architecture port (not yet implemented)
+
+this directory will contain the x86_64 (long mode) implementation of
+the arch-neutral interface defined in src/arch/arch.h.

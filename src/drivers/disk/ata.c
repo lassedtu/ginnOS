@@ -1,46 +1,46 @@
 #include "ata.h"
-#include "../../arch/x86/cpu/io.h"
+#include "arch/x86/cpu/io.h"
 
 /*
  * register offsets from the I/O base port.
  * applied as: device->io_base + ATA_REG_*.
  */
-#define ATA_REG_DATA 0u         // data port (read/write 16-bit words)
-#define ATA_REG_ERROR 1u        // error register (read) / features (write)
+#define ATA_REG_DATA         0u // data port (read/write 16-bit words)
+#define ATA_REG_ERROR        1u // error register (read) / features (write)
 #define ATA_REG_SECTOR_COUNT 2u // sector count
-#define ATA_REG_LBA_LOW 3u      // LBA bits  7:0
-#define ATA_REG_LBA_MID 4u      // LBA bits 15:8
-#define ATA_REG_LBA_HIGH 5u     // LBA bits 23:16
-#define ATA_REG_DRIVE_HEAD 6u   // drive/head select + LBA bits 27:24 (LBA28)
-#define ATA_REG_STATUS 7u       // status (read) / command (write)
+#define ATA_REG_LBA_LOW      3u // LBA bits  7:0
+#define ATA_REG_LBA_MID      4u // LBA bits 15:8
+#define ATA_REG_LBA_HIGH     5u // LBA bits 23:16
+#define ATA_REG_DRIVE_HEAD   6u // drive/head select + LBA bits 27:24 (LBA28)
+#define ATA_REG_STATUS       7u // status (read) / command (write)
 
 /* ATA status register bits */
 #define ATA_STATUS_ERR 0x01u // error occurred
-#define ATA_STATUS_DF 0x20u  // device fault
+#define ATA_STATUS_DF  0x20u // device fault
 #define ATA_STATUS_DRQ 0x08u // data request, drive is ready to transfer
 #define ATA_STATUS_BSY 0x80u // busy, do not access other registers
 
 /* ATA commands */
-#define ATA_COMMAND_READ_SECTORS 0x20u      // LBA28 read
-#define ATA_COMMAND_WRITE_SECTORS 0x30u     // LBA28 write
-#define ATA_COMMAND_READ_SECTORS_EXT 0x24u  // LBA48 read
+#define ATA_COMMAND_READ_SECTORS      0x20u // LBA28 read
+#define ATA_COMMAND_WRITE_SECTORS     0x30u // LBA28 write
+#define ATA_COMMAND_READ_SECTORS_EXT  0x24u // LBA48 read
 #define ATA_COMMAND_WRITE_SECTORS_EXT 0x34u // LBA48 write
-#define ATA_COMMAND_CACHE_FLUSH 0xE7u       // flush write cache
-#define ATA_COMMAND_CACHE_FLUSH_EXT 0xEAu   // flush write cache (LBA48 devices)
-#define ATA_COMMAND_IDENTIFY 0xECu          // identify device
+#define ATA_COMMAND_CACHE_FLUSH       0xE7u // flush write cache
+#define ATA_COMMAND_CACHE_FLUSH_EXT   0xEAu // flush write cache (LBA48 devices)
+#define ATA_COMMAND_IDENTIFY          0xECu // identify device
 
 /* LBA28 ceiling, 28 usable address bits */
 #define ATA_LBA28_MAX 0x0FFFFFFFu
 
 /* I/O port constants for each channel */
-#define ATA_PRIMARY_IO_BASE 0x1F0u
-#define ATA_PRIMARY_CTRL_BASE 0x3F6u
-#define ATA_SECONDARY_IO_BASE 0x170u
+#define ATA_PRIMARY_IO_BASE     0x1F0u
+#define ATA_PRIMARY_CTRL_BASE   0x3F6u
+#define ATA_SECONDARY_IO_BASE   0x170u
 #define ATA_SECONDARY_CTRL_BASE 0x376u
 
 /* drive-select byte for LBA mode: bit6=LBA, bit5=1 (obsolete), bit7=1 (obsolete) */
 #define ATA_DRIVE_SELECT_MASTER 0xE0u // 1110 0000
-#define ATA_DRIVE_SELECT_SLAVE 0xF0u  // 1111 0000
+#define ATA_DRIVE_SELECT_SLAVE  0xF0u // 1111 0000
 
 /*
  * device control register (written to control_base).
@@ -53,7 +53,7 @@
 /**
  * wait 400ns by reading the control port four times.
  */
-static void ata_400ns_delay(const ATA_DEVICE *dev)
+static void ata_400ns_delay(const ata_device_t *dev)
 {
     io_inb(dev->control_base);
     io_inb(dev->control_base);
@@ -66,7 +66,7 @@ static void ata_400ns_delay(const ATA_DEVICE *dev)
  * @param dev ATA device to poll.
  * @return true if the device is not busy, false on timeout.
  */
-static bool ata_wait_not_busy(const ATA_DEVICE *dev)
+static bool ata_wait_not_busy(const ata_device_t *dev)
 {
     uint32_t spin;
     for (spin = 0; spin < 200000u; spin++)
@@ -82,7 +82,7 @@ static bool ata_wait_not_busy(const ATA_DEVICE *dev)
  * @param dev ATA device to poll.
  * @return true if the device is ready to transfer data, false on timeout or error.
  */
-static bool ata_wait_data_request(const ATA_DEVICE *dev)
+static bool ata_wait_data_request(const ata_device_t *dev)
 {
     uint32_t spin;
     for (spin = 0; spin < 200000u; spin++)
@@ -106,7 +106,7 @@ static bool ata_wait_data_request(const ATA_DEVICE *dev)
  * @param dest destination buffer to store the read data (must be large enough).
  * @return true on success, false on error or timeout.
  */
-static bool ata_read_lba28(ATA_DEVICE *dev, uint32_t lba, uint8_t sector_count, void *dest)
+static bool ata_read_lba28(ata_device_t *dev, uint32_t lba, uint8_t sector_count, void *dest)
 {
     uint8_t *out;
     uint32_t i;
@@ -146,7 +146,7 @@ static bool ata_read_lba28(ATA_DEVICE *dev, uint32_t lba, uint8_t sector_count, 
  * @param src source buffer containing the data to write (must be large enough).
  * @return true on success, false on error or timeout.
  */
-static bool ata_write_lba28(ATA_DEVICE *dev, uint32_t lba, uint8_t sector_count, const void *src)
+static bool ata_write_lba28(ata_device_t *dev, uint32_t lba, uint8_t sector_count, const void *src)
 {
     const uint8_t *in;
     uint32_t i;
@@ -191,7 +191,7 @@ static bool ata_write_lba28(ATA_DEVICE *dev, uint32_t lba, uint8_t sector_count,
  * @param dest destination buffer to store the read data (must be large enough).
  * @return true on success, false on error or timeout.
  */
-static bool ata_read_lba48(ATA_DEVICE *dev, uint64_t lba, uint8_t sector_count, void *dest)
+static bool ata_read_lba48(ata_device_t *dev, uint64_t lba, uint8_t sector_count, void *dest)
 {
     uint8_t *out;
     uint32_t i;
@@ -203,21 +203,25 @@ static bool ata_read_lba48(ATA_DEVICE *dev, uint64_t lba, uint8_t sector_count, 
         return false;
 
     /* Drive select: LBA mode, drive bit only, no LBA bits in this register */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_DRIVE_HEAD),
-            (uint8_t)(dev->drive_select & 0xF0u));
+    io_outb((uint16_t)(dev->io_base + ATA_REG_DRIVE_HEAD), (uint8_t)(dev->drive_select & 0xF0u));
     ata_400ns_delay(dev);
 
     /* High bytes first */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_SECTOR_COUNT), 0);                           /* count high  */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_LOW), (uint8_t)((lba >> 24u) & 0xFFu));  /* LBA 31:24   */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_MID), (uint8_t)((lba >> 32u) & 0xFFu));  /* LBA 39:32   */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_HIGH), (uint8_t)((lba >> 40u) & 0xFFu)); /* LBA 47:40   */
+    io_outb((uint16_t)(dev->io_base + ATA_REG_SECTOR_COUNT), 0); /* count high  */
+    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_LOW),
+            (uint8_t)((lba >> 24u) & 0xFFu)); /* LBA 31:24   */
+    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_MID),
+            (uint8_t)((lba >> 32u) & 0xFFu)); /* LBA 39:32   */
+    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_HIGH),
+            (uint8_t)((lba >> 40u) & 0xFFu)); /* LBA 47:40   */
 
     /* Low bytes */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_SECTOR_COUNT), sector_count);                /* count low   */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_LOW), (uint8_t)(lba & 0xFFu));           /* LBA  7:0    */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_MID), (uint8_t)((lba >> 8u) & 0xFFu));   /* LBA 15:8    */
-    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_HIGH), (uint8_t)((lba >> 16u) & 0xFFu)); /* LBA 23:16   */
+    io_outb((uint16_t)(dev->io_base + ATA_REG_SECTOR_COUNT), sector_count);      /* count low   */
+    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_LOW), (uint8_t)(lba & 0xFFu)); /* LBA  7:0    */
+    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_MID),
+            (uint8_t)((lba >> 8u) & 0xFFu)); /* LBA 15:8    */
+    io_outb((uint16_t)(dev->io_base + ATA_REG_LBA_HIGH),
+            (uint8_t)((lba >> 16u) & 0xFFu)); /* LBA 23:16   */
 
     io_outb((uint16_t)(dev->io_base + ATA_REG_STATUS), ATA_COMMAND_READ_SECTORS_EXT);
 
@@ -240,7 +244,7 @@ static bool ata_read_lba48(ATA_DEVICE *dev, uint64_t lba, uint8_t sector_count, 
  * @param src source buffer containing the data to write (must be large enough).
  * @return true on success, false on error or timeout.
  */
-static bool ata_write_lba48(ATA_DEVICE *dev, uint64_t lba, uint8_t sector_count, const void *src)
+static bool ata_write_lba48(ata_device_t *dev, uint64_t lba, uint8_t sector_count, const void *src)
 {
     const uint8_t *in;
     uint32_t i;
@@ -251,8 +255,7 @@ static bool ata_write_lba48(ATA_DEVICE *dev, uint64_t lba, uint8_t sector_count,
     if (!ata_wait_not_busy(dev))
         return false;
 
-    io_outb((uint16_t)(dev->io_base + ATA_REG_DRIVE_HEAD),
-            (uint8_t)(dev->drive_select & 0xF0u));
+    io_outb((uint16_t)(dev->io_base + ATA_REG_DRIVE_HEAD), (uint8_t)(dev->drive_select & 0xF0u));
     ata_400ns_delay(dev);
 
     /* High bytes first */
@@ -288,15 +291,16 @@ static bool ata_write_lba48(ATA_DEVICE *dev, uint64_t lba, uint8_t sector_count,
 /**
  * read blocks from an ATA device using the block device interface.
  * automatically chooses LBA28 or LBA48 based on the starting block number.
- * @param device block device interface pointer (must point to an ATA_DEVICE).
+ * @param device block device interface pointer (must point to an ata_device_t).
  * @param startBlock starting block number to read from.
  * @param blockCount number of blocks to read.
  * @param dest destination buffer to store the read data (must be large enough).
  * @return true on success, false on error or timeout.
  */
-static bool ata_block_read(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, void *dest)
+static bool ata_block_read(block_device_t *device, uint32_t startBlock, uint8_t blockCount,
+                           void *dest)
 {
-    ATA_DEVICE *dev = (ATA_DEVICE *)device->context;
+    ata_device_t *dev = (ata_device_t *)device->context;
 
     if (startBlock > ATA_LBA28_MAX)
         return ata_read_lba48(dev, (uint64_t)startBlock, blockCount, dest);
@@ -307,15 +311,16 @@ static bool ata_block_read(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t bl
 /**
  * write blocks to an ATA device using the block device interface.
  * automatically chooses LBA28 or LBA48 based on the starting block number.
- * @param device block device interface pointer (must point to an ATA_DEVICE).
+ * @param device block device interface pointer (must point to an ata_device_t).
  * @param startBlock starting block number to write to.
  * @param blockCount number of blocks to write.
  * @param src source buffer containing the data to write (must be large enough).
  * @return true on success, false on error or timeout.
  */
-static bool ata_block_write(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t blockCount, const void *src)
+static bool ata_block_write(block_device_t *device, uint32_t startBlock, uint8_t blockCount,
+                            const void *src)
 {
-    ATA_DEVICE *dev = (ATA_DEVICE *)device->context;
+    ata_device_t *dev = (ata_device_t *)device->context;
 
     if (startBlock > ATA_LBA28_MAX)
         return ata_write_lba48(dev, (uint64_t)startBlock, blockCount, src);
@@ -325,11 +330,11 @@ static bool ata_block_write(BLOCK_DEVICE *device, uint32_t startBlock, uint8_t b
 
 /**
  * perform IDENTIFY DEVICE on an ATA device to confirm presence and capabilities.
- * populates the sector_count field of the ATA_DEVICE structure.
+ * populates the sector_count field of the ata_device_t structure.
  * @param dev ATA device to identify.
  * @return true if the device is present and not ATAPI, false otherwise.
  */
-static bool ata_identify(ATA_DEVICE *dev)
+static bool ata_identify(ata_device_t *dev)
 {
     uint8_t status;
     uint16_t id[256];
@@ -370,7 +375,8 @@ static bool ata_identify(ATA_DEVICE *dev)
      * a device that doesn't support LBA48 will have these as zero; fall back
      * to the LBA28 count in words 60–61 in that case.
      */
-    lba48_sectors = (uint64_t)id[100] | ((uint64_t)id[101] << 16u) | ((uint64_t)id[102] << 32u) | ((uint64_t)id[103] << 48u);
+    lba48_sectors = (uint64_t)id[100] | ((uint64_t)id[101] << 16u) | ((uint64_t)id[102] << 32u) |
+                    ((uint64_t)id[103] << 48u);
 
     if (lba48_sectors != 0)
     {
@@ -393,7 +399,7 @@ static bool ata_identify(ATA_DEVICE *dev)
  * @param drive    ATA_DRIVE_MASTER or ATA_DRIVE_SLAVE.
  * @return true on success, false if no drive responds or device is ATAPI.
  */
-bool ATA_Initialize(ATA_DEVICE *device, ATA_CHANNEL channel, ATA_DRIVE drive)
+bool ata_initialize(ata_device_t *device, ata_channel_t channel, ata_drive_t drive)
 {
     if (!device)
         return false;
@@ -411,9 +417,8 @@ bool ATA_Initialize(ATA_DEVICE *device, ATA_CHANNEL channel, ATA_DRIVE drive)
     }
 
     /* derive drive-select byte from drive position */
-    device->drive_select = (drive == ATA_DRIVE_MASTER)
-                               ? ATA_DRIVE_SELECT_MASTER
-                               : ATA_DRIVE_SELECT_SLAVE;
+    device->drive_select =
+        (drive == ATA_DRIVE_MASTER) ? ATA_DRIVE_SELECT_MASTER : ATA_DRIVE_SELECT_SLAVE;
 
     device->sector_count = 0;
 
@@ -427,8 +432,15 @@ bool ATA_Initialize(ATA_DEVICE *device, ATA_CHANNEL channel, ATA_DRIVE drive)
         return false;
 
     device->block.bytes_per_block = 512;
+    // clamp the 48-bit sector count into the block layer's 32-bit field; a
+    // disk larger than 2 TiB would need a wider field, which we don't support.
+    device->block.total_blocks =
+        (device->sector_count > 0xFFFFFFFFull) ? 0xFFFFFFFFu : (uint32_t)device->sector_count;
     device->block.context = device;
     device->block.read_blocks = ata_block_read;
     device->block.write_blocks = ata_block_write;
+    // PIO ATA has no driver-side write-back cache and no trim support.
+    device->block.flush = NULL;
+    device->block.trim = NULL;
     return true;
 }

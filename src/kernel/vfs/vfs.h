@@ -1,19 +1,12 @@
 #pragma once
 
-#include "../fs/fs.h"
+#include "common/error.h"
+#include "kernel/fs/fs.h"
 
-typedef FS_STAT VFS_STAT;
+// maximum length of an absolute path (including the null terminator).
+#define VFS_PATH_MAX 256
 
-/**
- * virtual file system operation status codes.
- */
-typedef enum
-{
-    VFS_OK = FS_OK,                               // operation completed successfully
-    VFS_NOT_FOUND = FS_NOT_FOUND,                 // file or directory not found
-    VFS_PERMISSION_DENIED = FS_PERMISSION_DENIED, // permission denied for the operation
-    VFS_IO_ERROR = FS_IO_ERROR,                   // I/O error occurred during the operation
-} VFS_STATUS;
+typedef fs_stat_t vfs_stat_t;
 
 /**
  * virtual file system file handle structure representing an open file or directory.
@@ -21,70 +14,97 @@ typedef enum
  */
 typedef struct
 {
-    FS_MOUNT *mount;
-    FS_FILE file;
-} VFS_FILE;
+    fs_mount_t *mount;
+    fs_file_t file;
+} vfs_file_t;
 
 /**
  * mount a filesystem as the root filesystem.
+ * convenience wrapper for vfs_mount("/", mount).
  * @param mount pointer to the filesystem mount structure to be used as the root filesystem.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_mount_root(FS_MOUNT *mount);
+kerr_t vfs_mount_root(fs_mount_t *mount);
+
+/**
+ * mount a filesystem at a path prefix.
+ * a later, more specific prefix takes precedence over a shorter one during
+ * path resolution (e.g. "/dev" wins over "/"). remounting an existing prefix
+ * replaces its backing filesystem.
+ * @param prefix absolute mount point, e.g. "/" or "/dev".
+ * @param mount the filesystem to mount there (must already be mounted).
+ * @return KERR_OK on success, KERR_INVAL on bad input, KERR_NOSPC if full.
+ */
+kerr_t vfs_mount(const char *prefix, fs_mount_t *mount);
+
+/**
+ * unmount the filesystem at an exact path prefix.
+ * @param prefix the mount point to remove.
+ * @return KERR_OK on success, KERR_NOENT if nothing is mounted there.
+ */
+kerr_t vfs_umount(const char *prefix);
+
+/**
+ * find the mounted filesystem responsible for an absolute path.
+ * returns the mount whose prefix is the longest match for path.
+ * @param path absolute path to resolve.
+ * @return the backing mount, or NULL if no filesystem covers the path.
+ */
+fs_mount_t *vfs_resolve_mount(const char *path);
 
 /**
  * open a file or directory by absolute path in the virtual file system.
  * @param path absolute path to the file or directory.
- * @param file pointer to a VFS_FILE structure that will be initialized with the opened file
- * @return true on success, false on failure.
+ * @param file pointer to a vfs_file_t structure that will be initialized with the opened file
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_open(
+kerr_t vfs_open(
     const char *path,
-    VFS_FILE *file);
+    vfs_file_t *file);
 
 /**
  * create a regular file by absolute path.
  * @param path absolute path to the new file.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_create(const char *path);
+kerr_t vfs_create(const char *path);
 
 /**
  * create a directory by absolute path.
  * @param path absolute path to the new directory.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_mkdir(const char *path);
+kerr_t vfs_mkdir(const char *path);
 
 /**
  * remove a file by absolute path.
  * @param path absolute path to the file to remove.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_remove(const char *path);
+kerr_t vfs_remove(const char *path);
 
 /**
  * remove a directory by absolute path.
  * @param path absolute path to the directory to remove.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_rmdir(const char *path);
+kerr_t vfs_rmdir(const char *path);
 
 /**
  * rename a file or directory by absolute paths.
  * @param old_path absolute path to the existing file or directory.
  * @param new_path absolute path to the new name for the file or directory.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_rename(const char *old_path, const char *new_path);
+kerr_t vfs_rename(const char *old_path, const char *new_path);
 
 /**
  * stat a file or directory by absolute path.
  * @param path absolute path to the file or directory.
- * @param stat_out pointer to a VFS_STAT structure that will be filled with the file's metadata.
- * @return VFS_OK on success, or an error code on failure.
+ * @param stat_out pointer to a vfs_stat_t structure that will be filled with the file's metadata.
+ * @return KERR_OK on success, or an error code on failure.
  */
-VFS_STATUS vfs_stat(const char *path, VFS_STAT *stat_out);
+kerr_t vfs_stat(const char *path, vfs_stat_t *stat_out);
 
 /**
  * resolve an input path against the current working directory.
@@ -118,57 +138,57 @@ bool vfs_join_path(
 
 /**
  * read data from an open file in the virtual file system.
- * @param file pointer to the VFS_FILE structure representing the open file.
+ * @param file pointer to the vfs_file_t structure representing the open file.
  * @param size number of bytes to read.
  * @param buffer pointer to the buffer where the read data will be stored.
  * @return number of bytes actually read, or 0 on failure.
  */
 uint32_t vfs_read(
-    VFS_FILE *file,
+    vfs_file_t *file,
     uint32_t size,
     void *buffer);
 
 /**
  * write data to an open file in the virtual file system.
- * @param file pointer to the VFS_FILE structure representing the open file.
+ * @param file pointer to the vfs_file_t structure representing the open file.
  * @param size number of bytes to write.
  * @param buffer pointer to the source data.
  * @return number of bytes actually written, or 0 on failure.
  */
 uint32_t vfs_write(
-    VFS_FILE *file,
+    vfs_file_t *file,
     uint32_t size,
     const void *buffer);
 
 /**
  * truncate an open file to zero length.
- * @param file pointer to the VFS_FILE structure.
- * @return true on success, false on failure.
+ * @param file pointer to the vfs_file_t structure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_truncate(VFS_FILE *file);
+kerr_t vfs_truncate(vfs_file_t *file);
 
 /**
  * read a directory entry from an open directory in the virtual file system.
- * @param file pointer to the VFS_FILE structure representing the open directory.
+ * @param file pointer to the vfs_file_t structure representing the open directory.
  * @param entryOut pointer to output directory entry.
- * @return true on success, false on failure.
+ * @return KERR_OK on success, or an error code on failure.
  */
-bool vfs_read_entry(
-    VFS_FILE *file,
-    FS_DIRENT *entryOut);
+kerr_t vfs_read_entry(
+    vfs_file_t *file,
+    fs_dirent_t *entryOut);
 
 /**
  * close an open file in the virtual file system.
- * @param file pointer to the VFS_FILE structure representing the open file.
+ * @param file pointer to the vfs_file_t structure representing the open file.
  * @return void
  */
 void vfs_close(
-    VFS_FILE *file);
+    vfs_file_t *file);
 
 /**
  * get the type of an open file in the virtual file system.
- * @param file pointer to the VFS_FILE structure representing the open file.
+ * @param file pointer to the vfs_file_t structure representing the open file.
  * @return file type (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN).
  */
 uint8_t vfs_file_type(
-    VFS_FILE *file);
+    vfs_file_t *file);

@@ -1,5 +1,5 @@
 #include "gdt.h"
-#include "../../../common/memory.h"
+#include "common/memory.h"
 
 struct gdt_entry
 {

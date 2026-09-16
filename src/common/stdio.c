@@ -1,6 +1,6 @@
 #include "stdio.h"
 
-static StdioPutCharFn g_stdio_putchar = (StdioPutCharFn)0;
+static StdioPutCharFn g_stdio_putchar = NULL;
 
 void stdio_set_putchar(StdioPutCharFn func)
 {
@@ -42,14 +42,14 @@ typedef struct
     int length; // current length modifier (one of PRINTF_LENGTH_*)
     int radix;  // current numeric base for number formatting (e.g., 10 for decimal, 16 for hexadecimal)
     bool sign;  // flag indicating whether the number is signed (true for signed, false for unsigned)
-} PrintfContext;
+} printf_context_t;
 
 static const char g_HexChars[] = "0123456789abcdef"; // hexadecimal characters for number formatting
 
 /**
  * reset the printf context to its default state.
  */
-static void printf_context_reset(PrintfContext *ctx)
+static void printf_context_reset(printf_context_t *ctx)
 {
     ctx->state = PRINTF_STATE_NORMAL;
     ctx->length = PRINTF_LENGTH_DEFAULT;
@@ -83,50 +83,62 @@ static void div64_32(uint64_t dividend, uint32_t divisor, uint64_t *quotientOut,
 }
 
 /**
- * write a number to the output (VGA text buffer).
+ * write a number through the given output backend.
  */
-static int *printf_number(int *argp, int length, bool sign, int radix);
+static int *printf_number(StdioPutCharFn out, int *argp, int length, bool sign, int radix);
+
+/**
+ * write a null-terminated string through the given output backend.
+ */
+static void puts_to(StdioPutCharFn out, const char *str)
+{
+    while (*str)
+    {
+        out(*str);
+        str++;
+    }
+}
 
 /**
  * handle a format specifier in printf and write the corresponding output.
  */
-static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
+static int *printf_handle_spec(StdioPutCharFn out, int *argp, printf_context_t *ctx, char spec)
 {
     switch (spec)
     {
     case 'c':
-        stdio_putchar((char)*argp);
+        out((char)*argp);
         argp++;
         break;
 
     case 's':
         if (ctx->length == PRINTF_LENGTH_LONG || ctx->length == PRINTF_LENGTH_LONG_LONG)
         {
-            puts(*(const char **)argp);
+            puts_to(out, *(const char **)argp);
             argp += 2;
         }
         else
         {
-            puts(*(const char **)argp);
+            puts_to(out, *(const char **)argp);
             argp++;
         }
         break;
 
     case '%':
-        stdio_putchar('%');
+        out('%');
         break;
 
     case 'd':
     case 'i':
         ctx->radix = 10;
         ctx->sign = true;
-        argp = printf_number(argp, ctx->length, ctx->sign, ctx->radix);
+        argp = printf_number(out, argp, ctx->length, ctx->sign, ctx->radix);
         break;
 
     case 'u':
         ctx->radix = 10;
         ctx->sign = false;
-        argp = printf_number(argp, ctx->length, ctx->sign, ctx->radix);
+        argp = printf_number(out, argp, ctx->length, ctx->sign, ctx->radix);
         break;
 
     case 'X':
@@ -134,13 +146,13 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
     case 'p':
         ctx->radix = 16;
         ctx->sign = false;
-        argp = printf_number(argp, ctx->length, ctx->sign, ctx->radix);
+        argp = printf_number(out, argp, ctx->length, ctx->sign, ctx->radix);
         break;
 
     case 'o':
         ctx->radix = 8;
         ctx->sign = false;
-        argp = printf_number(argp, ctx->length, ctx->sign, ctx->radix);
+        argp = printf_number(out, argp, ctx->length, ctx->sign, ctx->radix);
         break;
 
     default:
@@ -151,14 +163,16 @@ static int *printf_handle_spec(int *argp, PrintfContext *ctx, char spec)
     return argp;
 }
 
-void printf(const char *fmt, ...)
+/**
+ * core format engine: walks fmt and the arg list, emitting each character
+ * through out. printf, stdio_printf_to, and klog all share this so the
+ * formatter lives in exactly one place.
+ */
+void stdio_format_args(StdioPutCharFn out, const char *fmt, int *argp)
 {
-    int *argp = (int *)&fmt;
-    PrintfContext ctx;
+    printf_context_t ctx;
 
     printf_context_reset(&ctx);
-
-    argp++;
 
     while (*fmt)
     {
@@ -174,7 +188,7 @@ void printf(const char *fmt, ...)
             }
             else
             {
-                stdio_putchar(ch);
+                out(ch);
             }
             break;
 
@@ -223,7 +237,7 @@ void printf(const char *fmt, ...)
             break;
 
         case PRINTF_STATE_SPEC:
-            argp = printf_handle_spec(argp, &ctx, ch);
+            argp = printf_handle_spec(out, argp, &ctx, ch);
             break;
         }
 
@@ -234,7 +248,29 @@ void printf(const char *fmt, ...)
     }
 }
 
-static int *printf_number(int *argp, int length, bool sign, int radix)
+void printf(const char *fmt, ...)
+{
+    // argp points at the first variadic argument (just past fmt on the stack).
+    int *argp = (int *)&fmt;
+    argp++;
+
+    stdio_format_args(stdio_putchar, fmt, argp);
+}
+
+void stdio_printf_to(StdioPutCharFn out, const char *fmt, ...)
+{
+    if (!out)
+    {
+        return;
+    }
+
+    int *argp = (int *)&fmt;
+    argp++;
+
+    stdio_format_args(out, fmt, argp);
+}
+
+static int *printf_number(StdioPutCharFn out, int *argp, int length, bool sign, int radix)
 {
     char buffer[32];
     unsigned long long number = 0;
@@ -311,7 +347,7 @@ static int *printf_number(int *argp, int length, bool sign, int radix)
         buffer[pos++] = '-';
 
     while (--pos >= 0)
-        stdio_putchar(buffer[pos]);
+        out(buffer[pos]);
 
     return argp;
 }
