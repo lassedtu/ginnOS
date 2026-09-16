@@ -306,7 +306,9 @@ void paging_free_directory(uint32_t pd_phys)
             if ((table[j] & PTE_PRESENT) && (table[j] & PTE_USER))
             {
                 uint32_t frame = PAGE_FRAME(table[j]);
-                if (frame != 0)
+                // skip device mappings (e.g. a framebuffer mapped into the
+                // process): those frames aren't PMM RAM and must not be freed.
+                if (frame != 0 && pmm_owns(frame))
                 {
                     pmm_free_page((void *)frame);
                 }

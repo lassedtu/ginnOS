@@ -172,6 +172,11 @@ uint32_t pmm_total_count(void)
     return total_pages;
 }
 
+bool pmm_owns(uint32_t phys)
+{
+    return (phys / PAGE_SIZE) < total_pages;
+}
+
 void pmm_mark_region_used(uint32_t start, uint32_t end)
 {
     uint32_t page_start = start / PAGE_SIZE;

@@ -35,6 +35,11 @@
 /* user stack top */
 #define USER_STACK_TOP   0x00800000u
 
+/* userspace virtual address where SYS_fbmap maps the linear framebuffer.
+ * chosen well clear of the program (0x800000), its heap, and stack, and below
+ * USER_SPACE_END so pixel writes there pass is_user_ptr validation. */
+#define USER_FB_MAP_ADDR 0x40000000u
+
 /**
  * check whether a pointer with a given length falls entirely within
  * the user address space. used to validate syscall arguments before

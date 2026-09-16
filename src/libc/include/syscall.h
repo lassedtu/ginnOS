@@ -28,6 +28,9 @@
 #define SYS_DUP2 19
 #define SYS_FTRUNCATE 20
 #define SYS_LSEEK 21    // duplicate a file descriptor
+#define SYS_FBINFO 22   // query framebuffer geometry/format
+#define SYS_FBMAP 23    // map the framebuffer into the process
+#define SYS_POLLKEY 24  // non-blocking: return a pending char key, or 0
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

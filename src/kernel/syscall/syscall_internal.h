@@ -65,3 +65,8 @@ int32_t sys_sbrk(struct registers *regs);
 int32_t sys_getcwd(struct registers *regs);
 int32_t sys_chdir(struct registers *regs);
 int32_t sys_ttyctl(struct registers *regs);
+
+/* sys_fb.c */
+int32_t sys_fbinfo(struct registers *regs);
+int32_t sys_fbmap(struct registers *regs);
+int32_t sys_pollkey(struct registers *regs);
