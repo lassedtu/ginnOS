@@ -9,7 +9,7 @@
 #include "keyboard_layout.h"
 
 #include "arch/arch.h"
-#include "arch/arch_irq.h"
+#include "kernel/irq/irq.h"
 #include "arch/x86/cpu/io.h"
 #include "common/stdint.h"
 
@@ -317,6 +317,6 @@ uint32_t keyboard_dropped_count(void)
 
 void keyboard_initialize(void)
 {
-    arch_irq_register(1, keyboard_irq_handler);
-    arch_irq_enable(1);
+    // register the keyboard handler on IRQ1; irq_request unmasks the line.
+    irq_request(1, keyboard_irq_handler, IRQ_FLAG_NONE, "keyboard");
 }

@@ -1,7 +1,7 @@
 #include "pit.h"
 
 #include "arch/x86/cpu/io.h"
-#include "arch/arch_irq.h"
+#include "kernel/irq/irq.h"
 #include "kernel/scheduler/scheduler.h"
 
 enum
@@ -50,11 +50,8 @@ void pit_initialize(uint32_t frequency)
         raw_divisor = 0xFFFF;
     divisor = (uint16_t)raw_divisor;
 
-    // register IRQ0 handler
-    arch_irq_register(0, pit_irq_handler);
-
-    // enable IRQ0 (timer)
-    arch_irq_enable(0);
+    // register the timer handler on IRQ0; irq_request unmasks the line.
+    irq_request(0, pit_irq_handler, IRQ_FLAG_NONE, "pit");
 
     uint8_t command =
         PIT_COMMAND_CHANNEL0 |

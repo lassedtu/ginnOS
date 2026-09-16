@@ -5,6 +5,7 @@
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/exception.h"
 #include "arch/x86/cpu/irq.h"
+#include "kernel/irq/irq.h"
 #include "drivers/pit/pit.h"
 #include "drivers/keyboard/keyboard.h"
 
@@ -68,6 +69,7 @@ void hal_initialize(void)
     isr_initialize();
     exception_initialize();
     irq_initialize();
+    irq_manager_init();
     pit_initialize(PIT_FREQUENCY_HZ);
     keyboard_initialize();
 }
