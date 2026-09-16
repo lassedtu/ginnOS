@@ -59,12 +59,6 @@ void kernel_main(boot_info_t *boot)
 
     hal_initialize();
 
-    console_initialize();
-
-    stdio_set_putchar(console_putchar); // set stdio output to console (sophisticated VGA text buffer)
-
-    printf("Kernel: entered 32-bit C main\r\n");
-
     if (kernel_end_address() <= kernel_start_address())
     {
         kernel_panic("invalid kernel layout");
@@ -85,6 +79,13 @@ void kernel_main(boot_info_t *boot)
     // bring up the linear framebuffer (if the bootloader set a graphics mode).
     // must follow paging_init: the LFB lives above identity-mapped RAM.
     fb_init(boot);
+
+    // bring up the console now that the framebuffer (if any) is mapped. it
+    // picks the framebuffer backend when present, else the VGA text buffer.
+    // serial klog has covered diagnostics up to this point.
+    console_initialize(boot);
+    stdio_set_putchar(console_putchar);
+    printf("Kernel: entered 32-bit C main\r\n");
 
     syscall_initialize();
 

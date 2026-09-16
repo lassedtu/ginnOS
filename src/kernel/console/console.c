@@ -1,19 +1,22 @@
 #include "console.h"
+#include "fb_console.h"
 
 #include "kernel/tty/tty.h"
 #include "kernel/device/device.h"
 #include "drivers/video/vga/vga.h"
+#include "drivers/video/fb/fb.h"
 #include "drivers/keyboard/keyboard.h"
 #include "common/string.h"
 
 /**
  * @file console.c
- * @brief the system console: a VGA-backed tty plus cooked-mode line input.
+ * @brief the system console: a tty over either the framebuffer or VGA text.
  *
- * console_* is now a thin facade. output bytes go through a global tty_t
- * (the terminal state machine in kernel/tty/tty.c), which draws onto the VGA
- * text buffer via the backend ops below. keeping this facade means every
- * existing caller (kernel printf, klog, the write syscall) is unchanged.
+ * console_* is a thin facade. output bytes go through a global tty_t (the
+ * terminal state machine in kernel/tty/tty.c), which draws onto whichever
+ * backend was selected at init: the framebuffer (JetBrains Mono) when the
+ * bootloader set a graphics mode, or the legacy VGA text buffer otherwise.
+ * every existing caller (kernel printf, klog, the write syscall) is unchanged.
  */
 
 #define CONSOLE_VGA_WIDTH 80u
@@ -33,10 +36,25 @@ static const tty_backend_t vga_backend = {
 
 static tty_t console_tty;
 
-void console_initialize(void)
+void console_initialize(const boot_info_t *boot)
 {
-    vga_initialize();
-    tty_init(&console_tty, &vga_backend);
+    const tty_backend_t *backend;
+
+    (void)boot; // fb_init already consumed it; presence is queried via fb_available.
+
+    if (fb_available())
+    {
+        // graphics mode: render text on the framebuffer with JetBrains Mono.
+        backend = fb_console_backend();
+    }
+    else
+    {
+        // no framebuffer: fall back to the VGA text buffer.
+        vga_initialize();
+        backend = &vga_backend;
+    }
+
+    tty_init(&console_tty, backend);
 
     // announce the console to the device registry.
     static device_t console_device;
