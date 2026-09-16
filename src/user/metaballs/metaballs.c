@@ -156,14 +156,15 @@ int main(int argc, char **argv)
         int key = pollkey();
         if (key == 'q' || key == 'Q')
         {
-            // clear to black so the shell isn't left drawing over blobs.
-            uint32_t black = pack(&fb, 0, 0, 0);
-            for (uint32_t y = 0; y < fb.height; y++)
+            // hand the screen back to the console cleanly: clear it and move
+            // the cursor home so the shell resumes at the top-left instead of
+            // wherever the console cursor was when we launched.
+            // built as explicit bytes (ESC = 0x1B) to avoid GCC emitting a
+            // .base64 directive for a string literal containing \033.
+            char seq[] = {0x1B, '[', '2', 'J', 0x1B, '[', 'H', '\0'};
+            for (int i = 0; seq[i]; i++)
             {
-                for (uint32_t x = 0; x < fb.width; x++)
-                {
-                    put_pixel(fbmem, &fb, x, y, black);
-                }
+                putchar(seq[i]);
             }
             break;
         }
