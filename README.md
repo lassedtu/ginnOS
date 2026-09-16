@@ -297,6 +297,39 @@ The helper tool is located at:
 
 - [tools/ext2/make_image.py](tools/ext2/make_image.py)
 
+## Framebuffer Font Tool
+
+The framebuffer terminal (bifrost) renders text with a bitmap font baked from a
+TrueType font. The kernel stays a simple bitmap blitter, no TrueType rasterizer
+runs at runtime: [tools/font/make_font.py](tools/font/make_font.py) rasterizes a
+TTF offline and emits the C header the renderer uses
+([src/drivers/video/fb/font.h](src/drivers/video/fb/font.h)), which is committed
+so the normal build has no font dependency.
+
+The default is JetBrains Mono Regular at a 10x20 cell. Regenerate the header
+(only needed when changing font/size):
+
+```bash
+python3 tools/font/make_font.py src/drivers/video/fb/font.h
+```
+
+Use a different font, size, or cell:
+
+```bash
+python3 tools/font/make_font.py \
+  --font /path/to/Font-Regular.ttf --size 16 --cell 10x20 \
+  src/drivers/video/fb/font.h
+```
+
+The tool needs Pillow:
+
+```bash
+pip install Pillow
+```
+
+JetBrains Mono is licensed under the SIL Open Font License 1.1; the notice is
+copied into the generated header.
+
 ## Credits and Learning Resources
 
 - Nanobyte: https://www.youtube.com/@nanobyte-dev
