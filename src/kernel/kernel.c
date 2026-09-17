@@ -5,6 +5,7 @@
 
 #include "common/error.h"
 #include "fs/fs.h"
+#include "fs/devfs.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
@@ -137,6 +138,14 @@ void kernel_main(boot_info_t *boot)
     if (kerr_failed(vfs_mount_root(&mount)))
     {
         kernel_panic("VFS root mount failed");
+    }
+
+    // mount devfs at /dev so registered devices (fb0, tty0, hda, ...) appear as
+    // nodes. static storage: vfs_mount keeps the pointer for the system's life.
+    static fs_mount_t devfs;
+    if (kerr_failed(devfs_mount(&devfs)) || kerr_failed(vfs_mount("/dev", &devfs)))
+    {
+        KLOG_WARN("kernel: devfs mount failed; /dev unavailable");
     }
 
     KLOG_INFO("kernel: root filesystem mounted, launching /bin/sh");

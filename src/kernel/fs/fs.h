@@ -66,6 +66,7 @@ struct fs_mount
 {
     const fs_ops_t *ops;  // filesystem operations vtable (set by fs_mount)
     ext2_volume_t ext2;   // embedded ext2_volume_t representing the mounted filesystem (not a pointer)
+    void *fs_data;        // generic per-mount state for non-ext2 filesystems (devfs, procfs, ...)
     uint8_t is_mounted; // flag indicating whether the filesystem is successfully mounted (1 for mounted, 0 for not mounted)
 };
 
@@ -92,6 +93,8 @@ struct fs_file
 {
     const fs_ops_t *ops;   // vtable of the filesystem this file belongs to
     ext2_file_t ext2_file; // embedded ext2_file_t representing the open file or directory (not a pointer)
+    void *fs_data;         // generic per-file state for non-ext2 filesystems (e.g. the target device_t)
+    uint32_t fs_pos;       // generic cursor for non-ext2 filesystems (e.g. devfs dir index)
     uint8_t file_type;   // type of the file (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN)
     uint8_t is_open;     // flag indicating whether the file is open (1 for open, 0 for closed)
 };
