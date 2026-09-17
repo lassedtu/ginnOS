@@ -45,12 +45,19 @@ kerr_t vfs_mount(const char *prefix, fs_mount_t *mount);
 kerr_t vfs_umount(const char *prefix);
 
 /**
- * find the mounted filesystem responsible for an absolute path.
- * returns the mount whose prefix is the longest match for path.
+ * find the mounted filesystem responsible for an absolute path, and the
+ * sub-path relative to that mount's prefix.
+ *
+ * the backing filesystem is handed a path relative to its own mount point, not
+ * the full absolute path: the root mount "/" sees the path unchanged (still
+ * leading '/'), while a sub-mount at "/dev" sees "/fb0" for "/dev/fb0" and "/"
+ * for "/dev" itself. the relative path always keeps a leading '/'.
  * @param path absolute path to resolve.
+ * @param rel_out if non-NULL, receives a pointer into @p path (or a static "/")
+ *                for the mount-relative sub-path. only valid while @p path is.
  * @return the backing mount, or NULL if no filesystem covers the path.
  */
-fs_mount_t *vfs_resolve_mount(const char *path);
+fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out);
 
 /**
  * open a file or directory by absolute path in the virtual file system.

@@ -9,13 +9,14 @@ kerr_t vfs_open(
     if (!file || !path)
         return KERR_INVAL;
 
-    fs_mount_t *mount = vfs_resolve_mount(path);
+    const char *rel = NULL;
+    fs_mount_t *mount = vfs_resolve_mount_path(path, &rel);
     if (!mount)
         return KERR_INVAL;
 
     kerr_t err = fs_open(
             mount,
-            path,
+            rel,
             &file->file);
     if (kerr_failed(err))
     {
@@ -34,13 +35,14 @@ kerr_t vfs_create(const char *path)
         return KERR_INVAL;
     }
 
-    fs_mount_t *mount = vfs_resolve_mount(path);
+    const char *rel = NULL;
+    fs_mount_t *mount = vfs_resolve_mount_path(path, &rel);
     if (!mount)
     {
         return KERR_INVAL;
     }
 
-    return fs_create(mount, path);
+    return fs_create(mount, rel);
 }
 
 kerr_t vfs_mkdir(const char *path)
@@ -50,13 +52,14 @@ kerr_t vfs_mkdir(const char *path)
         return KERR_INVAL;
     }
 
-    fs_mount_t *mount = vfs_resolve_mount(path);
+    const char *rel = NULL;
+    fs_mount_t *mount = vfs_resolve_mount_path(path, &rel);
     if (!mount)
     {
         return KERR_INVAL;
     }
 
-    return fs_mkdir(mount, path);
+    return fs_mkdir(mount, rel);
 }
 
 kerr_t vfs_remove(const char *path)
@@ -66,13 +69,14 @@ kerr_t vfs_remove(const char *path)
         return KERR_INVAL;
     }
 
-    fs_mount_t *mount = vfs_resolve_mount(path);
+    const char *rel = NULL;
+    fs_mount_t *mount = vfs_resolve_mount_path(path, &rel);
     if (!mount)
     {
         return KERR_INVAL;
     }
 
-    return fs_remove(mount, path);
+    return fs_remove(mount, rel);
 }
 
 kerr_t vfs_rmdir(const char *path)
@@ -82,13 +86,14 @@ kerr_t vfs_rmdir(const char *path)
         return KERR_INVAL;
     }
 
-    fs_mount_t *mount = vfs_resolve_mount(path);
+    const char *rel = NULL;
+    fs_mount_t *mount = vfs_resolve_mount_path(path, &rel);
     if (!mount)
     {
         return KERR_INVAL;
     }
 
-    return fs_rmdir(mount, path);
+    return fs_rmdir(mount, rel);
 }
 
 kerr_t vfs_rename(const char *old_path, const char *new_path)
@@ -98,20 +103,23 @@ kerr_t vfs_rename(const char *old_path, const char *new_path)
         return KERR_INVAL;
     }
 
-    fs_mount_t *mount = vfs_resolve_mount(old_path);
+    const char *old_rel = NULL;
+    fs_mount_t *mount = vfs_resolve_mount_path(old_path, &old_rel);
     if (!mount)
     {
         return KERR_INVAL;
     }
 
     // rename across different mounts is not supported: both paths must
-    // resolve to the same filesystem.
-    if (vfs_resolve_mount(new_path) != mount)
+    // resolve to the same filesystem. resolve the destination's relative path
+    // too so the backing fs sees mount-relative names for both.
+    const char *new_rel = NULL;
+    if (vfs_resolve_mount_path(new_path, &new_rel) != mount)
     {
         return KERR_INVAL;
     }
 
-    return fs_rename(mount, old_path, new_path);
+    return fs_rename(mount, old_rel, new_rel);
 }
 
 kerr_t vfs_stat(const char *path, vfs_stat_t *stat_out)
@@ -121,13 +129,14 @@ kerr_t vfs_stat(const char *path, vfs_stat_t *stat_out)
         return KERR_INVAL;
     }
 
-    fs_mount_t *mount = vfs_resolve_mount(path);
+    const char *rel = NULL;
+    fs_mount_t *mount = vfs_resolve_mount_path(path, &rel);
     if (!mount)
     {
         return KERR_INVAL;
     }
 
-    return fs_stat(mount, path, stat_out);
+    return fs_stat(mount, rel, stat_out);
 }
 
 uint32_t vfs_read(
