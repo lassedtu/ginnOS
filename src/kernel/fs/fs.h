@@ -46,6 +46,14 @@ typedef struct
     kerr_t (*truncate)(fs_file_t *file);
     kerr_t (*read_entry)(fs_file_t *file, fs_dirent_t *entry_out);
     void (*close)(fs_file_t *file);
+
+    /**
+     * device-control operation for a special file (optional; NULL means the
+     * filesystem supports no ioctls, i.e. -ENOTTY). devfs forwards this to the
+     * backing device; disk filesystems like ext2 leave it NULL. returns 0 on
+     * success or a negative errno.
+     */
+    int32_t (*ioctl)(fs_file_t *file, uint32_t request, void *arg);
 } fs_ops_t;
 
 /**
@@ -212,3 +220,14 @@ void fs_close(fs_file_t *file);
  * @return file type (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN).
  */
 uint8_t fs_file_type(const fs_file_t *file);
+
+/**
+ * issue a device-control (ioctl) request on an open special file.
+ * dispatches through the filesystem's ioctl op; filesystems without one
+ * (ext2, etc.) return -ENOTTY.
+ * @param file open file handle.
+ * @param request driver-defined request code.
+ * @param arg request-specific argument (typically a bounds-checked pointer).
+ * @return 0 on success, or a negative errno on failure.
+ */
+int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg);

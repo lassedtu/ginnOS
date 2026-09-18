@@ -215,3 +215,13 @@ uint8_t vfs_file_type(
 
     return fs_file_type(&file->file);
 }
+
+int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg)
+{
+    if (!file || !file->mount)
+    {
+        return -9; /* EBADF */
+    }
+
+    return fs_ioctl(&file->file, request, arg);
+}

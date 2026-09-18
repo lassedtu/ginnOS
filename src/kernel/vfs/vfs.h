@@ -199,3 +199,14 @@ void vfs_close(
  */
 uint8_t vfs_file_type(
     vfs_file_t *file);
+
+/**
+ * issue a device-control (ioctl) request on an open file.
+ * dispatches through the backing filesystem; only special filesystems (devfs)
+ * implement it, forwarding to the device. others return -ENOTTY.
+ * @param file pointer to the vfs_file_t representing the open file.
+ * @param request driver-defined request code.
+ * @param arg request-specific argument (typically a bounds-checked pointer).
+ * @return 0 on success, or a negative errno on failure.
+ */
+int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg);

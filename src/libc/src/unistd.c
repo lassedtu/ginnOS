@@ -176,6 +176,17 @@ int ttyctl(int mode)
     return ret;
 }
 
+int ioctl(int fd, unsigned int request, void *arg)
+{
+    int ret = _syscall(SYS_IOCTL, fd, (int)request, (int)arg, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
+}
+
 int read_event(key_event_t *event)
 {
     int n = (int)read(0, (void *)event, sizeof(key_event_t));

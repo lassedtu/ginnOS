@@ -35,6 +35,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_FBINFO] = sys_fbinfo,
     [SYS_FBMAP] = sys_fbmap,
     [SYS_POLLKEY] = sys_pollkey,
+    [SYS_IOCTL] = sys_ioctl,
 };
 
 /**

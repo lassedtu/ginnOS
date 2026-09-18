@@ -39,6 +39,19 @@ typedef struct device device_t;
 typedef struct
 {
     void (*shutdown)(device_t *dev); // quiesce the device (optional)
+
+    /**
+     * device-specific control operation, the transport for ioctl(2)-style
+     * requests (e.g. the framebuffer's FBIOGET_VSCREENINFO). optional: a NULL
+     * hook means the device supports no ioctls.
+     * @param dev the device.
+     * @param request driver-defined request code.
+     * @param arg request-specific argument (often a user pointer, already
+     *            bounds-checked by the syscall layer before it reaches here).
+     * @return 0 on success, or a negative errno on failure (-25/-ENOTTY for an
+     *         unrecognized request).
+     */
+    int32_t (*ioctl)(device_t *dev, uint32_t request, void *arg);
 } device_ops_t;
 
 /**

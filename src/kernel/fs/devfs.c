@@ -181,6 +181,19 @@ static void devfs_close(fs_file_t *file)
     file->fs_data = NULL;
 }
 
+static int32_t devfs_ioctl(fs_file_t *file, uint32_t request, void *arg)
+{
+    // forward to the backing device's ioctl hook. fs_data holds the device_t*
+    // stashed at open time; the directory root (fs_data == NULL) has none.
+    device_t *dev = (device_t *)file->fs_data;
+    if (!dev || !dev->ops || !dev->ops->ioctl)
+    {
+        return -25; /* ENOTTY: device supports no ioctls */
+    }
+
+    return dev->ops->ioctl(dev, request, arg);
+}
+
 // the devfs operations table handed to the generic fs layer.
 static const fs_ops_t devfs_ops = {
     .open = devfs_open,
@@ -195,6 +208,7 @@ static const fs_ops_t devfs_ops = {
     .truncate = devfs_truncate,
     .read_entry = devfs_read_entry,
     .close = devfs_close,
+    .ioctl = devfs_ioctl,
 };
 
 kerr_t devfs_mount(fs_mount_t *mount)

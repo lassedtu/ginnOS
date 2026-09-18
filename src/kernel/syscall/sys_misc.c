@@ -4,6 +4,7 @@
 #include "kernel/vfs/vfs.h"
 #include "kernel/process/process.h"
 #include "common/string.h"
+#include "fd_table.h"
 
 /**
  * SYS_getcwd: copy the current working directory into a user buffer.
@@ -96,4 +97,37 @@ int32_t sys_ttyctl(struct registers *regs)
     int32_t prev = (int32_t)proc->tty_raw;
     proc->tty_raw = (uint8_t)mode;
     return prev;
+}
+
+/**
+ * SYS_ioctl: issue a device-control request on an open file descriptor.
+ * args: EBX = fd, ECX = request code, EDX = argument (usually a user pointer).
+ * only file-backed fds carry a filesystem that can service ioctls; devfs
+ * device nodes forward to the backing device. everything else is -ENOTTY.
+ * returns 0 (or a request-specific value) on success, negative errno on error.
+ *
+ * note: the arg pointer is request-specific, so its size is only known to the
+ * device handler; this layer passes it through and the handler validates it.
+ */
+int32_t sys_ioctl(struct registers *regs)
+{
+    int32_t fd_num = (int32_t)regs->ebx;
+    uint32_t request = regs->ecx;
+    void *arg = (void *)regs->edx;
+
+    fd_entry_t *entry = fd_get(fd_num);
+    if (!entry)
+    {
+        return -9; /* EBADF */
+    }
+
+    // ioctls are only defined for file-backed descriptors (the transport to a
+    // filesystem, hence to a devfs device node). console and pipe fds have no
+    // ioctl surface.
+    if (entry->type != FD_TYPE_FILE)
+    {
+        return -25; /* ENOTTY */
+    }
+
+    return vfs_ioctl(&entry->file, request, arg);
 }

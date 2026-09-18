@@ -172,3 +172,20 @@ uint8_t fs_file_type(const fs_file_t *file)
 
     return file->file_type;
 }
+
+int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg)
+{
+    if (!file || !file->is_open)
+    {
+        return -9; /* EBADF */
+    }
+
+    // a filesystem without an ioctl op supports no device control: -ENOTTY,
+    // the same "inappropriate ioctl for device" errno a regular file returns.
+    if (!file->ops->ioctl)
+    {
+        return -25; /* ENOTTY */
+    }
+
+    return file->ops->ioctl(file, request, arg);
+}
