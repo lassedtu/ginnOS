@@ -1,8 +1,10 @@
 #include "fb.h"
 
 #include "arch/x86/cpu/paging.h"
+#include "arch/arch.h"
 #include "kernel/device/device.h"
 #include "kernel/memory/heap.h"
+#include "kernel/memory/mman.h"
 #include "common/memory.h"
 #include "common/string.h"
 
@@ -78,6 +80,61 @@ static void map_framebuffer(uint32_t phys_base, uint32_t bytes)
     }
 }
 
+/**
+ * device mmap op: map the linear framebuffer into a process at the address the
+ * mmap syscall reserved. this is the FB6 path that replaces the interim
+ * SYS_fbmap: the LFB's physical frames are shared with the kernel mapping, so
+ * this just adds a user alias in the process page directory. eager, no demand
+ * paging; the frames are device memory (outside PMM) so teardown skips them.
+ */
+static int32_t fb_dev_mmap(device_t *dev, uint32_t page_directory, uint32_t virt,
+                           uint32_t length, int prot, uint32_t offset)
+{
+    (void)dev;
+
+    if (!fb_ready)
+    {
+        return -19; /* ENODEV */
+    }
+
+    uint32_t fb_bytes = fb.height * fb.pitch;
+
+    // clamp the request to the framebuffer; reject an offset past the end.
+    if (offset >= fb_bytes)
+    {
+        return -22; /* EINVAL */
+    }
+    if (length > fb_bytes - offset)
+    {
+        length = fb_bytes - offset;
+    }
+
+    // writable unless the caller asked for a read-only mapping.
+    uint32_t flags = (prot & PROT_WRITE) ? MMU_USER_RW : MMU_FLAG_PRESENT | MMU_FLAG_USER;
+
+    uint32_t phys = (uint32_t)fb.addr + offset; // identity-mapped: virt == phys
+    uint32_t phys_start = phys & ~(PAGE_SIZE - 1);
+    uint32_t phys_end = (phys + length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    uint32_t v = virt;
+    for (uint32_t p = phys_start; p < phys_end; p += PAGE_SIZE)
+    {
+        if (arch_map_page(page_directory, v, p, flags) != 0)
+        {
+            return -12; /* ENOMEM */
+        }
+        v += PAGE_SIZE;
+    }
+
+    return 0;
+}
+
+// device ops for fb0: mappable (mmap) so userspace reaches the LFB via
+// mmap("/dev/fb0"). no ioctl yet (that arrives with the fbdev screeninfo).
+static const device_ops_t fb_device_ops = {
+    .mmap = fb_dev_mmap,
+};
+
 bool fb_init(const boot_info_t *boot)
 {
     if (!boot || boot->framebuffer_type == 0 || boot->framebuffer_addr == 0)
@@ -123,7 +180,7 @@ bool fb_init(const boot_info_t *boot)
     strncpy(fb_device.name, "fb0", DEVICE_NAME_MAX - 1);
     fb_device.name[DEVICE_NAME_MAX - 1] = '\0';
     fb_device.type = DEVICE_TYPE_CHAR;
-    fb_device.ops = 0;
+    fb_device.ops = &fb_device_ops;
     fb_device.driver_data = &fb;
     device_register(&fb_device);
 

@@ -32,9 +32,10 @@
 #define SYS_FBMAP 23
 #define SYS_POLLKEY 24
 #define SYS_IOCTL 25
+#define SYS_MMAP 26
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 26
+#define SYSCALL_COUNT 27
 
 /**
  * initialize the system call interface.

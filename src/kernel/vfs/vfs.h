@@ -210,3 +210,18 @@ uint8_t vfs_file_type(
  * @return 0 on success, or a negative errno on failure.
  */
 int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg);
+
+/**
+ * map an open file's memory into a process address space.
+ * dispatches through the backing filesystem; only device nodes (devfs) that
+ * forward to a mappable device succeed. others return -ENODEV.
+ * @param file pointer to the vfs_file_t representing the open file.
+ * @param page_directory physical address of the target process page directory.
+ * @param virt page-aligned destination virtual address.
+ * @param length bytes to map (page-multiple).
+ * @param prot PROT_* bits.
+ * @param offset page-aligned byte offset into the mapped object.
+ * @return 0 on success, or a negative errno on failure.
+ */
+int32_t vfs_mmap(vfs_file_t *file, uint32_t page_directory, uint32_t virt,
+                 uint32_t length, int prot, uint32_t offset);

@@ -1,5 +1,6 @@
 #include "process.h"
 #include "kernel/memory/pmm.h"
+#include "kernel/memory/memory_layout.h"
 #include "arch/arch.h"
 #include "common/memory.h"
 
@@ -33,6 +34,7 @@ process_t *process_create(void)
             proc->parent_pid = PID_NONE;
             proc->state = PROC_STATE_READY;
             proc->brk = 0;
+            proc->mmap_next = USER_MMAP_BASE;
             proc->exit_code = 0;
             proc->wait_for_pid = PID_NONE;
 

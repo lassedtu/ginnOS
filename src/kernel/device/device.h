@@ -52,6 +52,24 @@ typedef struct
      *         unrecognized request).
      */
     int32_t (*ioctl)(device_t *dev, uint32_t request, void *arg);
+
+    /**
+     * map the device's memory into a process address space (optional; NULL
+     * means the device is not mappable, i.e. -ENODEV). the device maps its own
+     * frames at @p virt in @p page_directory; the caller (SYS_mmap) has already
+     * reserved the virtual range and validated it. eager mapping, no demand
+     * paging. the frames are device memory (outside PMM), so process teardown
+     * leaves them alone.
+     * @param dev the device.
+     * @param page_directory physical address of the target process page dir.
+     * @param virt page-aligned destination virtual address.
+     * @param length number of bytes to map (page-multiple).
+     * @param prot PROT_* protection bits.
+     * @param offset byte offset into the device memory (page-aligned).
+     * @return 0 on success, or a negative errno on failure.
+     */
+    int32_t (*mmap)(device_t *dev, uint32_t page_directory, uint32_t virt,
+                    uint32_t length, int prot, uint32_t offset);
 } device_ops_t;
 
 /**

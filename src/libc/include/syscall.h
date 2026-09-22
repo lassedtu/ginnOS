@@ -32,6 +32,7 @@
 #define SYS_FBMAP 23    // map the framebuffer into the process
 #define SYS_POLLKEY 24  // non-blocking: return a pending char key, or 0
 #define SYS_IOCTL 25    // device-control request on a file descriptor
+#define SYS_MMAP 26     // map memory (anonymous or device-backed)
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

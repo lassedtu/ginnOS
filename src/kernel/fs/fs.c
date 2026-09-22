@@ -189,3 +189,20 @@ int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg)
 
     return file->ops->ioctl(file, request, arg);
 }
+
+int32_t fs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
+                uint32_t length, int prot, uint32_t offset)
+{
+    if (!file || !file->is_open)
+    {
+        return -9; /* EBADF */
+    }
+
+    // a filesystem without an mmap op has nothing mappable: -ENODEV.
+    if (!file->ops->mmap)
+    {
+        return -19; /* ENODEV */
+    }
+
+    return file->ops->mmap(file, page_directory, virt, length, prot, offset);
+}

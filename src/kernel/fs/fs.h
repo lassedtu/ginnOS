@@ -54,6 +54,14 @@ typedef struct
      * success or a negative errno.
      */
     int32_t (*ioctl)(fs_file_t *file, uint32_t request, void *arg);
+
+    /**
+     * map an open special file's memory into a process (optional; NULL means
+     * the file is not mappable, i.e. -ENODEV). devfs forwards this to the
+     * backing device; disk filesystems leave it NULL. returns 0 or -errno.
+     */
+    int32_t (*mmap)(fs_file_t *file, uint32_t page_directory, uint32_t virt,
+                    uint32_t length, int prot, uint32_t offset);
 } fs_ops_t;
 
 /**
@@ -231,3 +239,18 @@ uint8_t fs_file_type(const fs_file_t *file);
  * @return 0 on success, or a negative errno on failure.
  */
 int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg);
+
+/**
+ * map an open special file's memory into a process address space.
+ * dispatches through the filesystem's mmap op; filesystems without one return
+ * -ENODEV. the frames are mapped eagerly at @p virt in @p page_directory.
+ * @param file open file handle.
+ * @param page_directory physical address of the target process page directory.
+ * @param virt page-aligned destination virtual address.
+ * @param length bytes to map (page-multiple).
+ * @param prot PROT_* bits.
+ * @param offset page-aligned byte offset into the mapped object.
+ * @return 0 on success, or a negative errno on failure.
+ */
+int32_t fs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
+                uint32_t length, int prot, uint32_t offset);
