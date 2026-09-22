@@ -7,7 +7,7 @@
  * turns the pixel-only framebuffer driver into a character grid: it lays out
  * cells using the generated bitmap font (font.h), draws glyphs with a
  * foreground/background colour, tracks a cursor, and scrolls. it does not
- * parse escape sequences — that is the tty layer's job. this is the piece the
+ * parse escape sequences, that is the tty layer's job. this is the piece the
  * framebuffer tty backend calls.
  */
 

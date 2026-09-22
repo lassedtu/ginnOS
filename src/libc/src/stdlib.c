@@ -23,7 +23,7 @@
  */
 
 /** minimum alignment for returned pointers (8 bytes). */
-#define ALIGN 8
+#define ALIGN       8
 #define ALIGN_UP(x) (((x) + (ALIGN - 1)) & ~(ALIGN - 1))
 
 /** minimum sbrk request size to reduce syscall overhead. */
@@ -95,8 +95,7 @@ static void split_block(block_header_t *block, size_t size)
     if (block->size < size + HEADER_SIZE + ALIGN)
         return;
 
-    block_header_t *new_block =
-        (block_header_t *)((char *)block + HEADER_SIZE + size);
+    block_header_t *new_block = (block_header_t *)((char *)block + HEADER_SIZE + size);
     new_block->size = remaining;
     new_block->next = block->next;
     new_block->free = 1;
@@ -220,8 +219,6 @@ void *realloc(void *ptr, size_t size)
     free(ptr);
     return new_ptr;
 }
-
-/* ─── Other stdlib functions ─────────────────────────────────────────────── */
 
 int atoi(const char *s)
 {

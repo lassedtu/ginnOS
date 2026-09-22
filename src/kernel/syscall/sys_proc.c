@@ -190,7 +190,7 @@ int32_t sys_sbrk(struct registers *regs)
 /**
  * SYS_mmap: map memory into the calling process.
  * args: EBX = length, ECX = prot, EDX = flags, ESI = fd, EDI = offset.
- * (POSIX's advisory addr is dropped — the kernel always picks the range.)
+ * (POSIX's advisory addr is dropped; the kernel always picks the range.)
  *
  * two forms:
  *   - anonymous (MAP_ANONYMOUS, fd < 0): allocate zeroed physical pages.

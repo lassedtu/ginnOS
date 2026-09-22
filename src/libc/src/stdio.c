@@ -55,8 +55,6 @@ static void buf_emit(const char *str, int len, void *ctx)
     }
 }
 
-/* ─── Generic formatting engine ───────────────────────────────────────────── */
-
 /**
  * format an unsigned integer into buf (in reverse), return length.
  */
@@ -202,8 +200,6 @@ static int format_core(output_t *out, const char *fmt, va_list ap)
 done:
     return count;
 }
-
-/* ─── Public API ──────────────────────────────────────────────────────────── */
 
 int putchar(int c)
 {
