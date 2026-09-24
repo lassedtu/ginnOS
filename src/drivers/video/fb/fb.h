@@ -23,15 +23,15 @@
  */
 typedef struct
 {
-    uint8_t *addr;    // framebuffer base (virtual == physical, identity-mapped).
-    uint32_t width;   // width in pixels.
-    uint32_t height;  // height in pixels.
-    uint32_t pitch;   // bytes per scanline (may exceed width * bytes_per_pixel).
-    uint8_t bpp;      // bits per pixel (24 or 32).
-    uint8_t bytes_pp; // bytes per pixel (3 or 4).
-    uint8_t red_size, red_shift;
-    uint8_t green_size, green_shift;
-    uint8_t blue_size, blue_shift;
+    uint8_t *addr;                   // framebuffer base (virtual == physical, identity-mapped).
+    uint32_t width;                  // width in pixels.
+    uint32_t height;                 // height in pixels.
+    uint32_t pitch;                  // bytes per scanline (may exceed width * bytes_per_pixel).
+    uint8_t bpp;                     // bits per pixel (24 or 32).
+    uint8_t bytes_pp;                // bytes per pixel (3 or 4).
+    uint8_t red_size, red_shift;     // how the red channel sits in a pixel.
+    uint8_t green_size, green_shift; // how the green channel sits in a pixel.
+    uint8_t blue_size, blue_shift;   // how the blue channel sits in a pixel.
 } fb_info_t;
 
 /**
