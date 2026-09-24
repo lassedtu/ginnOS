@@ -12,6 +12,130 @@ The name ginnOS is taken from Ginnungagap, the primordial void in Norse mytholog
 
 I've recently started on writing documentation for this project in obsidian and hosting it using quartz, this can be read at: https://lassedtu.github.io/ginnOS-docs/
 
+## Features
+
+ginnOS is a 32-bit x86 (i686) Unix-like system written from scratch in C and
+assembly. It boots on BIOS/QEMU via its own two-stage bootloader and drops
+straight into a userspace shell. Everything below is implemented and working
+today.
+
+### Boot and kernel core
+
+- Custom two-stage bootloader (stage1 MBR + stage2), real mode → protected mode
+- x86 protected-mode kernel with GDT (ring 0/3 segments + TSS)
+- IDT, 8259 PIC, IRQ handling and a 256-vector ISR framework
+- Shared-IRQ registration layer (`irq_request`/`irq_free`, per-handler enable)
+- Kernel panic + assertion infrastructure, unified `kerr_t` error type
+- E820 memory-map detection and boot-time region reservation
+- Serial (COM1 16550 UART) driver + leveled kernel logging (`klog`) for
+  headless debugging
+
+### Memory management
+
+- Physical memory manager (bitmap allocator)
+- Kernel heap: first-fit allocator with splitting, coalescing, expansion —
+  `kmalloc`/`kfree`/`krealloc` (in-place when possible)/`kcalloc`, allocation
+  statistics, and an optional `HEAP_DEBUG` mode (redzone canaries, freed-memory
+  poisoning)
+- Virtual memory: paging with per-process page directories, a page-fault
+  handler, and a map/unmap/translate API
+- `SYS_mmap` (anonymous + device-backed) with a per-process mmap region
+
+### Processes and multitasking
+
+- Process table with per-process page directory, kernel stack, fd table, cwd
+- ELF32 loader (`PT_LOAD` mapping) with `argc`/`argv` passing
+- Ring 3 execution via `iret`, TSS kernel-stack switching
+- Round-robin scheduler with an O(1) intrusive ready queue and an idle (hlt)
+  task
+- Parent/child relationships, `waitpid` with zombie reaping
+- fd inheritance across `exec` (close-on-exec for pipe fds beyond stdio)
+
+### Concurrency
+
+- Spinlocks (`spin_lock`/`spin_lock_irqsave`) with nesting-safe
+  `arch_irq_save`/`arch_irq_restore`
+- Generic wait queues (block/wake-one/wake-all); pipes and blocking I/O use them
+  instead of busy-waiting
+
+### Filesystem and I/O
+
+- VFS layer with a mount table (longest-prefix resolution) and a filesystem
+  operations vtable (`fs_ops_t`) — the VFS never calls a filesystem directly
+- ext2 driver: read/write, direct + single/double/triple-indirect blocks, inode
+  and block allocation, directory operations (create, remove, read, write,
+  truncate, stat, rename), re-entrant per-volume scratch buffers
+- devfs mounted at `/dev`, enumerating the device registry (`fb0`, `tty0`,
+  `hda`, `hda1`, `pit`, `kbd`)
+- Block-device abstraction (ATA PIO driver + MBR partition parsing)
+- Pipes (circular buffers) with blocking, EOF/EPIPE, reference-counted endpoints
+- `dup2` fd redirection
+
+### System calls
+
+- 25 syscalls via `int 0x80` with proper `-errno` returns
+- Process/IO: `exit`, `write`, `read`, `open`, `close`, `stat`, `create`,
+  `mkdir`, `exec`, `getpid`, `waitpid`, `sbrk`, `getcwd`, `chdir`, `readdir`,
+  `unlink`, `rmdir`, `pipe`, `dup2`, `ftruncate`, `lseek`
+- Device/terminal/graphics: `ttyctl`, `ioctl` (general device control),
+  `mmap`, `pollkey`
+
+### Terminal and graphics (Bifröst framebuffer)
+
+- Layered TTY: a device-independent VT/ANSI terminal state machine
+  (`tty_backend_t`) decoupled from the output device
+- VGA text-mode backend (fallback console)
+- Linear VBE framebuffer: bootloader mode-set with full pixel-format reporting
+  (channel size/shift masks), a driver with pixel primitives, and LFB mapping
+- Framebuffer console: JetBrains Mono bitmap-font glyph renderer (font baked
+  offline from a TTF), SGR colours, VT100 growth, and double buffering with
+  dirty-row flushing — with automatic fallback to VGA text when no framebuffer
+  is present
+- Linux-style **`/dev/fb0`** framebuffer device: a char device with
+  `read`/`write`/`lseek`/`ioctl`/`mmap`, exposing `fb_fix_screeninfo` /
+  `fb_var_screeninfo` (per-channel bitfields) — the stable userspace graphics
+  interface. A `metaballs` demo draws to it via `open` + `ioctl` + `mmap`.
+
+### C standard library (libc.a)
+
+- `<string.h>`: `strlen`, `strcpy`/`strncpy`, `strcat`, `strcmp`/`strncmp`,
+  `strchr`/`strrchr`, `strstr`, `strtok`, `memcpy`/`memmove`/`memset`/`memcmp`
+- `<stdio.h>`: `printf`/`fprintf` (`%s %d %u %x %c %%`), `puts`, `putchar`
+- `<stdlib.h>`: `atoi`, `malloc`/`free`, `exit`
+- `<unistd.h>`: the full syscall surface (`read`/`write`/`open`/`close`/`exec`/
+  `waitpid`/`pipe`/`dup2`/`lseek`/`ioctl`/`readdir`/… and `read_event`)
+- `<sys/mman.h>` (`mmap`), `<sys/fb.h>` (framebuffer)
+- `<errno.h>`: `errno`, `perror`, `strerror`
+- `crt0` with `argc`/`argv` setup; `int 0x80` syscall stubs
+
+### Userspace shell (skl -> /bin/sh)
+
+- Line editor: cursor movement, insert/delete, Home/End, Ctrl+A/E/K/U/W/L/D
+- Command history (128 entries, Up/Down, dedup)
+- Environment variables (`export`, `unset`, `env`, `printenv`, `which`) with
+  `$VAR` / `${VAR}` / `$?` / `$$` expansion
+- PATH-based command lookup
+- Tokenizer with double/single quoting and backslash escaping
+- Pipelines (`cmd1 | cmd2 | cmd3`) and I/O redirection (`>`, `>>`, `<`)
+- Builtins: `cd`, `exit`, `history`, `export`, `unset`, `env`, `printenv`,
+  `which`
+
+### Bundled userspace programs
+
+- `cat`, `clear`, `echo`, `ls`, `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `touch`,
+  `ze` (text editor), and a `metaballs` framebuffer demo
+
+### Portability and tooling
+
+- Architecture-neutral abstraction layers (`arch_*` for interrupts, MMU,
+  context switch, boot protocol) with x86 as the only current backend —
+  groundwork for a future x86_64 port
+- Multi-arch-ready build system (`ARCH` switch), `make lint` (clang-tidy),
+  `make format` (clang-format), `make debug` (QEMU + GDB stub), `make iso`
+  (GRUB-bootable), and `compile_commands.json` generation for LSP
+- Consistent `snake_case` conventions documented in `STYLE.md`; ext2 image and
+  bitmap-font helper tools under `tools/`
+
 ## macOS Toolchain Setup (Manual)
 
 ### Clone the project
@@ -296,6 +420,39 @@ brew install e2fsprogs
 The helper tool is located at:
 
 - [tools/ext2/make_image.py](tools/ext2/make_image.py)
+
+## Framebuffer Font Tool
+
+The framebuffer terminal (bifrost) renders text with a bitmap font baked from a
+TrueType font. The kernel stays a simple bitmap blitter, no TrueType rasterizer
+runs at runtime: [tools/font/make_font.py](tools/font/make_font.py) rasterizes a
+TTF offline and emits the C header the renderer uses
+([src/drivers/video/fb/font.h](src/drivers/video/fb/font.h)), which is committed
+so the normal build has no font dependency.
+
+The default is JetBrains Mono Regular at a 10x20 cell. Regenerate the header
+(only needed when changing font/size):
+
+```bash
+python3 tools/font/make_font.py src/drivers/video/fb/font.h
+```
+
+Use a different font, size, or cell:
+
+```bash
+python3 tools/font/make_font.py \
+  --font /path/to/Font-Regular.ttf --size 16 --cell 10x20 \
+  src/drivers/video/fb/font.h
+```
+
+The tool needs Pillow:
+
+```bash
+pip install Pillow
+```
+
+JetBrains Mono is licensed under the SIL Open Font License 1.1; the notice is
+copied into the generated header.
 
 ## Credits and Learning Resources
 

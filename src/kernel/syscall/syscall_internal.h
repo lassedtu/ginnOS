@@ -60,8 +60,13 @@ int32_t sys_exec(struct registers *regs);
 int32_t sys_getpid(struct registers *regs);
 int32_t sys_waitpid(struct registers *regs);
 int32_t sys_sbrk(struct registers *regs);
+int32_t sys_mmap(struct registers *regs);
 
 /* sys_misc.c */
 int32_t sys_getcwd(struct registers *regs);
 int32_t sys_chdir(struct registers *regs);
 int32_t sys_ttyctl(struct registers *regs);
+int32_t sys_ioctl(struct registers *regs);
+
+/* sys_fb.c */
+int32_t sys_pollkey(struct registers *regs);

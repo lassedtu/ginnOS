@@ -114,13 +114,16 @@ kerr_t vfs_umount(const char *prefix)
     return KERR_OK;
 }
 
-fs_mount_t *vfs_resolve_mount(const char *path)
+fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out)
 {
     if (!path || path[0] != '/')
     {
         return NULL;
     }
 
+    // resolve to the longest-matching mount, tracking its prefix length so we
+    // can hand the backing fs a path relative to its own mount point rather
+    // than the full absolute path.
     fs_mount_t *best = NULL;
     uint32_t best_len = 0;
 
@@ -136,6 +139,34 @@ fs_mount_t *vfs_resolve_mount(const char *path)
         {
             best = mount_table[i].mount;
             best_len = plen;
+        }
+    }
+
+    if (!best)
+    {
+        return NULL;
+    }
+
+    if (rel_out)
+    {
+        // the root mount "/" owns the whole path: hand it through unchanged so
+        // the backing fs still sees a leading '/'. for a sub-mount like "/dev",
+        // strip the prefix so "/dev/fb0" becomes "/fb0" and "/dev" becomes "/".
+        // the relative path always keeps a leading '/' so backends have a
+        // consistent root-relative contract.
+        if (best_len <= 1)
+        {
+            *rel_out = path; // root mount: full path, already leading '/'.
+        }
+        else
+        {
+            *rel_out = path + best_len; // points at the '/' after the prefix,
+                                        // or at the trailing '\0' for an exact
+                                        // mount-point match.
+            if ((*rel_out)[0] == '\0')
+            {
+                *rel_out = "/"; // exact mount point resolves to the fs root.
+            }
         }
     }
 

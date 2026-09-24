@@ -156,6 +156,16 @@ int mkdir(const char *path);
  */
 int ttyctl(int mode);
 
+/**
+ * issue a device-control request on an open file descriptor.
+ * only device nodes under /dev service ioctls; other fds return -1/ENOTTY.
+ * @param fd open file descriptor (e.g. an open "/dev/fb0").
+ * @param request driver-defined request code.
+ * @param arg request-specific argument, usually a pointer to a struct.
+ * @return 0 (or a request-specific value) on success, -1 on error (errno set).
+ */
+int ioctl(int fd, unsigned int request, void *arg);
+
 /* keyboard event types (matches kernel keyboard_event_type_t) */
 #define KEY_EVENT_CHAR    0
 #define KEY_EVENT_SPECIAL 1

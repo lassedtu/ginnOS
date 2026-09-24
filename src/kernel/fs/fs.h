@@ -46,6 +46,30 @@ typedef struct
     kerr_t (*truncate)(fs_file_t *file);
     kerr_t (*read_entry)(fs_file_t *file, fs_dirent_t *entry_out);
     void (*close)(fs_file_t *file);
+
+    /**
+     * device-control operation for a special file (optional; NULL means the
+     * filesystem supports no ioctls, i.e. -ENOTTY). devfs forwards this to the
+     * backing device; disk filesystems like ext2 leave it NULL. returns 0 on
+     * success or a negative errno.
+     */
+    int32_t (*ioctl)(fs_file_t *file, uint32_t request, void *arg);
+
+    /**
+     * map an open special file's memory into a process (optional; NULL means
+     * the file is not mappable, i.e. -ENODEV). devfs forwards this to the
+     * backing device; disk filesystems leave it NULL. returns 0 or -errno.
+     */
+    int32_t (*mmap)(fs_file_t *file, uint32_t page_directory, uint32_t virt,
+                    uint32_t length, int prot, uint32_t offset);
+
+    /**
+     * reposition an open file's cursor (optional). devfs implements this over
+     * its generic cursor; ext2 leaves it NULL and the syscall layer uses the
+     * ext2 file cursor directly. whence is SEEK_SET(0)/CUR(1)/END(2).
+     * @return the new absolute position, or a negative errno.
+     */
+    int32_t (*seek)(fs_file_t *file, int32_t offset, int whence);
 } fs_ops_t;
 
 /**
@@ -66,6 +90,7 @@ struct fs_mount
 {
     const fs_ops_t *ops;  // filesystem operations vtable (set by fs_mount)
     ext2_volume_t ext2;   // embedded ext2_volume_t representing the mounted filesystem (not a pointer)
+    void *fs_data;        // generic per-mount state for non-ext2 filesystems (devfs, procfs, ...)
     uint8_t is_mounted; // flag indicating whether the filesystem is successfully mounted (1 for mounted, 0 for not mounted)
 };
 
@@ -92,6 +117,8 @@ struct fs_file
 {
     const fs_ops_t *ops;   // vtable of the filesystem this file belongs to
     ext2_file_t ext2_file; // embedded ext2_file_t representing the open file or directory (not a pointer)
+    void *fs_data;         // generic per-file state for non-ext2 filesystems (e.g. the target device_t)
+    uint32_t fs_pos;       // generic cursor for non-ext2 filesystems (e.g. devfs dir index)
     uint8_t file_type;   // type of the file (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN)
     uint8_t is_open;     // flag indicating whether the file is open (1 for open, 0 for closed)
 };
@@ -209,3 +236,37 @@ void fs_close(fs_file_t *file);
  * @return file type (FS_TYPE_FILE, FS_TYPE_DIR, or FS_TYPE_UNKNOWN).
  */
 uint8_t fs_file_type(const fs_file_t *file);
+
+/**
+ * issue a device-control (ioctl) request on an open special file.
+ * dispatches through the filesystem's ioctl op; filesystems without one
+ * (ext2, etc.) return -ENOTTY.
+ * @param file open file handle.
+ * @param request driver-defined request code.
+ * @param arg request-specific argument (typically a bounds-checked pointer).
+ * @return 0 on success, or a negative errno on failure.
+ */
+int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg);
+
+/**
+ * map an open special file's memory into a process address space.
+ * dispatches through the filesystem's mmap op; filesystems without one return
+ * -ENODEV. the frames are mapped eagerly at @p virt in @p page_directory.
+ * @param file open file handle.
+ * @param page_directory physical address of the target process page directory.
+ * @param virt page-aligned destination virtual address.
+ * @param length bytes to map (page-multiple).
+ * @param prot PROT_* bits.
+ * @param offset page-aligned byte offset into the mapped object.
+ * @return 0 on success, or a negative errno on failure.
+ */
+int32_t fs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
+                uint32_t length, int prot, uint32_t offset);
+
+/**
+ * reposition an open file's cursor via the filesystem's seek op.
+ * @return the new absolute position, or -ENOSYS if the filesystem has no seek
+ *         op (the caller then handles seeking itself, e.g. via the ext2
+ *         cursor), or another negative errno on failure.
+ */
+int32_t fs_seek(fs_file_t *file, int32_t offset, int whence);

@@ -36,6 +36,16 @@ uint32_t pmm_free_count(void);
 uint32_t pmm_total_count(void);
 
 /**
+ * check whether a physical address falls within the RAM the PMM manages.
+ * device memory (e.g. a linear framebuffer mapped high) is not owned by the
+ * PMM, so it must not be handed to pmm_free_page. address-space teardown uses
+ * this to skip freeing such mappings.
+ * @param phys the physical address to test.
+ * @return true if the address is a PMM-managed frame, false otherwise.
+ */
+bool pmm_owns(uint32_t phys);
+
+/**
  * mark all page frames within a physical address range as used.
  * used by subsystems that claim memory after pmm_init() (e.g., kernel heap).
  * @param start first byte of the region (inclusive, page-aligned).

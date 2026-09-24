@@ -35,6 +35,7 @@ typedef struct process
     uint32_t parent_pid;    // parent process PID (PID_NONE if orphan)
     process_state_t state;  // current state
     uint32_t brk;           // program break (for sbrk)
+    uint32_t mmap_next;     // next free virtual address in the mmap region (bump allocator)
     int32_t exit_code;      // exit code (valid in ZOMBIE state)
     uint32_t kernel_stack;  // base address of kernel stack page
     uint32_t kernel_esp;    // saved kernel ESP (for context switch)

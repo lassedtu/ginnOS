@@ -35,6 +35,13 @@
 /* user stack top */
 #define USER_STACK_TOP   0x00800000u
 
+/* userspace mmap region: SYS_mmap hands out page-aligned virtual ranges here,
+ * bumping upward per mapping. sits below kernel space (0xC0000000) and clear of
+ * the program, heap, and stack. no unmap/reuse yet, just a bump cursor per
+ * process. this is also where a device mapping (e.g. mmap of /dev/fb0) lands. */
+#define USER_MMAP_BASE 0x50000000u
+#define USER_MMAP_END  0xB0000000u
+
 /**
  * check whether a pointer with a given length falls entirely within
  * the user address space. used to validate syscall arguments before

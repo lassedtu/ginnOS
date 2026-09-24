@@ -39,6 +39,57 @@ typedef struct device device_t;
 typedef struct
 {
     void (*shutdown)(device_t *dev); // quiesce the device (optional)
+
+    /**
+     * device-specific control operation, the transport for ioctl(2)-style
+     * requests (e.g. the framebuffer's FBIOGET_VSCREENINFO). optional: a NULL
+     * hook means the device supports no ioctls.
+     * @param dev the device.
+     * @param request driver-defined request code.
+     * @param arg request-specific argument (often a user pointer, already
+     *            bounds-checked by the syscall layer before it reaches here).
+     * @return 0 on success, or a negative errno on failure (-25/-ENOTTY for an
+     *         unrecognized request).
+     */
+    int32_t (*ioctl)(device_t *dev, uint32_t request, void *arg);
+
+    /**
+     * map the device's memory into a process address space (optional; NULL
+     * means the device is not mappable, i.e. -ENODEV). the device maps its own
+     * frames at @p virt in @p page_directory; the caller (SYS_mmap) has already
+     * reserved the virtual range and validated it. eager mapping, no demand
+     * paging. the frames are device memory (outside PMM), so process teardown
+     * leaves them alone.
+     * @param dev the device.
+     * @param page_directory physical address of the target process page dir.
+     * @param virt page-aligned destination virtual address.
+     * @param length number of bytes to map (page-multiple).
+     * @param prot PROT_* protection bits.
+     * @param offset byte offset into the device memory (page-aligned).
+     * @return 0 on success, or a negative errno on failure.
+     */
+    int32_t (*mmap)(device_t *dev, uint32_t page_directory, uint32_t virt,
+                    uint32_t length, int prot, uint32_t offset);
+
+    /**
+     * byte-oriented read at an explicit offset (optional; NULL means the device
+     * is not readable). the caller (devfs) owns the cursor and passes it in.
+     * @return number of bytes read (may be short at end of device).
+     */
+    uint32_t (*read)(device_t *dev, uint32_t offset, void *buf, uint32_t len);
+
+    /**
+     * byte-oriented write at an explicit offset (optional; NULL means the
+     * device is not writable).
+     * @return number of bytes written.
+     */
+    uint32_t (*write)(device_t *dev, uint32_t offset, const void *buf, uint32_t len);
+
+    /**
+     * total byte size of the device's addressable memory (optional; NULL means
+     * unknown/zero). used for read clamping and lseek(SEEK_END).
+     */
+    uint32_t (*size)(device_t *dev);
 } device_ops_t;
 
 /**

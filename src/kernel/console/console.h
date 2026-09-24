@@ -1,10 +1,15 @@
 #pragma once
 
+#include "common/boot/boot_info.h"
+
 /**
  * initialize the console driver.
- * this function must be called before any other console functions are used.
+ * chooses the framebuffer backend when the bootloader provided a graphics-mode
+ * framebuffer, otherwise the VGA text backend. must be called before any other
+ * console functions are used.
+ * @param boot boot information (carries the framebuffer description).
  */
-void console_initialize(void);
+void console_initialize(const boot_info_t *boot);
 
 /**
  * write a single character to the console.

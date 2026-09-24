@@ -6,6 +6,11 @@ ifeq ($(ARCH),i686)
   ARCH_DIRS   := src/arch/x86
   LINKER_DIR  := linker
   QEMU        := qemu-system-i386
+  # more RAM, a full CPU model, and a large TCG translation-block cache. on an
+  # Apple Silicon / arm64 host, i386 runs under TCG software emulation (no HVF
+  # for i386 on ARM), so these only soften the emulation cost. override with
+  # e.g. `make run QEMU_FLAGS=...`.
+  QEMU_FLAGS  ?= -m 256 -cpu max -accel tcg,tb-size=256 -vga std
   ASM_FORMAT  := elf32
   ASM_BIN_FMT := bin
 else
@@ -312,7 +317,7 @@ $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) rootfs-image
 	dd if=$(ROOTFS_IMAGE) of=$@ bs=512 seek=63 conv=notrunc status=none
 
 run: check-tools $(DISK_IMAGE)
-	$(QEMU) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+	$(QEMU) $(QEMU_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 clean:
 	rm -rf $(BUILD_DIR)

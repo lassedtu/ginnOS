@@ -45,12 +45,19 @@ kerr_t vfs_mount(const char *prefix, fs_mount_t *mount);
 kerr_t vfs_umount(const char *prefix);
 
 /**
- * find the mounted filesystem responsible for an absolute path.
- * returns the mount whose prefix is the longest match for path.
+ * find the mounted filesystem responsible for an absolute path, and the
+ * sub-path relative to that mount's prefix.
+ *
+ * the backing filesystem is handed a path relative to its own mount point, not
+ * the full absolute path: the root mount "/" sees the path unchanged (still
+ * leading '/'), while a sub-mount at "/dev" sees "/fb0" for "/dev/fb0" and "/"
+ * for "/dev" itself. the relative path always keeps a leading '/'.
  * @param path absolute path to resolve.
+ * @param rel_out if non-NULL, receives a pointer into @p path (or a static "/")
+ *                for the mount-relative sub-path. only valid while @p path is.
  * @return the backing mount, or NULL if no filesystem covers the path.
  */
-fs_mount_t *vfs_resolve_mount(const char *path);
+fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out);
 
 /**
  * open a file or directory by absolute path in the virtual file system.
@@ -192,3 +199,36 @@ void vfs_close(
  */
 uint8_t vfs_file_type(
     vfs_file_t *file);
+
+/**
+ * issue a device-control (ioctl) request on an open file.
+ * dispatches through the backing filesystem; only special filesystems (devfs)
+ * implement it, forwarding to the device. others return -ENOTTY.
+ * @param file pointer to the vfs_file_t representing the open file.
+ * @param request driver-defined request code.
+ * @param arg request-specific argument (typically a bounds-checked pointer).
+ * @return 0 on success, or a negative errno on failure.
+ */
+int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg);
+
+/**
+ * map an open file's memory into a process address space.
+ * dispatches through the backing filesystem; only device nodes (devfs) that
+ * forward to a mappable device succeed. others return -ENODEV.
+ * @param file pointer to the vfs_file_t representing the open file.
+ * @param page_directory physical address of the target process page directory.
+ * @param virt page-aligned destination virtual address.
+ * @param length bytes to map (page-multiple).
+ * @param prot PROT_* bits.
+ * @param offset page-aligned byte offset into the mapped object.
+ * @return 0 on success, or a negative errno on failure.
+ */
+int32_t vfs_mmap(vfs_file_t *file, uint32_t page_directory, uint32_t virt,
+                 uint32_t length, int prot, uint32_t offset);
+
+/**
+ * reposition an open file's cursor through the backing filesystem's seek op.
+ * @return the new absolute position, or -ENOSYS if the filesystem has no seek
+ *         op (the caller handles seeking itself), or another negative errno.
+ */
+int32_t vfs_seek(vfs_file_t *file, int32_t offset, int whence);

@@ -309,6 +309,14 @@ int32_t sys_lseek(struct registers *regs)
     if (entry->type != FD_TYPE_FILE)
         return -8; /* ESPIPE */
 
+    // try the filesystem's own seek first (devfs and other non-ext2 backends).
+    // -ENOSYS means "no seek op" — fall back to the ext2 file cursor below.
+    int32_t seeked = vfs_seek(&entry->file, offset, whence);
+    if (seeked != -38)
+    {
+        return seeked;
+    }
+
     uint32_t size = entry->file.file.ext2_file.size;
     uint32_t cursor = entry->file.file.ext2_file.cursor;
     int32_t new_pos;

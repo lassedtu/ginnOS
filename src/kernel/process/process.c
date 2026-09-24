@@ -1,5 +1,6 @@
 #include "process.h"
 #include "kernel/memory/pmm.h"
+#include "kernel/memory/memory_layout.h"
 #include "arch/arch.h"
 #include "common/memory.h"
 
@@ -33,6 +34,7 @@ process_t *process_create(void)
             proc->parent_pid = PID_NONE;
             proc->state = PROC_STATE_READY;
             proc->brk = 0;
+            proc->mmap_next = USER_MMAP_BASE;
             proc->exit_code = 0;
             proc->wait_for_pid = PID_NONE;
 
@@ -91,7 +93,7 @@ void process_destroy(process_t *proc)
 
     // close all open file descriptors (including pipes and fds 0-2).
     // note: this may run for a process that isn't the current one (a parent
-    // reaping a zombie child), so we can't use fd_free() here — it operates
+    // reaping a zombie child), so we can't use fd_free() here it operates
     // on process_current(). the pipe close logic is mirrored inline, plus a
     // wake of the opposite end so no peer blocks forever on a dead process.
     for (int i = 0; i < FD_MAX; i++)
@@ -154,8 +156,7 @@ process_t *process_get(uint32_t pid)
 
     for (int i = 0; i < PROCESS_MAX; i++)
     {
-        if (proc_table[i].state != PROC_STATE_UNUSED &&
-            proc_table[i].pid == pid)
+        if (proc_table[i].state != PROC_STATE_UNUSED && proc_table[i].pid == pid)
         {
             return &proc_table[i];
         }

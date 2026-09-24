@@ -5,6 +5,7 @@
 
 #include "common/error.h"
 #include "fs/fs.h"
+#include "fs/devfs.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
@@ -17,6 +18,7 @@
 
 #include "console/console.h"
 #include "kernel/device/device.h"
+#include "drivers/video/fb/fb.h"
 #include "common/string.h"
 #include "klog/klog.h"
 #include "memory/kernel_layout.h"
@@ -58,12 +60,6 @@ void kernel_main(boot_info_t *boot)
 
     hal_initialize();
 
-    console_initialize();
-
-    stdio_set_putchar(console_putchar); // set stdio output to console (sophisticated VGA text buffer)
-
-    printf("Kernel: entered 32-bit C main\r\n");
-
     if (kernel_end_address() <= kernel_start_address())
     {
         kernel_panic("invalid kernel layout");
@@ -80,6 +76,17 @@ void kernel_main(boot_info_t *boot)
     heap_init();
 
     paging_init();
+
+    // bring up the linear framebuffer (if the bootloader set a graphics mode).
+    // must follow paging_init: the LFB lives above identity-mapped RAM.
+    fb_init(boot);
+
+    // bring up the console now that the framebuffer (if any) is mapped. it
+    // picks the framebuffer backend when present, else the VGA text buffer.
+    // serial klog has covered diagnostics up to this point.
+    console_initialize(boot);
+    stdio_set_putchar(console_putchar);
+    printf("Kernel: entered 32-bit C main\r\n");
 
     syscall_initialize();
 
@@ -131,6 +138,14 @@ void kernel_main(boot_info_t *boot)
     if (kerr_failed(vfs_mount_root(&mount)))
     {
         kernel_panic("VFS root mount failed");
+    }
+
+    // mount devfs at /dev so registered devices (fb0, tty0, hda, ...) appear as
+    // nodes. static storage: vfs_mount keeps the pointer for the system's life.
+    static fs_mount_t devfs;
+    if (kerr_failed(devfs_mount(&devfs)) || kerr_failed(vfs_mount("/dev", &devfs)))
+    {
+        KLOG_WARN("kernel: devfs mount failed; /dev unavailable");
     }
 
     KLOG_INFO("kernel: root filesystem mounted, launching /bin/sh");

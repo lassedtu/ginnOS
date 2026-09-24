@@ -28,9 +28,12 @@
 #define SYS_DUP2 19
 #define SYS_FTRUNCATE 20
 #define SYS_LSEEK 21
+#define SYS_POLLKEY 22
+#define SYS_IOCTL 23
+#define SYS_MMAP 24
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 22
+#define SYSCALL_COUNT 25
 
 /**
  * initialize the system call interface.
