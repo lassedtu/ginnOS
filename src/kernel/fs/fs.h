@@ -62,6 +62,14 @@ typedef struct
      */
     int32_t (*mmap)(fs_file_t *file, uint32_t page_directory, uint32_t virt,
                     uint32_t length, int prot, uint32_t offset);
+
+    /**
+     * reposition an open file's cursor (optional). devfs implements this over
+     * its generic cursor; ext2 leaves it NULL and the syscall layer uses the
+     * ext2 file cursor directly. whence is SEEK_SET(0)/CUR(1)/END(2).
+     * @return the new absolute position, or a negative errno.
+     */
+    int32_t (*seek)(fs_file_t *file, int32_t offset, int whence);
 } fs_ops_t;
 
 /**
@@ -254,3 +262,11 @@ int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg);
  */
 int32_t fs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
                 uint32_t length, int prot, uint32_t offset);
+
+/**
+ * reposition an open file's cursor via the filesystem's seek op.
+ * @return the new absolute position, or -ENOSYS if the filesystem has no seek
+ *         op (the caller then handles seeking itself, e.g. via the ext2
+ *         cursor), or another negative errno on failure.
+ */
+int32_t fs_seek(fs_file_t *file, int32_t offset, int whence);

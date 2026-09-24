@@ -206,3 +206,19 @@ int32_t fs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
 
     return file->ops->mmap(file, page_directory, virt, length, prot, offset);
 }
+
+int32_t fs_seek(fs_file_t *file, int32_t offset, int whence)
+{
+    if (!file || !file->is_open)
+    {
+        return -9; /* EBADF */
+    }
+
+    // no seek op: tell the caller to handle it (ext2 uses its own cursor).
+    if (!file->ops->seek)
+    {
+        return -38; /* ENOSYS */
+    }
+
+    return file->ops->seek(file, offset, whence);
+}

@@ -114,24 +114,35 @@ static kerr_t devfs_read_entry(fs_file_t *file, fs_dirent_t *entry_out)
     return KERR_OK;
 }
 
-// devfs is read-only for now: byte i/o and mutations are per-device-family
-// work (the fbdev in FB6 wires read/write/ioctl/mmap on /dev/fb0). until then
-// these are safe no-ops / errors rather than touching a device blindly.
+// devfs is read-only for filesystem structure, but a device node can carry
+// byte i/o: read/write forward to the backing device at the file's cursor
+// (fs_pos), which advances by the transferred count. mutations to the devfs
+// namespace itself (create/mkdir/...) stay forbidden.
 
 static uint32_t devfs_read(fs_file_t *file, uint32_t byte_count, void *data_out)
 {
-    (void)file;
-    (void)byte_count;
-    (void)data_out;
-    return 0;
+    device_t *dev = (device_t *)file->fs_data;
+    if (!dev || !dev->ops || !dev->ops->read)
+    {
+        return 0;
+    }
+
+    uint32_t n = dev->ops->read(dev, file->fs_pos, data_out, byte_count);
+    file->fs_pos += n;
+    return n;
 }
 
 static uint32_t devfs_write(fs_file_t *file, uint32_t byte_count, const void *data_in)
 {
-    (void)file;
-    (void)byte_count;
-    (void)data_in;
-    return 0;
+    device_t *dev = (device_t *)file->fs_data;
+    if (!dev || !dev->ops || !dev->ops->write)
+    {
+        return 0;
+    }
+
+    uint32_t n = dev->ops->write(dev, file->fs_pos, data_in, byte_count);
+    file->fs_pos += n;
+    return n;
 }
 
 static kerr_t devfs_truncate(fs_file_t *file)
@@ -208,6 +219,37 @@ static int32_t devfs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t vir
     return dev->ops->mmap(dev, page_directory, virt, length, prot, offset);
 }
 
+static int32_t devfs_seek(fs_file_t *file, int32_t offset, int whence)
+{
+    device_t *dev = (device_t *)file->fs_data;
+    uint32_t size = (dev && dev->ops && dev->ops->size) ? dev->ops->size(dev) : 0;
+
+    int32_t base;
+    switch (whence)
+    {
+    case 0: /* SEEK_SET */
+        base = 0;
+        break;
+    case 1: /* SEEK_CUR */
+        base = (int32_t)file->fs_pos;
+        break;
+    case 2: /* SEEK_END */
+        base = (int32_t)size;
+        break;
+    default:
+        return -22; /* EINVAL */
+    }
+
+    int32_t new_pos = base + offset;
+    if (new_pos < 0)
+    {
+        new_pos = 0;
+    }
+
+    file->fs_pos = (uint32_t)new_pos;
+    return new_pos;
+}
+
 // the devfs operations table handed to the generic fs layer.
 static const fs_ops_t devfs_ops = {
     .open = devfs_open,
@@ -224,6 +266,7 @@ static const fs_ops_t devfs_ops = {
     .close = devfs_close,
     .ioctl = devfs_ioctl,
     .mmap = devfs_mmap,
+    .seek = devfs_seek,
 };
 
 kerr_t devfs_mount(fs_mount_t *mount)

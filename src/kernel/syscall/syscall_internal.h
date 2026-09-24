@@ -69,6 +69,4 @@ int32_t sys_ttyctl(struct registers *regs);
 int32_t sys_ioctl(struct registers *regs);
 
 /* sys_fb.c */
-int32_t sys_fbinfo(struct registers *regs);
-int32_t sys_fbmap(struct registers *regs);
 int32_t sys_pollkey(struct registers *regs);

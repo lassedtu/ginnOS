@@ -6,8 +6,10 @@
  *
  * a program calls fbinfo() to learn the framebuffer geometry and pixel format,
  * then fbmap() to map it into its address space and draw pixels directly.
- * this is the interim, single-client interface (no compositor yet): whoever
- * maps it owns the whole screen until it exits.
+ * these are convenience wrappers over the /dev/fb0 fbdev (open + ioctl + mmap,
+ * see <sys/fb.h>); a program can use that interface directly instead. this is
+ * still a single-client path (no compositor yet): whoever maps it owns the
+ * whole screen until it exits.
  */
 
 typedef unsigned int size_t;

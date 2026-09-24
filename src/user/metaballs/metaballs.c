@@ -15,6 +15,9 @@
  */
 
 #include <fb.h>
+#include <sys/fb.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -111,15 +114,42 @@ static void delay(void)
 
 int main(int argc, char **argv)
 {
-    fb_info_t fb;
-    if (fbinfo(&fb) != 0)
+    // talk to the framebuffer the fbdev way: open the device node, query its
+    // geometry/format with ioctls, and mmap its pixels for direct drawing.
+    int fd = open("/dev/fb0", 0);
+    if (fd < 0)
     {
-        printf("metaballs: no framebuffer available\n");
+        printf("metaballs: cannot open /dev/fb0\n");
         return 1;
     }
 
-    uint8_t *fbmem = (uint8_t *)fbmap();
-    if (!fbmem)
+    fb_var_screeninfo_t var;
+    fb_fix_screeninfo_t fix;
+    if (ioctl(fd, FBIOGET_VSCREENINFO, &var) < 0 ||
+        ioctl(fd, FBIOGET_FSCREENINFO, &fix) < 0)
+    {
+        printf("metaballs: fb ioctl failed\n");
+        close(fd);
+        return 1;
+    }
+
+    // build the local descriptor the drawing code (pack(), etc.) expects.
+    fb_info_t fb;
+    fb.width = var.xres;
+    fb.height = var.yres;
+    fb.pitch = fix.line_length;
+    fb.bpp = var.bits_per_pixel;
+    fb.red_size = (uint8_t)var.red.length;
+    fb.red_shift = (uint8_t)var.red.offset;
+    fb.green_size = (uint8_t)var.green.length;
+    fb.green_shift = (uint8_t)var.green.offset;
+    fb.blue_size = (uint8_t)var.blue.length;
+    fb.blue_shift = (uint8_t)var.blue.offset;
+
+    uint8_t *fbmem = (uint8_t *)mmap(0, fix.smem_len, PROT_READ | PROT_WRITE,
+                                     MAP_SHARED, fd, 0);
+    close(fd); // the mapping persists after close (kernel maps eagerly).
+    if (fbmem == MAP_FAILED)
     {
         printf("metaballs: framebuffer map failed\n");
         return 1;

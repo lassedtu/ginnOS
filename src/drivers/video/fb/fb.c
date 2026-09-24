@@ -5,6 +5,7 @@
 #include "kernel/device/device.h"
 #include "kernel/memory/heap.h"
 #include "kernel/memory/mman.h"
+#include "common/fb/fb_ioctl.h"
 #include "common/memory.h"
 #include "common/string.h"
 
@@ -129,10 +130,151 @@ static int32_t fb_dev_mmap(device_t *dev, uint32_t page_directory, uint32_t virt
     return 0;
 }
 
-// device ops for fb0: mappable (mmap) so userspace reaches the LFB via
-// mmap("/dev/fb0"). no ioctl yet (that arrives with the fbdev screeninfo).
+/**
+ * device size op: total addressable framebuffer bytes.
+ */
+static uint32_t fb_dev_size(device_t *dev)
+{
+    (void)dev;
+    return fb_ready ? fb.height * fb.pitch : 0;
+}
+
+/**
+ * device read op: copy framebuffer bytes out at an offset (so `cat /dev/fb0`
+ * dumps the screen). reads from the visible LFB, clamped to the fb size.
+ */
+static uint32_t fb_dev_read(device_t *dev, uint32_t offset, void *buf, uint32_t len)
+{
+    (void)dev;
+
+    if (!fb_ready)
+    {
+        return 0;
+    }
+
+    uint32_t total = fb.height * fb.pitch;
+    if (offset >= total)
+    {
+        return 0; // at or past end
+    }
+    if (len > total - offset)
+    {
+        len = total - offset;
+    }
+
+    memcpy(buf, fb.addr + offset, len);
+    return len;
+}
+
+/**
+ * device write op: copy bytes into the framebuffer at an offset. writes go to
+ * the visible LFB (this is the raw fbdev path; the console back buffer is a
+ * separate concern). clamped to the fb size.
+ */
+static uint32_t fb_dev_write(device_t *dev, uint32_t offset, const void *buf, uint32_t len)
+{
+    (void)dev;
+
+    if (!fb_ready)
+    {
+        return 0;
+    }
+
+    uint32_t total = fb.height * fb.pitch;
+    if (offset >= total)
+    {
+        return 0;
+    }
+    if (len > total - offset)
+    {
+        len = total - offset;
+    }
+
+    memcpy(fb.addr + offset, buf, len);
+    return len;
+}
+
+/**
+ * fill an fb_bitfield_t from a channel size/shift pair.
+ */
+static void fb_fill_bitfield(fb_bitfield_t *bf, uint8_t size, uint8_t shift)
+{
+    bf->offset = shift;
+    bf->length = size;
+    bf->msb_right = 0;
+}
+
+/**
+ * device ioctl op: the Linux-style fbdev screeninfo requests.
+ * GET_FSCREENINFO / GET_VSCREENINFO fill the caller's struct from fb_info;
+ * PUT_VSCREENINFO validates against the single fixed mode (no mode-setting yet).
+ */
+static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
+{
+    (void)dev;
+
+    if (!fb_ready)
+    {
+        return -19; /* ENODEV */
+    }
+
+    switch (request)
+    {
+    case FBIOGET_FSCREENINFO:
+    {
+        fb_fix_screeninfo_t *fix = (fb_fix_screeninfo_t *)arg;
+        memset(fix, 0, sizeof(*fix));
+        strncpy(fix->id, "ginnfb", sizeof(fix->id) - 1);
+        fix->smem_start = (uint32_t)fb.addr;
+        fix->smem_len = fb.height * fb.pitch;
+        fix->type = FB_TYPE_PACKED_PIXELS;
+        fix->visual = FB_VISUAL_TRUECOLOR;
+        fix->line_length = fb.pitch;
+        return 0;
+    }
+
+    case FBIOGET_VSCREENINFO:
+    {
+        fb_var_screeninfo_t *var = (fb_var_screeninfo_t *)arg;
+        memset(var, 0, sizeof(*var));
+        var->xres = fb.width;
+        var->yres = fb.height;
+        var->xres_virtual = fb.width;
+        var->yres_virtual = fb.height;
+        var->bits_per_pixel = fb.bpp;
+        fb_fill_bitfield(&var->red, fb.red_size, fb.red_shift);
+        fb_fill_bitfield(&var->green, fb.green_size, fb.green_shift);
+        fb_fill_bitfield(&var->blue, fb.blue_size, fb.blue_shift);
+        fb_fill_bitfield(&var->transp, 0, 0); // no alpha
+        return 0;
+    }
+
+    case FBIOPUT_VSCREENINFO:
+    {
+        // mode-setting is not supported: accept only a request matching the
+        // current mode, reject anything else. the seam is here for later.
+        const fb_var_screeninfo_t *var = (const fb_var_screeninfo_t *)arg;
+        if (var->xres == fb.width && var->yres == fb.height &&
+            var->bits_per_pixel == fb.bpp)
+        {
+            return 0;
+        }
+        return -22; /* EINVAL */
+    }
+
+    default:
+        return -25; /* ENOTTY: unknown request */
+    }
+}
+
+// device ops for fb0: the Linux-style fbdev surface. mmap for zero-copy
+// drawing; read/write so `cat /dev/fb0` works; ioctl for fix/var screeninfo.
 static const device_ops_t fb_device_ops = {
     .mmap = fb_dev_mmap,
+    .read = fb_dev_read,
+    .write = fb_dev_write,
+    .size = fb_dev_size,
+    .ioctl = fb_dev_ioctl,
 };
 
 bool fb_init(const boot_info_t *boot)

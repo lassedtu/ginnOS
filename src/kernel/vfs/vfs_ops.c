@@ -236,3 +236,13 @@ int32_t vfs_mmap(vfs_file_t *file, uint32_t page_directory, uint32_t virt,
 
     return fs_mmap(&file->file, page_directory, virt, length, prot, offset);
 }
+
+int32_t vfs_seek(vfs_file_t *file, int32_t offset, int whence)
+{
+    if (!file || !file->mount)
+    {
+        return -9; /* EBADF */
+    }
+
+    return fs_seek(&file->file, offset, whence);
+}

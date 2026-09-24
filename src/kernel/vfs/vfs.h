@@ -225,3 +225,10 @@ int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg);
  */
 int32_t vfs_mmap(vfs_file_t *file, uint32_t page_directory, uint32_t virt,
                  uint32_t length, int prot, uint32_t offset);
+
+/**
+ * reposition an open file's cursor through the backing filesystem's seek op.
+ * @return the new absolute position, or -ENOSYS if the filesystem has no seek
+ *         op (the caller handles seeking itself), or another negative errno.
+ */
+int32_t vfs_seek(vfs_file_t *file, int32_t offset, int whence);

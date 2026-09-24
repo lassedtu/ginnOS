@@ -70,6 +70,26 @@ typedef struct
      */
     int32_t (*mmap)(device_t *dev, uint32_t page_directory, uint32_t virt,
                     uint32_t length, int prot, uint32_t offset);
+
+    /**
+     * byte-oriented read at an explicit offset (optional; NULL means the device
+     * is not readable). the caller (devfs) owns the cursor and passes it in.
+     * @return number of bytes read (may be short at end of device).
+     */
+    uint32_t (*read)(device_t *dev, uint32_t offset, void *buf, uint32_t len);
+
+    /**
+     * byte-oriented write at an explicit offset (optional; NULL means the
+     * device is not writable).
+     * @return number of bytes written.
+     */
+    uint32_t (*write)(device_t *dev, uint32_t offset, const void *buf, uint32_t len);
+
+    /**
+     * total byte size of the device's addressable memory (optional; NULL means
+     * unknown/zero). used for read clamping and lseek(SEEK_END).
+     */
+    uint32_t (*size)(device_t *dev);
 } device_ops_t;
 
 /**

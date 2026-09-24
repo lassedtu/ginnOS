@@ -35,15 +35,10 @@
 /* user stack top */
 #define USER_STACK_TOP   0x00800000u
 
-/* userspace virtual address where SYS_fbmap maps the linear framebuffer.
- * chosen well clear of the program (0x800000), its heap, and stack, and below
- * USER_SPACE_END so pixel writes there pass is_user_ptr validation. */
-#define USER_FB_MAP_ADDR 0x40000000u
-
 /* userspace mmap region: SYS_mmap hands out page-aligned virtual ranges here,
- * bumping upward per mapping. sits above the fixed framebuffer map
- * (0x40000000) and below kernel space (0xC0000000), clear of the program,
- * heap, and stack. no unmap/reuse yet, just a bump cursor per process. */
+ * bumping upward per mapping. sits below kernel space (0xC0000000) and clear of
+ * the program, heap, and stack. no unmap/reuse yet, just a bump cursor per
+ * process. this is also where a device mapping (e.g. mmap of /dev/fb0) lands. */
 #define USER_MMAP_BASE 0x50000000u
 #define USER_MMAP_END  0xB0000000u
 
