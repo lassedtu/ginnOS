@@ -76,6 +76,21 @@ void console_write(const char *str)
     tty_write(&console_tty, str);
 }
 
+void console_write_bytes(const char *buf, uint32_t len)
+{
+    tty_begin_batch(&console_tty);
+    for (uint32_t i = 0; i < len; i++)
+    {
+        // output newline translation: \n becomes \r\n on the terminal.
+        if (buf[i] == '\n')
+        {
+            tty_putchar(&console_tty, '\r');
+        }
+        tty_putchar(&console_tty, buf[i]);
+    }
+    tty_end_batch(&console_tty);
+}
+
 int console_readline(char *buffer, int size)
 {
     int length = 0;

@@ -36,20 +36,9 @@ int32_t sys_write(struct registers *regs)
 
     if (entry->type == FD_TYPE_CONSOLE)
     {
-        /* write each byte to the console */
-        for (uint32_t i = 0; i < count; i++)
-        {
-            char c = buf[i];
-            if (c == '\n')
-            {
-                console_putchar('\r');
-                console_putchar('\n');
-            }
-            else
-            {
-                console_putchar(c);
-            }
-        }
+        /* one batched console update per write: the caret is placed and the
+         * display flushed once at the end, not after every byte */
+        console_write_bytes(buf, count);
         return (int32_t)count;
     }
 

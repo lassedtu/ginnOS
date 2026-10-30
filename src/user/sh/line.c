@@ -61,20 +61,46 @@ static char line_buf[LINE_MAX];
 static int line_len; // number of characters in the buffer
 static int line_pos; // cursor position within the buffer
 
+// pending terminal output. everything the editor draws for one keystroke is
+// collected here and sent with a single write() before waiting for the next
+// key, so the console shows each update in one go instead of every in-between
+// step (e.g. the cursor visiting column 0 while the line is redrawn).
+static char out_buf[1024];
+static int out_len;
+
 /**
- * write raw bytes to stdout (no printf formatting overhead).
+ * send any pending editor output to the terminal.
  */
-static void emit(const char *s, int len)
+static void flush_output(void)
 {
-    write(1, s, len);
+    if (out_len > 0)
+    {
+        write(1, out_buf, out_len);
+        out_len = 0;
+    }
 }
 
 /**
- * emit a single character.
+ * queue raw bytes for the terminal (no printf formatting overhead).
+ */
+static void emit(const char *s, int len)
+{
+    for (int i = 0; i < len; i++)
+    {
+        if (out_len == (int)sizeof(out_buf))
+        {
+            flush_output();
+        }
+        out_buf[out_len++] = s[i];
+    }
+}
+
+/**
+ * queue a single character.
  */
 static void emit_char(char c)
 {
-    write(1, &c, 1);
+    emit(&c, 1);
 }
 
 /**
@@ -125,9 +151,13 @@ static void refresh_line(int prompt_len)
     char cr = '\r';
     emit(&cr, 1);
 
-    // re-emit the prompt (we need it to be there for the cursor to be right)
-    extern void print_prompt(void);
-    print_prompt();
+    // re-emit the prompt (we need it to be there for the cursor to be right).
+    // formatted into our buffer rather than printed, so it goes out in the
+    // same single write as the rest of the line.
+    char prompt[PROMPT_MAX];
+    int plen = format_prompt(prompt, sizeof(prompt));
+    if (plen > 0)
+        emit(prompt, plen);
 
     // print the full line buffer
     if (line_len > 0)
@@ -188,6 +218,9 @@ int line_read(char *buf, int size)
 
     while (1)
     {
+        // show everything drawn for the previous key before blocking.
+        flush_output();
+
         if (read_event(&event) < 0)
             continue;
 
@@ -200,6 +233,7 @@ int line_read(char *buf, int size)
                 // submit line
                 emit_char('\r');
                 emit_char('\n');
+                flush_output();
                 history_reset_nav();
                 int len = line_len < size - 1 ? line_len : size - 1;
                 memcpy(buf, line_buf, len);
@@ -210,7 +244,10 @@ int line_read(char *buf, int size)
             if (c == 4) // Ctrl+D
             {
                 if (line_len == 0)
+                {
+                    flush_output();
                     return -1; // EOF
+                }
                 // with content, Ctrl+D does nothing (or delete-at-cursor in some shells)
                 continue;
             }

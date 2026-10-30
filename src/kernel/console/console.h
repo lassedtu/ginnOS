@@ -24,6 +24,15 @@ void console_putchar(char c);
 void console_write(const char *str);
 
 /**
+ * write a buffer to the console as one update: the whole buffer is drawn,
+ * then the caret is placed and the display flushed once. translates \n to
+ * \r\n. this is the write syscall's path to the terminal.
+ * @param buf bytes to write (need not be null-terminated).
+ * @param len number of bytes.
+ */
+void console_write_bytes(const char *buf, uint32_t len);
+
+/**
  * read a line of input from the console.
  * this function will block until a line of input is available.
  * @param buffer pointer to a buffer to receive the input line.

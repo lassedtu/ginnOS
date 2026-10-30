@@ -79,6 +79,7 @@ typedef struct
     uint8_t fg;                   // current foreground ANSI colour index (0-15)
     uint8_t bg;                   // current background ANSI colour index (0-15)
     bool bold;                    // bold/bright attribute (brightens fg)
+    uint32_t batch_depth;         // >0 while inside tty_begin_batch/end_batch
 } tty_t;
 
 /**
@@ -98,11 +99,26 @@ void tty_init(tty_t *tty, const tty_backend_t *backend);
 void tty_putchar(tty_t *tty, char c);
 
 /**
- * feed a null-terminated string through tty_putchar().
+ * feed a null-terminated string through tty_putchar(), as one batch.
  * @param tty the terminal.
  * @param str the string to write.
  */
 void tty_write(tty_t *tty, const char *str);
+
+/**
+ * start a batch of output. until the matching tty_end_batch(), bytes are drawn
+ * but the caret is hidden and nothing is flushed to the display, so the
+ * screen never shows a half-finished update (e.g. a shell redrawing its line,
+ * where the cursor briefly visits column 0). batches nest.
+ * @param tty the terminal.
+ */
+void tty_begin_batch(tty_t *tty);
+
+/**
+ * end a batch: redraw the caret where the cursor ended up and flush once.
+ * @param tty the terminal.
+ */
+void tty_end_batch(tty_t *tty);
 
 /**
  * set the line-discipline mode (TTY_MODE_COOKED or TTY_MODE_RAW).

@@ -23,12 +23,23 @@ static char cwd_buf[CWD_MAX];
 // global shell state used by expand.c and execute.c
 int shell_last_exit_code = 0;
 
-void print_prompt(void)
+int format_prompt(char *buf, int size)
 {
     if (getcwd(cwd_buf, sizeof(cwd_buf)) < 0)
         strcpy(cwd_buf, "?");
 
-    printf("skl:%s $ ", cwd_buf);
+    int len = snprintf(buf, size, "skl:%s $ ", cwd_buf);
+    if (len >= size)
+        len = size - 1; // truncated
+    return len;
+}
+
+void print_prompt(void)
+{
+    char prompt[PROMPT_MAX];
+    int len = format_prompt(prompt, sizeof(prompt));
+    if (len > 0)
+        write(1, prompt, len);
 }
 
 static int prompt_len(void)
