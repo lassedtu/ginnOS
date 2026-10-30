@@ -24,6 +24,8 @@ LD      := $(CROSS)ld
 OBJCOPY := $(CROSS)objcopy
 NM      := $(CROSS)nm
 PYTHON  ?= python3
+GDB     ?= gdb
+GDB_PORT ?= 1234
 
 BUILD_DIR := build
 
@@ -37,20 +39,22 @@ BASE_CFLAGS   := -std=gnu11 -ffreestanding -m32 -I src -MMD -MP
 KERNEL_FRAME_FLAGS := -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer \
                       -fno-optimize-sibling-calls
 
-# per-subsystem compiler flags
-KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 -DNDEBUG \
+# per-subsystem compiler flags. -g only adds debug info to the ELF files (for
+# make gdb); the flat binaries made with objcopy are unchanged by it.
+KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 -g -DNDEBUG \
                  -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS)
 
 DRIVER_CFLAGS := $(KERNEL_CFLAGS)
 
-COMMON_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Os \
+COMMON_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Os -g \
                  -fno-pic -fno-stack-protector \
                  -fno-unwind-tables -fno-asynchronous-unwind-tables \
                  -ffunction-sections -fdata-sections -fomit-frame-pointer
 
 STAGE2_CFLAGS := $(COMMON_CFLAGS) -DEXT2_STATIC_BUFFERS
 
-# debug build overrides (make debug)
+# debug build overrides (make debug). switching modes rebuilds the kernel
+# objects, because they depend on $(KERNEL_FLAGS_FILE) (see below).
 ifeq ($(BUILD_MODE),debug)
   KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Og -g -DDEBUG \
                    -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS)
@@ -213,6 +217,10 @@ define link_with_ksyms
 	@rm -f $(1).pass1
 endef
 
+# file recording the kernel C flags, rewritten only when they change, so
+# kernel objects rebuild when the flags do (e.g. make debug after make all).
+KERNEL_FLAGS_FILE := $(BUILD_DIR)/kernel.flags
+
 # write $(2) into file $(1), touching it only if the content changed.
 define update_if_changed
 	@mkdir -p $(dir $(1))
@@ -226,16 +234,22 @@ ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run rootfs-image clean check-tools debug lint format compile_commands iso test test-image FORCE
+.PHONY: all run rootfs-image clean check-tools debug gdb lint format compile_commands iso test test-image FORCE
 
 all: check-tools $(DISK_IMAGE)
 
-# debug build: compile with -Og -g -DDEBUG and launch qemu with gdb stub
+# debug the kernel: boot QEMU halted at the first instruction with a gdb stub
+# on GDB_PORT, attach gdb with build/kernel.elf and tools/gdb/ginnos.gdb
+# (breakpoints on panics), and stop QEMU when gdb exits. type `c` to boot.
+gdb: check-tools $(DISK_IMAGE)
+	@command -v $(GDB) >/dev/null 2>&1 || { echo "missing tool: $(GDB) (set GDB=...)"; exit 1; }
+	@PYTHON="$(PYTHON)" ./tools/gdb/run_gdb.sh "$(QEMU)" "$(DISK_IMAGE)" "$(KERNEL_ELF)" \
+		"$(GDB)" "$(GDB_PORT)" $(QEMU_FLAGS) -- $(GDB_ARGS)
+
+# same as make gdb, but with the kernel built -Og -DDEBUG (easier stepping,
+# fewer optimised-out variables, debug-level klog).
 debug:
-	$(MAKE) BUILD_MODE=debug all
-	$(QEMU) -s -S -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE) &
-	@echo "qemu started with gdb stub on localhost:1234"
-	@echo "connect with: gdb build/kernel.elf -ex 'target remote :1234'"
+	$(MAKE) BUILD_MODE=debug gdb
 
 check-tools:
 	@command -v $(CC) >/dev/null 2>&1 || { echo "missing tool: $(CC)"; exit 1; }
@@ -310,7 +324,7 @@ $(BUILD_DIR)/%.o: src/%.c
 
 $(BUILD_DIR)/%.o: src/%.asm
 	@mkdir -p $(dir $@)
-	$(AS) -f $(ASM_FORMAT) -I $(dir $<) $< -o $@
+	$(AS) -f $(ASM_FORMAT) -g -F dwarf -I $(dir $<) $< -o $@
 
 # isr.asm %includes the generated stub table
 $(BUILD_DIR)/arch/x86/asm/isr.o: $(ISR_GEN_INC)
@@ -337,6 +351,12 @@ $(STAGE2_BIN): $(STAGE2_LINK_OBJS) $(LINKER_DIR)/stage2.ld $(ISR_GEN_SCRIPT)
 $(STAGE2_PAD): $(STAGE2_BIN)
 	cp $(STAGE2_BIN) $@
 	truncate -s $(STAGE2_MAX_BYTES) $@
+
+# kernel objects rebuild when the kernel C flags change.
+$(KERNEL_FLAGS_FILE): FORCE
+	$(call update_if_changed,$@,$(KERNEL_CFLAGS))
+
+$(KERNEL_C_OBJS) $(TEST_KERNEL_C_OBJS): $(KERNEL_FLAGS_FILE)
 
 # kernel link
 $(KERNEL_OBJS_LIST): FORCE

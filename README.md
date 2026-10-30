@@ -136,8 +136,9 @@ today.
   context switch, boot protocol) with x86 as the only current backend —
   groundwork for a future x86_64 port
 - Multi-arch-ready build system (`ARCH` switch), `make lint` (clang-tidy),
-  `make format` (clang-format), `make debug` (QEMU + GDB stub), `make iso`
-  (GRUB-bootable), and `compile_commands.json` generation for LSP
+  `make format` (clang-format), `make gdb`/`make debug` (QEMU + gdb
+  attached), `make iso` (GRUB-bootable), and `compile_commands.json`
+  generation for LSP
 - Consistent `snake_case` conventions documented in `STYLE.md`; ext2 image and
   bitmap-font helper tools under `tools/`
 
@@ -156,6 +157,7 @@ Only install what this two-stage build needs:
 
 ```bash
 brew install gmp mpfr libmpc texinfo nasm qemu
+brew install gdb   # optional, for make gdb / make debug
 ```
 
 ### Build i686 cross compiler manually
@@ -269,6 +271,7 @@ sudo apt update
 sudo apt install build-essential curl nasm qemu-system-x86 \
   libgmp-dev libmpfr-dev libmpc-dev texinfo bison flex \
   python3 e2fsprogs
+sudo apt install gdb   # optional, for make gdb / make debug
 ```
 
 ### Build i686 cross compiler manually
@@ -400,6 +403,23 @@ with the result):
 ```bash
 make test
 ```
+
+Debug the kernel with gdb. QEMU starts halted with a gdb stub, gdb attaches
+with `build/kernel.elf` and `tools/gdb/ginnos.gdb` (breakpoints on
+`kernel_panic`/`kernel_panic_at`), and QEMU stops when gdb exits. Type `c` to
+boot. `make debug` does the same with the kernel built `-Og -DDEBUG`, which is
+easier to step through:
+
+```bash
+make gdb                 # optimised kernel, with debug info
+make debug               # -Og kernel
+make gdb GDB_PORT=1240   # if port 1234 is taken
+```
+
+gdb must support i386 (Homebrew's and most distro `gdb` builds do; set
+`GDB=...` to use another one, e.g. `i686-elf-gdb`). Kernel panics and CPU
+exceptions also print a symbolised backtrace on screen and over serial, so
+many crashes can be read without a debugger.
 
 ## ext2 Side-Disk Helper
 
