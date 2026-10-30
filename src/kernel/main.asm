@@ -11,6 +11,8 @@ _start:
     mov eax, [esp + 4]
     mov esp, stack_top
     push eax
+    ; a zero frame pointer marks the outermost frame for backtraces.
+    xor ebp, ebp
     call cstart
 
 .hang:

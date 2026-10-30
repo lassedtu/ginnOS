@@ -1,5 +1,4 @@
 #include "arch/arch.h"
-#include "arch/arch.h"
 #include "arch/x86/cpu/io.h"
 #include "arch/x86/cpu/gdt.h"
 #include "arch/x86/cpu/paging.h"
@@ -58,6 +57,51 @@ uint32_t arch_get_stack_pointer(void)
     uint32_t esp;
     __asm__ volatile("mov %%esp, %0" : "=r"(esp));
     return esp;
+}
+
+// a frame word can be read without faulting. before paging is on every
+// physical address is readable; after, the page must be mapped.
+static bool frame_word_readable(uint32_t addr)
+{
+    if (!paging_is_enabled())
+    {
+        return true;
+    }
+    return paging_get_physical(addr & ~0xFFFu) != 0;
+}
+
+int arch_stack_walk(uint32_t frame, uint32_t *pcs, int max)
+{
+    int depth = 0;
+
+    // with frame pointers each frame is [saved ebp][return address]. the
+    // entry code and new kernel threads start with ebp = 0, ending the chain.
+    while (depth < max && frame != 0)
+    {
+        if ((frame & 3u) != 0 || !frame_word_readable(frame) ||
+            !frame_word_readable(frame + 4))
+        {
+            break;
+        }
+
+        const uint32_t *words = (const uint32_t *)frame;
+        uint32_t next = words[0];
+        uint32_t ret = words[1];
+        if (ret == 0)
+        {
+            break;
+        }
+        pcs[depth++] = ret;
+
+        // the stack grows down, so a caller's frame is always higher.
+        if (next <= frame)
+        {
+            break;
+        }
+        frame = next;
+    }
+
+    return depth;
 }
 
 void arch_switch_address_space(addr_space_t as)

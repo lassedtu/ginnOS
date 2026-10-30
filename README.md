@@ -29,6 +29,8 @@ today.
 - IDT, 8259 PIC, IRQ handling and a 256-vector ISR framework
 - Shared-IRQ registration layer (`irq_request`/`irq_free`, per-handler enable)
 - Kernel panic + assertion infrastructure, unified `kerr_t` error type
+- Symbolised backtraces on panics and CPU exceptions (frame-pointer walk +
+  a symbol table embedded at build time), on screen and over serial
 - E820 memory-map detection and boot-time region reservation
 - Serial (COM1 16550 UART) driver + leveled kernel logging (`klog`) for
   headless debugging

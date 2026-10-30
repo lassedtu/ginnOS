@@ -57,6 +57,18 @@ void arch_halt_forever(void) __attribute__((noreturn));
 uint32_t arch_get_stack_pointer(void);
 
 /**
+ * walk a chain of saved frame pointers and collect return addresses.
+ * stops at a null or misaligned frame, an unmapped frame, a frame that does
+ * not move up the stack, or after max entries, so it is safe to call on a
+ * corrupt stack from a panic.
+ * @param frame the frame pointer to start from (e.g. __builtin_frame_address(0)).
+ * @param pcs receives the return addresses, innermost first.
+ * @param max capacity of pcs.
+ * @return the number of addresses stored.
+ */
+int arch_stack_walk(uint32_t frame, uint32_t *pcs, int max);
+
+/**
  * an address space handle. opaque to portable code: it identifies a page
  * table root but says nothing about the underlying paging structure, so
  * the same kernel code works whether the arch uses 2-level, 4-level, or

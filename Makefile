@@ -22,6 +22,7 @@ AS      := nasm
 CC      := $(CROSS)gcc
 LD      := $(CROSS)ld
 OBJCOPY := $(CROSS)objcopy
+NM      := $(CROSS)nm
 PYTHON  ?= python3
 
 BUILD_DIR := build
@@ -30,9 +31,15 @@ BUILD_DIR := build
 BASE_WARNINGS := -Wall -Wextra
 BASE_CFLAGS   := -std=gnu11 -ffreestanding -m32 -I src -MMD -MP
 
+# the kernel keeps a full frame-pointer chain (in release too) so panics can
+# walk the stack and print a backtrace: no omitted frames, not even in leaf
+# functions, and no sibling calls (a tail-call jmp would drop the caller).
+KERNEL_FRAME_FLAGS := -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer \
+                      -fno-optimize-sibling-calls
+
 # per-subsystem compiler flags
 KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 -DNDEBUG \
-                 -fno-pie -fno-jump-tables
+                 -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS)
 
 DRIVER_CFLAGS := $(KERNEL_CFLAGS)
 
@@ -46,7 +53,7 @@ STAGE2_CFLAGS := $(COMMON_CFLAGS) -DEXT2_STATIC_BUFFERS
 # debug build overrides (make debug)
 ifeq ($(BUILD_MODE),debug)
   KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Og -g -DDEBUG \
-                   -fno-pie -fno-jump-tables
+                   -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS)
   DRIVER_CFLAGS := $(KERNEL_CFLAGS)
 endif
 
@@ -187,6 +194,25 @@ DEP_FILES += $(TEST_KERNEL_C_OBJS:.o=.d)
 KERNEL_OBJS_LIST      := $(BUILD_DIR)/kernel.objs
 TEST_KERNEL_OBJS_LIST := $(TEST_BUILD_DIR)/kernel.objs
 
+# two-pass kernel link with an embedded symbol table (src/kernel/debug/ksyms.h).
+# pass 1 links an empty table to learn the function addresses, pass 2 links the
+# real table. .ksyms sits after .text, so function addresses are the same in
+# both passes; the final --check fails the build if that ever stops holding.
+#   $(1) output elf, $(2) link objects, $(3) scratch dir, $(4) C flags
+KSYMS_TOOL := tools/gen_ksyms.py
+
+define link_with_ksyms
+	@mkdir -p $(3)
+	$(PYTHON) $(KSYMS_TOOL) -o $(3)/ksyms_empty.c < /dev/null
+	$(CC) $(4) -c $(3)/ksyms_empty.c -o $(3)/ksyms_empty.o
+	$(LD) $(LDFLAGS) -o $(1).pass1 $(2) $(3)/ksyms_empty.o
+	$(NM) -n $(1).pass1 | $(PYTHON) $(KSYMS_TOOL) -o $(3)/ksyms.c
+	$(CC) $(4) -c $(3)/ksyms.c -o $(3)/ksyms.o
+	$(LD) $(LDFLAGS) -o $(1) $(2) $(3)/ksyms.o
+	$(NM) -n $(1) | $(PYTHON) $(KSYMS_TOOL) --check $(3)/ksyms.c
+	@rm -f $(1).pass1
+endef
+
 # write $(2) into file $(1), touching it only if the content changed.
 define update_if_changed
 	@mkdir -p $(dir $(1))
@@ -215,6 +241,7 @@ check-tools:
 	@command -v $(CC) >/dev/null 2>&1 || { echo "missing tool: $(CC)"; exit 1; }
 	@command -v $(LD) >/dev/null 2>&1 || { echo "missing tool: $(LD)"; exit 1; }
 	@command -v $(OBJCOPY) >/dev/null 2>&1 || { echo "missing tool: $(OBJCOPY)"; exit 1; }
+	@command -v $(NM) >/dev/null 2>&1 || { echo "missing tool: $(NM)"; exit 1; }
 	@command -v $(AS) >/dev/null 2>&1 || { echo "missing tool: $(AS)"; exit 1; }
 	@command -v $(QEMU) >/dev/null 2>&1 || { echo "missing tool: $(QEMU)"; exit 1; }
 	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "missing tool: $(PYTHON)"; exit 1; }
@@ -315,8 +342,8 @@ $(STAGE2_PAD): $(STAGE2_BIN)
 $(KERNEL_OBJS_LIST): FORCE
 	$(call update_if_changed,$@,$(KERNEL_LINK_OBJS))
 
-$(KERNEL_ELF): $(KERNEL_LINK_OBJS) $(KERNEL_OBJS_LIST) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_LINK_OBJS)
+$(KERNEL_ELF): $(KERNEL_LINK_OBJS) $(KERNEL_OBJS_LIST) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC) $(KSYMS_TOOL)
+	$(call link_with_ksyms,$@,$(KERNEL_LINK_OBJS),$(BUILD_DIR)/ksyms,$(KERNEL_CFLAGS))
 
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
@@ -378,9 +405,9 @@ $(TEST_BUILD_DIR)/obj/%.o: src/%.c
 $(TEST_KERNEL_OBJS_LIST): FORCE
 	$(call update_if_changed,$@,$(TEST_KERNEL_LINK_OBJS))
 
-$(TEST_KERNEL_ELF): $(TEST_KERNEL_LINK_OBJS) $(TEST_KERNEL_OBJS_LIST) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
+$(TEST_KERNEL_ELF): $(TEST_KERNEL_LINK_OBJS) $(TEST_KERNEL_OBJS_LIST) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC) $(KSYMS_TOOL)
 	@mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $(TEST_KERNEL_LINK_OBJS)
+	$(call link_with_ksyms,$@,$(TEST_KERNEL_LINK_OBJS),$(TEST_BUILD_DIR)/ksyms,$(TEST_KERNEL_CFLAGS))
 
 $(TEST_KERNEL_BIN): $(TEST_KERNEL_ELF)
 	$(OBJCOPY) -O binary $(TEST_KERNEL_ELF) $@

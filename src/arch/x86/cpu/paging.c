@@ -1,4 +1,5 @@
 #include "paging.h"
+#include "exception.h"
 #include "isr.h"
 
 #include "common/memory.h"
@@ -48,10 +49,8 @@ static void page_fault_handler(struct registers *regs)
         printf("  instruction fetch\r\n");
     }
 
-    printf("eip=0x%x cs=0x%x eflags=0x%x\r\n",
-           regs->eip, regs->cs, regs->eflags);
-
-    kernel_panic("page fault");
+    exception_dump_regs(regs);
+    exception_panic("page fault", regs);
 }
 
 /**

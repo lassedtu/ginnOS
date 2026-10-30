@@ -13,7 +13,9 @@ SECTIONS
 
     .text :
     {
+        __text_start = .;
         *(.text*)
+        __text_end = .;
     } :text
 
     .rodata :
@@ -35,6 +37,14 @@ SECTIONS
         __start_ktests = .;
         KEEP(*(.ktests))
         __stop_ktests = .;
+    } :text
+
+    /* symbol table for backtraces (tools/gen_ksyms.py). it must come after
+     * .text: the kernel is linked twice and the table's size must not move
+     * any function between the two passes. */
+    .ksyms : ALIGN(4)
+    {
+        KEEP(*(.ksyms))
     } :text
 
     .data :

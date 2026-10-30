@@ -1,6 +1,7 @@
 #include "exception.h"
 #include "common/stdint.h"
 #include "common/stdio.h"
+#include "kernel/debug/ksyms.h"
 #include "kernel/panic.h"
 
 /**
@@ -42,6 +43,108 @@ static const char *const exception_names[] =
         ""                                // 31 (reserved)
 };
 
+void exception_dump_regs(const struct registers *regs)
+{
+    // esp/ss are only pushed on a privilege change. for a kernel-mode trap
+    // the interrupted stack pointer is where the esp field would be.
+    bool from_kernel = (regs->cs & 3u) == 0;
+    uint32_t esp = from_kernel ? (uint32_t)&regs->esp : regs->esp;
+
+    printf(
+        "eax=0x%x ebx=0x%x ecx=0x%x edx=0x%x\r\n",
+        regs->eax,
+        regs->ebx,
+        regs->ecx,
+        regs->edx);
+
+    printf(
+        "esi=0x%x edi=0x%x ebp=0x%x esp=0x%x\r\n",
+        regs->esi,
+        regs->edi,
+        regs->ebp,
+        esp);
+
+    if (from_kernel)
+    {
+        printf(
+            "eip=0x%x cs=0x%x eflags=0x%x\r\n",
+            regs->eip,
+            regs->cs,
+            regs->eflags);
+    }
+    else
+    {
+        printf(
+            "eip=0x%x cs=0x%x eflags=0x%x ss=0x%x\r\n",
+            regs->eip,
+            regs->cs,
+            regs->eflags,
+            regs->ss);
+    }
+}
+
+// true if the instruction ending just before ret is a near call: e8 rel32,
+// or ff /2 (call through a register or memory operand).
+static bool follows_call(uint32_t ret)
+{
+    const uint8_t *code = (const uint8_t *)ret;
+
+    if (code[-5] == 0xE8)
+    {
+        return true;
+    }
+
+    // ff /2: modrm reg field is 2. check the encodings by length: register
+    // (2 bytes), [reg] (2), [reg+disp8] (3), [reg+disp32] or [disp32] (6).
+    uint8_t modrm2 = code[-1];
+    if (code[-2] == 0xFF && ((modrm2 >> 3) & 7u) == 2 &&
+        ((modrm2 >> 6) == 3 || ((modrm2 >> 6) == 0 && (modrm2 & 7u) != 4 && (modrm2 & 7u) != 5)))
+    {
+        return true;
+    }
+    uint8_t modrm3 = code[-2];
+    if (code[-3] == 0xFF && ((modrm3 >> 3) & 7u) == 2 && (modrm3 >> 6) == 1 && (modrm3 & 7u) != 4)
+    {
+        return true;
+    }
+    uint8_t modrm6 = code[-5];
+    if (code[-6] == 0xFF && ((modrm6 >> 3) & 7u) == 2 && (modrm6 & 7u) != 4 &&
+        ((modrm6 >> 6) == 2 || ((modrm6 >> 6) == 0 && (modrm6 & 7u) == 5)))
+    {
+        return true;
+    }
+    return false;
+}
+
+// a fault inside a function that has no frame of its own (a frameless leaf
+// such as the src/common string routines, or a prologue) leaves its return
+// address on top of the stack instead of in the ebp chain. return that word
+// if it looks like a return address into kernel code, else 0. it is only a
+// guess: a function with a frame may have a stale code address there.
+static uint32_t probable_caller(const struct registers *regs)
+{
+    // a same-privilege trap does not push esp/ss, so the trap frame's esp
+    // field overlays the interrupted stack: it holds the word on top of it.
+    uint32_t top = regs->esp;
+    if (!ksym_is_kernel_text(top - 6) || !ksym_is_kernel_text(top - 1))
+    {
+        return 0;
+    }
+    return follows_call(top) ? top : 0;
+}
+
+void exception_panic(const char *message, const struct registers *regs)
+{
+    // only kernel frames can be symbolised; a user-mode fault has a user
+    // ebp, so print just the faulting pc.
+    bool from_kernel = (regs->cs & 3u) == 0;
+    if (!from_kernel)
+    {
+        kernel_panic_at(message, regs->eip, 0, 0);
+    }
+    kernel_panic_at(message, regs->eip, probable_caller(regs), regs->ebp);
+}
+
 /**
  * default exception handler
  */
@@ -56,28 +159,8 @@ void exception_handler(struct registers *regs)
         "error code: 0x%x\r\n",
         regs->error);
 
-    printf(
-        "eax=0x%x ebx=0x%x ecx=0x%x edx=0x%x\r\n",
-        regs->eax,
-        regs->ebx,
-        regs->ecx,
-        regs->edx);
-
-    printf(
-        "esi=0x%x edi=0x%x ebp=0x%x esp=0x%x\r\n",
-        regs->esi,
-        regs->edi,
-        regs->ebp,
-        regs->esp);
-
-    printf(
-        "eip=0x%x cs=0x%x eflags=0x%x ss=0x%x\r\n",
-        regs->eip,
-        regs->cs,
-        regs->eflags,
-        regs->ss);
-
-    kernel_panic("CPU exception");
+    exception_dump_regs(regs);
+    exception_panic("CPU exception", regs);
 }
 
 void exception_initialize(void)
