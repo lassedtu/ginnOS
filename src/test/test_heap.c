@@ -134,3 +134,104 @@ KTEST(heap_many_alloc_free_cycles)
     KEXPECT_EQ(heap_get_stats().current_usage, before.current_usage);
     KEXPECT_EQ(heap_free_size(), free_before);
 }
+
+KTEST(heap_is_consistent)
+{
+    KEXPECT(heap_check());
+}
+
+KTEST(heap_grows_for_large_allocation)
+{
+    // larger than the initial 64 KiB heap, so this forces an expansion.
+    uint32_t size = 128 * 1024;
+    uint8_t *p = kmalloc(size);
+    KEXPECT(p != NULL);
+    if (p)
+    {
+        // touch the whole block: it must be real, writable memory.
+        memset(p, 0x3C, size);
+        KEXPECT(p[0] == 0x3C && p[size / 2] == 0x3C && p[size - 1] == 0x3C);
+        kfree(p);
+    }
+    KEXPECT(heap_total_size() >= size);
+    KEXPECT(heap_check());
+}
+
+KTEST(heap_reuses_freed_expansion)
+{
+    uint32_t size = 128 * 1024;
+
+    void *first = kmalloc(size);
+    KEXPECT(first != NULL);
+    kfree(first);
+
+    // the space freed above must be reused rather than growing again.
+    uint32_t total_before = heap_total_size();
+    uint32_t segments_before = heap_segment_count();
+    void *second = kmalloc(size);
+    KEXPECT(second != NULL);
+    KEXPECT_EQ(heap_total_size(), total_before);
+    KEXPECT_EQ(heap_segment_count(), segments_before);
+    kfree(second);
+    KEXPECT(heap_check());
+}
+
+KTEST(heap_many_small_allocations_beyond_initial_size)
+{
+    // 256 x 1 KiB = 256 KiB of live allocations at once, far beyond the
+    // initial heap, grown in steps rather than with one big request.
+    static void *ptrs[256];
+    heap_stats_t before = heap_get_stats();
+
+    bool all_ok = true;
+    for (uint32_t i = 0; i < 256; i++)
+    {
+        ptrs[i] = kmalloc(1024);
+        if (!ptrs[i])
+        {
+            all_ok = false;
+            break;
+        }
+        memset(ptrs[i], (int)(i & 0xFF), 1024);
+    }
+    KEXPECT(all_ok);
+    KEXPECT(heap_check());
+
+    // every block still holds its own pattern: no two allocations overlap.
+    bool intact = true;
+    for (uint32_t i = 0; i < 256 && ptrs[i]; i++)
+    {
+        uint8_t *b = ptrs[i];
+        if (b[0] != (uint8_t)i || b[1023] != (uint8_t)i)
+            intact = false;
+    }
+    KEXPECT(intact);
+
+    for (uint32_t i = 0; i < 256; i++)
+        kfree(ptrs[i]);
+
+    KEXPECT_EQ(heap_get_stats().current_usage, before.current_usage);
+    KEXPECT(heap_check());
+}
+
+KTEST(heap_krealloc_grows_across_segments)
+{
+    // grow one allocation well past the initial heap; the data must move
+    // intact even when the new block lives in a different segment.
+    uint8_t *p = kmalloc(64);
+    KEXPECT(p != NULL);
+    for (uint32_t i = 0; i < 64; i++)
+        p[i] = (uint8_t)(0xA0 + i);
+
+    p = krealloc(p, 200 * 1024);
+    KEXPECT(p != NULL);
+    bool kept = true;
+    for (uint32_t i = 0; p && i < 64; i++)
+    {
+        if (p[i] != (uint8_t)(0xA0 + i))
+            kept = false;
+    }
+    KEXPECT(kept);
+    kfree(p);
+    KEXPECT(heap_check());
+}

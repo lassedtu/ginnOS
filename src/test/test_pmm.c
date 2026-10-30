@@ -56,3 +56,40 @@ KTEST(pmm_does_not_own_device_memory)
     KEXPECT(!pmm_owns(0xFD000000u));
     KEXPECT(pmm_free_count() <= pmm_total_count());
 }
+
+KTEST(pmm_alloc_contiguous_run)
+{
+    uint32_t free_before = pmm_free_count();
+
+    uint8_t *run = pmm_alloc_contiguous(8);
+    KEXPECT(run != NULL);
+    KEXPECT_EQ((uint32_t)run % PAGE_BYTES, 0);
+    KEXPECT_EQ(pmm_free_count(), free_before - 8);
+
+    if (run)
+    {
+        // every page of the run is now used, and the run is writable memory.
+        bool all_used = true;
+        for (uint32_t i = 0; i < 8; i++)
+        {
+            if (pmm_is_page_free(((uint32_t)run / PAGE_BYTES) + i))
+                all_used = false;
+        }
+        KEXPECT(all_used);
+        run[0] = 1;
+        run[8 * PAGE_BYTES - 1] = 2;
+        KEXPECT(run[0] == 1 && run[8 * PAGE_BYTES - 1] == 2);
+
+        for (uint32_t i = 0; i < 8; i++)
+            pmm_free_page(run + i * PAGE_BYTES);
+    }
+    KEXPECT_EQ(pmm_free_count(), free_before);
+}
+
+KTEST(pmm_alloc_contiguous_rejects_impossible)
+{
+    uint32_t free_before = pmm_free_count();
+    KEXPECT(pmm_alloc_contiguous(0) == NULL);
+    KEXPECT(pmm_alloc_contiguous(pmm_total_count() + 1) == NULL);
+    KEXPECT_EQ(pmm_free_count(), free_before);
+}

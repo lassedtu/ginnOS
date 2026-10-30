@@ -18,6 +18,15 @@ void pmm_init(boot_info_t *boot);
 void *pmm_alloc_page(void);
 
 /**
+ * allocate a run of physically contiguous 4 KiB page frames.
+ * pages are freed individually with pmm_free_page().
+ * @param count number of pages (must be > 0).
+ * @return physical address of the first page, or NULL if no free run of
+ *         that length exists.
+ */
+void *pmm_alloc_contiguous(uint32_t count);
+
+/**
  * free a previously allocated physical page frame.
  * @param address physical address of the page to free (must be page-aligned).
  */

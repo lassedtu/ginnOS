@@ -10,11 +10,19 @@
 // pointer to the first block in the heap's linked list.
 static heap_block_t *heap_head;
 
-// physical start address of the heap region.
-static uint32_t heap_start;
+/**
+ * a physically contiguous region of memory owned by the heap. the block list
+ * visits segments in creation order and, inside a segment, blocks in address
+ * order, so the list tail is always the last block of the newest segment.
+ */
+typedef struct
+{
+    uint32_t start; // first byte of the segment
+    uint32_t end;   // first byte past the segment
+} heap_segment_t;
 
-// physical end address of the heap region (exclusive).
-static uint32_t heap_end;
+static heap_segment_t segments[HEAP_MAX_SEGMENTS];
+static uint32_t segment_count;
 
 // allocation statistics.
 static heap_stats_t stats;
@@ -25,6 +33,39 @@ static heap_stats_t stats;
 static uint32_t align4(uint32_t value)
 {
     return (value + 3) & ~(uint32_t)3;
+}
+
+/**
+ * first byte past a block's data area.
+ */
+static uint32_t block_end(const heap_block_t *block)
+{
+    return (uint32_t)block + sizeof(heap_block_t) + block->size;
+}
+
+/**
+ * true if `next` starts exactly where `block` ends. blocks in different
+ * segments are list neighbours without being adjacent in memory, and must
+ * never be merged.
+ */
+static bool blocks_adjacent(const heap_block_t *block, const heap_block_t *next)
+{
+    return next && block_end(block) == (uint32_t)next;
+}
+
+/**
+ * true if the address lies inside any heap segment.
+ */
+static bool heap_contains(uint32_t addr)
+{
+    for (uint32_t i = 0; i < segment_count; i++)
+    {
+        if (addr >= segments[i].start && addr < segments[i].end)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -47,13 +88,14 @@ static void heap_split(heap_block_t *block, uint32_t size)
 }
 
 /**
- * coalesce a block with its next neighbor if both are free.
+ * coalesce a block with its next neighbours while they are free and directly
+ * adjacent in memory (never across a segment boundary).
  * called after kfree to reduce fragmentation.
  * @param block the block to attempt coalescing from.
  */
 static void heap_coalesce(heap_block_t *block)
 {
-    while (block->next && block->next->free)
+    while (block->next && block->next->free && blocks_adjacent(block, block->next))
     {
         block->size += sizeof(heap_block_t) + block->next->size;
         block->next = block->next->next;
@@ -113,11 +155,15 @@ static void heap_poison(void *ptr, uint32_t size)
 void heap_init(void)
 {
     // place the heap right after the PMM bitmap (page-aligned)
-    heap_start = (pmm_bitmap_end() + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    heap_end = heap_start + (HEAP_INITIAL_PAGES * PAGE_SIZE);
+    uint32_t heap_start = (pmm_bitmap_end() + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint32_t heap_end = heap_start + (HEAP_INITIAL_PAGES * PAGE_SIZE);
 
     memory_reserve_heap(heap_start, heap_end);
     pmm_mark_region_used(heap_start, heap_end);
+
+    segments[0].start = heap_start;
+    segments[0].end = heap_end;
+    segment_count = 1;
 
     // initialize the heap as a single large free block
     heap_head = (heap_block_t *)heap_start;
@@ -136,8 +182,36 @@ void heap_init(void)
 }
 
 /**
- * expand the heap by allocating more pages from the PMM.
- * the new pages must be physically contiguous with the current heap end.
+ * try to grow the newest segment in place by claiming the pages right after it.
+ * @param pages number of pages to claim.
+ * @return true if every page was free and is now owned by the heap.
+ */
+static bool heap_grow_in_place(uint32_t pages)
+{
+    heap_segment_t *newest = &segments[segment_count - 1];
+    uint32_t first_page = newest->end / PAGE_SIZE;
+
+    for (uint32_t i = 0; i < pages; i++)
+    {
+        if (!pmm_is_page_free(first_page + i))
+        {
+            return false;
+        }
+    }
+
+    for (uint32_t i = 0; i < pages; i++)
+    {
+        pmm_mark_page_used(first_page + i);
+    }
+    return true;
+}
+
+/**
+ * expand the heap by at least `needed` bytes of usable space.
+ * first tries to extend the newest segment in place (the pages after it are
+ * free), otherwise takes a new physically contiguous run of pages from
+ * anywhere in RAM as a new segment. all RAM is identity-mapped, so the new
+ * pages are usable directly.
  * @param needed minimum number of bytes needed (used to determine page count).
  * @return true if expansion succeeded, false otherwise.
  */
@@ -149,47 +223,58 @@ static bool heap_expand(uint32_t needed)
     {
         pages_needed = HEAP_EXPAND_PAGES;
     }
+    uint32_t bytes = pages_needed * PAGE_SIZE;
 
-    uint32_t expand_start = heap_end;
-
-    for (uint32_t i = 0; i < pages_needed; i++)
-    {
-        uint32_t expected_addr = expand_start + (i * PAGE_SIZE);
-        uint32_t page_index = expected_addr / PAGE_SIZE;
-
-        if (!pmm_is_page_free(page_index))
-        {
-            for (uint32_t j = 0; j < i; j++)
-            {
-                pmm_free_page((void *)(expand_start + (j * PAGE_SIZE)));
-            }
-            return false;
-        }
-
-        pmm_mark_page_used(page_index);
-    }
-
-    heap_block_t *new_block = (heap_block_t *)expand_start;
-    new_block->size = (pages_needed * PAGE_SIZE) - sizeof(heap_block_t);
-    new_block->free = true;
-    new_block->next = NULL;
-
+    // the list tail is the last block of the newest segment.
     heap_block_t *last = heap_head;
     while (last->next)
     {
         last = last->next;
     }
 
-    if (last->free)
+    if (heap_grow_in_place(pages_needed))
     {
-        last->size += sizeof(heap_block_t) + new_block->size;
-    }
-    else
-    {
-        last->next = new_block;
+        heap_segment_t *newest = &segments[segment_count - 1];
+        heap_block_t *new_block = (heap_block_t *)newest->end;
+        newest->end += bytes;
+
+        if (last->free)
+        {
+            // extend the free tail block over the new pages.
+            last->size += bytes;
+        }
+        else
+        {
+            new_block->size = bytes - sizeof(heap_block_t);
+            new_block->free = true;
+            new_block->next = NULL;
+            last->next = new_block;
+        }
+        return true;
     }
 
-    heap_end = expand_start + (pages_needed * PAGE_SIZE);
+    if (segment_count >= HEAP_MAX_SEGMENTS)
+    {
+        return false;
+    }
+
+    void *run = pmm_alloc_contiguous(pages_needed);
+    if (!run)
+    {
+        return false;
+    }
+
+    segments[segment_count].start = (uint32_t)run;
+    segments[segment_count].end = (uint32_t)run + bytes;
+    segment_count++;
+
+    // a new segment is not adjacent to the old tail, so it always gets its
+    // own block; heap_coalesce will never merge across the boundary.
+    heap_block_t *new_block = (heap_block_t *)run;
+    new_block->size = bytes - sizeof(heap_block_t);
+    new_block->free = true;
+    new_block->next = NULL;
+    last->next = new_block;
     return true;
 }
 
@@ -326,6 +411,9 @@ void *krealloc(void *ptr, uint32_t new_size)
         if (block->size != old_size)
         {
             stats.current_usage -= (old_size - block->size);
+            // the split-off remainder is free; merge it with a free block
+            // right after it so no two free neighbours are left side by side.
+            heap_coalesce(block->next);
         }
 #ifdef HEAP_DEBUG
         heap_write_canaries(block, new_size);
@@ -333,8 +421,9 @@ void *krealloc(void *ptr, uint32_t new_size)
         return ptr;
     }
 
-    // try to expand in place by absorbing the next free block
-    if (block->next && block->next->free)
+    // try to expand in place by absorbing the next free block (only if it is
+    // directly after this one in memory, not in another segment)
+    if (block->next && block->next->free && blocks_adjacent(block, block->next))
     {
         uint32_t combined = block->size + sizeof(heap_block_t) + block->next->size;
         if (combined >= alloc_size)
@@ -388,8 +477,8 @@ void kfree(void *ptr)
         return;
     }
 
-    // sanity check: pointer must be within the heap region
-    if ((uint32_t)ptr < heap_start || (uint32_t)ptr >= heap_end)
+    // sanity check: pointer must be inside one of the heap's segments
+    if (!heap_contains((uint32_t)ptr))
     {
         kernel_panic("kfree: pointer outside heap region");
     }
@@ -436,19 +525,19 @@ void kfree(void *ptr)
     }
 }
 
-uint32_t heap_start_address(void)
-{
-    return heap_start;
-}
-
-uint32_t heap_end_address(void)
-{
-    return heap_end;
-}
-
 uint32_t heap_total_size(void)
 {
-    return heap_end - heap_start;
+    uint32_t total = 0;
+    for (uint32_t i = 0; i < segment_count; i++)
+    {
+        total += segments[i].end - segments[i].start;
+    }
+    return total;
+}
+
+uint32_t heap_segment_count(void)
+{
+    return segment_count;
 }
 
 uint32_t heap_free_size(void)
@@ -485,4 +574,41 @@ uint32_t heap_block_count(void)
 heap_stats_t heap_get_stats(void)
 {
     return stats;
+}
+
+bool heap_check(void)
+{
+    const heap_block_t *block = heap_head;
+
+    // the list visits segments in creation order; inside each segment the
+    // blocks must tile it exactly, back to back.
+    for (uint32_t s = 0; s < segment_count; s++)
+    {
+        if (!block || (uint32_t)block != segments[s].start)
+        {
+            return false;
+        }
+
+        while (block && block_end(block) < segments[s].end)
+        {
+            const heap_block_t *next = block->next;
+            if (!next || !blocks_adjacent(block, next))
+            {
+                return false; // gap or overlap inside the segment
+            }
+            if (block->free && next->free)
+            {
+                return false; // two free neighbours should have merged
+            }
+            block = next;
+        }
+
+        if (!block || block_end(block) != segments[s].end)
+        {
+            return false; // last block overruns or underfills the segment
+        }
+        block = block->next;
+    }
+
+    return block == NULL; // no blocks outside every segment
 }

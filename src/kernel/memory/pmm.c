@@ -137,6 +137,46 @@ void *pmm_alloc_page(void)
     return NULL;
 }
 
+void *pmm_alloc_contiguous(uint32_t count)
+{
+    if (count == 0 || count > free_pages)
+    {
+        return NULL;
+    }
+
+    /* first-fit scan for a run of `count` free pages. page 0 is never free,
+     * so a run can't start there. O(total_pages), fine for occasional use. */
+    uint32_t run_start = 0;
+    uint32_t run_length = 0;
+
+    for (uint32_t index = 1; index < total_pages; index++)
+    {
+        if (!bitmap_test(index))
+        {
+            run_length = 0;
+            continue;
+        }
+
+        if (run_length == 0)
+        {
+            run_start = index;
+        }
+
+        run_length++;
+        if (run_length == count)
+        {
+            for (uint32_t page = run_start; page < run_start + count; page++)
+            {
+                bitmap_clear(page);
+            }
+            free_pages -= count;
+            return (void *)(run_start * PAGE_SIZE);
+        }
+    }
+
+    return NULL;
+}
+
 void pmm_free_page(void *address)
 {
     uint32_t addr = (uint32_t)address;
