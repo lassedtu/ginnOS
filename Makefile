@@ -145,7 +145,8 @@ USER_PROG_NAMES := $(notdir $(USER_PROG_DIRS))
 USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
 
 # dependency files (C compilations only)
-DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
+DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d) \
+             $(LIBC_C_OBJS:.o=.d)
 
 # all source files for lint/format targets
 ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
