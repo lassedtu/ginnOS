@@ -180,6 +180,11 @@ void usermode_exit(int exit_code)
 
     if (proc && proc->parent_pid != PID_NONE)
     {
+        // masked from here on: becoming a zombie, waking the parent and
+        // switching away must not be split by a timer tick. this context
+        // never resumes, so the state is never restored.
+        arch_disable_interrupts();
+
         // child of another process: transition to ZOMBIE, wake parent
         proc->state = PROC_STATE_ZOMBIE;
         proc->exit_code = exit_code;

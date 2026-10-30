@@ -40,6 +40,13 @@ uint32_t arch_irq_save(void);
 void arch_irq_restore(uint32_t flags);
 
 /**
+ * check whether hardware interrupts are currently enabled.
+ * meant for assertions such as "must be called with interrupts masked".
+ * @return true if interrupts are enabled.
+ */
+bool arch_irqs_enabled(void);
+
+/**
  * halt the cpu until the next interrupt arrives.
  * interrupts must be enabled before calling this.
  */

@@ -104,31 +104,32 @@ int32_t sys_waitpid(struct registers *regs)
         return -20; /* ECHILD */
     }
 
-    /* if child is already a zombie, reap immediately */
-    if (child->state == PROC_STATE_ZOMBIE)
+    /* mask interrupts from the zombie check until we are blocked, so the
+     * child cannot exit in between (it would see us not yet BLOCKED, skip
+     * the wakeup, and we would sleep forever). */
+    uint32_t flags = arch_irq_save();
+
+    /* child is still running: block the parent until it exits */
+    if (child->state != PROC_STATE_ZOMBIE)
     {
-        int32_t code = child->exit_code;
-        process_destroy(child);
-        return code;
+        parent->state = PROC_STATE_BLOCKED;
+        parent->wait_for_pid = child_pid;
+        scheduler_remove(parent);
+        scheduler_yield();
+
+        /* woken up: the child should now be a zombie */
+        child = process_get(child_pid);
     }
 
-    /* child is still running block the parent */
-    parent->state = PROC_STATE_BLOCKED;
-    parent->wait_for_pid = child_pid;
-    scheduler_remove(parent);
-    scheduler_yield();
-
-    /* we've been woken up child should now be a zombie */
-    child = process_get(child_pid);
+    int32_t result = -19; /* ESRCH: child disappeared somehow */
     if (child && child->state == PROC_STATE_ZOMBIE)
     {
-        int32_t code = child->exit_code;
+        result = child->exit_code;
         process_destroy(child);
-        return code;
     }
 
-    /* child disappeared somehow */
-    return -19; /* ESRCH */
+    arch_irq_restore(flags);
+    return result;
 }
 
 /**

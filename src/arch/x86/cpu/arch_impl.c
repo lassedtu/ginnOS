@@ -39,6 +39,15 @@ void arch_irq_restore(uint32_t flags)
                      : "memory", "cc");
 }
 
+bool arch_irqs_enabled(void)
+{
+    uint32_t flags;
+    __asm__ volatile("pushf\n"
+                     "pop %0\n"
+                     : "=r"(flags));
+    return (flags & 0x200u) != 0; // EFLAGS.IF
+}
+
 void arch_halt(void)
 {
     __asm__ __volatile__("hlt");

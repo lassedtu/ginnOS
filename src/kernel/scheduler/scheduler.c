@@ -4,6 +4,16 @@
 #include "arch/arch_context.h"
 #include "arch/x86/cpu/gdt.h"
 #include "common/memory.h"
+#include "kernel/assert.h"
+
+/*
+ * locking: the ready queue, ticks_remaining and the current process are
+ * shared with the timer interrupt, which calls schedule(). every change to
+ * them happens with interrupts masked. schedule() itself must be entered
+ * with interrupts masked; each caller that switches away (scheduler_yield,
+ * wait_queue_block, the timer's iret) restores its own interrupt state when
+ * it is switched back, because the context switch does not carry EFLAGS.
+ */
 
 // doubly-linked intrusive ready queue (head and tail).
 static process_t *queue_head;
@@ -147,6 +157,8 @@ void scheduler_ready(process_t *proc)
         return;
     }
 
+    uint32_t flags = arch_irq_save();
+
     proc->state = PROC_STATE_READY;
     queue_push(proc);
 
@@ -154,16 +166,23 @@ void scheduler_ready(process_t *proc)
     {
         scheduler_active = 1;
     }
+
+    arch_irq_restore(flags);
 }
 
 void scheduler_remove(process_t *proc)
 {
-    if (!proc || !queue_contains(proc))
+    if (!proc)
     {
         return;
     }
 
-    queue_remove(proc);
+    uint32_t flags = arch_irq_save();
+    if (queue_contains(proc))
+    {
+        queue_remove(proc);
+    }
+    arch_irq_restore(flags);
 }
 
 /**
@@ -171,6 +190,8 @@ void scheduler_remove(process_t *proc)
  */
 static void schedule(void)
 {
+    KASSERT(!arch_irqs_enabled(), "schedule() with interrupts enabled");
+
     process_t *current = process_current();
     process_t *next = queue_pop();
 
@@ -256,6 +277,8 @@ void scheduler_yield(void)
         return;
     }
 
+    uint32_t flags = arch_irq_save();
     ticks_remaining = 0;
     schedule();
+    arch_irq_restore(flags);
 }
