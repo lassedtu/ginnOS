@@ -88,6 +88,18 @@ STAGE2_SECTORS   := 62
 SECTOR_SIZE      := 512
 STAGE2_MAX_BYTES := $(shell echo $$(( $(STAGE2_SECTORS) * $(SECTOR_SIZE) )))
 
+# lay out a bootable disk image: stage1 in the MBR, stage2 in sectors 1-62,
+# the ext2 root filesystem from sector 63. used by the normal and test images.
+# $(1) = output image, $(2) = ext2 filesystem image.
+define assemble_disk
+	@EXT2_BYTES=$$(wc -c < $(2)); \
+	TOTAL_BYTES=$$(echo $$(( 63 * 512 + $$EXT2_BYTES ))); \
+	truncate -s $$TOTAL_BYTES $(1)
+	dd if=$(STAGE1_BIN) of=$(1) bs=512 seek=0 conv=notrunc status=none
+	dd if=$(STAGE2_PAD) of=$(1) bs=512 seek=1 conv=notrunc status=none
+	dd if=$(2) of=$(1) bs=512 seek=63 conv=notrunc status=none
+endef
+
 # path mapping helpers
 src_c_to_obj      = $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(1))
 src_asm_to_obj    = $(patsubst src/%.asm,$(BUILD_DIR)/%.o,$(1))
@@ -148,13 +160,47 @@ USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d) \
              $(LIBC_C_OBJS:.o=.d)
 
+# in-kernel test build (make test). the whole kernel is recompiled into a
+# separate object tree with -DKERNEL_TEST plus the tests under src/test/, so
+# the normal kernel never contains test code. asm and common objects carry no
+# test-specific code and are shared with the normal build.
+TEST_BUILD_DIR      := $(BUILD_DIR)/test
+TEST_C_SRCS         := $(call find_c_sources,src/test)
+TEST_KERNEL_CFLAGS   = $(KERNEL_CFLAGS) -DKERNEL_TEST
+TEST_KERNEL_C_OBJS  := $(patsubst src/%.c,$(TEST_BUILD_DIR)/obj/%.o,$(KERNEL_C_SRCS) $(TEST_C_SRCS))
+TEST_KERNEL_LINK_OBJS := $(KERNEL_ENTRY_OBJ) \
+                         $(filter-out $(KERNEL_ENTRY_OBJ),$(sort $(KERNEL_ASM_OBJS) $(TEST_KERNEL_C_OBJS))) \
+                         $(COMMON_OBJS)
+TEST_KERNEL_ELF     := $(TEST_BUILD_DIR)/kernel.elf
+TEST_KERNEL_BIN     := $(TEST_BUILD_DIR)/kernel.bin
+TEST_ROOTFS_DIR     := $(TEST_BUILD_DIR)/rootfs
+TEST_ROOTFS_IMAGE   := $(TEST_BUILD_DIR)/rootfs.ext2
+TEST_DISK_IMAGE     := $(TEST_BUILD_DIR)/ginnos-test.img
+TEST_TIMEOUT        ?= 120
+
+DEP_FILES += $(TEST_KERNEL_C_OBJS:.o=.d)
+
+# files recording each kernel's link object list. rewritten only when the list
+# changes, so adding or deleting a source file relinks the kernel (a link rule
+# otherwise only notices objects that are newer than the binary, not ones that
+# disappeared).
+KERNEL_OBJS_LIST      := $(BUILD_DIR)/kernel.objs
+TEST_KERNEL_OBJS_LIST := $(TEST_BUILD_DIR)/kernel.objs
+
+# write $(2) into file $(1), touching it only if the content changed.
+define update_if_changed
+	@mkdir -p $(dir $(1))
+	@echo '$(2)' > $(1).tmp; \
+	if cmp -s $(1).tmp $(1); then rm -f $(1).tmp; else mv $(1).tmp $(1); fi
+endef
+
 # all source files for lint/format targets
 ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
-              $(STAGE2_C_SRCS) $(LIBC_C_SRCS)
+              $(STAGE2_C_SRCS) $(LIBC_C_SRCS) $(TEST_C_SRCS)
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run rootfs-image clean check-tools debug lint format compile_commands iso
+.PHONY: all run rootfs-image clean check-tools debug lint format compile_commands iso test test-image FORCE
 
 all: check-tools $(DISK_IMAGE)
 
@@ -266,7 +312,10 @@ $(STAGE2_PAD): $(STAGE2_BIN)
 	truncate -s $(STAGE2_MAX_BYTES) $@
 
 # kernel link
-$(KERNEL_ELF): $(KERNEL_LINK_OBJS) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
+$(KERNEL_OBJS_LIST): FORCE
+	$(call update_if_changed,$@,$(KERNEL_LINK_OBJS))
+
+$(KERNEL_ELF): $(KERNEL_LINK_OBJS) $(KERNEL_OBJS_LIST) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_LINK_OBJS)
 
 $(KERNEL_BIN): $(KERNEL_ELF)
@@ -310,15 +359,43 @@ rootfs-image: $(KERNEL_BIN) user-programs
 		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
 
 $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) rootfs-image
-	@EXT2_BYTES=$$(wc -c < $(ROOTFS_IMAGE)); \
-	TOTAL_BYTES=$$(echo $$(( 63 * 512 + $$EXT2_BYTES ))); \
-	truncate -s $$TOTAL_BYTES $@
-	dd if=$(STAGE1_BIN) of=$@ bs=512 seek=0 conv=notrunc status=none
-	dd if=$(STAGE2_PAD) of=$@ bs=512 seek=1 conv=notrunc status=none
-	dd if=$(ROOTFS_IMAGE) of=$@ bs=512 seek=63 conv=notrunc status=none
+	$(call assemble_disk,$@,$(ROOTFS_IMAGE))
 
 run: check-tools $(DISK_IMAGE)
 	$(QEMU) $(QEMU_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+
+# in-kernel tests: build the test kernel into its own disk image (a copy of the
+# normal rootfs, so tests that write to the filesystem never touch
+# build/ginnos.img), boot it headless, and turn QEMU's isa-debug-exit status
+# into the make exit code. override the watchdog with TEST_TIMEOUT=<seconds>.
+test: check-tools test-image
+	./tools/run_tests.sh "$(QEMU)" "$(TEST_DISK_IMAGE)" "$(TEST_TIMEOUT)" $(QEMU_FLAGS)
+
+$(TEST_BUILD_DIR)/obj/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(TEST_KERNEL_CFLAGS) -c $< -o $@
+
+$(TEST_KERNEL_OBJS_LIST): FORCE
+	$(call update_if_changed,$@,$(TEST_KERNEL_LINK_OBJS))
+
+$(TEST_KERNEL_ELF): $(TEST_KERNEL_LINK_OBJS) $(TEST_KERNEL_OBJS_LIST) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
+	@mkdir -p $(dir $@)
+	$(LD) $(LDFLAGS) -o $@ $(TEST_KERNEL_LINK_OBJS)
+
+$(TEST_KERNEL_BIN): $(TEST_KERNEL_ELF)
+	$(OBJCOPY) -O binary $(TEST_KERNEL_ELF) $@
+
+test-image: $(STAGE1_BIN) $(STAGE2_PAD) $(TEST_KERNEL_BIN) rootfs-image
+	rm -rf $(TEST_ROOTFS_DIR)
+	@mkdir -p $(TEST_ROOTFS_DIR)
+	cp -R $(EXT2_SOURCE_DIR)/. $(TEST_ROOTFS_DIR)/
+	cp $(TEST_KERNEL_BIN) $(TEST_ROOTFS_DIR)/boot/kernel.bin
+	$(PYTHON) $(EXT2_IMAGE_TOOL) \
+		--source "$(TEST_ROOTFS_DIR)" \
+		--output "$(TEST_ROOTFS_IMAGE)" \
+		--min-size-mb $(EXT2_MIN_SIZE_MB) \
+		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
+	$(call assemble_disk,$(TEST_DISK_IMAGE),$(TEST_ROOTFS_IMAGE))
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -326,6 +403,9 @@ clean:
 	rm -rf $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 	rm -f compile_commands.json
+
+# always-run prerequisite for the kernel object-list files.
+FORCE:
 
 # automatic header dependencies
 -include $(DEP_FILES)

@@ -33,6 +33,10 @@
 #include "scheduler/scheduler.h"
 #include "usermode/usermode.h"
 
+#ifdef KERNEL_TEST
+#include "test/ktest.h"
+#endif
+
 void cstart(boot_info_t *boot)
 {
     if (!boot)
@@ -147,6 +151,13 @@ void kernel_main(boot_info_t *boot)
     {
         KLOG_WARN("kernel: devfs mount failed; /dev unavailable");
     }
+
+#ifdef KERNEL_TEST
+    // test kernel (make test): run the in-kernel tests instead of the shell.
+    // ktest_run_all exits QEMU with the result and never returns.
+    KLOG_INFO("kernel: root filesystem mounted, running tests");
+    ktest_run_all();
+#endif
 
     KLOG_INFO("kernel: root filesystem mounted, launching /bin/sh");
 

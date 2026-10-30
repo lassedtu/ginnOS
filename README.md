@@ -242,6 +242,13 @@ make
 make run
 ```
 
+Run the in-kernel test suite (boots a separate test kernel headless and exits
+with the result):
+
+```bash
+make test
+```
+
 ## Ubuntu / Debian Toolchain Setup (Manual)
 
 ### Clone the project
@@ -383,6 +390,13 @@ From project root:
 ```bash
 make
 make run
+```
+
+Run the in-kernel test suite (boots a separate test kernel headless and exits
+with the result):
+
+```bash
+make test
 ```
 
 ## ext2 Side-Disk Helper

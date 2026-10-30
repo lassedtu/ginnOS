@@ -28,6 +28,15 @@ SECTIONS
         __stop_shell_cmds = .;
     } :text
 
+    /* in-kernel test descriptors (src/test, KTEST macro). empty in the
+     * normal kernel; only the make test kernel links any tests in. */
+    .ktests : ALIGN(4)
+    {
+        __start_ktests = .;
+        KEEP(*(.ktests))
+        __stop_ktests = .;
+    } :text
+
     .data :
     {
         *(.data*)
