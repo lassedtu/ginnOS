@@ -22,7 +22,8 @@ int32_t sys_write(struct registers *regs)
     const char *buf = (const char *)regs->ecx;
     uint32_t count = regs->edx;
 
-    if (!is_user_ptr(buf, count))
+    /* the whole buffer must be readable user memory */
+    if (!user_access_ok(buf, count, false))
         return -18; /* EFAULT */
 
     if (count == 0)
@@ -75,7 +76,8 @@ int32_t sys_read(struct registers *regs)
     char *buf = (char *)regs->ecx;
     uint32_t count = regs->edx;
 
-    if (!is_user_ptr(buf, count))
+    /* the whole buffer must be writable user memory */
+    if (!user_access_ok(buf, count, true))
         return -18; /* EFAULT */
 
     if (count == 0)
@@ -175,18 +177,11 @@ int32_t sys_open(struct registers *regs)
     const char *path = (const char *)regs->ebx;
     (void)regs->ecx; /* flags reserved for future use */
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
-
-    /* resolve relative paths against the process's cwd */
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
-
-    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
-    {
-        return -3; /* EINVAL */
-    }
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
     vfs_file_t file;
     kerr_t err = vfs_open(resolved, &file);
@@ -350,7 +345,8 @@ int32_t sys_pipe(struct registers *regs)
     int *user_fds = (int *)regs->ebx;
     process_t *proc = process_current();
 
-    if (!is_user_ptr(user_fds, 2 * sizeof(int)))
+    /* checked up front: the fds are allocated before they are copied out */
+    if (!user_access_ok(user_fds, 2 * sizeof(int), true))
         return -18; /* EFAULT */
 
     if (!proc)
@@ -390,8 +386,6 @@ int32_t sys_pipe(struct registers *regs)
     proc->fds[write_fd].pipe.dir = PIPE_WRITE;
 
     /* return fd numbers to userspace */
-    user_fds[0] = read_fd;
-    user_fds[1] = write_fd;
-
-    return 0;
+    int fds[2] = {read_fd, write_fd};
+    return kerr_to_errno(copy_to_user(user_fds, fds, sizeof(fds)));
 }

@@ -178,6 +178,11 @@ void arch_unmap_kernel_page(uint32_t virt)
     paging_unmap(virt);
 }
 
+bool arch_user_access_ok(addr_space_t as, uint32_t addr, uint32_t len, bool write)
+{
+    return paging_user_range_ok(as, addr, len, write);
+}
+
 uint32_t arch_translate_in(addr_space_t as, uint32_t virt)
 {
     return paging_get_physical_in(as, virt);

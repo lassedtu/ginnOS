@@ -160,6 +160,18 @@ bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flag
 void paging_reserve_tables(uint32_t start, uint32_t end);
 
 /**
+ * check that every page of [addr, addr + len) is mapped user-accessible in
+ * a page directory (and writable, if write is set), at both the directory
+ * and the table level.
+ * @param pd_phys physical address of the page directory to walk.
+ * @param addr first byte of the range.
+ * @param len length of the range in bytes (0 is always accessible).
+ * @param write true if the kernel will write to the range.
+ * @return true if user code could make the same accesses.
+ */
+bool paging_user_range_ok(uint32_t pd_phys, uint32_t addr, uint32_t len, bool write);
+
+/**
  * read CR2, the address of the most recent page fault.
  * @return the faulting linear address.
  */

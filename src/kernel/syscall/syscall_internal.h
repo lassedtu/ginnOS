@@ -4,6 +4,7 @@
 #include "common/stdint.h"
 #include "common/error.h"
 #include "kernel/memory/memory_layout.h"
+#include "kernel/usermode/uaccess.h"
 
 /**
  * syscall function pointer type. takes a pointer to the CPU registers struct and returns an int32_t.
@@ -35,6 +36,17 @@ static inline int32_t kerr_to_errno(kerr_t err)
     }
     return -3; /* EINVAL as fallback */
 }
+
+/**
+ * copy a path string in from user memory and resolve it against the current
+ * process's cwd.
+ * @param user_path the user's path pointer.
+ * @param resolved receives the absolute path.
+ * @param size size of resolved.
+ * @return 0, or a negative errno (EFAULT for a bad pointer, EINVAL for a
+ *         path too long or unresolvable).
+ */
+int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size);
 
 /* sys_io.c */
 int32_t sys_write(struct registers *regs);

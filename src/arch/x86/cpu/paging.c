@@ -284,6 +284,45 @@ void paging_reserve_tables(uint32_t start, uint32_t end)
     }
 }
 
+bool paging_user_range_ok(uint32_t pd_phys, uint32_t addr, uint32_t len, bool write)
+{
+    if (len == 0)
+    {
+        return true;
+    }
+
+    uint32_t last = addr + len - 1;
+    if (last < addr)
+    {
+        return false; // wraps around the address space
+    }
+
+    const uint32_t *dir = (const uint32_t *)pd_phys;
+    uint32_t pde_need = PDE_PRESENT | PDE_USER | (write ? PDE_READ_WRITE : 0);
+    uint32_t pte_need = PTE_PRESENT | PTE_USER | (write ? PTE_READ_WRITE : 0);
+
+    for (uint32_t page = addr & ~(PAGE_SIZE - 1);; page += PAGE_SIZE)
+    {
+        uint32_t pde = dir[PAGE_DIR_INDEX(page)];
+        if ((pde & pde_need) != pde_need)
+        {
+            return false;
+        }
+
+        const uint32_t *table = (const uint32_t *)PAGE_FRAME(pde);
+        uint32_t pte = table[PAGE_TABLE_INDEX(page)];
+        if ((pte & pte_need) != pte_need)
+        {
+            return false;
+        }
+
+        if (page >= (last & ~(PAGE_SIZE - 1)))
+        {
+            return true;
+        }
+    }
+}
+
 uint32_t paging_fault_address(void)
 {
     return paging_read_cr2();

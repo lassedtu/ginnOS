@@ -140,6 +140,17 @@ void arch_map_kernel_page(uint32_t virt, uint32_t phys);
 void arch_unmap_kernel_page(uint32_t virt);
 
 /**
+ * check that user code in an address space could access a whole range:
+ * every page present and user-accessible, and writable if write is set.
+ * @param as the address space to check.
+ * @param addr first byte of the range.
+ * @param len length in bytes.
+ * @param write true if the range will be written.
+ * @return true if every page allows the access.
+ */
+bool arch_user_access_ok(addr_space_t as, uint32_t addr, uint32_t len, bool write);
+
+/**
  * map one page into a given address space.
  * @param as the target address space.
  * @param virt page-aligned virtual address.

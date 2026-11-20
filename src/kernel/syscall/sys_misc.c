@@ -17,9 +17,6 @@ int32_t sys_getcwd(struct registers *regs)
     uint32_t size = regs->ecx;
     process_t *proc = process_current();
 
-    if (!is_user_ptr(buf, size))
-        return -18; /* EFAULT */
-
     if (!proc || size == 0)
     {
         return -3; /* EINVAL */
@@ -31,8 +28,7 @@ int32_t sys_getcwd(struct registers *regs)
         return -17; /* ERANGE */
     }
 
-    strcpy(buf, proc->cwd);
-    return 0;
+    return kerr_to_errno(copy_to_user(buf, proc->cwd, len + 1));
 }
 
 /**
@@ -45,20 +41,16 @@ int32_t sys_chdir(struct registers *regs)
     const char *path = (const char *)regs->ebx;
     process_t *proc = process_current();
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
-
     if (!proc)
     {
         return -3; /* EINVAL */
     }
 
-    /* resolve the path relative to the current cwd */
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    if (!vfs_resolve_path(proc->cwd, path, resolved, sizeof(resolved)))
-    {
-        return -3; /* EINVAL */
-    }
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
     /* verify the target is a valid directory */
     vfs_stat_t stat;

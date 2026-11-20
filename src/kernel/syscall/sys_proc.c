@@ -13,6 +13,7 @@
 #include "arch/arch.h"
 #include "common/memory.h"
 #include "common/string.h"
+#include "kernel/memory/heap.h"
 
 /**
  * SYS_exit: terminate the current process.
@@ -29,6 +30,50 @@ int32_t sys_exit(struct registers *regs)
     return 0;
 }
 
+// most arguments, and most argument bytes (NULs included), sys_exec takes
+#define EXEC_ARGC_MAX 32
+#define EXEC_ARG_BYTES 1024
+
+/**
+ * copy a user argv array and its strings into kernel memory.
+ * @param user_argv the user's NULL-terminated array (may itself be NULL).
+ * @param kargv receives EXEC_ARGC_MAX + 1 pointers into strings.
+ * @param strings receives the strings, packed.
+ * @return argc, or a negative errno (EFAULT for bad memory, EINVAL when
+ *         over EXEC_ARGC_MAX or EXEC_ARG_BYTES).
+ */
+static int32_t copy_argv_from_user(const char **user_argv, const char **kargv, char *strings)
+{
+    uint32_t argc = 0;
+    uint32_t used = 0;
+
+    if (user_argv)
+    {
+        for (;;)
+        {
+            const char *arg;
+            if (kerr_failed(copy_from_user(&arg, &user_argv[argc], sizeof(arg))))
+                return -18; /* EFAULT */
+            if (!arg)
+                break;
+            if (argc == EXEC_ARGC_MAX)
+                return -3; /* EINVAL: too many arguments */
+
+            int32_t len = strncpy_from_user(strings + used, arg, EXEC_ARG_BYTES - used);
+            if (len == KERR_FAULT)
+                return -18; /* EFAULT */
+            if (len < 0)
+                return -3; /* EINVAL: arguments too long */
+
+            kargv[argc++] = strings + used;
+            used += (uint32_t)len + 1;
+        }
+    }
+
+    kargv[argc] = NULL;
+    return (int32_t)argc;
+}
+
 /**
  * SYS_exec: start an ELF binary as a child process (spawn, not execve).
  * args: EBX = path string pointer, ECX = argv array pointer (may be NULL).
@@ -39,24 +84,27 @@ int32_t sys_exec(struct registers *regs)
     const char *path = (const char *)regs->ebx;
     const char **argv = (const char **)regs->ecx;
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
-
-    /* resolve relative paths against the process's cwd */
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
-    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    /* argv and its strings are user memory too: copy them in first */
+    char *strings = kmalloc(EXEC_ARG_BYTES);
+    if (!strings)
+        return -4; /* ENOMEM */
+
+    const char *kargv[EXEC_ARGC_MAX + 1];
+    int32_t ret = copy_argv_from_user(argv, kargv, strings);
+    if (ret >= 0)
     {
-        return -3; /* EINVAL */
+        ret = (int32_t)exec_program(resolved, kargv);
+        if (ret < 0)
+            ret = -5; /* ENOENT */
     }
 
-    int32_t ret = (int32_t)exec_program(resolved, argv);
-    if (ret < 0)
-    {
-        return -5; /* ENOENT */
-    }
+    kfree(strings);
     return ret;
 }
 

@@ -1,4 +1,5 @@
 #include "fb.h"
+#include "kernel/usermode/uaccess.h"
 
 #include "arch/x86/cpu/paging.h"
 #include "arch/arch.h"
@@ -222,40 +223,44 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
     {
     case FBIOGET_FSCREENINFO:
     {
-        fb_fix_screeninfo_t *fix = (fb_fix_screeninfo_t *)arg;
-        memset(fix, 0, sizeof(*fix));
-        strncpy(fix->id, "ginnfb", sizeof(fix->id) - 1);
-        fix->smem_start = (uint32_t)fb.addr;
-        fix->smem_len = fb.height * fb.pitch;
-        fix->type = FB_TYPE_PACKED_PIXELS;
-        fix->visual = FB_VISUAL_TRUECOLOR;
-        fix->line_length = fb.pitch;
-        return 0;
+        // filled in kernel memory, then copied out: arg is a user pointer
+        fb_fix_screeninfo_t fix;
+        memset(&fix, 0, sizeof(fix));
+        strncpy(fix.id, "ginnfb", sizeof(fix.id) - 1);
+        fix.smem_start = (uint32_t)fb.addr;
+        fix.smem_len = fb.height * fb.pitch;
+        fix.type = FB_TYPE_PACKED_PIXELS;
+        fix.visual = FB_VISUAL_TRUECOLOR;
+        fix.line_length = fb.pitch;
+        return kerr_failed(copy_to_user(arg, &fix, sizeof(fix))) ? -18 /* EFAULT */ : 0;
     }
 
     case FBIOGET_VSCREENINFO:
     {
-        fb_var_screeninfo_t *var = (fb_var_screeninfo_t *)arg;
-        memset(var, 0, sizeof(*var));
-        var->xres = fb.width;
-        var->yres = fb.height;
-        var->xres_virtual = fb.width;
-        var->yres_virtual = fb.height;
-        var->bits_per_pixel = fb.bpp;
-        fb_fill_bitfield(&var->red, fb.red_size, fb.red_shift);
-        fb_fill_bitfield(&var->green, fb.green_size, fb.green_shift);
-        fb_fill_bitfield(&var->blue, fb.blue_size, fb.blue_shift);
-        fb_fill_bitfield(&var->transp, 0, 0); // no alpha
-        return 0;
+        fb_var_screeninfo_t var;
+        memset(&var, 0, sizeof(var));
+        var.xres = fb.width;
+        var.yres = fb.height;
+        var.xres_virtual = fb.width;
+        var.yres_virtual = fb.height;
+        var.bits_per_pixel = fb.bpp;
+        fb_fill_bitfield(&var.red, fb.red_size, fb.red_shift);
+        fb_fill_bitfield(&var.green, fb.green_size, fb.green_shift);
+        fb_fill_bitfield(&var.blue, fb.blue_size, fb.blue_shift);
+        fb_fill_bitfield(&var.transp, 0, 0); // no alpha
+        return kerr_failed(copy_to_user(arg, &var, sizeof(var))) ? -18 /* EFAULT */ : 0;
     }
 
     case FBIOPUT_VSCREENINFO:
     {
         // mode-setting is not supported: accept only a request matching the
         // current mode, reject anything else. the seam is here for later.
-        const fb_var_screeninfo_t *var = (const fb_var_screeninfo_t *)arg;
-        if (var->xres == fb.width && var->yres == fb.height &&
-            var->bits_per_pixel == fb.bpp)
+        fb_var_screeninfo_t var;
+        if (kerr_failed(copy_from_user(&var, arg, sizeof(var))))
+        {
+            return -18; /* EFAULT */
+        }
+        if (var.xres == fb.width && var.yres == fb.height && var.bits_per_pixel == fb.bpp)
         {
             return 0;
         }

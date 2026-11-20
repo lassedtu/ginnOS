@@ -7,6 +7,24 @@
 #include "common/memory.h"
 #include "common/string.h"
 
+int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size)
+{
+    char path[PATH_MAX];
+    int32_t len = strncpy_from_user(path, user_path, sizeof(path));
+    if (len == KERR_FAULT)
+        return -18; /* EFAULT */
+    if (len < 0)
+        return -3; /* EINVAL: longer than PATH_MAX */
+
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    if (!vfs_resolve_path(cwd, path, resolved, size))
+        return -3; /* EINVAL */
+
+    return 0;
+}
+
 /**
  * SYS_stat: get file metadata.
  * args: EBX = path string pointer, ECX = pointer to stat output struct.
@@ -18,29 +36,20 @@ int32_t sys_stat(struct registers *regs)
     const char *path = (const char *)regs->ebx;
     vfs_stat_t *stat_out = (vfs_stat_t *)regs->ecx;
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
-
-    if (!is_user_ptr(stat_out, sizeof(vfs_stat_t)))
-        return -18; /* EFAULT */
-
-    /* resolve relative paths against the process's cwd */
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
-    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
-    {
-        return -3; /* EINVAL */
-    }
-
-    kerr_t err = vfs_stat(resolved, stat_out);
+    vfs_stat_t st;
+    kerr_t err = vfs_stat(resolved, &st);
     if (kerr_failed(err))
     {
         return kerr_to_errno(err);
     }
 
-    return 0;
+    return kerr_to_errno(copy_to_user(stat_out, &st, sizeof(st)));
 }
 
 /**
@@ -52,18 +61,11 @@ int32_t sys_create(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
-
-    /* resolve relative paths against the process's cwd */
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
-
-    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
-    {
-        return -3; /* EINVAL */
-    }
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
     kerr_t err = vfs_create(resolved);
     if (kerr_failed(err))
@@ -83,18 +85,11 @@ int32_t sys_mkdir(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
-
-    /* resolve relative paths against the process's cwd */
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
-
-    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
-    {
-        return -3; /* EINVAL */
-    }
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
     kerr_t err = vfs_mkdir(resolved);
     if (kerr_failed(err))
@@ -114,18 +109,11 @@ int32_t sys_unlink(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
-
-    /* resolve relative paths against the process's cwd */
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
-
-    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
-    {
-        return -3; /* EINVAL */
-    }
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
     kerr_t err = vfs_remove(resolved);
     if (kerr_failed(err))
@@ -145,18 +133,11 @@ int32_t sys_rmdir(struct registers *regs)
 {
     const char *path = (const char *)regs->ebx;
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
-
-    /* resolve relative paths against the process's cwd */
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
-
-    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
-    {
-        return -3; /* EINVAL */
-    }
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
     kerr_t err = vfs_rmdir(resolved);
     if (kerr_failed(err))
@@ -184,7 +165,8 @@ int32_t sys_readdir(struct registers *regs)
     int fd_num = (int)regs->ebx;
     fs_dirent_t *user_dirent = (fs_dirent_t *)regs->ecx;
 
-    if (!is_user_ptr(user_dirent, sizeof(fs_dirent_t)))
+    /* check before reading: the read advances the directory position */
+    if (!user_access_ok(user_dirent, sizeof(fs_dirent_t), true))
         return -18; /* EFAULT */
 
     fd_entry_t *entry = fd_get(fd_num);
@@ -201,6 +183,5 @@ int32_t sys_readdir(struct registers *regs)
     }
 
     /* copy to userspace */
-    memcpy(user_dirent, &dirent, sizeof(fs_dirent_t));
-    return 0;
+    return kerr_to_errno(copy_to_user(user_dirent, &dirent, sizeof(fs_dirent_t)));
 }
