@@ -38,6 +38,10 @@ void wait_queue_init(wait_queue_t *wq)
  */
 static void block_current(wait_queue_t *wq, process_t *proc)
 {
+    // without a running scheduler the yield below returns at once, and the
+    // caller's retry would queue this process a second time
+    KASSERT(scheduler_is_active(), "wait queue: blocking before the scheduler runs");
+
     proc->state = PROC_STATE_BLOCKED;
     scheduler_remove(proc);
     queue_append(wq, proc);

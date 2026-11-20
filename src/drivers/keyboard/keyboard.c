@@ -11,6 +11,10 @@
 #include "arch/arch.h"
 #include "kernel/irq/irq.h"
 #include "kernel/device/device.h"
+#include "kernel/process/process.h"
+#include "kernel/scheduler/scheduler.h"
+#include "kernel/sync/spinlock.h"
+#include "kernel/sync/wait_queue.h"
 #include "arch/x86/cpu/io.h"
 #include "common/stdint.h"
 #include "common/string.h"
@@ -23,6 +27,15 @@ static uint16_t buffer_read = 0;  // index of the next event to read
 static uint16_t buffer_write = 0; // index of the next slot to write into
 
 static uint32_t dropped_count = 0; // events dropped because the buffer was full
+
+// guards buffer_read, buffer_write and dropped_count. the IRQ handler
+// produces and any number of processes consume (sys_read, sys_pollkey), so
+// taking an event must be one atomic check-and-advance.
+static spinlock_t buffer_lock;
+
+// processes sleeping in keyboard_wait_event until the IRQ handler adds an
+// event.
+static wait_queue_t readers;
 
 static key_state_t shift_state = KEY_RELEASED; // current shift key state
 static key_state_t ctrl_state = KEY_RELEASED;  // current ctrl key state
@@ -79,16 +92,38 @@ static const keyboard_special_key_t extended_map[128] = {
  */
 static void keyboard_buffer_push(keyboard_event_t event)
 {
-    uint16_t next = (uint16_t)((buffer_write + 1) % KEYBOARD_BUFFER_SIZE);
+    uint32_t flags = spin_lock_irqsave(&buffer_lock);
 
+    uint16_t next = (uint16_t)((buffer_write + 1) % KEYBOARD_BUFFER_SIZE);
     if (next == buffer_read)
     {
         dropped_count++;
-        return;
+    }
+    else
+    {
+        keyboard_buffer[buffer_write] = event;
+        buffer_write = next;
+        // every sleeping reader re-checks; whoever runs first takes it
+        wait_queue_wake_all(&readers);
     }
 
-    keyboard_buffer[buffer_write] = event;
-    buffer_write = next;
+    spin_unlock_irqrestore(&buffer_lock, flags);
+}
+
+/**
+ * take the oldest event out of the buffer. caller holds buffer_lock.
+ * @return true if an event was taken, false if the buffer was empty.
+ */
+static bool buffer_pop_locked(keyboard_event_t *event_out)
+{
+    if (buffer_read == buffer_write)
+    {
+        return false;
+    }
+
+    *event_out = keyboard_buffer[buffer_read];
+    buffer_read = (uint16_t)((buffer_read + 1) % KEYBOARD_BUFFER_SIZE);
+    return true;
 }
 
 /**
@@ -271,20 +306,37 @@ int keyboard_available(void)
 
 int keyboard_read_event(keyboard_event_t *event_out)
 {
-    if (!keyboard_available())
-        return 0;
+    uint32_t flags = spin_lock_irqsave(&buffer_lock);
+    bool got = buffer_pop_locked(event_out);
+    spin_unlock_irqrestore(&buffer_lock, flags);
 
-    *event_out = keyboard_buffer[buffer_read];
-    buffer_read = (uint16_t)((buffer_read + 1) % KEYBOARD_BUFFER_SIZE);
-    return 1;
+    return got ? 1 : 0;
 }
 
 void keyboard_wait_event(keyboard_event_t *event_out)
 {
-    while (!keyboard_available())
-        arch_halt();
+    uint32_t flags = spin_lock_irqsave(&buffer_lock);
 
-    keyboard_read_event(event_out);
+    while (!buffer_pop_locked(event_out))
+    {
+        if (process_current() && scheduler_is_active())
+        {
+            // sleep until the IRQ handler pushes an event and wakes us
+            wait_queue_block_locked(&readers, &buffer_lock);
+        }
+        else
+        {
+            // nothing to switch to yet (the first shell runs on the boot
+            // stack until it starts a child): wait for the next interrupt
+            // with the lock released and interrupts enabled
+            spin_unlock_irqrestore(&buffer_lock, flags);
+            arch_enable_interrupts();
+            arch_halt();
+            flags = spin_lock_irqsave(&buffer_lock);
+        }
+    }
+
+    spin_unlock_irqrestore(&buffer_lock, flags);
 }
 
 char keyboard_getchar(void)
@@ -319,6 +371,9 @@ uint32_t keyboard_dropped_count(void)
 
 void keyboard_initialize(void)
 {
+    spinlock_init(&buffer_lock);
+    wait_queue_init(&readers);
+
     // register the keyboard handler on IRQ1; irq_request unmasks the line.
     irq_request(1, keyboard_irq_handler, IRQ_FLAG_NONE, "keyboard");
 

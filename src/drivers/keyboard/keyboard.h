@@ -62,7 +62,9 @@ typedef struct
 void keyboard_initialize(void);
 
 /**
- * check if at least one event is available in the event buffer.
+ * check if at least one event is available in the event buffer. only a
+ * hint: another reader may take the event first, so callers that then
+ * read must use a read function that copes with an empty buffer.
  * @return 1 if an event is available, 0 otherwise.
  */
 int keyboard_available(void);
@@ -92,6 +94,8 @@ int keyboard_read_event(keyboard_event_t *event_out);
 
 /**
  * read the next keyboard event from the event buffer, blocking until one arrives.
+ * the calling process sleeps until the keyboard IRQ wakes it; it does not
+ * spin. safe with several readers: each event goes to exactly one of them.
  * @param event_out output structure filled with the event type and value.
  */
 void keyboard_wait_event(keyboard_event_t *event_out);

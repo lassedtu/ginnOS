@@ -260,6 +260,11 @@ static void schedule(void)
     }
 }
 
+bool scheduler_is_active(void)
+{
+    return scheduler_active != 0;
+}
+
 void scheduler_tick(void)
 {
     if (!scheduler_active)
