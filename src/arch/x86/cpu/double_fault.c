@@ -90,6 +90,12 @@ void double_fault_initialize(void)
     tss_install_double_fault(double_fault_task,
                              (uintptr_t)double_fault_stack + DOUBLE_FAULT_STACK_SIZE);
 
+    // until paging_init installs the kernel directory, the task runs with
+    // whatever page directory is live now
+    uint32_t cr3;
+    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    tss_set_double_fault_cr3(cr3);
+
     // a task gate ignores the offset; the TSS selector names the task
     idt_set_gate(8, 0, GDT_DOUBLE_FAULT_TSS,
                  IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_GATE_TASK);

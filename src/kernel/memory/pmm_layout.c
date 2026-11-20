@@ -1,6 +1,7 @@
 #include "pmm_layout.h"
 
 #include "kernel_layout.h"
+#include "memory_layout.h"
 #include "kernel/panic.h"
 
 static phys_addr_t bitmap_start;
@@ -57,6 +58,13 @@ void pmm_layout_init(boot_info_t *boot)
         kernel_panic("pmm_layout_init: no usable memory found");
     }
 
+    /* the kernel reaches RAM through the direct map, which covers at most
+     * PHYS_MAP_SIZE bytes on 32-bit: RAM above that is left unused */
+    if (highest_address > PHYS_MAP_SIZE)
+    {
+        highest_address = PHYS_MAP_SIZE;
+    }
+
     /* total page frames the bitmap must track */
     total_pages = highest_address / PAGE_SIZE;
 
@@ -64,7 +72,7 @@ void pmm_layout_init(boot_info_t *boot)
     bitmap_bytes = (total_pages + 7) / 8;
 
     /* place bitmap right after kernel_end, page-aligned */
-    bitmap_start = page_align_up(kernel_end_address());
+    bitmap_start = page_align_up(virt_to_phys((void *)kernel_end_address()));
     bitmap_end = bitmap_start + bitmap_bytes;
 }
 

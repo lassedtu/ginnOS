@@ -35,10 +35,23 @@
 /* user stack top */
 #define USER_STACK_TOP   0x00800000u
 
+/* the kernel half: every address from here up is kernel-only and shared by
+ * all address spaces. RAM is direct-mapped at its start (phys_to_virt). */
+#define KERNEL_VIRT_BASE 0xC0000000u
+
+/* most RAM the direct map covers on 32-bit (it must stay below the kernel
+ * stack region); RAM above this is not used. x86_64 removes the cap. */
+#define PHYS_MAP_SIZE 0x20000000u
+
 /* kernel stacks: one slot per process, each an unmapped guard page followed
  * by the stack itself. kernel-only, shared by every address space (its page
  * table is reserved at boot), above user space. */
 #define KSTACK_REGION_BASE 0xE0000000u
+
+/* device memory (MMIO) mapped with ioremap, e.g. the framebuffer: a kernel
+ * window shared by every address space. */
+#define MMIO_REGION_BASE 0xF0000000u
+#define MMIO_REGION_END  0xF4000000u
 
 /* userspace mmap region: SYS_mmap hands out page-aligned virtual ranges here,
  * bumping upward per mapping. sits below kernel space (0xC0000000) and clear of

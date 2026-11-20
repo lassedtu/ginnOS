@@ -161,12 +161,16 @@ static void heap_poison(void *ptr, size_t size)
 
 void heap_init(void)
 {
-    // place the heap right after the PMM bitmap (page-aligned)
-    uintptr_t heap_start = PAGE_ALIGN_UP(pmm_bitmap_end());
-    uintptr_t heap_end = heap_start + (HEAP_INITIAL_PAGES * PAGE_SIZE);
+    // place the heap right after the PMM bitmap (page-aligned). the
+    // reservation is physical; segments and blocks are kernel pointers.
+    phys_addr_t heap_phys = PAGE_ALIGN_UP(pmm_bitmap_end());
+    phys_addr_t heap_phys_end = heap_phys + (HEAP_INITIAL_PAGES * PAGE_SIZE);
 
-    memory_reserve_heap(heap_start, heap_end);
-    pmm_mark_region_used(heap_start, heap_end);
+    memory_reserve_heap(heap_phys, heap_phys_end);
+    pmm_mark_region_used(heap_phys, heap_phys_end);
+
+    uintptr_t heap_start = (uintptr_t)phys_to_virt(heap_phys);
+    uintptr_t heap_end = heap_start + (HEAP_INITIAL_PAGES * PAGE_SIZE);
 
     segments[0].start = heap_start;
     segments[0].end = heap_end;
@@ -198,7 +202,7 @@ void heap_init(void)
 static bool heap_grow_in_place(uint32_t pages)
 {
     heap_segment_t *newest = &segments[segment_count - 1];
-    return pmm_claim_pages((uint32_t)(newest->end / PAGE_SIZE), pages);
+    return pmm_claim_pages((uint32_t)(virt_to_phys((void *)newest->end) / PAGE_SIZE), pages);
 }
 
 /**

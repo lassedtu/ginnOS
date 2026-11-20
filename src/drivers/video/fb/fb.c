@@ -6,6 +6,7 @@
 #include "kernel/device/device.h"
 #include "kernel/memory/heap.h"
 #include "kernel/memory/mman.h"
+#include "kernel/memory/mmio.h"
 #include "common/fb/fb_ioctl.h"
 #include "common/memory.h"
 #include "common/string.h"
@@ -66,25 +67,6 @@ static void mark_dirty(uint32_t y, uint32_t h)
 }
 
 /**
- * map the framebuffer's physical range into the kernel address space.
- * the LFB sits above identity-mapped RAM, so its pages are not present yet;
- * paging_map allocates page tables as needed. virtual == physical keeps the
- * driver's addressing trivial.
- */
-static void map_framebuffer(phys_addr_t phys_base, size_t bytes)
-{
-    phys_addr_t start = PAGE_ALIGN_DOWN(phys_base);
-    phys_addr_t end = PAGE_ALIGN_UP(phys_base + bytes);
-
-    // identity-mapped like RAM: the kernel reaches the LFB at its physical
-    // address (fb.addr comes from phys_to_virt)
-    for (phys_addr_t addr = start; addr < end; addr += PAGE_SIZE)
-    {
-        paging_map((uintptr_t)phys_to_virt(addr), addr, PTE_KERNEL_RW);
-    }
-}
-
-/**
  * device mmap op: map the linear framebuffer into a process at the address the
  * mmap syscall reserved. this is the FB6 path that replaces the interim
  * SYS_fbmap: the LFB's physical frames are shared with the kernel mapping, so
@@ -116,7 +98,7 @@ static int32_t fb_dev_mmap(device_t *dev, addr_space_t as, uintptr_t virt,
     // writable unless the caller asked for a read-only mapping.
     uint32_t flags = (prot & PROT_WRITE) ? MMU_USER_RW : MMU_FLAG_PRESENT | MMU_FLAG_USER;
 
-    phys_addr_t phys = virt_to_phys(fb.addr) + offset;
+    phys_addr_t phys = fb.phys + offset;
     phys_addr_t phys_start = PAGE_ALIGN_DOWN(phys);
     phys_addr_t phys_end = PAGE_ALIGN_UP(phys + length);
 
@@ -229,7 +211,7 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
         fb_fix_screeninfo_t fix;
         memset(&fix, 0, sizeof(fix));
         strncpy(fix.id, "ginnfb", sizeof(fix.id) - 1);
-        fix.smem_start = (uint32_t)virt_to_phys(fb.addr);
+        fix.smem_start = (uint32_t)fb.phys;
         fix.smem_len = fb.height * fb.pitch;
         fix.type = FB_TYPE_PACKED_PIXELS;
         fix.visual = FB_VISUAL_TRUECOLOR;
@@ -292,7 +274,7 @@ bool fb_init(const boot_info_t *boot)
         return false;
     }
 
-    fb.addr = (uint8_t *)phys_to_virt(boot->framebuffer_addr);
+    fb.phys = boot->framebuffer_addr;
     fb.width = boot->framebuffer_width;
     fb.height = boot->framebuffer_height;
     fb.pitch = boot->framebuffer_pitch;
@@ -312,7 +294,14 @@ bool fb_init(const boot_info_t *boot)
         return false;
     }
 
-    map_framebuffer(boot->framebuffer_addr, fb.height * fb.pitch);
+    // the LFB lies outside RAM, so it is not in the direct map: map it into
+    // the kernel's MMIO window
+    fb.addr = (uint8_t *)ioremap(fb.phys, fb.height * fb.pitch);
+    if (!fb.addr)
+    {
+        fb_ready = false;
+        return false;
+    }
 
     // try to allocate a RAM back buffer for double buffering. on failure we
     // simply draw straight to the LFB (draw_target == fb.addr).

@@ -28,6 +28,7 @@
 #include "memory/reservations.h"
 #include "memory/heap.h"
 #include "memory/kstack.h"
+#include "memory/mmio.h"
 #include "arch/x86/cpu/paging.h"
 #include "syscall/syscall.h"
 #include "process/process.h"
@@ -38,14 +39,15 @@
 #include "test/ktest.h"
 #endif
 
-void cstart(boot_info_t *boot)
+void cstart(phys_addr_t boot_phys)
 {
-    if (!boot)
+    if (!boot_phys)
     {
         kernel_panic("missing boot_info_t");
     }
 
-    kernel_main(boot);
+    // stage2 passes the physical address of its boot_info_t
+    kernel_main((boot_info_t *)phys_to_virt(boot_phys));
 }
 
 void kernel_main(boot_info_t *boot)
@@ -85,6 +87,9 @@ void kernel_main(boot_info_t *boot)
     // reserve the kernel stack region before any address space is cloned,
     // so its page table is shared by every process.
     kstack_init();
+
+    // likewise the MMIO window (the framebuffer is mapped into it next)
+    mmio_init();
 
     // bring up the linear framebuffer (if the bootloader set a graphics mode).
     // must follow paging_init: the LFB lives above identity-mapped RAM.

@@ -16,6 +16,7 @@
  */
 
 #include "common/stdint.h"
+#include "kernel/memory/phys.h"
 #include "common/boot/boot_info.h"
 
 /**
@@ -23,7 +24,8 @@
  */
 typedef struct
 {
-    uint8_t *addr;                   // framebuffer base (virtual == physical, identity-mapped).
+    uint8_t *addr;                   // framebuffer base, mapped with ioremap.
+    phys_addr_t phys;                // physical address of the framebuffer.
     uint32_t width;                  // width in pixels.
     uint32_t height;                 // height in pixels.
     uint32_t pitch;                  // bytes per scanline (may exceed width * bytes_per_pixel).

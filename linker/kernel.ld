@@ -52,10 +52,13 @@ SECTIONS
         *(.data*)
     } :data
 
+    /* not in kernel.bin: the entry stub zeroes it before any C runs */
     .bss :
     {
+        __bss_start = .;
         *(.bss*)
         *(COMMON)
+        __bss_end = .;
     } :data
 
     kernel_end = .;
