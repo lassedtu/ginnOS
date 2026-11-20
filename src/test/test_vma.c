@@ -100,3 +100,31 @@ KTEST(vma_table_full)
         vma_insert(&table, P(10 * i), P(10 * i + 5), PROT_READ, VMA_ANON);
     KEXPECT_EQ(vma_remove(&table, P(1), P(2)), KERR_NOSPC);
 }
+
+KTEST(vma_protect_splits_at_edges)
+{
+    vma_table_init(&table);
+    vma_insert(&table, P(10), P(20), PROT_READ | PROT_WRITE, VMA_ANON);
+    vma_insert(&table, P(20), P(30), PROT_READ | PROT_WRITE, VMA_HEAP);
+
+    // a range across both areas, starting and ending inside them
+    KEXPECT(kerr_ok(vma_protect(&table, P(15), P(25), PROT_READ)));
+    KEXPECT_EQ(table.count, 4);
+    KEXPECT_EQ(table.areas[0].end, P(15));
+    KEXPECT_EQ(table.areas[0].prot, PROT_READ | PROT_WRITE);
+    KEXPECT_EQ(table.areas[1].start, P(15));
+    KEXPECT_EQ(table.areas[1].prot, PROT_READ);
+    KEXPECT_EQ(table.areas[2].end, P(25));
+    KEXPECT_EQ(table.areas[2].prot, PROT_READ);
+    KEXPECT_EQ(table.areas[2].kind, VMA_HEAP);
+    KEXPECT_EQ(table.areas[3].start, P(25));
+    KEXPECT_EQ(table.areas[3].prot, PROT_READ | PROT_WRITE);
+
+    // a range with a hole in it changes nothing
+    vma_table_init(&table);
+    vma_insert(&table, P(10), P(12), PROT_READ, VMA_ANON);
+    vma_insert(&table, P(13), P(15), PROT_READ, VMA_ANON);
+    KEXPECT_EQ(vma_protect(&table, P(10), P(15), PROT_NONE), KERR_NOENT);
+    KEXPECT_EQ(table.count, 2);
+    KEXPECT_EQ(table.areas[0].prot, PROT_READ);
+}

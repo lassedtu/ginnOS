@@ -183,6 +183,16 @@ bool arch_user_access_ok(addr_space_t as, uintptr_t addr, size_t len, bool write
     return paging_user_range_ok(as, addr, len, write);
 }
 
+phys_addr_t arch_unmap_page(addr_space_t as, uintptr_t virt)
+{
+    return paging_unmap_in(as, virt);
+}
+
+bool arch_protect_page(addr_space_t as, uintptr_t virt, uint32_t flags)
+{
+    return paging_protect_in(as, virt, pte_flags_from_mmu(flags));
+}
+
 phys_addr_t arch_translate_in(addr_space_t as, uintptr_t virt)
 {
     return paging_get_physical_in(as, virt);

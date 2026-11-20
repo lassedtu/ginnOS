@@ -116,3 +116,16 @@ uintptr_t vma_find_free(const vma_table_t *table, size_t length, uintptr_t low, 
  *         range, KERR_NOSPC if a split needs a slot and the table is full.
  */
 kerr_t vma_remove(vma_table_t *table, uintptr_t start, uintptr_t end);
+
+/**
+ * change the protection of [start, end). every byte of the range must be in
+ * some area; areas crossing its edges are split so only the range changes.
+ * @param table the table.
+ * @param start first byte (page-aligned).
+ * @param end first byte past the range (page-aligned).
+ * @param prot the new PROT_* bits.
+ * @return KERR_OK, KERR_INVAL for a bad range, KERR_NOENT if part of the
+ *         range is unmapped, KERR_NOSPC if the splits need more slots than
+ *         are free. on failure nothing changes.
+ */
+kerr_t vma_protect(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t prot);

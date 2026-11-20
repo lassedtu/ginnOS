@@ -182,3 +182,61 @@ kerr_t vma_remove(vma_table_t *table, uintptr_t start, uintptr_t end)
 
     return KERR_OK;
 }
+
+/**
+ * split the area containing addr in two at addr, if addr falls strictly
+ * inside one. the caller has checked there is a free slot.
+ */
+static void split_at(vma_table_t *table, uintptr_t addr)
+{
+    uint32_t i = first_ending_after(table, addr);
+    if (i < table->count && table->areas[i].start < addr)
+    {
+        open_slot(table, i + 1);
+        table->areas[i + 1] = table->areas[i];
+        table->areas[i].end = addr;
+        table->areas[i + 1].start = addr;
+    }
+}
+
+kerr_t vma_protect(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t prot)
+{
+    if (!valid_range(start, end))
+    {
+        return KERR_INVAL;
+    }
+
+    // the range must be covered without gaps
+    uintptr_t covered = start;
+    for (uint32_t i = first_ending_after(table, start); i < table->count && covered < end; i++)
+    {
+        if (table->areas[i].start > covered)
+        {
+            break; // a gap
+        }
+        covered = table->areas[i].end;
+    }
+    if (covered < end)
+    {
+        return KERR_NOENT;
+    }
+
+    // an area crossing either edge is split there
+    vma_t *first = vma_find(table, start);
+    vma_t *last = vma_find(table, end - 1);
+    uint32_t splits = (first->start < start ? 1u : 0u) + (last->end > end ? 1u : 0u);
+    if (table->count + splits > VMA_MAX)
+    {
+        return KERR_NOSPC;
+    }
+    split_at(table, start);
+    split_at(table, end);
+
+    uint32_t i = first_ending_after(table, start);
+    while (i < table->count && table->areas[i].start < end)
+    {
+        table->areas[i].prot = prot;
+        i++;
+    }
+    return KERR_OK;
+}

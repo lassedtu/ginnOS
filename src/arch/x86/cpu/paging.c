@@ -427,6 +427,53 @@ bool paging_map_in(phys_addr_t pd_phys, uintptr_t virt, phys_addr_t phys, uint32
     return true;
 }
 
+/**
+ * the user PTE for virt in a page directory, or NULL if no page table covers
+ * it.
+ */
+static pte_t *user_pte(phys_addr_t pd_phys, uintptr_t virt)
+{
+    KASSERT(virt < KERNEL_VIRT_BASE, "user_pte: kernel address");
+
+    pte_t *dir = (pte_t *)phys_to_virt(pd_phys);
+    pte_t pde = dir[PAGE_DIR_INDEX(virt)];
+    if (!(pde & PDE_PRESENT))
+    {
+        return NULL;
+    }
+    return &entry_table(pde)[PAGE_TABLE_INDEX(virt)];
+}
+
+phys_addr_t paging_unmap_in(phys_addr_t pd_phys, uintptr_t virt)
+{
+    pte_t *pte = user_pte(pd_phys, virt);
+    if (!pte || !(*pte & PTE_PRESENT))
+    {
+        return 0;
+    }
+
+    phys_addr_t frame = PAGE_FRAME(*pte);
+    *pte = 0;
+
+    // the mapping may be cached if pd_phys is the live directory. invlpg on
+    // another directory only drops an unrelated entry, which is harmless.
+    paging_invalidate(virt);
+    return frame;
+}
+
+bool paging_protect_in(phys_addr_t pd_phys, uintptr_t virt, uint32_t flags)
+{
+    pte_t *pte = user_pte(pd_phys, virt);
+    if (!pte || !(*pte & PTE_PRESENT))
+    {
+        return false;
+    }
+
+    *pte = (pte_t)(PAGE_FRAME(*pte) | (flags & PAGE_OFFSET_MASK));
+    paging_invalidate(virt);
+    return true;
+}
+
 void paging_switch_directory(phys_addr_t pd_phys)
 {
     // paging is already enabled here, so only CR3 changes; CR0 is left alone.

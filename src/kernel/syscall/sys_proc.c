@@ -8,6 +8,7 @@
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/pmm_layout.h"
 #include "kernel/memory/mman.h"
+#include "kernel/memory/mm.h"
 #include "kernel/memory/memory_layout.h"
 #include "fd_table.h"
 #include "arch/arch.h"
@@ -254,29 +255,35 @@ syscall_ret_t sys_sbrk(struct registers *regs)
 
 /**
  * SYS_mmap: map memory into the calling process.
- * args: EBX = length, ECX = prot, EDX = flags, ESI = fd, EDI = offset.
- * (POSIX's advisory addr is dropped; the kernel always picks the range.)
+ * args: EBX = addr, ECX = length, EDX = prot | flags << 8, ESI = fd,
+ *       EDI = offset (prot and flags share a register: all five are taken).
  *
  * two forms:
  *   - anonymous (MAP_ANONYMOUS, fd < 0): zero-filled pages, backed on first
  *     touch.
  *   - device-backed (fd is an open device node): route through vfs_mmap so the
  *     device maps its own memory (e.g. the framebuffer's LFB).
- * ranges are the lowest free ones in the process's mmap region (its areas).
+ * with MAP_FIXED the mapping is placed exactly at addr (page-aligned, user
+ * space), replacing whatever was mapped there. otherwise addr is a hint,
+ * used if that range of the mmap region is free; failing that, the lowest
+ * free range of the region is used.
  * returns the mapped address, or MAP_FAILED (-1) on error.
  */
 syscall_ret_t sys_mmap(struct registers *regs)
 {
-    size_t length = syscall_arg(regs, 0);
-    int prot = (int)syscall_arg(regs, 1);
-    int flags = (int)syscall_arg(regs, 2);
+    uintptr_t hint = syscall_arg(regs, 0);
+    size_t length = syscall_arg(regs, 1);
+    uint32_t prot_flags = (uint32_t)syscall_arg(regs, 2);
+    int prot = (int)(prot_flags & 0xFFu);
+    int flags = (int)(prot_flags >> 8);
     int32_t fd = (int32_t)syscall_arg(regs, 3);
     uint32_t offset = (uint32_t)syscall_arg(regs, 4);
 
     process_t *proc = process_current();
-    if (!proc || length == 0)
+    size_t len_pages = PAGE_ALIGN_UP(length);
+    if (!proc || length == 0 || len_pages == 0)
     {
-        return (syscall_ret_t)MAP_FAILED;
+        return (syscall_ret_t)MAP_FAILED; // empty, or so large it wrapped
     }
 
     // offset must be page-aligned (file/device mappings start on a page).
@@ -296,13 +303,34 @@ syscall_ret_t sys_mmap(struct registers *regs)
         }
     }
 
-    // pick the lowest free page-aligned range in the mmap region and
-    // record it as an area before mapping anything into it
-    size_t len_pages = PAGE_ALIGN_UP(length);
-    uintptr_t virt = vma_find_free(&proc->vmas, len_pages, USER_MMAP_BASE, USER_MMAP_END);
-    if (virt == 0)
+    // choose the range, then record it as an area before mapping anything
+    uintptr_t virt;
+    if (flags & MAP_FIXED)
     {
-        return (syscall_ret_t)MAP_FAILED; /* region exhausted */
+        if (!PAGE_IS_ALIGNED(hint) || hint < USER_SPACE_START ||
+            len_pages > USER_SPACE_END - hint)
+        {
+            return (syscall_ret_t)MAP_FAILED;
+        }
+        if (kerr_failed(mm_unmap(proc, hint, hint + len_pages)))
+        {
+            return (syscall_ret_t)MAP_FAILED;
+        }
+        virt = hint;
+    }
+    else if (hint != 0 && PAGE_IS_ALIGNED(hint) && hint >= USER_MMAP_BASE &&
+             len_pages <= USER_MMAP_END - hint &&
+             vma_range_free(&proc->vmas, hint, hint + len_pages))
+    {
+        virt = hint;
+    }
+    else
+    {
+        virt = vma_find_free(&proc->vmas, len_pages, USER_MMAP_BASE, USER_MMAP_END);
+        if (virt == 0)
+        {
+            return (syscall_ret_t)MAP_FAILED; /* region exhausted */
+        }
     }
 
     uint32_t area_prot = (uint32_t)prot & (PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -326,4 +354,52 @@ syscall_ret_t sys_mmap(struct registers *regs)
     }
 
     return (syscall_ret_t)virt;
+}
+
+/**
+ * SYS_munmap: remove mappings from the calling process.
+ * args: EBX = addr (page-aligned), ECX = length.
+ * every page of [addr, addr + length) that is mapped is removed; parts that
+ * are not mapped are skipped. returns 0, or a negative errno.
+ */
+syscall_ret_t sys_munmap(struct registers *regs)
+{
+    uintptr_t addr = syscall_arg(regs, 0);
+    size_t length = syscall_arg(regs, 1);
+    process_t *proc = process_current();
+
+    size_t len_pages = PAGE_ALIGN_UP(length);
+    if (!proc || length == 0 || len_pages == 0 || addr + len_pages < addr)
+    {
+        return -3; /* EINVAL */
+    }
+
+    return kerr_to_errno(mm_unmap(proc, addr, addr + len_pages));
+}
+
+/**
+ * SYS_mprotect: change the protection of mapped memory.
+ * args: EBX = addr (page-aligned), ECX = length, EDX = prot.
+ * returns 0, -ENOMEM if part of the range is not mapped, or another
+ * negative errno.
+ */
+syscall_ret_t sys_mprotect(struct registers *regs)
+{
+    uintptr_t addr = syscall_arg(regs, 0);
+    size_t length = syscall_arg(regs, 1);
+    uint32_t prot = (uint32_t)syscall_arg(regs, 2) & (PROT_READ | PROT_WRITE | PROT_EXEC);
+    process_t *proc = process_current();
+
+    size_t len_pages = PAGE_ALIGN_UP(length);
+    if (!proc || length == 0 || len_pages == 0 || addr + len_pages < addr)
+    {
+        return -3; /* EINVAL */
+    }
+
+    kerr_t err = mm_protect(proc, addr, addr + len_pages, prot);
+    if (err == KERR_NOENT)
+    {
+        return -4; /* ENOMEM: POSIX's error for an unmapped range */
+    }
+    return kerr_to_errno(err);
 }

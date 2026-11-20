@@ -104,6 +104,8 @@ syscall_ret_t sys_getpid(struct registers *regs);
 syscall_ret_t sys_waitpid(struct registers *regs);
 syscall_ret_t sys_sbrk(struct registers *regs);
 syscall_ret_t sys_mmap(struct registers *regs);
+syscall_ret_t sys_munmap(struct registers *regs);
+syscall_ret_t sys_mprotect(struct registers *regs);
 
 /* sys_misc.c */
 syscall_ret_t sys_getcwd(struct registers *regs);

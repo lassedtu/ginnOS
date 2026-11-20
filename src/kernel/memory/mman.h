@@ -19,6 +19,7 @@
 #define MAP_SHARED    0x01 // changes are shared (device/shared memory)
 #define MAP_PRIVATE   0x02 // changes are private to the process
 #define MAP_ANONYMOUS 0x04 // not backed by a file; zero-filled (fd ignored)
+#define MAP_FIXED     0x10 // place the mapping exactly at addr, replacing what is there
 
 // mmap failure return value (a userspace pointer sentinel).
 #define MAP_FAILED ((void *)-1)

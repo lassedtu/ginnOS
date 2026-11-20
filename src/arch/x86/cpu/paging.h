@@ -190,6 +190,24 @@ bool paging_user_range_ok(phys_addr_t pd_phys, uintptr_t addr, size_t len, bool 
 uintptr_t paging_fault_address(void);
 
 /**
+ * remove a user mapping from a page directory and drop its TLB entry.
+ * @param pd_phys physical address of the page directory.
+ * @param virt page-aligned user address.
+ * @return the frame that was mapped there, or 0 if nothing was.
+ */
+phys_addr_t paging_unmap_in(phys_addr_t pd_phys, uintptr_t virt);
+
+/**
+ * change the flags of an existing user mapping, keeping its frame, and drop
+ * its TLB entry.
+ * @param pd_phys physical address of the page directory.
+ * @param virt page-aligned user address.
+ * @param flags new PTE flags (PTE_PRESENT must be set).
+ * @return true if a mapping was there and changed.
+ */
+bool paging_protect_in(phys_addr_t pd_phys, uintptr_t virt, uint32_t flags);
+
+/**
  * switch the active page directory (load CR3).
  * does not modify CR0 paging must already be enabled.
  * @param pd_phys physical address of the page directory to activate.

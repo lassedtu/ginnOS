@@ -162,6 +162,24 @@ bool arch_user_access_ok(addr_space_t as, uintptr_t addr, size_t len, bool write
 int arch_map_page(addr_space_t as, uintptr_t virt, phys_addr_t phys, uint32_t flags);
 
 /**
+ * remove a user page mapping (and its TLB entry). the frame is not freed.
+ * @param as the address space.
+ * @param virt page-aligned user address.
+ * @return the frame that was mapped there, or 0 if the page was not mapped.
+ */
+phys_addr_t arch_unmap_page(addr_space_t as, uintptr_t virt);
+
+/**
+ * change the protection of a mapped user page, keeping its frame.
+ * @param as the address space.
+ * @param virt page-aligned user address.
+ * @param flags MMU_FLAG_* bits; without MMU_FLAG_USER the page stays mapped
+ *        but user code can no longer touch it.
+ * @return true if the page was mapped and changed.
+ */
+bool arch_protect_page(addr_space_t as, uintptr_t virt, uint32_t flags);
+
+/**
  * translate a virtual address to its physical address within a given
  * address space. lets the kernel reach a process's memory without
  * switching to it (e.g. to stage argv or an ELF image before the swap).

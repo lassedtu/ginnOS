@@ -10,11 +10,9 @@
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, long offset)
 {
-    // the advisory addr is not passed to the kernel (it always picks the
-    // range); the raw syscall takes length, prot, flags, fd, offset.
-    (void)addr;
-
-    int ret = _syscall(SYS_MMAP, (int)length, prot, flags, fd, (int)offset);
+    // all five syscall registers are taken, so prot and flags share one
+    int ret = _syscall(SYS_MMAP, (int)addr, (int)length, (prot & 0xFF) | (flags << 8), fd,
+                       (int)offset);
 
     // the kernel returns either a mapped address or MAP_FAILED ((void*)-1).
     // a valid address can be >= 0x80000000 (negative as int), so test only
@@ -26,4 +24,26 @@ void *mmap(void *addr, size_t length, int prot, int flags, int fd, long offset)
     }
 
     return (void *)ret;
+}
+
+int munmap(void *addr, size_t length)
+{
+    int ret = _syscall(SYS_MUNMAP, (int)addr, (int)length, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+int mprotect(void *addr, size_t length, int prot)
+{
+    int ret = _syscall(SYS_MPROTECT, (int)addr, (int)length, prot, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
 }

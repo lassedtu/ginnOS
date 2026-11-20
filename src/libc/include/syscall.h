@@ -31,6 +31,8 @@
 #define SYS_POLLKEY 22  // non-blocking: return a pending char key, or 0
 #define SYS_IOCTL 23    // device-control request on a file descriptor
 #define SYS_MMAP 24     // map memory (anonymous or device-backed)
+#define SYS_MUNMAP 25   // unmap a range of memory
+#define SYS_MPROTECT 26 // change the protection of a range of memory
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);
