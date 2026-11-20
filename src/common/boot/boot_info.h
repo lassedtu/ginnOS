@@ -24,7 +24,9 @@ typedef struct
     uint32_t framebuffer_addr;   // physical address of a linear framebuffer, or 0 if none.
     uint32_t framebuffer_width;  // framebuffer width in pixels (valid when addr != 0).
     uint32_t framebuffer_height; // framebuffer height in pixels (valid when addr != 0).
-    const char *cmdline;         // NUL-terminated boot command line, or NULL if none.
+    uint32_t cmdline_addr;       // physical address of a NUL-terminated boot command
+                                 // line, or 0 if none (a fixed-width field: stage2
+                                 // is 32-bit, the kernel may not be)
 
     // framebuffer pixel format (valid when framebuffer_type != 0). the channel
     // size/shift pairs describe how r/g/b sit inside a pixel, so the driver can
