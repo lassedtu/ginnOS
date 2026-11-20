@@ -118,9 +118,9 @@ void gdt_initialize(void)
     tss_flush();
 }
 
-void tss_set_kernel_stack(uint32_t esp0)
+void tss_set_kernel_stack(uintptr_t esp0)
 {
-    tss.esp0 = esp0;
+    tss.esp0 = (uint32_t)esp0;
 }
 
 void tss_install_double_fault(void (*entry)(void), uintptr_t stack_top)

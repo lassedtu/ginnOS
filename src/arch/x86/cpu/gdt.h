@@ -32,7 +32,7 @@ void gdt_initialize(void);
  * when an interrupt occurs in ring 3.
  * @param esp0 the kernel stack pointer to store.
  */
-void tss_set_kernel_stack(uint32_t esp0);
+void tss_set_kernel_stack(uintptr_t esp0);
 
 /**
  * set up the double-fault task: a second TSS whose state the CPU loads when

@@ -52,7 +52,7 @@ static bool elf_validate(const Elf32_Ehdr *ehdr)
 /**
  * align an address up to the next page boundary.
  */
-static uint32_t page_align_up(uint32_t addr)
+static uintptr_t page_align_up(uintptr_t addr)
 {
     return PAGE_ALIGN_UP(addr);
 }
@@ -61,9 +61,9 @@ static uint32_t page_align_up(uint32_t addr)
  * map a range of virtual pages as user-accessible in the given page directory,
  * allocating physical frames. pages already mapped are skipped.
  */
-static bool map_user_range(uint32_t pd_phys, uint32_t vaddr_start, uint32_t vaddr_end)
+static bool map_user_range(addr_space_t as, uintptr_t vaddr_start, uintptr_t vaddr_end)
 {
-    uint32_t page;
+    uintptr_t page;
 
     vaddr_start = PAGE_ALIGN_DOWN(vaddr_start);
     vaddr_end = page_align_up(vaddr_end);
@@ -77,7 +77,7 @@ static bool map_user_range(uint32_t pd_phys, uint32_t vaddr_start, uint32_t vadd
         }
 
         memset(frame, 0, PAGE_SIZE);
-        arch_map_page(pd_phys, page, (uint32_t)frame, MMU_USER_RW);
+        arch_map_page(as, page, virt_to_phys(frame), MMU_USER_RW);
     }
 
     return true;
@@ -88,21 +88,21 @@ static bool map_user_range(uint32_t pd_phys, uint32_t vaddr_start, uint32_t vadd
  * resolves each page through the process's address space and writes
  * to the physical frame via identity mapping.
  */
-static void copy_to_process(uint32_t pd_phys, uint32_t vaddr, const void *src, uint32_t size)
+static void copy_to_process(addr_space_t as, uintptr_t vaddr, const void *src, size_t size)
 {
     const uint8_t *s = (const uint8_t *)src;
 
     while (size > 0)
     {
-        uint32_t phys = arch_translate_in(pd_phys, vaddr);
-        uint32_t offset_in_page = vaddr & PAGE_OFFSET_MASK;
-        uint32_t chunk = PAGE_SIZE - offset_in_page;
+        phys_addr_t phys = arch_translate_in(as, vaddr);
+        size_t offset_in_page = vaddr & PAGE_OFFSET_MASK;
+        size_t chunk = PAGE_SIZE - offset_in_page;
         if (chunk > size)
         {
             chunk = size;
         }
 
-        memcpy((void *)phys, s, chunk);
+        memcpy(phys_to_virt(phys), s, chunk);
 
         vaddr += chunk;
         s += chunk;
@@ -113,26 +113,26 @@ static void copy_to_process(uint32_t pd_phys, uint32_t vaddr, const void *src, u
 /**
  * zero a range in a process's virtual address space.
  */
-static void zero_in_process(uint32_t pd_phys, uint32_t vaddr, uint32_t size)
+static void zero_in_process(addr_space_t as, uintptr_t vaddr, size_t size)
 {
     while (size > 0)
     {
-        uint32_t phys = arch_translate_in(pd_phys, vaddr);
-        uint32_t offset_in_page = vaddr & PAGE_OFFSET_MASK;
-        uint32_t chunk = PAGE_SIZE - offset_in_page;
+        phys_addr_t phys = arch_translate_in(as, vaddr);
+        size_t offset_in_page = vaddr & PAGE_OFFSET_MASK;
+        size_t chunk = PAGE_SIZE - offset_in_page;
         if (chunk > size)
         {
             chunk = size;
         }
 
-        memset((void *)phys, 0, chunk);
+        memset(phys_to_virt(phys), 0, chunk);
 
         vaddr += chunk;
         size -= chunk;
     }
 }
 
-bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
+bool elf_load(const char *path, addr_space_t as, elf_load_result_t *result)
 {
     vfs_file_t file;
     vfs_stat_t stat;
@@ -208,11 +208,11 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
             continue;
         }
 
-        uint32_t seg_start = phdr->p_vaddr;
-        uint32_t seg_end = seg_start + phdr->p_memsz;
+        uintptr_t seg_start = phdr->p_vaddr;
+        uintptr_t seg_end = seg_start + phdr->p_memsz;
 
         /* allocate and map pages for this segment */
-        if (!map_user_range(pd_phys, seg_start, seg_end))
+        if (!map_user_range(as, seg_start, seg_end))
         {
             kfree(file_data);
             return false;
@@ -227,13 +227,13 @@ bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result)
                 return false;
             }
 
-            copy_to_process(pd_phys, seg_start, file_data + phdr->p_offset, phdr->p_filesz);
+            copy_to_process(as, seg_start, file_data + phdr->p_offset, phdr->p_filesz);
         }
 
         /* zero BSS region (memsz > filesz) */
         if (phdr->p_memsz > phdr->p_filesz)
         {
-            zero_in_process(pd_phys, seg_start + phdr->p_filesz,
+            zero_in_process(as, seg_start + phdr->p_filesz,
                            phdr->p_memsz - phdr->p_filesz);
         }
 

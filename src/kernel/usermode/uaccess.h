@@ -24,7 +24,7 @@
  * @param write true if the kernel will write to the range.
  * @return true if every byte is mapped user memory with that access.
  */
-bool user_access_ok(const void *ptr, uint32_t len, bool write);
+bool user_access_ok(const void *ptr, size_t len, bool write);
 
 /**
  * copy bytes from user memory into a kernel buffer.
@@ -33,7 +33,7 @@ bool user_access_ok(const void *ptr, uint32_t len, bool write);
  * @param len number of bytes.
  * @return KERR_OK, or KERR_FAULT (nothing copied) if the source is bad.
  */
-kerr_t copy_from_user(void *dst, const void *user_src, uint32_t len);
+kerr_t copy_from_user(void *dst, const void *user_src, size_t len);
 
 /**
  * copy bytes from a kernel buffer into user memory.
@@ -42,7 +42,7 @@ kerr_t copy_from_user(void *dst, const void *user_src, uint32_t len);
  * @param len number of bytes.
  * @return KERR_OK, or KERR_FAULT (nothing copied) if the destination is bad.
  */
-kerr_t copy_to_user(void *user_dst, const void *src, uint32_t len);
+kerr_t copy_to_user(void *user_dst, const void *src, size_t len);
 
 /**
  * copy a NUL-terminated user string into a kernel buffer, checking each page
@@ -54,4 +54,4 @@ kerr_t copy_to_user(void *user_dst, const void *src, uint32_t len);
  *         runs into memory the process cannot read, or KERR_RANGE if it
  *         does not fit in size bytes.
  */
-int32_t strncpy_from_user(char *dst, const char *user_src, uint32_t size);
+int32_t strncpy_from_user(char *dst, const char *user_src, size_t size);

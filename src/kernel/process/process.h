@@ -2,6 +2,7 @@
 
 #include "common/stdint.h"
 #include "kernel/memory/page.h"
+#include "arch/arch.h"
 #include "kernel/syscall/fd_table.h"
 
 // maximum number of concurrent processes.
@@ -40,13 +41,13 @@ typedef struct process
     uint32_t parent_pid;    // parent PID; PID_NONE for PID 1 and for orphans,
                             // which the kernel reaps itself when they exit
     process_state_t state;  // current state
-    uint32_t brk;           // program break (for sbrk)
-    uint32_t mmap_next;     // next free virtual address in the mmap region (bump allocator)
+    uintptr_t brk;          // program break (for sbrk)
+    uintptr_t mmap_next;    // next free virtual address in the mmap region (bump allocator)
     int32_t exit_code;      // exit code (valid in ZOMBIE state)
-    uint32_t kernel_stack;  // lowest address of the kernel stack (kstack.h)
-    uint32_t kernel_esp;    // saved kernel ESP (for context switch)
-    uint32_t entry;         // ELF entry point (used by trampoline on first schedule)
-    uint32_t page_directory; // physical address of this process's page directory
+    uintptr_t kernel_stack; // lowest address of the kernel stack (kstack.h)
+    uintptr_t kernel_esp;   // saved kernel ESP (for context switch)
+    uintptr_t entry;        // ELF entry point (used by trampoline on first schedule)
+    addr_space_t page_directory; // this process's address space (page directory)
     uint32_t wait_for_pid;  // PID this process is waiting for (0 = not waiting)
     char **argv;            // kernel-heap copy of argv (freed at exit)
     uint8_t tty_raw;        // 0 = cooked (line-buffered), 1 = raw (event-based)

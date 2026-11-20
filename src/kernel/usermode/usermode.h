@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/stdint.h"
+#include "arch/arch.h"
 
 struct process;
 typedef struct process process_t;
@@ -17,7 +18,7 @@ typedef struct process process_t;
  * @param pd_phys physical address of the process's page directory.
  * @param argv null-terminated array of argument strings (may be NULL).
  */
-void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv);
+void jump_to_usermode(uintptr_t entry, addr_space_t as, const char **argv);
 
 /**
  * start a program as a new process. creates the process, loads the ELF at
@@ -43,14 +44,14 @@ void usermode_exit(int exit_code);
  * get the current program break (end of the user heap).
  * @return current break address.
  */
-uint32_t usermode_get_brk(void);
+uintptr_t usermode_get_brk(void);
 
 /**
  * set the program break.
  * called by exec_program after ELF loading to initialize the break.
  * @param brk the initial break address (page-aligned end of loaded segments).
  */
-void usermode_set_brk(uint32_t brk);
+void usermode_set_brk(uintptr_t brk);
 
 /**
  * set up a child process's kernel stack so that context_switch
@@ -58,5 +59,5 @@ void usermode_set_brk(uint32_t brk);
  * @param child pointer to the child process control block.
  * @param entry ELF entry point for the child.
  */
-void setup_child_stack(process_t *child, uint32_t entry);
+void setup_child_stack(process_t *child, uintptr_t entry);
 

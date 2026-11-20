@@ -151,8 +151,8 @@ void scheduler_init(void)
     memset(&idle_proc, 0, sizeof(idle_proc));
     idle_proc.pid = 0;
     idle_proc.state = PROC_STATE_READY;
-    idle_proc.kernel_stack = (uint32_t)idle_stack;
-    idle_proc.kernel_esp = (uint32_t)idle_stack + KERNEL_STACK_SIZE;
+    idle_proc.kernel_stack = (uintptr_t)idle_stack;
+    idle_proc.kernel_esp = (uintptr_t)idle_stack + KERNEL_STACK_SIZE;
 
     // prime the idle stack so the first switch into it runs idle_entry.
     arch_setup_initial_stack(&idle_proc, idle_entry);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/stdint.h"
+#include "arch/arch.h"
 
 // result of a failed ELF load.
 #define ELF_LOAD_FAILED 0
@@ -10,8 +11,8 @@
  */
 typedef struct
 {
-    uint32_t entry; /* entry point virtual address */
-    uint32_t brk;   /* end of loaded segments (page-aligned, for sbrk) */
+    uintptr_t entry; /* entry point virtual address */
+    uintptr_t brk;   /* end of loaded segments (page-aligned, for sbrk) */
 } elf_load_result_t;
 
 /**
@@ -27,4 +28,4 @@ typedef struct
  * @param result filled with entry point and program break on success.
  * @return true on success, false on failure (invalid ELF, I/O error, OOM).
  */
-bool elf_load(const char *path, uint32_t pd_phys, elf_load_result_t *result);
+bool elf_load(const char *path, addr_space_t as, elf_load_result_t *result);

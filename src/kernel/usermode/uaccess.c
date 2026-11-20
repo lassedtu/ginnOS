@@ -6,7 +6,7 @@
 #include "kernel/memory/page.h"
 #include "kernel/process/process.h"
 
-bool user_access_ok(const void *ptr, uint32_t len, bool write)
+bool user_access_ok(const void *ptr, size_t len, bool write)
 {
     if (len == 0)
     {
@@ -25,10 +25,10 @@ bool user_access_ok(const void *ptr, uint32_t len, bool write)
         return false;
     }
 
-    return arch_user_access_ok(proc->page_directory, (uint32_t)ptr, len, write);
+    return arch_user_access_ok(proc->page_directory, (uintptr_t)ptr, len, write);
 }
 
-kerr_t copy_from_user(void *dst, const void *user_src, uint32_t len)
+kerr_t copy_from_user(void *dst, const void *user_src, size_t len)
 {
     if (!user_access_ok(user_src, len, false))
     {
@@ -39,7 +39,7 @@ kerr_t copy_from_user(void *dst, const void *user_src, uint32_t len)
     return KERR_OK;
 }
 
-kerr_t copy_to_user(void *user_dst, const void *src, uint32_t len)
+kerr_t copy_to_user(void *user_dst, const void *src, size_t len)
 {
     if (!user_access_ok(user_dst, len, true))
     {
@@ -50,22 +50,22 @@ kerr_t copy_to_user(void *user_dst, const void *src, uint32_t len)
     return KERR_OK;
 }
 
-int32_t strncpy_from_user(char *dst, const char *user_src, uint32_t size)
+int32_t strncpy_from_user(char *dst, const char *user_src, size_t size)
 {
     if (size == 0)
     {
         return KERR_RANGE;
     }
 
-    uint32_t addr = (uint32_t)user_src;
-    uint32_t checked_end = addr; // bytes before this address are known readable
+    uintptr_t addr = (uintptr_t)user_src;
+    uintptr_t checked_end = addr; // bytes before this address are known readable
 
-    for (uint32_t i = 0; i < size; i++)
+    for (size_t i = 0; i < size; i++)
     {
         if (addr + i >= checked_end)
         {
             // check the rest of this page before reading any of it
-            uint32_t page_end = PAGE_ALIGN_DOWN(addr + i) + PAGE_SIZE;
+            uintptr_t page_end = PAGE_ALIGN_DOWN(addr + i) + PAGE_SIZE;
             if (!user_access_ok((const void *)(addr + i), page_end - (addr + i), false))
             {
                 return KERR_FAULT;

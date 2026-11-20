@@ -23,7 +23,7 @@ static void process_entry_trampoline(void)
     // switch to this process's address space
     arch_switch_address_space(proc->page_directory);
 
-    uint32_t entry = proc->entry;
+    uintptr_t entry = proc->entry;
     const char **argv = (const char **)proc->argv;
 
     jump_to_usermode(entry, proc->page_directory, argv);
@@ -34,7 +34,7 @@ static void process_entry_trampoline(void)
  * switches to it, it "returns" into process_entry_trampoline. the ELF entry
  * point is stashed in the process so the trampoline can read it later.
  */
-void setup_child_stack(process_t *child, uint32_t entry)
+void setup_child_stack(process_t *child, uintptr_t entry)
 {
     child->entry = entry;
     arch_setup_initial_stack(child, process_entry_trampoline);
