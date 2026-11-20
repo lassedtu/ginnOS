@@ -226,15 +226,15 @@ int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg)
     return fs_ioctl(&file->file, request, arg);
 }
 
-int32_t vfs_mmap(vfs_file_t *file, uint32_t page_directory, uint32_t virt,
-                 uint32_t length, int prot, uint32_t offset)
+int32_t vfs_mmap(vfs_file_t *file, addr_space_t as, uintptr_t virt,
+                 size_t length, int prot, uint32_t offset)
 {
     if (!file || !file->mount)
     {
         return -9; /* EBADF */
     }
 
-    return fs_mmap(&file->file, page_directory, virt, length, prot, offset);
+    return fs_mmap(&file->file, as, virt, length, prot, offset);
 }
 
 int32_t vfs_seek(vfs_file_t *file, int32_t offset, int whence)

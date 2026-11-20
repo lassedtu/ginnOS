@@ -190,8 +190,8 @@ int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg)
     return file->ops->ioctl(file, request, arg);
 }
 
-int32_t fs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
-                uint32_t length, int prot, uint32_t offset)
+int32_t fs_mmap(fs_file_t *file, addr_space_t as, uintptr_t virt,
+                size_t length, int prot, uint32_t offset)
 {
     if (!file || !file->is_open)
     {
@@ -204,7 +204,7 @@ int32_t fs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
         return -19; /* ENODEV */
     }
 
-    return file->ops->mmap(file, page_directory, virt, length, prot, offset);
+    return file->ops->mmap(file, as, virt, length, prot, offset);
 }
 
 int32_t fs_seek(fs_file_t *file, int32_t offset, int whence)

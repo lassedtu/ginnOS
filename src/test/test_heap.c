@@ -11,8 +11,8 @@ KTEST(heap_kmalloc_basic)
     uint8_t *b = kmalloc(100);
     KEXPECT(a != NULL);
     KEXPECT(b != NULL);
-    KEXPECT_EQ((uint32_t)a % 4, 0);
-    KEXPECT_EQ((uint32_t)b % 4, 0);
+    KEXPECT_EQ((uintptr_t)a % 4, 0);
+    KEXPECT_EQ((uintptr_t)b % 4, 0);
 
     // the two blocks must not overlap: fill each and check the other survives.
     memset(a, 0xAA, 32);

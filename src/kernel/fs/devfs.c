@@ -205,8 +205,8 @@ static int32_t devfs_ioctl(fs_file_t *file, uint32_t request, void *arg)
     return dev->ops->ioctl(dev, request, arg);
 }
 
-static int32_t devfs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
-                          uint32_t length, int prot, uint32_t offset)
+static int32_t devfs_mmap(fs_file_t *file, addr_space_t as, uintptr_t virt,
+                          size_t length, int prot, uint32_t offset)
 {
     // forward to the backing device's mmap hook (e.g. the framebuffer maps its
     // LFB). a device without one is not mappable.
@@ -216,7 +216,7 @@ static int32_t devfs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t vir
         return -19; /* ENODEV: device is not mappable */
     }
 
-    return dev->ops->mmap(dev, page_directory, virt, length, prot, offset);
+    return dev->ops->mmap(dev, as, virt, length, prot, offset);
 }
 
 static int32_t devfs_seek(fs_file_t *file, int32_t offset, int whence)

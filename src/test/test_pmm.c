@@ -10,9 +10,9 @@ KTEST(pmm_alloc_free_single)
 
     void *page = pmm_alloc_page();
     KEXPECT(page != NULL);
-    KEXPECT_EQ((uint32_t)page % PAGE_SIZE, 0);
+    KEXPECT_EQ(virt_to_phys(page) % PAGE_SIZE, 0);
     KEXPECT_EQ(pmm_free_count(), free_before - 1);
-    KEXPECT(pmm_owns((uint32_t)page));
+    KEXPECT(pmm_owns(virt_to_phys(page)));
 
     pmm_free_page(page);
     KEXPECT_EQ(pmm_free_count(), free_before);
@@ -63,7 +63,7 @@ KTEST(pmm_alloc_contiguous_run)
 
     uint8_t *run = pmm_alloc_contiguous(8);
     KEXPECT(run != NULL);
-    KEXPECT_EQ((uint32_t)run % PAGE_SIZE, 0);
+    KEXPECT_EQ(virt_to_phys(run) % PAGE_SIZE, 0);
     KEXPECT_EQ(pmm_free_count(), free_before - 8);
 
     if (run)
@@ -72,7 +72,7 @@ KTEST(pmm_alloc_contiguous_run)
         bool all_used = true;
         for (uint32_t i = 0; i < 8; i++)
         {
-            if (pmm_is_page_free(((uint32_t)run / PAGE_SIZE) + i))
+            if (pmm_is_page_free((uint32_t)(virt_to_phys(run) / PAGE_SIZE) + i))
                 all_used = false;
         }
         KEXPECT(all_used);
@@ -101,7 +101,7 @@ KTEST(pmm_claim_pages_all_or_nothing)
     if (!run)
         return;
 
-    uint32_t first = (uint32_t)run / PAGE_SIZE;
+    uint32_t first = (uint32_t)(virt_to_phys(run) / PAGE_SIZE);
 
     // free pages 1-3 of the run, keep page 0 used
     for (uint32_t i = 1; i < 4; i++)

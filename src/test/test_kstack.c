@@ -9,7 +9,7 @@ KTEST(kstack_alloc_maps_stack_not_guard)
 {
     uint32_t free_before = pmm_free_count();
 
-    uint32_t base = kstack_alloc();
+    uintptr_t base = kstack_alloc();
     KEXPECT(base != 0);
     if (!base)
         return;
@@ -39,7 +39,7 @@ KTEST(kstack_alloc_maps_stack_not_guard)
 
 KTEST(kstack_slots_exhaust_and_reuse)
 {
-    uint32_t bases[PROCESS_MAX];
+    uintptr_t bases[PROCESS_MAX];
     uint32_t count = 0;
 
     // the test kernel runs no processes, so every slot is free
@@ -57,7 +57,7 @@ KTEST(kstack_slots_exhaust_and_reuse)
     KEXPECT(bases[1] - bases[0] >= KERNEL_STACK_SIZE + KSTACK_GUARD_SIZE);
 
     kstack_free(bases[0]);
-    uint32_t again = kstack_alloc();
+    uintptr_t again = kstack_alloc();
     KEXPECT_EQ(again, bases[0]);
 
     for (uint32_t i = 0; i < count; i++)

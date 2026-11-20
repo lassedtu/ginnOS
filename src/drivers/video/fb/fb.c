@@ -71,14 +71,16 @@ static void mark_dirty(uint32_t y, uint32_t h)
  * paging_map allocates page tables as needed. virtual == physical keeps the
  * driver's addressing trivial.
  */
-static void map_framebuffer(uint32_t phys_base, uint32_t bytes)
+static void map_framebuffer(phys_addr_t phys_base, size_t bytes)
 {
-    uint32_t start = PAGE_ALIGN_DOWN(phys_base);
-    uint32_t end = PAGE_ALIGN_UP(phys_base + bytes);
+    phys_addr_t start = PAGE_ALIGN_DOWN(phys_base);
+    phys_addr_t end = PAGE_ALIGN_UP(phys_base + bytes);
 
-    for (uint32_t addr = start; addr < end; addr += PAGE_SIZE)
+    // identity-mapped like RAM: the kernel reaches the LFB at its physical
+    // address (fb.addr comes from phys_to_virt)
+    for (phys_addr_t addr = start; addr < end; addr += PAGE_SIZE)
     {
-        paging_map(addr, addr, PTE_KERNEL_RW);
+        paging_map((uintptr_t)phys_to_virt(addr), addr, PTE_KERNEL_RW);
     }
 }
 
@@ -89,8 +91,8 @@ static void map_framebuffer(uint32_t phys_base, uint32_t bytes)
  * this just adds a user alias in the process page directory. eager, no demand
  * paging; the frames are device memory (outside PMM) so teardown skips them.
  */
-static int32_t fb_dev_mmap(device_t *dev, uint32_t page_directory, uint32_t virt,
-                           uint32_t length, int prot, uint32_t offset)
+static int32_t fb_dev_mmap(device_t *dev, addr_space_t as, uintptr_t virt,
+                           size_t length, int prot, uint32_t offset)
 {
     (void)dev;
 
@@ -114,14 +116,14 @@ static int32_t fb_dev_mmap(device_t *dev, uint32_t page_directory, uint32_t virt
     // writable unless the caller asked for a read-only mapping.
     uint32_t flags = (prot & PROT_WRITE) ? MMU_USER_RW : MMU_FLAG_PRESENT | MMU_FLAG_USER;
 
-    uint32_t phys = (uint32_t)fb.addr + offset; // identity-mapped: virt == phys
-    uint32_t phys_start = PAGE_ALIGN_DOWN(phys);
-    uint32_t phys_end = PAGE_ALIGN_UP(phys + length);
+    phys_addr_t phys = virt_to_phys(fb.addr) + offset;
+    phys_addr_t phys_start = PAGE_ALIGN_DOWN(phys);
+    phys_addr_t phys_end = PAGE_ALIGN_UP(phys + length);
 
-    uint32_t v = virt;
-    for (uint32_t p = phys_start; p < phys_end; p += PAGE_SIZE)
+    uintptr_t v = virt;
+    for (phys_addr_t p = phys_start; p < phys_end; p += PAGE_SIZE)
     {
-        if (arch_map_page(page_directory, v, p, flags) != 0)
+        if (arch_map_page(as, v, p, flags) != 0)
         {
             return -12; /* ENOMEM */
         }
@@ -227,7 +229,7 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
         fb_fix_screeninfo_t fix;
         memset(&fix, 0, sizeof(fix));
         strncpy(fix.id, "ginnfb", sizeof(fix.id) - 1);
-        fix.smem_start = (uint32_t)fb.addr;
+        fix.smem_start = (uint32_t)virt_to_phys(fb.addr);
         fix.smem_len = fb.height * fb.pitch;
         fix.type = FB_TYPE_PACKED_PIXELS;
         fix.visual = FB_VISUAL_TRUECOLOR;
@@ -290,7 +292,7 @@ bool fb_init(const boot_info_t *boot)
         return false;
     }
 
-    fb.addr = (uint8_t *)boot->framebuffer_addr;
+    fb.addr = (uint8_t *)phys_to_virt(boot->framebuffer_addr);
     fb.width = boot->framebuffer_width;
     fb.height = boot->framebuffer_height;
     fb.pitch = boot->framebuffer_pitch;

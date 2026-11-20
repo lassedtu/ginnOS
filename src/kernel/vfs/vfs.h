@@ -223,8 +223,8 @@ int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg);
  * @param offset page-aligned byte offset into the mapped object.
  * @return 0 on success, or a negative errno on failure.
  */
-int32_t vfs_mmap(vfs_file_t *file, uint32_t page_directory, uint32_t virt,
-                 uint32_t length, int prot, uint32_t offset);
+int32_t vfs_mmap(vfs_file_t *file, addr_space_t as, uintptr_t virt,
+                 size_t length, int prot, uint32_t offset);
 
 /**
  * reposition an open file's cursor through the backing filesystem's seek op.
