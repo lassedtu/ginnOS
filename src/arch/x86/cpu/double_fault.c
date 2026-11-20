@@ -64,7 +64,7 @@ static void double_fault_task(void)
     tss_interrupted_state(&eip, &esp, &ebp);
 
     // the page fault that escalated left its address in CR2
-    uint32_t fault_address = paging_fault_address();
+    uintptr_t fault_address = paging_fault_address();
 
     if (kstack_is_guard(fault_address) || kstack_is_guard(esp))
     {
@@ -88,7 +88,7 @@ static void double_fault_task(void)
 void double_fault_initialize(void)
 {
     tss_install_double_fault(double_fault_task,
-                             (uint32_t)double_fault_stack + DOUBLE_FAULT_STACK_SIZE);
+                             (uintptr_t)double_fault_stack + DOUBLE_FAULT_STACK_SIZE);
 
     // a task gate ignores the offset; the TSS selector names the task
     idt_set_gate(8, 0, GDT_DOUBLE_FAULT_TSS,

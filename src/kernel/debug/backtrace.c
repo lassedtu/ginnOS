@@ -13,27 +13,30 @@
         KLOG_ERROR(fmt, __VA_ARGS__);             \
     } while (0)
 
+// hex digits in a pointer-width address
+#define ADDR_HEX_DIGITS (2 * sizeof(uintptr_t))
+
 // the kernel printf has no field widths, so pad addresses by hand to keep
 // the columns lined up: "0001234a".
-static void format_hex8(char out[9], uint32_t value)
+static void format_hex_addr(char out[ADDR_HEX_DIGITS + 1], uintptr_t value)
 {
     static const char digits[] = "0123456789abcdef";
-    for (int i = 7; i >= 0; i--)
+    for (int i = (int)ADDR_HEX_DIGITS - 1; i >= 0; i--)
     {
         out[i] = digits[value & 0xFu];
         value >>= 4;
     }
-    out[8] = '\0';
+    out[ADDR_HEX_DIGITS] = '\0';
 }
 
 // print "<label> 0x<pc> name+0xoff". lookup is the address used for the
 // symbol (pc itself, or pc - 1 for return addresses).
-static void print_entry(const char *label, int index, uint32_t pc, uint32_t lookup)
+static void print_entry(const char *label, int index, uintptr_t pc, uintptr_t lookup)
 {
-    char hex[9];
-    format_hex8(hex, pc);
+    char hex[ADDR_HEX_DIGITS + 1];
+    format_hex_addr(hex, pc);
 
-    uint32_t offset = 0;
+    uintptr_t offset = 0;
     const char *name = ksym_lookup(lookup, &offset);
     if (!name)
     {
@@ -51,19 +54,19 @@ static void print_entry(const char *label, int index, uint32_t pc, uint32_t look
     }
 }
 
-void backtrace_print_pc(const char *label, uint32_t pc)
+void backtrace_print_pc(const char *label, uintptr_t pc)
 {
     print_entry(label, -1, pc, pc);
 }
 
-void backtrace_print_return(const char *label, uint32_t ret)
+void backtrace_print_return(const char *label, uintptr_t ret)
 {
     print_entry(label, -1, ret, ret - 1);
 }
 
-void backtrace_print(uint32_t frame)
+void backtrace_print(uintptr_t frame)
 {
-    uint32_t pcs[BACKTRACE_MAX_FRAMES];
+    uintptr_t pcs[BACKTRACE_MAX_FRAMES];
     int depth = arch_stack_walk(frame, pcs, BACKTRACE_MAX_FRAMES);
 
     printf("backtrace:\r\n");
@@ -74,7 +77,7 @@ void backtrace_print(uint32_t frame)
         // a return address points just past the call. look up the byte
         // before it, so a call that ends a function (e.g. to a noreturn
         // function) is still attributed to the caller.
-        uint32_t pc = pcs[i];
+        uintptr_t pc = pcs[i];
         if (!ksym_is_kernel_text(pc - 1))
         {
             break;

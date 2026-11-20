@@ -6,8 +6,8 @@
 
 KTEST(ksyms_lookup_finds_functions)
 {
-    uint32_t addr = (uint32_t)&ksym_lookup;
-    uint32_t offset = 99;
+    uintptr_t addr = (uintptr_t)&ksym_lookup;
+    uintptr_t offset = 99;
 
     KEXPECT_STREQ(ksym_lookup(addr, &offset), "ksym_lookup");
     KEXPECT_EQ(offset, 0);
@@ -17,13 +17,13 @@ KTEST(ksyms_lookup_finds_functions)
     KEXPECT_EQ(offset, 1);
 
     // static functions are in the table too.
-    KEXPECT_STREQ(ksym_lookup((uint32_t)&ktest_fn_ksyms_lookup_finds_functions, NULL),
+    KEXPECT_STREQ(ksym_lookup((uintptr_t)&ktest_fn_ksyms_lookup_finds_functions, NULL),
                   "ktest_fn_ksyms_lookup_finds_functions");
 }
 
 KTEST(ksyms_lookup_rejects_non_code)
 {
-    KEXPECT(ksym_lookup((uint32_t)&ksym_count, NULL) == NULL);
+    KEXPECT(ksym_lookup((uintptr_t)&ksym_count, NULL) == NULL);
     KEXPECT(ksym_lookup(0, NULL) == NULL);
     KEXPECT(ksym_lookup(0xFFFFFFF0u, NULL) == NULL);
     KEXPECT(ksym_count > 100);
@@ -34,11 +34,11 @@ KTEST(ksyms_lookup_rejects_non_code)
 #define BT_DEPTH 8
 
 static int walk_depth;
-static uint32_t walk_pcs[BT_DEPTH];
+static uintptr_t walk_pcs[BT_DEPTH];
 
 __attribute__((noinline)) static void bt_inner(void)
 {
-    walk_depth = arch_stack_walk((uint32_t)__builtin_frame_address(0), walk_pcs, BT_DEPTH);
+    walk_depth = arch_stack_walk((uintptr_t)__builtin_frame_address(0), walk_pcs, BT_DEPTH);
     __asm__ volatile("" ::: "memory");
 }
 
@@ -67,7 +67,7 @@ KTEST(backtrace_walks_frame_pointers)
 
 KTEST(backtrace_stops_on_bad_frames)
 {
-    uint32_t pcs[4];
+    uintptr_t pcs[4];
 
     KEXPECT_EQ(arch_stack_walk(0, pcs, 4), 0);
     // misaligned and unmapped frames are rejected rather than followed.

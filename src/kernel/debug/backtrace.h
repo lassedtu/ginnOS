@@ -15,7 +15,7 @@
  * @param label text printed before the address (e.g. "at" or "#3").
  * @param pc the code address.
  */
-void backtrace_print_pc(const char *label, uint32_t pc);
+void backtrace_print_pc(const char *label, uintptr_t pc);
 
 /**
  * print one return address. like backtrace_print_pc, but the symbol is
@@ -23,11 +23,11 @@ void backtrace_print_pc(const char *label, uint32_t pc);
  * @param label text printed before the address (e.g. "?").
  * @param ret the return address.
  */
-void backtrace_print_return(const char *label, uint32_t ret);
+void backtrace_print_return(const char *label, uintptr_t ret);
 
 /**
  * print the return addresses found by walking frame pointers from frame.
  * stops at the first address outside kernel code (e.g. a user-mode frame).
  * @param frame the frame pointer to start from.
  */
-void backtrace_print(uint32_t frame);
+void backtrace_print(uintptr_t frame);

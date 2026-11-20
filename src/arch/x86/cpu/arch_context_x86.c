@@ -17,13 +17,13 @@ void arch_setup_initial_stack(process_t *proc, void (*entry_fn)(void))
     // build the stack top-down. arch_context_switch returns by popping the
     // four callee-saved registers and then executing 'ret', so we lay down a
     // return address followed by four zeroed register slots.
-    uint32_t *sp = (uint32_t *)(proc->kernel_stack + KERNEL_STACK_SIZE);
+    uintptr_t *sp = (uintptr_t *)(proc->kernel_stack + KERNEL_STACK_SIZE);
 
-    *(--sp) = (uint32_t)entry_fn; // eip: where 'ret' lands
+    *(--sp) = (uintptr_t)entry_fn; // eip: where 'ret' lands
     *(--sp) = 0;                  // ebp
     *(--sp) = 0;                  // ebx
     *(--sp) = 0;                  // esi
     *(--sp) = 0;                  // edi  <- kernel_esp points here
 
-    proc->kernel_esp = (uint32_t)sp;
+    proc->kernel_esp = (uintptr_t)sp;
 }

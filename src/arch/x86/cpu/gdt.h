@@ -42,7 +42,7 @@ void tss_set_kernel_stack(uint32_t esp0);
  * @param entry function the task starts in; it must never return.
  * @param stack_top initial ESP for the task.
  */
-void tss_install_double_fault(void (*entry)(void), uint32_t stack_top);
+void tss_install_double_fault(void (*entry)(void), uintptr_t stack_top);
 
 /**
  * set the page directory the double-fault task runs with.

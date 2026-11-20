@@ -38,7 +38,7 @@ void idt_set_gate(int vector, void *base, uint16_t segment, uint8_t flags)
     ASSERT(vector >= 0 && vector <= 255);
 
     idt[vector].base_low =
-        ((uint32_t)base) & 0xFFFF;
+        ((uint32_t)(uintptr_t)base) & 0xFFFF;
 
     idt[vector].segment_selector = segment;
 
@@ -47,7 +47,7 @@ void idt_set_gate(int vector, void *base, uint16_t segment, uint8_t flags)
     idt[vector].flags = flags;
 
     idt[vector].base_high =
-        ((uint32_t)base >> 16) & 0xFFFF;
+        ((uint32_t)(uintptr_t)base >> 16) & 0xFFFF;
 }
 
 void idt_enable_gate(int vector)
@@ -66,8 +66,8 @@ void idt_initialize(void)
         sizeof(idt) - 1;
 
     ip.base =
-        (uint32_t)&idt;
+        (uint32_t)(uintptr_t)&idt;
 
     // load the IDT descriptor into the IDTR register
-    idt_load((uint32_t)&ip);
+    idt_load((uint32_t)(uintptr_t)&ip);
 }

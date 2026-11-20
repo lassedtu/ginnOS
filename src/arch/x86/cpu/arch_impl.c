@@ -61,16 +61,16 @@ void arch_halt_forever(void)
     }
 }
 
-uint32_t arch_get_stack_pointer(void)
+uintptr_t arch_get_stack_pointer(void)
 {
-    uint32_t esp;
+    uintptr_t esp;
     __asm__ volatile("mov %%esp, %0" : "=r"(esp));
     return esp;
 }
 
 // a frame word can be read without faulting. before paging is on every
 // physical address is readable; after, the page must be mapped.
-static bool frame_word_readable(uint32_t addr)
+static bool frame_word_readable(uintptr_t addr)
 {
     if (!paging_is_enabled())
     {
@@ -79,7 +79,7 @@ static bool frame_word_readable(uint32_t addr)
     return paging_get_physical(PAGE_ALIGN_DOWN(addr)) != 0;
 }
 
-int arch_stack_walk(uint32_t frame, uint32_t *pcs, int max)
+int arch_stack_walk(uintptr_t frame, uintptr_t *pcs, int max)
 {
     int depth = 0;
 
@@ -93,9 +93,9 @@ int arch_stack_walk(uint32_t frame, uint32_t *pcs, int max)
             break;
         }
 
-        const uint32_t *words = (const uint32_t *)frame;
-        uint32_t next = words[0];
-        uint32_t ret = words[1];
+        const uintptr_t *words = (const uintptr_t *)frame;
+        uintptr_t next = words[0];
+        uintptr_t ret = words[1];
         if (ret == 0)
         {
             break;
@@ -154,7 +154,7 @@ static uint32_t pte_flags_from_mmu(uint32_t mmu_flags)
     return pte;
 }
 
-int arch_map_page(addr_space_t as, uint32_t virt, uint32_t phys, uint32_t flags)
+int arch_map_page(addr_space_t as, uintptr_t virt, phys_addr_t phys, uint32_t flags)
 {
     if (!paging_map_in(as, virt, phys, pte_flags_from_mmu(flags)))
     {
@@ -163,32 +163,32 @@ int arch_map_page(addr_space_t as, uint32_t virt, uint32_t phys, uint32_t flags)
     return 0;
 }
 
-void arch_reserve_kernel_range(uint32_t start, uint32_t end)
+void arch_reserve_kernel_range(uintptr_t start, uintptr_t end)
 {
     paging_reserve_tables(start, end);
 }
 
-void arch_map_kernel_page(uint32_t virt, uint32_t phys)
+void arch_map_kernel_page(uintptr_t virt, phys_addr_t phys)
 {
     paging_map(virt, phys, PTE_KERNEL_RW);
 }
 
-void arch_unmap_kernel_page(uint32_t virt)
+void arch_unmap_kernel_page(uintptr_t virt)
 {
     paging_unmap(virt);
 }
 
-bool arch_user_access_ok(addr_space_t as, uint32_t addr, uint32_t len, bool write)
+bool arch_user_access_ok(addr_space_t as, uintptr_t addr, size_t len, bool write)
 {
     return paging_user_range_ok(as, addr, len, write);
 }
 
-uint32_t arch_translate_in(addr_space_t as, uint32_t virt)
+phys_addr_t arch_translate_in(addr_space_t as, uintptr_t virt)
 {
     return paging_get_physical_in(as, virt);
 }
 
-void arch_jump_to_usermode(uint32_t entry, uint32_t user_esp)
+void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp)
 {
     __asm__ volatile(
         "cli\n"

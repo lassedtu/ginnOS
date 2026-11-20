@@ -21,7 +21,7 @@ typedef struct process process_t;
  * @param old_sp where to store the outgoing process's kernel stack pointer.
  * @param new_sp the incoming process's saved kernel stack pointer.
  */
-void arch_context_switch(uint32_t *old_sp, uint32_t new_sp);
+void arch_context_switch(uintptr_t *old_sp, uintptr_t new_sp);
 
 /**
  * prepare a process's kernel stack so its first arch_context_switch() into it

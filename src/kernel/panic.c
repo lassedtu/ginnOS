@@ -64,11 +64,11 @@ void kernel_panic(const char *message)
     }
 
     panic_header(message);
-    backtrace_print((uint32_t)__builtin_frame_address(0));
+    backtrace_print((uintptr_t)__builtin_frame_address(0));
     panic_halt();
 }
 
-void kernel_panic_at(const char *message, uint32_t pc, uint32_t caller, uint32_t frame)
+void kernel_panic_at(const char *message, uintptr_t pc, uintptr_t caller, uintptr_t frame)
 {
     arch_disable_interrupts();
 

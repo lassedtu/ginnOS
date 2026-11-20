@@ -67,12 +67,12 @@ static void page_fault_handler(struct registers *regs)
 /**
  * pointer to the kernel page directory (virtual == physical while identity-mapped).
  */
-static uint32_t *kernel_directory;
+static pte_t *kernel_directory;
 
 /**
  * physical address of the kernel page directory.
  */
-static uint32_t kernel_directory_phys;
+static phys_addr_t kernel_directory_phys;
 
 /**
  * number of page tables allocated.
@@ -90,7 +90,7 @@ static bool directory_cloned;
  * panics if allocation fails.
  * @return physical address of the allocated page.
  */
-static uint32_t alloc_page_zeroed(void)
+static phys_addr_t alloc_page_zeroed(void)
 {
     void *page = pmm_alloc_page();
 
@@ -100,38 +100,38 @@ static uint32_t alloc_page_zeroed(void)
     }
 
     memset(page, 0, PAGE_SIZE);
-    return (uint32_t)page;
+    return virt_to_phys(page);
 }
 
 void paging_init(void)
 {
-    uint32_t total_memory;
+    phys_addr_t total_memory;
     uint32_t tables_needed;
     uint32_t i;
 
     /* determine how much physical memory to identity-map */
-    total_memory = pmm_total_pages() * PAGE_SIZE;
+    total_memory = (phys_addr_t)pmm_total_pages() * PAGE_SIZE;
 
     /* we need one page table per 4 MiB of address space */
-    tables_needed = (total_memory + (PAGE_SIZE * PAGE_ENTRIES) - 1) / (PAGE_SIZE * PAGE_ENTRIES);
+    tables_needed = (uint32_t)((total_memory + (PAGE_SIZE * PAGE_ENTRIES) - 1) / (PAGE_SIZE * PAGE_ENTRIES));
 
     /* allocate the page directory */
     kernel_directory_phys = alloc_page_zeroed();
-    kernel_directory = (uint32_t *)kernel_directory_phys;
+    kernel_directory = (pte_t *)phys_to_virt(kernel_directory_phys);
 
     allocated_tables = 0;
 
     /* allocate page tables and fill them with identity mappings */
     for (i = 0; i < tables_needed; i++)
     {
-        uint32_t table_phys = alloc_page_zeroed();
-        uint32_t *table = (uint32_t *)table_phys;
+        phys_addr_t table_phys = alloc_page_zeroed();
+        pte_t *table = (pte_t *)phys_to_virt(table_phys);
         uint32_t j;
 
         /* fill 1024 entries: each maps a 4 KiB page */
         for (j = 0; j < PAGE_ENTRIES; j++)
         {
-            uint32_t phys_addr = (i * PAGE_ENTRIES + j) * PAGE_SIZE;
+            phys_addr_t phys_addr = ((phys_addr_t)i * PAGE_ENTRIES + j) * PAGE_SIZE;
 
             /* don't map beyond physical memory */
             if (phys_addr >= total_memory)
@@ -139,11 +139,11 @@ void paging_init(void)
                 break;
             }
 
-            table[j] = phys_addr | PTE_KERNEL_RW;
+            table[j] = (pte_t)phys_addr | PTE_KERNEL_RW;
         }
 
         /* install the page table in the page directory */
-        kernel_directory[i] = table_phys | PDE_KERNEL_RW;
+        kernel_directory[i] = (pte_t)table_phys | PDE_KERNEL_RW;
         allocated_tables++;
     }
 
@@ -162,17 +162,17 @@ void paging_init(void)
     paging_flush(kernel_directory_phys);
 }
 
-bool paging_map(uint32_t virt, uint32_t phys, uint32_t flags)
+bool paging_map(uintptr_t virt, phys_addr_t phys, uint32_t flags)
 {
     uint32_t dir_index = PAGE_DIR_INDEX(virt);
     uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
-    uint32_t *table;
+    pte_t *table;
 
     /* if the page table doesn't exist yet, allocate one */
     if (!(kernel_directory[dir_index] & PDE_PRESENT))
     {
-        uint32_t new_table = alloc_page_zeroed();
-        kernel_directory[dir_index] = new_table | PDE_KERNEL_RW;
+        phys_addr_t new_table = alloc_page_zeroed();
+        kernel_directory[dir_index] = (pte_t)new_table | PDE_KERNEL_RW;
         allocated_tables++;
     }
 
@@ -183,42 +183,42 @@ bool paging_map(uint32_t virt, uint32_t phys, uint32_t flags)
         kernel_directory[dir_index] |= PDE_USER;
     }
 
-    table = (uint32_t *)PAGE_FRAME(kernel_directory[dir_index]);
-    table[tbl_index] = PAGE_ALIGN_DOWN(phys) | (flags & PAGE_OFFSET_MASK);
+    table = entry_table(kernel_directory[dir_index]);
+    table[tbl_index] = (pte_t)(PAGE_ALIGN_DOWN(phys) | (flags & PAGE_OFFSET_MASK));
 
     paging_invalidate(virt);
     return true;
 }
 
-void paging_unmap(uint32_t virt)
+void paging_unmap(uintptr_t virt)
 {
     uint32_t dir_index = PAGE_DIR_INDEX(virt);
     uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
-    uint32_t *table;
+    pte_t *table;
 
     if (!(kernel_directory[dir_index] & PDE_PRESENT))
     {
         return;
     }
 
-    table = (uint32_t *)PAGE_FRAME(kernel_directory[dir_index]);
+    table = entry_table(kernel_directory[dir_index]);
     table[tbl_index] = 0;
 
     paging_invalidate(virt);
 }
 
-uint32_t paging_get_physical(uint32_t virt)
+phys_addr_t paging_get_physical(uintptr_t virt)
 {
     uint32_t dir_index = PAGE_DIR_INDEX(virt);
     uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
-    uint32_t *table;
+    pte_t *table;
 
     if (!(kernel_directory[dir_index] & PDE_PRESENT))
     {
         return 0;
     }
 
-    table = (uint32_t *)PAGE_FRAME(kernel_directory[dir_index]);
+    table = entry_table(kernel_directory[dir_index]);
 
     if (!(table[tbl_index] & PTE_PRESENT))
     {
@@ -228,19 +228,19 @@ uint32_t paging_get_physical(uint32_t virt)
     return PAGE_FRAME(table[tbl_index]) | (virt & PAGE_OFFSET_MASK);
 }
 
-uint32_t paging_get_physical_in(uint32_t pd_phys, uint32_t virt)
+phys_addr_t paging_get_physical_in(phys_addr_t pd_phys, uintptr_t virt)
 {
-    uint32_t *dir = (uint32_t *)pd_phys;
+    pte_t *dir = (pte_t *)phys_to_virt(pd_phys);
     uint32_t dir_index = PAGE_DIR_INDEX(virt);
     uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
-    uint32_t *table;
+    pte_t *table;
 
     if (!(dir[dir_index] & PDE_PRESENT))
     {
         return 0;
     }
 
-    table = (uint32_t *)PAGE_FRAME(dir[dir_index]);
+    table = entry_table(dir[dir_index]);
 
     if (!(table[tbl_index] & PTE_PRESENT))
     {
@@ -250,7 +250,7 @@ uint32_t paging_get_physical_in(uint32_t pd_phys, uint32_t virt)
     return PAGE_FRAME(table[tbl_index]) | (virt & PAGE_OFFSET_MASK);
 }
 
-uint32_t paging_directory_address(void)
+phys_addr_t paging_directory_address(void)
 {
     return kernel_directory_phys;
 }
@@ -269,7 +269,7 @@ bool paging_is_enabled(void)
 // index boundary: entries 0–767 are user space, 768–1023 are kernel.
 #define KERNEL_PDE_START 768
 
-void paging_reserve_tables(uint32_t start, uint32_t end)
+void paging_reserve_tables(uintptr_t start, uintptr_t end)
 {
     KASSERT(!directory_cloned, "paging_reserve_tables after an address space was cloned");
 
@@ -278,39 +278,39 @@ void paging_reserve_tables(uint32_t start, uint32_t end)
     {
         if (!(kernel_directory[dir_index] & PDE_PRESENT))
         {
-            kernel_directory[dir_index] = alloc_page_zeroed() | PDE_KERNEL_RW;
+            kernel_directory[dir_index] = (pte_t)alloc_page_zeroed() | PDE_KERNEL_RW;
             allocated_tables++;
         }
     }
 }
 
-bool paging_user_range_ok(uint32_t pd_phys, uint32_t addr, uint32_t len, bool write)
+bool paging_user_range_ok(phys_addr_t pd_phys, uintptr_t addr, size_t len, bool write)
 {
     if (len == 0)
     {
         return true;
     }
 
-    uint32_t last = addr + len - 1;
+    uintptr_t last = addr + len - 1;
     if (last < addr)
     {
         return false; // wraps around the address space
     }
 
-    const uint32_t *dir = (const uint32_t *)pd_phys;
+    const pte_t *dir = (const pte_t *)phys_to_virt(pd_phys);
     uint32_t pde_need = PDE_PRESENT | PDE_USER | (write ? PDE_READ_WRITE : 0);
     uint32_t pte_need = PTE_PRESENT | PTE_USER | (write ? PTE_READ_WRITE : 0);
 
-    for (uint32_t page = PAGE_ALIGN_DOWN(addr);; page += PAGE_SIZE)
+    for (uintptr_t page = PAGE_ALIGN_DOWN(addr);; page += PAGE_SIZE)
     {
-        uint32_t pde = dir[PAGE_DIR_INDEX(page)];
+        pte_t pde = dir[PAGE_DIR_INDEX(page)];
         if ((pde & pde_need) != pde_need)
         {
             return false;
         }
 
-        const uint32_t *table = (const uint32_t *)PAGE_FRAME(pde);
-        uint32_t pte = table[PAGE_TABLE_INDEX(page)];
+        const pte_t *table = entry_table(pde);
+        pte_t pte = table[PAGE_TABLE_INDEX(page)];
         if ((pte & pte_need) != pte_need)
         {
             return false;
@@ -323,12 +323,12 @@ bool paging_user_range_ok(uint32_t pd_phys, uint32_t addr, uint32_t len, bool wr
     }
 }
 
-uint32_t paging_fault_address(void)
+uintptr_t paging_fault_address(void)
 {
     return paging_read_cr2();
 }
 
-uint32_t paging_clone_directory(void)
+phys_addr_t paging_clone_directory(void)
 {
     void *page = pmm_alloc_page();
     if (!page)
@@ -336,7 +336,7 @@ uint32_t paging_clone_directory(void)
         return 0;
     }
 
-    uint32_t *new_dir = (uint32_t *)page;
+    pte_t *new_dir = (pte_t *)page;
     directory_cloned = true;
 
     // copy all entries from the kernel directory.
@@ -348,17 +348,17 @@ uint32_t paging_clone_directory(void)
         new_dir[i] = kernel_directory[i];
     }
 
-    return (uint32_t)new_dir;
+    return virt_to_phys(new_dir);
 }
 
-void paging_free_directory(uint32_t pd_phys)
+void paging_free_directory(phys_addr_t pd_phys)
 {
     if (pd_phys == 0 || pd_phys == kernel_directory_phys)
     {
         return;
     }
 
-    uint32_t *dir = (uint32_t *)pd_phys;
+    pte_t *dir = (pte_t *)phys_to_virt(pd_phys);
 
     // free process-specific page tables and their user-mapped frames.
     // only process entries with PDE_USER set  these are either newly
@@ -376,7 +376,7 @@ void paging_free_directory(uint32_t pd_phys)
             continue;
         }
 
-        uint32_t *table = (uint32_t *)PAGE_FRAME(dir[i]);
+        pte_t *table = entry_table(dir[i]);
 
         // only free physical frames that have PTE_USER set
         // kernel identity-mapped entries (copied) don't have PTE_USER.
@@ -384,12 +384,12 @@ void paging_free_directory(uint32_t pd_phys)
         {
             if ((table[j] & PTE_PRESENT) && (table[j] & PTE_USER))
             {
-                uint32_t frame = PAGE_FRAME(table[j]);
+                phys_addr_t frame = PAGE_FRAME(table[j]);
                 // skip device mappings (e.g. a framebuffer mapped into the
                 // process): those frames aren't PMM RAM and must not be freed.
                 if (frame != 0 && pmm_owns(frame))
                 {
-                    pmm_free_page((void *)frame);
+                    pmm_free_page(phys_to_virt(frame));
                 }
             }
         }
@@ -399,15 +399,15 @@ void paging_free_directory(uint32_t pd_phys)
     }
 
     // free the directory page
-    pmm_free_page((void *)pd_phys);
+    pmm_free_page(phys_to_virt(pd_phys));
 }
 
-bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flags)
+bool paging_map_in(phys_addr_t pd_phys, uintptr_t virt, phys_addr_t phys, uint32_t flags)
 {
-    uint32_t *dir = (uint32_t *)pd_phys;
+    pte_t *dir = (pte_t *)phys_to_virt(pd_phys);
     uint32_t dir_index = PAGE_DIR_INDEX(virt);
     uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
-    uint32_t *table;
+    pte_t *table;
 
     if (!(dir[dir_index] & PDE_PRESENT))
     {
@@ -418,14 +418,14 @@ bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flag
             return false;
         }
         memset(new_table, 0, PAGE_SIZE);
-        dir[dir_index] = (uint32_t)new_table | PDE_KERNEL_RW;
+        dir[dir_index] = (pte_t)virt_to_phys(new_table) | PDE_KERNEL_RW;
     }
     else if ((flags & PTE_USER) && !(dir[dir_index] & PDE_USER))
     {
         // PDE exists but is kernel-only (shared from clone).
         // we need to add a user mapping, so we must copy the page table
         // to avoid contaminating the shared kernel table.
-        uint32_t *old_table = (uint32_t *)PAGE_FRAME(dir[dir_index]);
+        pte_t *old_table = entry_table(dir[dir_index]);
         void *new_table = pmm_alloc_page();
         if (!new_table)
         {
@@ -433,7 +433,7 @@ bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flag
         }
         // copy existing kernel entries
         memcpy(new_table, old_table, PAGE_SIZE);
-        dir[dir_index] = (uint32_t)new_table | PDE_USER_RW;
+        dir[dir_index] = (pte_t)virt_to_phys(new_table) | PDE_USER_RW;
     }
 
     // if mapping a user-accessible page, the PDE must also have the user bit
@@ -442,13 +442,13 @@ bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flag
         dir[dir_index] |= PDE_USER;
     }
 
-    table = (uint32_t *)PAGE_FRAME(dir[dir_index]);
-    table[tbl_index] = PAGE_ALIGN_DOWN(phys) | (flags & PAGE_OFFSET_MASK);
+    table = entry_table(dir[dir_index]);
+    table[tbl_index] = (pte_t)(PAGE_ALIGN_DOWN(phys) | (flags & PAGE_OFFSET_MASK));
 
     return true;
 }
 
-void paging_switch_directory(uint32_t pd_phys)
+void paging_switch_directory(phys_addr_t pd_phys)
 {
     // paging is already enabled here, so only CR3 changes; CR0 is left alone.
     paging_load_cr3(pd_phys);

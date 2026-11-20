@@ -11,6 +11,7 @@
  */
 
 #include "common/stdint.h"
+#include "kernel/memory/phys.h"
 
 /**
  * disable hardware interrupts.
@@ -61,7 +62,7 @@ void arch_halt_forever(void) __attribute__((noreturn));
 /**
  * read the current stack pointer.
  */
-uint32_t arch_get_stack_pointer(void);
+uintptr_t arch_get_stack_pointer(void);
 
 /**
  * walk a chain of saved frame pointers and collect return addresses.
@@ -73,7 +74,7 @@ uint32_t arch_get_stack_pointer(void);
  * @param max capacity of pcs.
  * @return the number of addresses stored.
  */
-int arch_stack_walk(uint32_t frame, uint32_t *pcs, int max);
+int arch_stack_walk(uintptr_t frame, uintptr_t *pcs, int max);
 
 /**
  * an address space handle. opaque to portable code: it identifies a page
@@ -81,7 +82,7 @@ int arch_stack_walk(uint32_t frame, uint32_t *pcs, int max);
  * the same kernel code works whether the arch uses 2-level, 4-level, or
  * some other table layout.
  */
-typedef uint32_t addr_space_t;
+typedef uintptr_t addr_space_t;
 
 /**
  * sentinel handle meaning "no address space".
@@ -123,7 +124,7 @@ void arch_destroy_address_space(addr_space_t as);
  * @param start first virtual address of the range.
  * @param end first virtual address past the range.
  */
-void arch_reserve_kernel_range(uint32_t start, uint32_t end);
+void arch_reserve_kernel_range(uintptr_t start, uintptr_t end);
 
 /**
  * map one kernel-only, writable page inside a reserved kernel range. the
@@ -131,13 +132,13 @@ void arch_reserve_kernel_range(uint32_t start, uint32_t end);
  * @param virt page-aligned virtual address inside a reserved range.
  * @param phys page-aligned physical frame.
  */
-void arch_map_kernel_page(uint32_t virt, uint32_t phys);
+void arch_map_kernel_page(uintptr_t virt, phys_addr_t phys);
 
 /**
  * remove a page mapped with arch_map_kernel_page(). the frame is not freed.
  * @param virt page-aligned virtual address.
  */
-void arch_unmap_kernel_page(uint32_t virt);
+void arch_unmap_kernel_page(uintptr_t virt);
 
 /**
  * check that user code in an address space could access a whole range:
@@ -148,7 +149,7 @@ void arch_unmap_kernel_page(uint32_t virt);
  * @param write true if the range will be written.
  * @return true if every page allows the access.
  */
-bool arch_user_access_ok(addr_space_t as, uint32_t addr, uint32_t len, bool write);
+bool arch_user_access_ok(addr_space_t as, uintptr_t addr, size_t len, bool write);
 
 /**
  * map one page into a given address space.
@@ -158,7 +159,7 @@ bool arch_user_access_ok(addr_space_t as, uint32_t addr, uint32_t len, bool writ
  * @param flags MMU_FLAG_* bits describing the mapping.
  * @return 0 on success, -1 on failure.
  */
-int arch_map_page(addr_space_t as, uint32_t virt, uint32_t phys, uint32_t flags);
+int arch_map_page(addr_space_t as, uintptr_t virt, phys_addr_t phys, uint32_t flags);
 
 /**
  * translate a virtual address to its physical address within a given
@@ -168,7 +169,7 @@ int arch_map_page(addr_space_t as, uint32_t virt, uint32_t phys, uint32_t flags)
  * @param virt the virtual address to translate.
  * @return the physical address, or 0 if the page is not mapped.
  */
-uint32_t arch_translate_in(addr_space_t as, uint32_t virt);
+phys_addr_t arch_translate_in(addr_space_t as, uintptr_t virt);
 
 /**
  * switch the active address space.
@@ -182,7 +183,7 @@ void arch_switch_address_space(addr_space_t as);
  * @param entry userspace entry point address.
  * @param user_esp userspace stack pointer.
  */
-void arch_jump_to_usermode(uint32_t entry, uint32_t user_esp) __attribute__((noreturn));
+void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp) __attribute__((noreturn));
 
 /**
  * reload kernel data segment selectors.

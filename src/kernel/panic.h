@@ -22,5 +22,5 @@ void kernel_panic(const char *message) __attribute__((noreturn));
  * @param frame the frame pointer at the fault, or 0 to skip the backtrace
  *              (e.g. the fault came from user mode).
  */
-void kernel_panic_at(const char *message, uint32_t pc, uint32_t caller, uint32_t frame)
+void kernel_panic_at(const char *message, uintptr_t pc, uintptr_t caller, uintptr_t frame)
     __attribute__((noreturn));

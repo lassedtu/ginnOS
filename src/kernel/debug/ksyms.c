@@ -6,12 +6,12 @@
 extern const uint8_t __text_start[];
 extern const uint8_t __text_end[];
 
-bool ksym_is_kernel_text(uint32_t addr)
+bool ksym_is_kernel_text(uintptr_t addr)
 {
-    return addr >= (uint32_t)__text_start && addr < (uint32_t)__text_end;
+    return addr >= (uintptr_t)__text_start && addr < (uintptr_t)__text_end;
 }
 
-const char *ksym_lookup(uint32_t addr, uint32_t *offset)
+const char *ksym_lookup(uintptr_t addr, uintptr_t *offset)
 {
     if (!ksym_is_kernel_text(addr) || ksym_count == 0 || addr < ksym_table[0].addr)
     {

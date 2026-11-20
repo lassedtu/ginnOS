@@ -48,7 +48,7 @@ void exception_dump_regs(const struct registers *regs)
     // esp/ss are only pushed on a privilege change. for a kernel-mode trap
     // the interrupted stack pointer is where the esp field would be.
     bool from_kernel = (regs->cs & 3u) == 0;
-    uint32_t esp = from_kernel ? (uint32_t)&regs->esp : regs->esp;
+    uint32_t esp = from_kernel ? (uint32_t)(uintptr_t)&regs->esp : regs->esp;
 
     printf(
         "eax=0x%x ebx=0x%x ecx=0x%x edx=0x%x\r\n",
@@ -85,7 +85,7 @@ void exception_dump_regs(const struct registers *regs)
 
 // true if the instruction ending just before ret is a near call: e8 rel32,
 // or ff /2 (call through a register or memory operand).
-static bool follows_call(uint32_t ret)
+static bool follows_call(uintptr_t ret)
 {
     const uint8_t *code = (const uint8_t *)ret;
 
@@ -121,11 +121,11 @@ static bool follows_call(uint32_t ret)
 // address on top of the stack instead of in the ebp chain. return that word
 // if it looks like a return address into kernel code, else 0. it is only a
 // guess: a function with a frame may have a stale code address there.
-static uint32_t probable_caller(const struct registers *regs)
+static uintptr_t probable_caller(const struct registers *regs)
 {
     // a same-privilege trap does not push esp/ss, so the trap frame's esp
     // field overlays the interrupted stack: it holds the word on top of it.
-    uint32_t top = regs->esp;
+    uintptr_t top = regs->esp;
     if (!ksym_is_kernel_text(top - 6) || !ksym_is_kernel_text(top - 1))
     {
         return 0;

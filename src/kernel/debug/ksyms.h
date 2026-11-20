@@ -17,7 +17,7 @@
  */
 typedef struct
 {
-    uint32_t addr;
+    uintptr_t addr;
     uint32_t name_offset;
 } ksym_t;
 
@@ -32,11 +32,11 @@ extern const char ksym_names[];
  * @param offset receives addr minus the function start; may be NULL.
  * @return the function name, or NULL if addr is not inside kernel code.
  */
-const char *ksym_lookup(uint32_t addr, uint32_t *offset);
+const char *ksym_lookup(uintptr_t addr, uintptr_t *offset);
 
 /**
  * check whether an address lies inside the kernel's .text section.
  * @param addr the address to check.
  * @return true if addr is kernel code.
  */
-bool ksym_is_kernel_text(uint32_t addr);
+bool ksym_is_kernel_text(uintptr_t addr);
