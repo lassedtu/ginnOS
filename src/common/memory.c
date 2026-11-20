@@ -1,6 +1,6 @@
 #include "memory.h"
 
-void *memcpy(void *dest, const void *src, uint32_t count)
+void *memcpy(void *dest, const void *src, size_t count)
 {
     uint8_t *d = (uint8_t *)dest;
     const uint8_t *s = (const uint8_t *)src;
@@ -13,7 +13,7 @@ void *memcpy(void *dest, const void *src, uint32_t count)
     return dest;
 }
 
-void *memmove(void *dest, const void *src, uint32_t count)
+void *memmove(void *dest, const void *src, size_t count)
 {
     uint8_t *d;
     const uint8_t *s;
@@ -47,7 +47,7 @@ void *memmove(void *dest, const void *src, uint32_t count)
     return dest;
 }
 
-void *memset(void *dest, int value, uint32_t count)
+void *memset(void *dest, int value, size_t count)
 {
     uint8_t *d = (uint8_t *)dest;
 
@@ -59,7 +59,7 @@ void *memset(void *dest, int value, uint32_t count)
     return dest;
 }
 
-int memcmp(const void *lhs, const void *rhs, uint32_t count)
+int memcmp(const void *lhs, const void *rhs, size_t count)
 {
     const uint8_t *a = (const uint8_t *)lhs;
     const uint8_t *b = (const uint8_t *)rhs;

@@ -1,8 +1,8 @@
 #include "string.h"
 
-uint32_t strlen(const char *str)
+size_t strlen(const char *str)
 {
-    uint32_t length = 0;
+    size_t length = 0;
 
     while (*str++)
     {
@@ -23,7 +23,7 @@ int strcmp(const char *lhs, const char *rhs)
     return (int)(unsigned char)*lhs - (int)(unsigned char)*rhs;
 }
 
-int strncmp(const char *lhs, const char *rhs, uint32_t count)
+int strncmp(const char *lhs, const char *rhs, size_t count)
 {
     while (count-- > 0)
     {
@@ -52,7 +52,7 @@ char *strcpy(char *dest, const char *src)
     return out;
 }
 
-char *strncpy(char *dest, const char *src, uint32_t count)
+char *strncpy(char *dest, const char *src, size_t count)
 {
     char *out = dest;
 

@@ -9,7 +9,7 @@
  * @param count number of bytes to copy.
  * @return pointer to the destination buffer.
  */
-void *memcpy(void *dest, const void *src, uint32_t count);
+void *memcpy(void *dest, const void *src, size_t count);
 
 /**
  * move memory from source to destination, allowing for overlapping regions.
@@ -18,7 +18,7 @@ void *memcpy(void *dest, const void *src, uint32_t count);
  * @param count number of bytes to move.
  * @return pointer to the destination buffer.
  */
-void *memmove(void *dest, const void *src, uint32_t count);
+void *memmove(void *dest, const void *src, size_t count);
 
 /**
  * set a block of memory to a specific value.
@@ -27,7 +27,7 @@ void *memmove(void *dest, const void *src, uint32_t count);
  * @param count number of bytes to set.
  * @return pointer to the destination buffer.
  */
-void *memset(void *dest, int value, uint32_t count);
+void *memset(void *dest, int value, size_t count);
 
 /**
  * compare two blocks of memory.
@@ -36,4 +36,4 @@ void *memset(void *dest, int value, uint32_t count);
  * @param count number of bytes to compare.
  * @return negative if lhs < rhs, 0 if lhs == rhs, positive if lhs > rhs.
  */
-int memcmp(const void *lhs, const void *rhs, uint32_t count);
+int memcmp(const void *lhs, const void *rhs, size_t count);
