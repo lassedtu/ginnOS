@@ -150,9 +150,12 @@ today.
 - Architecture-neutral abstraction layers (`arch_*` for interrupts, MMU,
   context switch, boot protocol) with x86 as the only current backend —
   groundwork for a future x86_64 port
+- Pointer-width types throughout (`uintptr_t`/`size_t`/`phys_addr_t`, one
+  `PAGE_SIZE`, `phys_to_virt`/`virt_to_phys`, a `syscall_arg()` accessor) and
+  compiler-checked printf formats
 - Multi-arch-ready build system (`ARCH` switch), `make lint` (clang-tidy),
-  `make format` (clang-format), `make gdb`/`make debug` (QEMU + gdb
-  attached), `make iso` (GRUB-bootable), and `compile_commands.json`
+  `make check64` (x86_64 portability check), `make format` (clang-format),
+  `make gdb`/`make debug` (QEMU + gdb attached), `make iso` (GRUB-bootable), and `compile_commands.json`
   generation for LSP
 - Consistent `snake_case` conventions documented in `STYLE.md`; ext2 image and
   bitmap-font helper tools under `tools/`
@@ -417,6 +420,16 @@ with the result):
 
 ```bash
 make test
+```
+
+Check the kernel for 64-bit portability (needs a host `clang`; nothing is
+built or run). It compiles every kernel, driver, filesystem and test source
+for x86_64 without linking, and fails on any pointer/integer cast, 64-to-32-bit
+narrowing or printf format mismatch, so code that only works with 32-bit
+pointers is caught before the x86_64 port:
+
+```bash
+make check64
 ```
 
 Debug the kernel with gdb. QEMU starts halted with a gdb stub, gdb attaches

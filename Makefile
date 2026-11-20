@@ -234,7 +234,7 @@ ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run rootfs-image clean check-tools debug gdb lint format compile_commands iso test test-image FORCE
+.PHONY: all run rootfs-image clean check-tools debug gdb lint check64 format compile_commands iso test test-image FORCE
 
 all: check-tools $(DISK_IMAGE)
 
@@ -264,6 +264,23 @@ check-tools:
 lint:
 	@command -v clang-tidy >/dev/null 2>&1 || { echo "install clang-tidy to use make lint"; exit 1; }
 	clang-tidy $(filter %.c,$(ALL_C_SRCS)) $(ALL_H_SRCS) -- $(KERNEL_CFLAGS)
+
+# x86_64 readiness check: a syntax-only x86_64 compile (host clang) of the
+# kernel, drivers, fs, common code and tests. any pointer/integer cast,
+# 64-to-32-bit narrowing or printf format mismatch is an error, so code that
+# only works because pointers are 32 bits is caught before the x86_64 port.
+CLANG ?= clang
+CHECK64_FLAGS := --target=x86_64-elf -ffreestanding -fsyntax-only -std=gnu11 -I src \
+                 -DKERNEL_TEST -Wno-everything -Werror -Wpointer-to-int-cast \
+                 -Wint-to-pointer-cast -Wvoid-pointer-to-int-cast -Wshorten-64-to-32 \
+                 -Wformat
+
+check64:
+	@command -v $(CLANG) >/dev/null 2>&1 || { echo "install clang to use make check64"; exit 1; }
+	@for f in $(KERNEL_C_SRCS) $(COMMON_C_SRCS) $(TEST_C_SRCS); do \
+		$(CLANG) $(CHECK64_FLAGS) "$$f" || exit 1; \
+	done
+	@echo "check64: no 64-bit portability warnings"
 
 # auto-format via clang-format (uses .clang-format config)
 format:
