@@ -67,7 +67,7 @@ void region_print_all(void)
 
     for (i = 0; i < region_table_count; i++)
     {
-        printf("  [%u] 0x%x - 0x%x (%u bytes) %s\r\n",
+        printf("  [%u] 0x%lx - 0x%lx (%lu bytes) %s\r\n",
                i,
                region_table[i].start,
                region_table[i].end,

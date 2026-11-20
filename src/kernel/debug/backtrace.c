@@ -46,11 +46,11 @@ static void print_entry(const char *label, int index, uintptr_t pc, uintptr_t lo
 
     if (index >= 0)
     {
-        BT_LINE("  %s%d 0x%s %s+0x%x", label, index, hex, name, offset);
+        BT_LINE("  %s%d 0x%s %s+0x%lx", label, index, hex, name, offset);
     }
     else
     {
-        BT_LINE("  %s 0x%s %s+0x%x", label, hex, name, offset);
+        BT_LINE("  %s 0x%s %s+0x%lx", label, hex, name, offset);
     }
 }
 

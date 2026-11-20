@@ -54,7 +54,7 @@ KTEST(printf_length_modifiers)
     FORMAT("%zu %zd %d", (size_t)123, (ssize_t)-4, 5);
     KEXPECT_STREQ(out_buf, "123 -4 5");
 
-    FORMAT("%hhu %hd", 200, -3);
+    FORMAT("%hhu %hd", (unsigned char)200, (short)-3);
     KEXPECT_STREQ(out_buf, "200 -3");
 }
 
@@ -63,10 +63,16 @@ KTEST(printf_pointers_chars_strings)
     FORMAT("%p", (void *)0x1000);
     KEXPECT_STREQ(out_buf, "0x1000");
 
+    // a NULL string and malformed formats are deliberate here: they test the
+    // formatter's fallbacks, so the compiler's format checks are silenced
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat"
+#pragma GCC diagnostic ignored "-Wformat-overflow"
     FORMAT("%c%c %s %s %%", 'o', 'k', "str", (const char *)NULL);
     KEXPECT_STREQ(out_buf, "ok str (null) %");
 
     // an unknown conversion is printed as written, a trailing % dropped
     FORMAT("%q 1%");
     KEXPECT_STREQ(out_buf, "%q 1");
+#pragma GCC diagnostic pop
 }

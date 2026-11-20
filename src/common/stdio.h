@@ -36,7 +36,7 @@ void puts(const char *str);
  * no field width, precision or flags.
  * @param fmt format string.
  */
-void printf(const char *fmt, ...);
+void printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 /**
  * print a formatted string through a caller-supplied output backend,
@@ -45,7 +45,8 @@ void printf(const char *fmt, ...);
  * @param out  character output callback.
  * @param fmt  format string.
  */
-void stdio_printf_to(StdioPutCharFn out, const char *fmt, ...);
+void stdio_printf_to(StdioPutCharFn out, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));
 
 /**
  * format engine entry point for variadic wrappers: they va_start their own

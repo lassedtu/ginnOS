@@ -259,7 +259,7 @@ static void schedule(void)
     else
     {
         // no previous context to save (first schedule call)
-        uint32_t dummy_esp;
+        uintptr_t dummy_esp;
         arch_context_switch(&dummy_esp, next->kernel_esp);
     }
 }

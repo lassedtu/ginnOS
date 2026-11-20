@@ -3,16 +3,20 @@
 /**
  * fixed-width integer types.
  */
-// fixed-width types from the compiler's own macros, so they have the right
-// width on every target (on i686 int32_t is long, on x86_64 it is int).
-typedef __INT8_TYPE__ int8_t;
-typedef __UINT8_TYPE__ uint8_t;
-typedef __INT16_TYPE__ int16_t;
-typedef __UINT16_TYPE__ uint16_t;
-typedef __INT32_TYPE__ int32_t;
-typedef __UINT32_TYPE__ uint32_t;
-typedef __INT64_TYPE__ int64_t;
-typedef __UINT64_TYPE__ uint64_t;
+// fixed-width types, pinned to the same C types on every target we build
+// for (i686 ILP32 and x86_64 LP64), so one printf format fits each:
+// %u/%x for uint32_t, %llu/%llx for uint64_t. pointer-width types below
+// (uintptr_t, size_t) are unsigned long on both: %lx, %zu.
+typedef signed char int8_t;
+typedef unsigned char uint8_t;
+typedef short int16_t;
+typedef unsigned short uint16_t;
+typedef int int32_t;
+typedef unsigned int uint32_t;
+typedef long long int64_t;
+typedef unsigned long long uint64_t;
+
+_Static_assert(sizeof(int32_t) == 4 && sizeof(uint64_t) == 8, "fixed-width types");
 
 // integers wide enough to hold a pointer: the only way pointers and integers
 // should be converted. the compiler names the right type for each target.
