@@ -1,6 +1,7 @@
 #include "panic.h"
 #include "arch/arch.h"
 #include "common/stdio.h"
+#include "kernel/console/console.h"
 #include "kernel/debug/backtrace.h"
 #include "klog/klog.h"
 
@@ -44,6 +45,8 @@ static bool panic_reentered(const char *message)
     if (!panicking)
     {
         panicking = true;
+        // the panic may have struck inside the console with its lock held
+        console_panic_mode();
         return false;
     }
     KLOG_ERROR("nested panic: %s", message ? message : "Unknown error");
