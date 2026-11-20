@@ -3,14 +3,16 @@
 /**
  * physical addresses and the conversion between physical and virtual.
  *
- * all RAM is identity-mapped today, so a physical address *is* a usable
- * pointer and these conversions are the identity. every place that turns a
- * physical address into a pointer (or back) goes through them anyway, so the
- * higher-half kernel (K3, a direct map at an offset) only changes these two
- * functions instead of every cast.
+ * the kernel runs in the higher half and reaches RAM through a direct map:
+ * physical address P is at virtual P + KERNEL_VIRT_BASE (up to
+ * PHYS_MAP_SIZE). device memory outside RAM is mapped with ioremap instead
+ * (kernel/memory/mmio.h), and kernel stacks live in their own region, so
+ * virt_to_phys only works on direct-mapped pointers (heap, PMM frames,
+ * the kernel image).
  */
 
 #include "common/stdint.h"
+#include "kernel/memory/memory_layout.h"
 
 // a physical address (pointer-width for now; PAE or x86_64 may widen it)
 typedef uintptr_t phys_addr_t;
@@ -22,7 +24,7 @@ typedef uintptr_t phys_addr_t;
  */
 static inline void *phys_to_virt(phys_addr_t phys)
 {
-    return (void *)phys;
+    return (void *)(phys + KERNEL_VIRT_BASE);
 }
 
 /**
@@ -33,5 +35,5 @@ static inline void *phys_to_virt(phys_addr_t phys)
  */
 static inline phys_addr_t virt_to_phys(const void *virt)
 {
-    return (phys_addr_t)virt;
+    return (phys_addr_t)virt - KERNEL_VIRT_BASE;
 }

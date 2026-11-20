@@ -15,6 +15,9 @@
 extern void paging_flush(uint32_t page_directory_phys);
 extern void paging_invalidate(uintptr_t virtual_address);
 extern uint32_t paging_read_cr2(void);
+
+// first page directory entry of the kernel half (KERNEL_VIRT_BASE)
+#define KERNEL_PDE_START PAGE_DIR_INDEX(KERNEL_VIRT_BASE)
 extern uint32_t paging_read_cr0(void);
 extern void paging_load_cr3(uint32_t page_directory_phys);
 
@@ -105,15 +108,8 @@ static phys_addr_t alloc_page_zeroed(void)
 
 void paging_init(void)
 {
-    phys_addr_t total_memory;
-    uint32_t tables_needed;
-    uint32_t i;
-
-    /* determine how much physical memory to identity-map */
-    total_memory = (phys_addr_t)pmm_total_pages() * PAGE_SIZE;
-
-    /* we need one page table per 4 MiB of address space */
-    tables_needed = (uint32_t)((total_memory + (PAGE_SIZE * PAGE_ENTRIES) - 1) / (PAGE_SIZE * PAGE_ENTRIES));
+    // RAM the direct map covers (the PMM already capped it at PHYS_MAP_SIZE)
+    phys_addr_t total_memory = (phys_addr_t)pmm_total_pages() * PAGE_SIZE;
 
     /* allocate the page directory */
     kernel_directory_phys = alloc_page_zeroed();
@@ -121,30 +117,22 @@ void paging_init(void)
 
     allocated_tables = 0;
 
-    /* allocate page tables and fill them with identity mappings */
-    for (i = 0; i < tables_needed; i++)
+    // every kernel-half PDE gets its page table now. clones copy these
+    // entries, so the tables are shared by every address space and a kernel
+    // mapping made later is seen everywhere. the user half stays empty: there
+    // is no identity map, so a physical address used as a pointer faults.
+    for (uint32_t dir_index = KERNEL_PDE_START; dir_index < PAGE_ENTRIES; dir_index++)
     {
-        phys_addr_t table_phys = alloc_page_zeroed();
-        pte_t *table = (pte_t *)phys_to_virt(table_phys);
-        uint32_t j;
-
-        /* fill 1024 entries: each maps a 4 KiB page */
-        for (j = 0; j < PAGE_ENTRIES; j++)
-        {
-            phys_addr_t phys_addr = ((phys_addr_t)i * PAGE_ENTRIES + j) * PAGE_SIZE;
-
-            /* don't map beyond physical memory */
-            if (phys_addr >= total_memory)
-            {
-                break;
-            }
-
-            table[j] = (pte_t)phys_addr | PTE_KERNEL_RW;
-        }
-
-        /* install the page table in the page directory */
-        kernel_directory[i] = (pte_t)table_phys | PDE_KERNEL_RW;
+        kernel_directory[dir_index] = (pte_t)alloc_page_zeroed() | PDE_KERNEL_RW;
         allocated_tables++;
+    }
+
+    // the direct map: physical address P at virtual P + KERNEL_VIRT_BASE
+    for (phys_addr_t phys = 0; phys < total_memory; phys += PAGE_SIZE)
+    {
+        uintptr_t virt = (uintptr_t)phys_to_virt(phys);
+        pte_t *table = entry_table(kernel_directory[PAGE_DIR_INDEX(virt)]);
+        table[PAGE_TABLE_INDEX(virt)] = (pte_t)phys | PTE_KERNEL_RW;
     }
 
     /* reserve page directory + table memory so the PMM won't reuse it */
@@ -158,12 +146,15 @@ void paging_init(void)
     /* install dedicated page fault handler (replaces generic exception handler) */
     isr_register_handler(14, page_fault_handler);
 
-    /* load CR3 and set CR0.PG paging is now active */
-    paging_flush((uint32_t)kernel_directory_phys);
+    /* paging is already on (the entry stub's boot directory): switch to the
+     * kernel directory; the boot identity map is gone from here on */
+    paging_load_cr3((uint32_t)kernel_directory_phys);
 }
 
 bool paging_map(uintptr_t virt, phys_addr_t phys, uint32_t flags)
 {
+    KASSERT(virt >= KERNEL_VIRT_BASE, "paging_map: not a kernel address");
+
     uint32_t dir_index = PAGE_DIR_INDEX(virt);
     uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
     pte_t *table;
@@ -266,9 +257,6 @@ bool paging_is_enabled(void)
     return (paging_read_cr0() & 0x80000000u) != 0;
 }
 
-// index boundary: entries 0–767 are user space, 768–1023 are kernel.
-#define KERNEL_PDE_START 768
-
 void paging_reserve_tables(uintptr_t start, uintptr_t end)
 {
     KASSERT(!directory_cloned, "paging_reserve_tables after an address space was cloned");
@@ -339,11 +327,13 @@ phys_addr_t paging_clone_directory(void)
     pte_t *new_dir = (pte_t *)page;
     directory_cloned = true;
 
-    // copy all entries from the kernel directory.
-    // kernel page tables are marked supervisor-only (no PDE_USER bit),
-    // so user code cannot access kernel memory even though entries are present.
-    // user-space mappings (with PDE_USER) will be added per-process.
-    for (uint32_t i = 0; i < PAGE_ENTRIES; i++)
+    // the user half starts empty; the kernel half shares the kernel's page
+    // tables (supervisor-only: no PDE_USER, so user code cannot reach them)
+    for (uint32_t i = 0; i < KERNEL_PDE_START; i++)
+    {
+        new_dir[i] = 0;
+    }
+    for (uint32_t i = KERNEL_PDE_START; i < PAGE_ENTRIES; i++)
     {
         new_dir[i] = kernel_directory[i];
     }
@@ -360,26 +350,18 @@ void paging_free_directory(phys_addr_t pd_phys)
 
     pte_t *dir = (pte_t *)phys_to_virt(pd_phys);
 
-    // free process-specific page tables and their user-mapped frames.
-    // only process entries with PDE_USER set  these are either newly
-    // allocated or copied-on-write from kernel tables.
-    for (uint32_t i = 0; i < PAGE_ENTRIES; i++)
+    // free the process's own page tables (the user half) and the user frames
+    // mapped in them. the kernel half is shared and never freed here.
+    for (uint32_t i = 0; i < KERNEL_PDE_START; i++)
     {
         if (!(dir[i] & PDE_PRESENT))
         {
             continue;
         }
 
-        // skip kernel-shared entries (no user bit)
-        if (!(dir[i] & PDE_USER))
-        {
-            continue;
-        }
-
         pte_t *table = entry_table(dir[i]);
 
-        // only free physical frames that have PTE_USER set
-        // kernel identity-mapped entries (copied) don't have PTE_USER.
+        // only user-mapped frames belong to the process
         for (uint32_t j = 0; j < PAGE_ENTRIES; j++)
         {
             if ((table[j] & PTE_PRESENT) && (table[j] & PTE_USER))
@@ -409,9 +391,12 @@ bool paging_map_in(phys_addr_t pd_phys, uintptr_t virt, phys_addr_t phys, uint32
     uint32_t tbl_index = PAGE_TABLE_INDEX(virt);
     pte_t *table;
 
+    // only the user half is per-process; the kernel half's tables are shared
+    KASSERT(virt < KERNEL_VIRT_BASE, "paging_map_in: kernel address");
+
     if (!(dir[dir_index] & PDE_PRESENT))
     {
-        // no page table exists  allocate a fresh one
+        // no page table exists yet: allocate a fresh one for this process
         void *new_table = pmm_alloc_page();
         if (!new_table)
         {
@@ -419,21 +404,6 @@ bool paging_map_in(phys_addr_t pd_phys, uintptr_t virt, phys_addr_t phys, uint32
         }
         memset(new_table, 0, PAGE_SIZE);
         dir[dir_index] = (pte_t)virt_to_phys(new_table) | PDE_KERNEL_RW;
-    }
-    else if ((flags & PTE_USER) && !(dir[dir_index] & PDE_USER))
-    {
-        // PDE exists but is kernel-only (shared from clone).
-        // we need to add a user mapping, so we must copy the page table
-        // to avoid contaminating the shared kernel table.
-        pte_t *old_table = entry_table(dir[dir_index]);
-        void *new_table = pmm_alloc_page();
-        if (!new_table)
-        {
-            return false;
-        }
-        // copy existing kernel entries
-        memcpy(new_table, old_table, PAGE_SIZE);
-        dir[dir_index] = (pte_t)virt_to_phys(new_table) | PDE_USER_RW;
     }
 
     // if mapping a user-accessible page, the PDE must also have the user bit
