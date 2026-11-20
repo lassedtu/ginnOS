@@ -1,6 +1,7 @@
 #include "kernel/sync/wait_queue.h"
 #include "kernel/scheduler/scheduler.h"
 #include "arch/arch.h"
+#include "kernel/assert.h"
 
 /**
  * append a process to the tail of the queue. the list is singly-linked
@@ -30,6 +31,22 @@ void wait_queue_init(wait_queue_t *wq)
     wq->head = NULL;
 }
 
+/**
+ * put the current process to sleep on the queue and run something else.
+ * returns once another context has woken it. caller must hold interrupts
+ * disabled, so a wake cannot land between enqueuing and yielding.
+ */
+static void block_current(wait_queue_t *wq, process_t *proc)
+{
+    proc->state = PROC_STATE_BLOCKED;
+    scheduler_remove(proc);
+    queue_append(wq, proc);
+
+    // the yield runs the next process; when we are later woken and
+    // rescheduled, execution resumes here.
+    scheduler_yield();
+}
+
 void wait_queue_block(wait_queue_t *wq)
 {
     process_t *proc = process_current();
@@ -38,19 +55,28 @@ void wait_queue_block(wait_queue_t *wq)
         return;
     }
 
-    // mask interrupts so a wake from an IRQ handler can't race between us
-    // enqueuing and yielding. the yield runs the next process; when we are
-    // later woken and rescheduled, execution resumes here.
     uint32_t flags = arch_irq_save();
-
-    proc->state = PROC_STATE_BLOCKED;
-    scheduler_remove(proc);
-    queue_append(wq, proc);
-
-    scheduler_yield();
-
-    // woken: we've been popped off the queue and marked ready again.
+    block_current(wq, proc);
     arch_irq_restore(flags);
+}
+
+void wait_queue_block_locked(wait_queue_t *wq, spinlock_t *lock)
+{
+    process_t *proc = process_current();
+
+    KASSERT(!arch_irqs_enabled(), "wait_queue_block_locked: interrupts enabled");
+    KASSERT(lock->locked == 1, "wait_queue_block_locked: lock not held");
+
+    if (!proc)
+    {
+        return;
+    }
+
+    // interrupts stay masked across the release, so the lock only has to
+    // be marked free for whoever runs while this process sleeps.
+    lock->locked = 0;
+    block_current(wq, proc);
+    lock->locked = 1;
 }
 
 void wait_queue_wake_one(wait_queue_t *wq)

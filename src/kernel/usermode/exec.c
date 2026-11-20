@@ -108,15 +108,7 @@ int exec_program(const char *path, const char **argv)
             if (i < FD_STDIO_COUNT)
             {
                 // always inherit stdin/stdout/stderr
-                child->fds[i] = parent->fds[i];
-                if (child->fds[i].type == FD_TYPE_PIPE)
-                {
-                    child->fds[i].pipe.buf->ref_count++;
-                    if (child->fds[i].pipe.dir == PIPE_READ)
-                        child->fds[i].pipe.buf->read_refs++;
-                    else
-                        child->fds[i].pipe.buf->write_refs++;
-                }
+                fd_copy_entry(&child->fds[i], &parent->fds[i]);
             }
             else if (parent->fds[i].type == FD_TYPE_PIPE)
             {

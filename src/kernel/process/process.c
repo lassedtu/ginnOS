@@ -92,41 +92,12 @@ void process_destroy(process_t *proc)
     }
 
     // close all open file descriptors (including pipes and fds 0-2).
-    // note: this may run for a process that isn't the current one (a parent
-    // reaping a zombie child), so we can't use fd_free() here it operates
-    // on process_current(). the pipe close logic is mirrored inline, plus a
-    // wake of the opposite end so no peer blocks forever on a dead process.
+    // this may run for a process that isn't the current one (a parent
+    // reaping a zombie child), so it works on the entries directly rather
+    // than through fd_free(), which operates on process_current().
     for (int i = 0; i < FD_MAX; i++)
     {
-        if (proc->fds[i].type == FD_TYPE_FILE)
-        {
-            vfs_close(&proc->fds[i].file);
-            proc->fds[i].type = FD_TYPE_NONE;
-        }
-        else if (proc->fds[i].type == FD_TYPE_PIPE)
-        {
-            pipe_buf_t *buf = proc->fds[i].pipe.buf;
-            pipe_dir_t dir = proc->fds[i].pipe.dir;
-
-            if (dir == PIPE_READ)
-            {
-                buf->read_refs--;
-                if (buf->read_refs <= 0)
-                    wait_queue_wake_all(&buf->writers);
-            }
-            else
-            {
-                buf->write_refs--;
-                if (buf->write_refs <= 0)
-                    wait_queue_wake_all(&buf->readers);
-            }
-
-            buf->ref_count--;
-            if (buf->ref_count <= 0)
-                pipe_release(buf);
-
-            proc->fds[i].type = FD_TYPE_NONE;
-        }
+        fd_close_entry(&proc->fds[i]);
     }
 
     // free the kernel stack

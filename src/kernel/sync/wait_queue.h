@@ -16,6 +16,8 @@
  * interrupt handler.
  */
 
+#include "kernel/sync/spinlock.h"
+
 // forward declaration: we only store a process pointer here, so including
 // process.h would create a cycle (process.h -> fd_table.h -> wait_queue.h).
 struct process;
@@ -43,6 +45,20 @@ void wait_queue_init(wait_queue_t *wq);
  * @param wq the queue to block on.
  */
 void wait_queue_block(wait_queue_t *wq);
+
+/**
+ * block on this queue while holding a spinlock, releasing the lock for as
+ * long as the process sleeps and holding it again on return.
+ *
+ * this is the check-then-sleep pattern: take the lock, test a condition,
+ * and if it is not met call this. interrupts stay masked from the test
+ * until the process is on the queue, so a wake from another process or an
+ * IRQ handler cannot slip in between and be lost. callers re-test the
+ * condition in a loop after waking.
+ * @param wq the queue to block on.
+ * @param lock a lock taken with spin_lock_irqsave() by the caller.
+ */
+void wait_queue_block_locked(wait_queue_t *wq, spinlock_t *lock);
 
 /**
  * wake the process at the head of the queue, if any.

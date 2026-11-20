@@ -44,40 +44,13 @@ int32_t sys_write(struct registers *regs)
 
     if (entry->type == FD_TYPE_PIPE)
     {
-        pipe_buf_t *pb = entry->pipe.buf;
-
         /* only the write end can write */
         if (entry->pipe.dir != PIPE_WRITE)
             return -3; /* EINVAL */
 
-        /* write every byte, blocking whenever the buffer fills up */
-        uint32_t written = 0;
-        while (written < count)
-        {
-            /* if all read ends are gone, the pipe is broken. report a
-             * short count if we already wrote some, else EPIPE. */
-            if (pb->read_refs <= 0)
-                return written > 0 ? (int32_t)written : -7; /* EPIPE */
-
-            if (pb->count >= PIPE_BUF_SIZE)
-            {
-                /* buffer full: sleep until a reader drains some space.
-                 * wake any reader first so it can make progress. */
-                wait_queue_wake_one(&pb->readers);
-                wait_queue_block(&pb->writers);
-                continue;
-            }
-
-            pb->data[pb->write_pos] = buf[written];
-            pb->write_pos = (pb->write_pos + 1) % PIPE_BUF_SIZE;
-            pb->count++;
-            written++;
-        }
-
-        /* data available: wake a blocked reader */
-        wait_queue_wake_one(&pb->readers);
-
-        return (int32_t)written;
+        /* a short count means every read end closed partway through */
+        uint32_t written = pipe_write(entry->pipe.buf, buf, count);
+        return written > 0 ? (int32_t)written : -7; /* EPIPE */
     }
 
     if (entry->type == FD_TYPE_FILE)
@@ -181,37 +154,12 @@ int32_t sys_read(struct registers *regs)
 
     if (entry->type == FD_TYPE_PIPE)
     {
-        pipe_buf_t *pb = entry->pipe.buf;
-
         /* only the read end can read */
         if (entry->pipe.dir != PIPE_READ)
             return -2; /* EBADF */
 
-        /* block until data is available or all write ends are closed */
-        while (pb->count == 0)
-        {
-            if (pb->write_refs <= 0)
-            {
-                /* all write ends closed + buffer empty = EOF */
-                return 0;
-            }
-            /* sleep until a writer adds data or closes the pipe */
-            wait_queue_block(&pb->readers);
-        }
-
-        /* read as many bytes as available (up to count) */
-        uint32_t to_read = pb->count < count ? pb->count : count;
-        for (uint32_t i = 0; i < to_read; i++)
-        {
-            buf[i] = pb->data[pb->read_pos];
-            pb->read_pos = (pb->read_pos + 1) % PIPE_BUF_SIZE;
-        }
-        pb->count -= to_read;
-
-        /* freed space: wake a writer that may be waiting to continue */
-        wait_queue_wake_one(&pb->writers);
-
-        return (int32_t)to_read;
+        /* blocks until data is available; 0 means EOF */
+        return (int32_t)pipe_read(entry->pipe.buf, buf, count);
     }
 
     return -2; /* EBADF */
@@ -386,18 +334,8 @@ int32_t sys_dup2(struct registers *regs)
         fd_free(new_fd);
     }
 
-    /* copy the fd entry */
-    proc->fds[new_fd] = proc->fds[old_fd];
-
-    /* if it's a pipe, increment the ref counts */
-    if (proc->fds[new_fd].type == FD_TYPE_PIPE)
-    {
-        proc->fds[new_fd].pipe.buf->ref_count++;
-        if (proc->fds[new_fd].pipe.dir == PIPE_READ)
-            proc->fds[new_fd].pipe.buf->read_refs++;
-        else
-            proc->fds[new_fd].pipe.buf->write_refs++;
-    }
+    /* the copy is another reference to the same pipe end or file */
+    fd_copy_entry(&proc->fds[new_fd], &proc->fds[old_fd]);
 
     return new_fd;
 }
@@ -418,11 +356,6 @@ int32_t sys_pipe(struct registers *regs)
     if (!proc)
         return -3; /* EINVAL */
 
-    /* allocate a pipe buffer */
-    pipe_buf_t *buf = pipe_alloc();
-    if (!buf)
-        return -21; /* ENOBUFS */
-
     /* find two free fd slots */
     int read_fd = -1;
     int write_fd = -1;
@@ -439,10 +372,12 @@ int32_t sys_pipe(struct registers *regs)
     }
 
     if (read_fd < 0 || write_fd < 0)
-    {
-        pipe_release(buf);
         return -12; /* EMFILE */
-    }
+
+    /* allocate the pipe with one read end and one write end */
+    pipe_buf_t *buf = pipe_alloc();
+    if (!buf)
+        return -21; /* ENOBUFS */
 
     /* set up read end */
     proc->fds[read_fd].type = FD_TYPE_PIPE;
