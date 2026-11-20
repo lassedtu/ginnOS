@@ -58,6 +58,13 @@ static void irq_handler(struct registers *regs)
         }
     }
 
+    // acknowledge before running the handler: the timer handler may switch
+    // to another process, which then runs until it is switched back. an EOI
+    // sent afterwards would leave this line (and every lower-priority one,
+    // the keyboard included) blocked at the PIC all that time. interrupts
+    // stay masked until iret (interrupt gate), so the handler cannot nest.
+    pic_send_eoi(irq);
+
     if (irq_handlers[irq] != 0)
     {
         irq_handlers[irq](regs);
@@ -71,9 +78,6 @@ static void irq_handler(struct registers *regs)
             printf("Unhandled IRQ %d\r\n", irq);
         }
     }
-
-    // acknowledge the interrupt to the PIC
-    pic_send_eoi(irq);
 }
 
 void irq_initialize(void)
