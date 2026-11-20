@@ -41,6 +41,14 @@ static void idle_entry(void)
     {
         arch_enable_interrupts();
         arch_halt();
+
+        // an interrupt handler (the keyboard, say) may have woken a process:
+        // run it now instead of idling until the next timer tick. reading
+        // queue_head unmasked is only a hint; schedule() re-checks it masked.
+        if (queue_head)
+        {
+            scheduler_yield();
+        }
     }
 }
 
