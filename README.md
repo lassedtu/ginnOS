@@ -42,8 +42,10 @@ today.
   `kmalloc`/`kfree`/`krealloc` (in-place when possible)/`kcalloc`, allocation
   statistics, and an optional `HEAP_DEBUG` mode (redzone canaries, freed-memory
   poisoning)
-- Virtual memory: paging with per-process page directories, a page-fault
-  handler, and a map/unmap/translate API
+- Virtual memory: a higher-half kernel at `0xC0000000` with a direct map of
+  RAM, kernel page tables shared by every process, a separate user half per
+  process, `ioremap` for device memory, a page-fault handler, and a
+  map/unmap/translate API
 - 8 KiB kernel stacks with an unmapped guard page below each; a double-fault
   task gate (its own TSS and stack) reports an overflow as a "kernel stack
   overflow" panic with a backtrace instead of a silent triple-fault reset
