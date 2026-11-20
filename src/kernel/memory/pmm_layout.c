@@ -3,15 +3,15 @@
 #include "kernel_layout.h"
 #include "kernel/panic.h"
 
-static uint32_t bitmap_start;
-static uint32_t bitmap_end;
-static uint32_t bitmap_bytes;
+static phys_addr_t bitmap_start;
+static phys_addr_t bitmap_end;
+static size_t bitmap_bytes;
 static uint32_t total_pages;
 
 /**
  * round an address up to the next page boundary.
  */
-static uint32_t page_align_up(uint32_t addr)
+static uintptr_t page_align_up(uintptr_t addr)
 {
     return PAGE_ALIGN_UP(addr);
 }
@@ -68,17 +68,17 @@ void pmm_layout_init(boot_info_t *boot)
     bitmap_end = bitmap_start + bitmap_bytes;
 }
 
-uint32_t pmm_bitmap_start(void)
+phys_addr_t pmm_bitmap_start(void)
 {
     return bitmap_start;
 }
 
-uint32_t pmm_bitmap_end(void)
+phys_addr_t pmm_bitmap_end(void)
 {
     return bitmap_end;
 }
 
-uint32_t pmm_bitmap_size(void)
+size_t pmm_bitmap_size(void)
 {
     return bitmap_bytes;
 }

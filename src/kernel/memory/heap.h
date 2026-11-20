@@ -47,7 +47,7 @@
  */
 typedef struct heap_block
 {
-    uint32_t size;            // size of the data area in bytes (excludes header)
+    size_t size;              // size of the data area in bytes (excludes header)
     bool free;                // true if this block is available for allocation
     struct heap_block *next;  // next block in the linked list (NULL if last)
 } heap_block_t;
@@ -59,8 +59,8 @@ typedef struct
 {
     uint32_t total_allocs;   // total number of kmalloc/kcalloc/krealloc calls that succeeded
     uint32_t total_frees;    // total number of kfree calls (excluding NULL)
-    uint32_t current_usage;  // bytes currently allocated (data only, excludes headers)
-    uint32_t peak_usage;     // highest current_usage value ever reached
+    size_t current_usage;    // bytes currently allocated (data only, excludes headers)
+    size_t peak_usage;       // highest current_usage value ever reached
 } heap_stats_t;
 
 /**
@@ -76,7 +76,7 @@ void heap_init(void);
  * @param size number of bytes to allocate.
  * @return pointer to the allocated memory, or NULL on failure.
  */
-void *kmalloc(uint32_t size);
+void *kmalloc(size_t size);
 
 /**
  * allocate zeroed memory for an array.
@@ -84,7 +84,7 @@ void *kmalloc(uint32_t size);
  * @param size size of each element in bytes.
  * @return pointer to zeroed memory, or NULL on failure.
  */
-void *kcalloc(uint32_t count, uint32_t size);
+void *kcalloc(size_t count, size_t size);
 
 /**
  * resize a previously allocated block.
@@ -94,7 +94,7 @@ void *kcalloc(uint32_t count, uint32_t size);
  * @param new_size new size in bytes. if 0, equivalent to kfree(ptr).
  * @return pointer to the resized memory, or NULL on failure (original unchanged).
  */
-void *krealloc(void *ptr, uint32_t new_size);
+void *krealloc(void *ptr, size_t new_size);
 
 /**
  * free a previously allocated block.
@@ -106,7 +106,7 @@ void kfree(void *ptr);
 /**
  * return the total heap size in bytes, summed over all segments.
  */
-uint32_t heap_total_size(void);
+size_t heap_total_size(void);
 
 /**
  * return the number of physical segments the heap currently spans.
@@ -116,7 +116,7 @@ uint32_t heap_segment_count(void);
 /**
  * return the number of free bytes available in the heap.
  */
-uint32_t heap_free_size(void);
+size_t heap_free_size(void);
 
 /**
  * return the total number of blocks (free + used) in the heap.

@@ -56,9 +56,9 @@
  * @param len number of bytes the kernel will access starting at ptr.
  * @return true if the entire range [ptr, ptr+len) is in user space.
  */
-static inline bool is_user_ptr(const void *ptr, uint32_t len)
+static inline bool is_user_ptr(const void *ptr, size_t len)
 {
-    uint32_t addr = (uint32_t)ptr;
+    uintptr_t addr = (uintptr_t)ptr;
 
     /* null check */
     if (addr == 0)

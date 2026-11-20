@@ -3,6 +3,7 @@
 #include "common/stdint.h"
 #include "common/boot/boot_info.h"
 #include "kernel/memory/page.h"
+#include "kernel/memory/phys.h"
 
 /**
  * initialize PMM layout by computing bitmap placement from the E820 map.
@@ -15,19 +16,19 @@ void pmm_layout_init(boot_info_t *boot);
  * return the start address of the PMM bitmap (page-aligned, after kernel_end).
  * only valid after pmm_layout_init() has been called.
  */
-uint32_t pmm_bitmap_start(void);
+phys_addr_t pmm_bitmap_start(void);
 
 /**
  * return the end address of the PMM bitmap (exclusive).
  * only valid after pmm_layout_init() has been called.
  */
-uint32_t pmm_bitmap_end(void);
+phys_addr_t pmm_bitmap_end(void);
 
 /**
  * return the size of the PMM bitmap in bytes.
  * only valid after pmm_layout_init() has been called.
  */
-uint32_t pmm_bitmap_size(void);
+size_t pmm_bitmap_size(void);
 
 /**
  * return the total number of page frames the bitmap can track.

@@ -29,18 +29,18 @@ void kstack_init(void);
  * @return the lowest address of the stack (it grows down from
  *         base + KERNEL_STACK_SIZE), or 0 if no slot or memory is free.
  */
-uint32_t kstack_alloc(void);
+uintptr_t kstack_alloc(void);
 
 /**
  * unmap a kernel stack and return its frames and slot. never free the stack
  * the CPU is currently running on.
  * @param base the value kstack_alloc() returned.
  */
-void kstack_free(uint32_t base);
+void kstack_free(uintptr_t base);
 
 /**
  * check whether an address falls in the guard page of any stack slot.
  * @param addr the address to check (e.g. a page fault's CR2).
  * @return true if addr is inside a guard page.
  */
-bool kstack_is_guard(uint32_t addr);
+bool kstack_is_guard(uintptr_t addr);

@@ -53,7 +53,7 @@ void pmm_init(boot_info_t *boot)
 {
     uint32_t i;
 
-    bitmap = (uint8_t *)pmm_bitmap_start();
+    bitmap = (uint8_t *)phys_to_virt(pmm_bitmap_start());
     total_pages = pmm_total_pages();
     free_pages = 0;
     search_start = 0;
@@ -136,7 +136,7 @@ void *pmm_alloc_page(void)
             bitmap_clear(index);
             free_pages--;
             search_start = (index + 1) % total_pages;
-            page = (void *)(index * PAGE_SIZE);
+            page = phys_to_virt((phys_addr_t)index * PAGE_SIZE);
             break;
         }
     }
@@ -182,7 +182,7 @@ void *pmm_alloc_contiguous(uint32_t count)
                 bitmap_clear(page);
             }
             free_pages -= count;
-            run = (void *)(run_start * PAGE_SIZE);
+            run = phys_to_virt((phys_addr_t)run_start * PAGE_SIZE);
             break;
         }
     }
@@ -193,14 +193,14 @@ void *pmm_alloc_contiguous(uint32_t count)
 
 void pmm_free_page(void *address)
 {
-    uint32_t addr = (uint32_t)address;
+    phys_addr_t addr = virt_to_phys(address);
 
     if (addr % PAGE_SIZE != 0)
     {
         kernel_panic("pmm_free_page: address not page-aligned");
     }
 
-    uint32_t index = addr / PAGE_SIZE;
+    uint32_t index = (uint32_t)(addr / PAGE_SIZE);
 
     if (index >= total_pages)
     {
@@ -230,15 +230,15 @@ uint32_t pmm_total_count(void)
     return total_pages;
 }
 
-bool pmm_owns(uint32_t phys)
+bool pmm_owns(phys_addr_t phys)
 {
     return (phys / PAGE_SIZE) < total_pages;
 }
 
-void pmm_mark_region_used(uint32_t start, uint32_t end)
+void pmm_mark_region_used(phys_addr_t start, phys_addr_t end)
 {
-    uint32_t page_start = start / PAGE_SIZE;
-    uint32_t page_end = end / PAGE_SIZE;
+    uint32_t page_start = (uint32_t)(start / PAGE_SIZE);
+    uint32_t page_end = (uint32_t)(end / PAGE_SIZE);
     uint32_t flags = spin_lock_irqsave(&pmm_lock);
 
     for (uint32_t page = page_start; page < page_end && page < total_pages; page++)

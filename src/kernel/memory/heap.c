@@ -18,8 +18,8 @@ static heap_block_t *heap_head;
  */
 typedef struct
 {
-    uint32_t start; // first byte of the segment
-    uint32_t end;   // first byte past the segment
+    uintptr_t start; // first byte of the segment
+    uintptr_t end;   // first byte past the segment
 } heap_segment_t;
 
 static heap_segment_t segments[HEAP_MAX_SEGMENTS];
@@ -37,17 +37,17 @@ static spinlock_t heap_lock;
 /**
  * align a value up to the nearest 4-byte boundary.
  */
-static uint32_t align4(uint32_t value)
+static size_t align4(size_t value)
 {
-    return (value + 3) & ~(uint32_t)3;
+    return (value + 3) & ~(size_t)3;
 }
 
 /**
  * first byte past a block's data area.
  */
-static uint32_t block_end(const heap_block_t *block)
+static uintptr_t block_end(const heap_block_t *block)
 {
-    return (uint32_t)block + sizeof(heap_block_t) + block->size;
+    return (uintptr_t)block + sizeof(heap_block_t) + block->size;
 }
 
 /**
@@ -57,13 +57,13 @@ static uint32_t block_end(const heap_block_t *block)
  */
 static bool blocks_adjacent(const heap_block_t *block, const heap_block_t *next)
 {
-    return next && block_end(block) == (uint32_t)next;
+    return next && block_end(block) == (uintptr_t)next;
 }
 
 /**
  * true if the address lies inside any heap segment.
  */
-static bool heap_contains(uint32_t addr)
+static bool heap_contains(uintptr_t addr)
 {
     for (uint32_t i = 0; i < segment_count; i++)
     {
@@ -80,7 +80,7 @@ static bool heap_contains(uint32_t addr)
  * @param block the block to split.
  * @param size the required data size (already aligned).
  */
-static void heap_split(heap_block_t *block, uint32_t size)
+static void heap_split(heap_block_t *block, size_t size)
 {
     if (block->size >= size + sizeof(heap_block_t) + HEAP_MIN_BLOCK_DATA)
     {
@@ -115,7 +115,7 @@ static void heap_coalesce(heap_block_t *block)
  * @param block the allocated block (header).
  * @param user_size the size the caller requested (before redzone padding).
  */
-static void heap_write_canaries(heap_block_t *block, uint32_t user_size)
+static void heap_write_canaries(heap_block_t *block, size_t user_size)
 {
     uint8_t *data = (uint8_t *)block + sizeof(heap_block_t);
     // front canary
@@ -130,7 +130,7 @@ static void heap_write_canaries(heap_block_t *block, uint32_t user_size)
  * @param block the allocated block (header).
  * @param user_size the size the caller requested.
  */
-static void heap_check_canaries(heap_block_t *block, uint32_t user_size)
+static void heap_check_canaries(heap_block_t *block, size_t user_size)
 {
     uint8_t *data = (uint8_t *)block + sizeof(heap_block_t);
     if (*(uint32_t *)data != HEAP_CANARY)
@@ -148,11 +148,11 @@ static void heap_check_canaries(heap_block_t *block, uint32_t user_size)
  * @param ptr start of the data area.
  * @param size size of the data area in bytes.
  */
-static void heap_poison(void *ptr, uint32_t size)
+static void heap_poison(void *ptr, size_t size)
 {
     uint32_t *p = (uint32_t *)ptr;
-    uint32_t words = size / sizeof(uint32_t);
-    for (uint32_t i = 0; i < words; i++)
+    size_t words = size / sizeof(uint32_t);
+    for (size_t i = 0; i < words; i++)
     {
         p[i] = HEAP_POISON;
     }
@@ -162,8 +162,8 @@ static void heap_poison(void *ptr, uint32_t size)
 void heap_init(void)
 {
     // place the heap right after the PMM bitmap (page-aligned)
-    uint32_t heap_start = PAGE_ALIGN_UP(pmm_bitmap_end());
-    uint32_t heap_end = heap_start + (HEAP_INITIAL_PAGES * PAGE_SIZE);
+    uintptr_t heap_start = PAGE_ALIGN_UP(pmm_bitmap_end());
+    uintptr_t heap_end = heap_start + (HEAP_INITIAL_PAGES * PAGE_SIZE);
 
     memory_reserve_heap(heap_start, heap_end);
     pmm_mark_region_used(heap_start, heap_end);
@@ -198,7 +198,7 @@ void heap_init(void)
 static bool heap_grow_in_place(uint32_t pages)
 {
     heap_segment_t *newest = &segments[segment_count - 1];
-    return pmm_claim_pages(newest->end / PAGE_SIZE, pages);
+    return pmm_claim_pages((uint32_t)(newest->end / PAGE_SIZE), pages);
 }
 
 /**
@@ -210,15 +210,15 @@ static bool heap_grow_in_place(uint32_t pages)
  * @param needed minimum number of bytes needed (used to determine page count).
  * @return true if expansion succeeded, false otherwise.
  */
-static bool heap_expand(uint32_t needed)
+static bool heap_expand(size_t needed)
 {
-    uint32_t bytes_needed = needed + sizeof(heap_block_t);
-    uint32_t pages_needed = PAGE_COUNT(bytes_needed);
+    size_t bytes_needed = needed + sizeof(heap_block_t);
+    uint32_t pages_needed = (uint32_t)PAGE_COUNT(bytes_needed);
     if (pages_needed < HEAP_EXPAND_PAGES)
     {
         pages_needed = HEAP_EXPAND_PAGES;
     }
-    uint32_t bytes = pages_needed * PAGE_SIZE;
+    size_t bytes = (size_t)pages_needed * PAGE_SIZE;
 
     // the list tail is the last block of the newest segment.
     heap_block_t *last = heap_head;
@@ -259,8 +259,8 @@ static bool heap_expand(uint32_t needed)
         return false;
     }
 
-    segments[segment_count].start = (uint32_t)run;
-    segments[segment_count].end = (uint32_t)run + bytes;
+    segments[segment_count].start = (uintptr_t)run;
+    segments[segment_count].end = (uintptr_t)run + bytes;
     segment_count++;
 
     // a new segment is not adjacent to the old tail, so it always gets its
@@ -276,7 +276,7 @@ static bool heap_expand(uint32_t needed)
 /**
  * update statistics after a successful allocation.
  */
-static void stats_alloc(uint32_t size)
+static void stats_alloc(size_t size)
 {
     stats.total_allocs++;
     stats.current_usage += size;
@@ -289,7 +289,7 @@ static void stats_alloc(uint32_t size)
 /**
  * update statistics after a free.
  */
-static void stats_free(uint32_t size)
+static void stats_free(size_t size)
 {
     stats.total_frees++;
     stats.current_usage -= size;
@@ -298,7 +298,7 @@ static void stats_free(uint32_t size)
 /**
  * kmalloc with heap_lock already held.
  */
-static void *alloc_locked(uint32_t size)
+static void *alloc_locked(size_t size)
 {
     heap_block_t *current;
 
@@ -307,7 +307,7 @@ static void *alloc_locked(uint32_t size)
         return NULL;
     }
 
-    uint32_t alloc_size = align4(size);
+    size_t alloc_size = align4(size);
 
 #ifdef HEAP_DEBUG
     // add space for front and back redzones
@@ -360,10 +360,10 @@ static void *alloc_locked(uint32_t size)
     return NULL;
 }
 
-void *kcalloc(uint32_t count, uint32_t size)
+void *kcalloc(size_t count, size_t size)
 {
     // overflow check
-    uint32_t total = count * size;
+    size_t total = count * size;
     if (count != 0 && total / count != size)
     {
         return NULL;
@@ -383,7 +383,7 @@ static void free_locked(void *ptr);
 /**
  * krealloc with heap_lock already held.
  */
-static void *realloc_locked(void *ptr, uint32_t new_size)
+static void *realloc_locked(void *ptr, size_t new_size)
 {
     if (!ptr)
     {
@@ -396,7 +396,7 @@ static void *realloc_locked(void *ptr, uint32_t new_size)
         return NULL;
     }
 
-    uint32_t alloc_size = align4(new_size);
+    size_t alloc_size = align4(new_size);
 
 #ifdef HEAP_DEBUG
     alloc_size = align4(new_size + 2 * HEAP_REDZONE_SIZE);
@@ -410,7 +410,7 @@ static void *realloc_locked(void *ptr, uint32_t new_size)
     if (block->size >= alloc_size)
     {
         // try to split off excess
-        uint32_t old_size = block->size;
+        size_t old_size = block->size;
         heap_split(block, alloc_size);
         if (block->size != old_size)
         {
@@ -429,10 +429,10 @@ static void *realloc_locked(void *ptr, uint32_t new_size)
     // directly after this one in memory, not in another segment)
     if (block->next && block->next->free && blocks_adjacent(block, block->next))
     {
-        uint32_t combined = block->size + sizeof(heap_block_t) + block->next->size;
+        size_t combined = block->size + sizeof(heap_block_t) + block->next->size;
         if (combined >= alloc_size)
         {
-            uint32_t old_size = block->size;
+            size_t old_size = block->size;
             block->size = combined;
             block->next = block->next->next;
             heap_split(block, alloc_size);
@@ -458,7 +458,7 @@ static void *realloc_locked(void *ptr, uint32_t new_size)
     }
 
     // copy the old data (minimum of old and new sizes)
-    uint32_t copy_size = block->size;
+    size_t copy_size = block->size;
 #ifdef HEAP_DEBUG
     copy_size -= 2 * HEAP_REDZONE_SIZE;
 #endif
@@ -485,7 +485,7 @@ static void free_locked(void *ptr)
     }
 
     // sanity check: pointer must be inside one of the heap's segments
-    if (!heap_contains((uint32_t)ptr))
+    if (!heap_contains((uintptr_t)ptr))
     {
         kernel_panic("kfree: pointer outside heap region");
     }
@@ -505,7 +505,7 @@ static void free_locked(void *ptr)
 
 #ifdef HEAP_DEBUG
     // check canaries before freeing
-    uint32_t user_size = block->size - 2 * HEAP_REDZONE_SIZE;
+    size_t user_size = block->size - 2 * HEAP_REDZONE_SIZE;
     heap_check_canaries(block, user_size);
 
     // poison the data area
@@ -532,7 +532,7 @@ static void free_locked(void *ptr)
     }
 }
 
-void *kmalloc(uint32_t size)
+void *kmalloc(size_t size)
 {
     uint32_t flags = spin_lock_irqsave(&heap_lock);
     void *ptr = alloc_locked(size);
@@ -540,7 +540,7 @@ void *kmalloc(uint32_t size)
     return ptr;
 }
 
-void *krealloc(void *ptr, uint32_t new_size)
+void *krealloc(void *ptr, size_t new_size)
 {
     uint32_t flags = spin_lock_irqsave(&heap_lock);
     void *new_ptr = realloc_locked(ptr, new_size);
@@ -555,9 +555,9 @@ void kfree(void *ptr)
     spin_unlock_irqrestore(&heap_lock, flags);
 }
 
-uint32_t heap_total_size(void)
+size_t heap_total_size(void)
 {
-    uint32_t total = 0;
+    size_t total = 0;
 
     uint32_t flags = spin_lock_irqsave(&heap_lock);
     for (uint32_t i = 0; i < segment_count; i++)
@@ -574,9 +574,9 @@ uint32_t heap_segment_count(void)
     return segment_count;
 }
 
-uint32_t heap_free_size(void)
+size_t heap_free_size(void)
 {
-    uint32_t free_bytes = 0;
+    size_t free_bytes = 0;
 
     uint32_t flags = spin_lock_irqsave(&heap_lock);
     for (heap_block_t *current = heap_head; current; current = current->next)
@@ -624,7 +624,7 @@ static bool check_locked(void)
     // blocks must tile it exactly, back to back.
     for (uint32_t s = 0; s < segment_count; s++)
     {
-        if (!block || (uint32_t)block != segments[s].start)
+        if (!block || (uintptr_t)block != segments[s].start)
         {
             return false;
         }

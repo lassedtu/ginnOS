@@ -1,6 +1,7 @@
 #include "kstack.h"
 
 #include "memory_layout.h"
+#include "phys.h"
 #include "pmm.h"
 #include "arch/arch.h"
 #include "common/memory.h"
@@ -24,7 +25,7 @@ static spinlock_t slot_lock;
 /**
  * lowest stack address (just above the guard page) of a slot.
  */
-static uint32_t slot_base(uint32_t slot)
+static uintptr_t slot_base(uint32_t slot)
 {
     return KSTACK_REGION_BASE + slot * KSTACK_SLOT_SIZE + KSTACK_GUARD_SIZE;
 }
@@ -32,18 +33,18 @@ static uint32_t slot_base(uint32_t slot)
 /**
  * unmap the first `pages` pages of a stack and free their frames.
  */
-static void unmap_pages(uint32_t base, uint32_t pages)
+static void unmap_pages(uintptr_t base, uint32_t pages)
 {
     addr_space_t kernel_as = arch_kernel_address_space();
 
     for (uint32_t i = 0; i < pages; i++)
     {
-        uint32_t virt = base + i * PAGE_SIZE;
-        uint32_t phys = arch_translate_in(kernel_as, virt);
+        uintptr_t virt = base + i * PAGE_SIZE;
+        phys_addr_t phys = arch_translate_in(kernel_as, virt);
         arch_unmap_kernel_page(virt);
         if (phys)
         {
-            pmm_free_page((void *)phys);
+            pmm_free_page(phys_to_virt(phys));
         }
     }
 }
@@ -69,7 +70,7 @@ void kstack_init(void)
     arch_reserve_kernel_range(KSTACK_REGION_BASE, KSTACK_REGION_END);
 }
 
-uint32_t kstack_alloc(void)
+uintptr_t kstack_alloc(void)
 {
     uint32_t slot = KSTACK_SLOTS;
 
@@ -91,7 +92,7 @@ uint32_t kstack_alloc(void)
     }
 
     // the slot is ours: map its stack pages (the guard page stays unmapped)
-    uint32_t base = slot_base(slot);
+    uintptr_t base = slot_base(slot);
     for (uint32_t i = 0; i < KSTACK_PAGES; i++)
     {
         void *frame = pmm_alloc_page();
@@ -101,16 +102,16 @@ uint32_t kstack_alloc(void)
             release_slot(slot);
             return 0;
         }
-        arch_map_kernel_page(base + i * PAGE_SIZE, (uint32_t)frame);
+        arch_map_kernel_page(base + i * PAGE_SIZE, virt_to_phys(frame));
     }
 
     memset((void *)base, 0, KERNEL_STACK_SIZE);
     return base;
 }
 
-void kstack_free(uint32_t base)
+void kstack_free(uintptr_t base)
 {
-    uint32_t slot = (base - KSTACK_REGION_BASE) / KSTACK_SLOT_SIZE;
+    uint32_t slot = (uint32_t)((base - KSTACK_REGION_BASE) / KSTACK_SLOT_SIZE);
     if (base < KSTACK_REGION_BASE || slot >= KSTACK_SLOTS || base != slot_base(slot))
     {
         return;
@@ -120,7 +121,7 @@ void kstack_free(uint32_t base)
     release_slot(slot);
 }
 
-bool kstack_is_guard(uint32_t addr)
+bool kstack_is_guard(uintptr_t addr)
 {
     if (addr < KSTACK_REGION_BASE || addr >= KSTACK_REGION_END)
     {

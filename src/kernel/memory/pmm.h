@@ -10,6 +10,7 @@
 
 #include "common/stdint.h"
 #include "common/boot/boot_info.h"
+#include "kernel/memory/phys.h"
 
 /**
  * initialize the physical memory manager.
@@ -60,7 +61,7 @@ uint32_t pmm_total_count(void);
  * @param phys the physical address to test.
  * @return true if the address is a PMM-managed frame, false otherwise.
  */
-bool pmm_owns(uint32_t phys);
+bool pmm_owns(phys_addr_t phys);
 
 /**
  * mark all page frames within a physical address range as used.
@@ -68,7 +69,7 @@ bool pmm_owns(uint32_t phys);
  * @param start first byte of the region (inclusive, page-aligned).
  * @param end first byte past the region (exclusive, page-aligned).
  */
-void pmm_mark_region_used(uint32_t start, uint32_t end);
+void pmm_mark_region_used(phys_addr_t start, phys_addr_t end);
 
 /**
  * check whether a specific page frame is free. the answer can be stale as
