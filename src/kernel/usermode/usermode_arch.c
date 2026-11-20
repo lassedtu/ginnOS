@@ -9,19 +9,15 @@
 #include "common/memory.h"
 #include "common/string.h"
 
-// size of the user stack in bytes (4 pages = 16 KiB).
-#define USER_STACK_SIZE (4 * PAGE_SIZE)
-
 // maximum number of command-line arguments passed to a user program.
 #define ARGV_MAX 64
 
 void jump_to_usermode(uintptr_t entry, addr_space_t as, const char **argv)
 {
-    // allocate physical pages for the user stack and map them at a fixed
-    // virtual address range just below the program load address.
-    // stack region: USER_STACK_BASE - USER_LOAD_ADDR (16 KiB, 4 pages)
+    // allocate physical pages for the user stack and map them just below
+    // USER_STACK_TOP (memory_layout.h); the page above stays an unmapped guard
     uint32_t stack_pages = USER_STACK_SIZE / PAGE_SIZE;
-    uintptr_t stack_virt_base = USER_LOAD_ADDR - USER_STACK_SIZE;
+    uintptr_t stack_virt_base = USER_STACK_BASE;
 
     for (uint32_t p = 0; p < stack_pages; p++)
     {
@@ -35,7 +31,7 @@ void jump_to_usermode(uintptr_t entry, addr_space_t as, const char **argv)
     }
 
     // user stack grows downward. start at the top of the stack region
-    uintptr_t stack_top = stack_virt_base + USER_STACK_SIZE; // 0x800000
+    uintptr_t stack_top = USER_STACK_TOP;
     uintptr_t sp = stack_top;
 
     // count arguments

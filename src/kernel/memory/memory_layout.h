@@ -5,20 +5,23 @@
 /**
  * ginnOS virtual memory layout constants.
  *
- * current identity-mapped layout (no higher-half kernel yet):
- *   0x00000000 - 0x003FFFFF : kernel, bootloader, hardware (4 MiB)
- *   0x00400000 - 0x007FFFFF : reserved / unmapped
- *   0x007FC000 - 0x007FFFFF : user stack (16 KiB, 4 pages)
- *   0x00800000 - ~          : user program text/data/bss
- *   ~          - ~          : user heap (grows up via sbrk)
- *   0xC0000000 - 0xFFFFFFFF : kernel page table entries (no user access)
+ * every address space (i686, 4 GiB):
+ *   0x00000000 - 0x00000FFF : null guard (never mapped)
+ *   0x00400000 - ...        : user program text/data/bss (linker/user.ld)
+ *   ...        - ...        : user heap (grows up via sbrk from the ELF end)
+ *   0x40000000 - 0xAFFFFFFF : user mmap region
+ *   0xBFFFB000 - 0xBFFFEFFF : user stack (16 KiB, grows down)
+ *   0xBFFFF000 - 0xBFFFFFFF : user stack guard (never mapped)
+ *   0xC0000000 - 0xDFFFFFFF : kernel: direct map of RAM (phys_to_virt)
+ *   0xE0000000 - ...        : kernel stacks (kstack.h)
+ *   0xF0000000 - 0xF3FFFFFF : kernel MMIO window (ioremap)
  *
- * user space is defined as addresses that user programs can legitimately
- * access. kernel space is everything else.
+ * the user half (below 0xC0000000) is per process; the kernel half is shared
+ * by every address space and supervisor-only.
  */
 
-/* lowest address a user pointer can validly reference (bottom of user stack) */
-#define USER_SPACE_START 0x00400000u
+/* lowest address a user pointer can validly reference (above the null guard) */
+#define USER_SPACE_START 0x00001000u
 
 /* one past the highest user-accessible address */
 #define USER_SPACE_END   0xC0000000u
@@ -27,13 +30,16 @@
 #define KERNEL_PHYS_BASE 0x00010000u
 
 /* user program load address (matches linker/user.ld) */
-#define USER_LOAD_ADDR   0x00800000u
+#define USER_LOAD_ADDR   0x00400000u
 
-/* user stack base (just below program load) */
-#define USER_STACK_BASE  0x007FC000u
+/* top of the user stack (exclusive); the page above it is an unmapped guard */
+#define USER_STACK_TOP   0xBFFFF000u
 
-/* user stack top */
-#define USER_STACK_TOP   0x00800000u
+/* size of the user stack, mapped eagerly below USER_STACK_TOP */
+#define USER_STACK_SIZE  0x00004000u
+
+/* lowest address of the user stack */
+#define USER_STACK_BASE  (USER_STACK_TOP - USER_STACK_SIZE)
 
 /* the kernel half: every address from here up is kernel-only and shared by
  * all address spaces. RAM is direct-mapped at its start (phys_to_virt). */
@@ -57,7 +63,7 @@
  * bumping upward per mapping. sits below kernel space (0xC0000000) and clear of
  * the program, heap, and stack. no unmap/reuse yet, just a bump cursor per
  * process. this is also where a device mapping (e.g. mmap of /dev/fb0) lands. */
-#define USER_MMAP_BASE 0x50000000u
+#define USER_MMAP_BASE 0x40000000u
 #define USER_MMAP_END  0xB0000000u
 
 /**
