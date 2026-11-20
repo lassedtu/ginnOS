@@ -1,4 +1,5 @@
 #include "process.h"
+#include "kernel/memory/kstack.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/memory_layout.h"
 #include "arch/arch.h"
@@ -78,23 +79,22 @@ process_t *process_create(void)
     proc->exit_code = 0;
     proc->wait_for_pid = PID_NONE;
 
-    // allocate a kernel stack page
-    void *stack_page = pmm_alloc_page();
-    if (!stack_page)
+    // allocate a guarded kernel stack (zeroed)
+    uint32_t stack = kstack_alloc();
+    if (!stack)
     {
         release_slot(proc);
         return NULL;
     }
-    memset(stack_page, 0, KERNEL_STACK_SIZE);
-    proc->kernel_stack = (uint32_t)stack_page;
+    proc->kernel_stack = stack;
     // ESP starts at the top of the stack (grows downward)
-    proc->kernel_esp = (uint32_t)stack_page + KERNEL_STACK_SIZE;
+    proc->kernel_esp = stack + KERNEL_STACK_SIZE;
 
     // allocate a per-process address space (shares kernel mappings)
     uint32_t pd = arch_create_address_space();
     if (pd == ADDR_SPACE_NONE)
     {
-        pmm_free_page(stack_page);
+        kstack_free(stack);
         release_slot(proc);
         return NULL;
     }
@@ -141,7 +141,7 @@ void process_destroy(process_t *proc)
     // free the kernel stack
     if (proc->kernel_stack)
     {
-        pmm_free_page((void *)proc->kernel_stack);
+        kstack_free(proc->kernel_stack);
         proc->kernel_stack = 0;
     }
 

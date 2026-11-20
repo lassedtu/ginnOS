@@ -8,6 +8,9 @@
 #include "kernel/memory/pmm_layout.h"
 #include "kernel/memory/region.h"
 #include "kernel/panic.h"
+#include "kernel/memory/kstack.h"
+#include "kernel/assert.h"
+#include "arch/x86/cpu/gdt.h"
 
 extern void paging_flush(uint32_t page_directory_phys);
 extern void paging_invalidate(uint32_t virtual_address);
@@ -50,6 +53,14 @@ static void page_fault_handler(struct registers *regs)
     }
 
     exception_dump_regs(regs);
+
+    // a supervisor access into a kernel stack's guard page means the stack
+    // overflowed (pushes that hit it become double faults instead)
+    if (!(err & PF_USER) && kstack_is_guard(faulting_address))
+    {
+        exception_panic("kernel stack overflow", regs);
+    }
+
     exception_panic("page fault", regs);
 }
 
@@ -67,6 +78,12 @@ static uint32_t kernel_directory_phys;
  * number of page tables allocated.
  */
 static uint32_t allocated_tables;
+
+/**
+ * set by the first paging_clone_directory(); from then on a new kernel page
+ * table would not be seen by existing address spaces.
+ */
+static bool directory_cloned;
 
 /**
  * allocate a page-aligned, zeroed 4 KiB page from the PMM.
@@ -134,6 +151,9 @@ void paging_init(void)
     region_reserve(kernel_directory_phys,
                    kernel_directory_phys + PAGE_SIZE,
                    "page_directory");
+
+    /* the double-fault task switches CR3 to the kernel directory */
+    tss_set_double_fault_cr3(kernel_directory_phys);
 
     /* install dedicated page fault handler (replaces generic exception handler) */
     isr_register_handler(14, page_fault_handler);
@@ -249,6 +269,26 @@ bool paging_is_enabled(void)
 // index boundary: entries 0–767 are user space, 768–1023 are kernel.
 #define KERNEL_PDE_START 768
 
+void paging_reserve_tables(uint32_t start, uint32_t end)
+{
+    KASSERT(!directory_cloned, "paging_reserve_tables after an address space was cloned");
+
+    for (uint32_t dir_index = PAGE_DIR_INDEX(start); dir_index <= PAGE_DIR_INDEX(end - 1);
+         dir_index++)
+    {
+        if (!(kernel_directory[dir_index] & PDE_PRESENT))
+        {
+            kernel_directory[dir_index] = alloc_page_zeroed() | PDE_KERNEL_RW;
+            allocated_tables++;
+        }
+    }
+}
+
+uint32_t paging_fault_address(void)
+{
+    return paging_read_cr2();
+}
+
 uint32_t paging_clone_directory(void)
 {
     void *page = pmm_alloc_page();
@@ -258,6 +298,7 @@ uint32_t paging_clone_directory(void)
     }
 
     uint32_t *new_dir = (uint32_t *)page;
+    directory_cloned = true;
 
     // copy all entries from the kernel directory.
     // kernel page tables are marked supervisor-only (no PDE_USER bit),

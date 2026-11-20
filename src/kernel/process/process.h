@@ -10,7 +10,7 @@
 #define PID_NONE 0
 
 // size of per-process kernel stack (4 KiB).
-#define KERNEL_STACK_SIZE 4096
+#define KERNEL_STACK_SIZE 8192
 
 /**
  * process states.
@@ -38,7 +38,7 @@ typedef struct process
     uint32_t brk;           // program break (for sbrk)
     uint32_t mmap_next;     // next free virtual address in the mmap region (bump allocator)
     int32_t exit_code;      // exit code (valid in ZOMBIE state)
-    uint32_t kernel_stack;  // base address of kernel stack page
+    uint32_t kernel_stack;  // lowest address of the kernel stack (kstack.h)
     uint32_t kernel_esp;    // saved kernel ESP (for context switch)
     uint32_t entry;         // ELF entry point (used by trampoline on first schedule)
     uint32_t page_directory; // physical address of this process's page directory

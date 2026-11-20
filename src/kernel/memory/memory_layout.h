@@ -35,6 +35,11 @@
 /* user stack top */
 #define USER_STACK_TOP   0x00800000u
 
+/* kernel stacks: one slot per process, each an unmapped guard page followed
+ * by the stack itself. kernel-only, shared by every address space (its page
+ * table is reserved at boot), above user space. */
+#define KSTACK_REGION_BASE 0xE0000000u
+
 /* userspace mmap region: SYS_mmap hands out page-aligned virtual ranges here,
  * bumping upward per mapping. sits below kernel space (0xC0000000) and clear of
  * the program, heap, and stack. no unmap/reuse yet, just a bump cursor per

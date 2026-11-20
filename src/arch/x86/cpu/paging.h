@@ -150,6 +150,22 @@ void paging_free_directory(uint32_t pd_phys);
 bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flags);
 
 /**
+ * make sure the kernel page directory has a page table for every 4 MiB in
+ * [start, end). must run before the first paging_clone_directory(): clones
+ * copy the directory entries, so only tables that exist by then are shared
+ * by every address space, and later mappings in them are seen everywhere.
+ * @param start first virtual address of the range.
+ * @param end first virtual address past the range.
+ */
+void paging_reserve_tables(uint32_t start, uint32_t end);
+
+/**
+ * read CR2, the address of the most recent page fault.
+ * @return the faulting linear address.
+ */
+uint32_t paging_fault_address(void);
+
+/**
  * switch the active page directory (load CR3).
  * does not modify CR0 paging must already be enabled.
  * @param pd_phys physical address of the page directory to activate.

@@ -27,6 +27,7 @@
 #include "memory/region.h"
 #include "memory/reservations.h"
 #include "memory/heap.h"
+#include "memory/kstack.h"
 #include "arch/x86/cpu/paging.h"
 #include "syscall/syscall.h"
 #include "process/process.h"
@@ -80,6 +81,10 @@ void kernel_main(boot_info_t *boot)
     heap_init();
 
     paging_init();
+
+    // reserve the kernel stack region before any address space is cloned,
+    // so its page table is shared by every process.
+    kstack_init();
 
     // bring up the linear framebuffer (if the bootloader set a graphics mode).
     // must follow paging_init: the LFB lives above identity-mapped RAM.

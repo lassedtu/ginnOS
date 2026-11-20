@@ -118,6 +118,28 @@ addr_space_t arch_create_address_space(void);
 void arch_destroy_address_space(addr_space_t as);
 
 /**
+ * set aside a kernel-only virtual range whose mappings every address space
+ * shares. call during boot, before the first arch_create_address_space().
+ * @param start first virtual address of the range.
+ * @param end first virtual address past the range.
+ */
+void arch_reserve_kernel_range(uint32_t start, uint32_t end);
+
+/**
+ * map one kernel-only, writable page inside a reserved kernel range. the
+ * mapping is visible in every address space at once.
+ * @param virt page-aligned virtual address inside a reserved range.
+ * @param phys page-aligned physical frame.
+ */
+void arch_map_kernel_page(uint32_t virt, uint32_t phys);
+
+/**
+ * remove a page mapped with arch_map_kernel_page(). the frame is not freed.
+ * @param virt page-aligned virtual address.
+ */
+void arch_unmap_kernel_page(uint32_t virt);
+
+/**
  * map one page into a given address space.
  * @param as the target address space.
  * @param virt page-aligned virtual address.

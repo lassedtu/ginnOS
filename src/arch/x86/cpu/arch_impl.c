@@ -163,6 +163,21 @@ int arch_map_page(addr_space_t as, uint32_t virt, uint32_t phys, uint32_t flags)
     return 0;
 }
 
+void arch_reserve_kernel_range(uint32_t start, uint32_t end)
+{
+    paging_reserve_tables(start, end);
+}
+
+void arch_map_kernel_page(uint32_t virt, uint32_t phys)
+{
+    paging_map(virt, phys, PTE_KERNEL_RW);
+}
+
+void arch_unmap_kernel_page(uint32_t virt)
+{
+    paging_unmap(virt);
+}
+
 uint32_t arch_translate_in(addr_space_t as, uint32_t virt)
 {
     return paging_get_physical_in(as, virt);
