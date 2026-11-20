@@ -4,6 +4,7 @@
 #include "pmm_layout.h"
 #include "reservations.h"
 #include "kernel/panic.h"
+#include "kernel/sync/spinlock.h"
 #include "common/stdio.h"
 #include "common/memory.h"
 
@@ -26,6 +27,12 @@ static uint32_t segment_count;
 
 // allocation statistics.
 static heap_stats_t stats;
+
+// guards the block list, the segments and the statistics. kmalloc and
+// kfree run in preemptible syscall code, so a process switch mid-update
+// could otherwise corrupt the list. not recursive: code holding it calls
+// the *_locked helpers, never the public functions.
+static spinlock_t heap_lock;
 
 /**
  * align a value up to the nearest 4-byte boundary.
@@ -174,6 +181,8 @@ void heap_init(void)
     // zero the data area
     memset((uint8_t *)heap_head + sizeof(heap_block_t), 0, heap_head->size);
 
+    spinlock_init(&heap_lock);
+
     // reset statistics
     stats.total_allocs = 0;
     stats.total_frees = 0;
@@ -286,7 +295,10 @@ static void stats_free(uint32_t size)
     stats.current_usage -= size;
 }
 
-void *kmalloc(uint32_t size)
+/**
+ * kmalloc with heap_lock already held.
+ */
+static void *alloc_locked(uint32_t size)
 {
     heap_block_t *current;
 
@@ -365,16 +377,22 @@ void *kcalloc(uint32_t count, uint32_t size)
     return ptr;
 }
 
-void *krealloc(void *ptr, uint32_t new_size)
+// defined below; realloc_locked frees the old block through it.
+static void free_locked(void *ptr);
+
+/**
+ * krealloc with heap_lock already held.
+ */
+static void *realloc_locked(void *ptr, uint32_t new_size)
 {
     if (!ptr)
     {
-        return kmalloc(new_size);
+        return alloc_locked(new_size);
     }
 
     if (new_size == 0)
     {
-        kfree(ptr);
+        free_locked(ptr);
         return NULL;
     }
 
@@ -433,7 +451,7 @@ void *krealloc(void *ptr, uint32_t new_size)
     }
 
     // can't expand in place, allocate new block and copy
-    void *new_ptr = kmalloc(new_size);
+    void *new_ptr = alloc_locked(new_size);
     if (!new_ptr)
     {
         return NULL;
@@ -450,11 +468,14 @@ void *krealloc(void *ptr, uint32_t new_size)
     }
     memcpy(new_ptr, ptr, copy_size);
 
-    kfree(ptr);
+    free_locked(ptr);
     return new_ptr;
 }
 
-void kfree(void *ptr)
+/**
+ * kfree with heap_lock already held.
+ */
+static void free_locked(void *ptr)
 {
     heap_block_t *block;
 
@@ -511,13 +532,40 @@ void kfree(void *ptr)
     }
 }
 
+void *kmalloc(uint32_t size)
+{
+    uint32_t flags = spin_lock_irqsave(&heap_lock);
+    void *ptr = alloc_locked(size);
+    spin_unlock_irqrestore(&heap_lock, flags);
+    return ptr;
+}
+
+void *krealloc(void *ptr, uint32_t new_size)
+{
+    uint32_t flags = spin_lock_irqsave(&heap_lock);
+    void *new_ptr = realloc_locked(ptr, new_size);
+    spin_unlock_irqrestore(&heap_lock, flags);
+    return new_ptr;
+}
+
+void kfree(void *ptr)
+{
+    uint32_t flags = spin_lock_irqsave(&heap_lock);
+    free_locked(ptr);
+    spin_unlock_irqrestore(&heap_lock, flags);
+}
+
 uint32_t heap_total_size(void)
 {
     uint32_t total = 0;
+
+    uint32_t flags = spin_lock_irqsave(&heap_lock);
     for (uint32_t i = 0; i < segment_count; i++)
     {
         total += segments[i].end - segments[i].start;
     }
+    spin_unlock_irqrestore(&heap_lock, flags);
+
     return total;
 }
 
@@ -529,16 +577,16 @@ uint32_t heap_segment_count(void)
 uint32_t heap_free_size(void)
 {
     uint32_t free_bytes = 0;
-    heap_block_t *current = heap_head;
 
-    while (current)
+    uint32_t flags = spin_lock_irqsave(&heap_lock);
+    for (heap_block_t *current = heap_head; current; current = current->next)
     {
         if (current->free)
         {
             free_bytes += current->size;
         }
-        current = current->next;
     }
+    spin_unlock_irqrestore(&heap_lock, flags);
 
     return free_bytes;
 }
@@ -546,23 +594,29 @@ uint32_t heap_free_size(void)
 uint32_t heap_block_count(void)
 {
     uint32_t count = 0;
-    heap_block_t *current = heap_head;
 
-    while (current)
+    uint32_t flags = spin_lock_irqsave(&heap_lock);
+    for (heap_block_t *current = heap_head; current; current = current->next)
     {
         count++;
-        current = current->next;
     }
+    spin_unlock_irqrestore(&heap_lock, flags);
 
     return count;
 }
 
 heap_stats_t heap_get_stats(void)
 {
-    return stats;
+    uint32_t flags = spin_lock_irqsave(&heap_lock);
+    heap_stats_t copy = stats;
+    spin_unlock_irqrestore(&heap_lock, flags);
+    return copy;
 }
 
-bool heap_check(void)
+/**
+ * heap_check with heap_lock already held.
+ */
+static bool check_locked(void)
 {
     const heap_block_t *block = heap_head;
 
@@ -597,4 +651,12 @@ bool heap_check(void)
     }
 
     return block == NULL; // no blocks outside every segment
+}
+
+bool heap_check(void)
+{
+    uint32_t flags = spin_lock_irqsave(&heap_lock);
+    bool ok = check_locked();
+    spin_unlock_irqrestore(&heap_lock, flags);
+    return ok;
 }
