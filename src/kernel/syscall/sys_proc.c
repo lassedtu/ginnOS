@@ -20,9 +20,9 @@
  * arg: EBX = exit code.
  * never returns: the process becomes a zombie until its parent reaps it.
  */
-int32_t sys_exit(struct registers *regs)
+syscall_ret_t sys_exit(struct registers *regs)
 {
-    int32_t code = (int32_t)regs->ebx;
+    int32_t code = (int32_t)syscall_arg(regs, 0);
 
     usermode_exit(code);
 
@@ -79,10 +79,10 @@ static int32_t copy_argv_from_user(const char **user_argv, const char **kargv, c
  * args: EBX = path string pointer, ECX = argv array pointer (may be NULL).
  * returns the child's PID, or negative errno on failure.
  */
-int32_t sys_exec(struct registers *regs)
+syscall_ret_t sys_exec(struct registers *regs)
 {
-    const char *path = (const char *)regs->ebx;
-    const char **argv = (const char **)regs->ecx;
+    const char *path = (const char *)syscall_arg(regs, 0);
+    const char **argv = (const char **)syscall_arg(regs, 1);
 
     /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
@@ -111,7 +111,7 @@ int32_t sys_exec(struct registers *regs)
 /**
  * SYS_getpid: return the current process ID.
  */
-int32_t sys_getpid(struct registers *regs)
+syscall_ret_t sys_getpid(struct registers *regs)
 {
     (void)regs;
     process_t *proc = process_current();
@@ -130,9 +130,9 @@ int32_t sys_getpid(struct registers *regs)
  * if the child is already a zombie, reaps it immediately.
  * otherwise, blocks the calling process until the child exits.
  */
-int32_t sys_waitpid(struct registers *regs)
+syscall_ret_t sys_waitpid(struct registers *regs)
 {
-    uint32_t child_pid = regs->ebx;
+    uint32_t child_pid = syscall_arg(regs, 0);
     process_t *parent = process_current();
 
     if (!parent)
@@ -183,57 +183,57 @@ int32_t sys_waitpid(struct registers *regs)
 /**
  * SYS_sbrk: grow the user program break.
  * args: EBX = increment (signed; only positive values supported for now).
- * returns the previous break address on success, or (uint32_t)-1 on failure.
+ * returns the previous break address on success, or -1 on failure.
  *
  * if increment is 0, simply returns the current break without changing it.
  * for positive increments, allocates physical pages and maps them as
  * user-accessible for any new pages between the old and new break.
  */
-int32_t sys_sbrk(struct registers *regs)
+syscall_ret_t sys_sbrk(struct registers *regs)
 {
-    int32_t increment = (int32_t)regs->ebx;
-    uint32_t old_brk = usermode_get_brk();
+    intptr_t increment = (intptr_t)syscall_arg(regs, 0);
+    uintptr_t old_brk = usermode_get_brk();
 
     /* increment of 0: just return current break */
     if (increment == 0)
     {
-        return (int32_t)old_brk;
+        return (syscall_ret_t)old_brk;
     }
 
     /* negative increment not supported yet */
     if (increment < 0)
     {
-        return (int32_t)(uint32_t)-1;
+        return -1;
     }
 
-    uint32_t new_brk = old_brk + (uint32_t)increment;
+    uintptr_t new_brk = old_brk + (uintptr_t)increment;
 
     /* overflow check */
     if (new_brk < old_brk)
     {
-        return (int32_t)(uint32_t)-1;
+        return -1;
     }
 
     /* allocate and map any new pages between old_brk and new_brk */
-    uint32_t page = PAGE_ALIGN_DOWN(old_brk);
-    uint32_t end = PAGE_ALIGN_UP(new_brk);
+    uintptr_t page = PAGE_ALIGN_DOWN(old_brk);
+    uintptr_t end = PAGE_ALIGN_UP(new_brk);
     process_t *proc = process_current();
-    uint32_t pd = proc ? proc->page_directory : arch_kernel_address_space();
+    addr_space_t pd = proc ? proc->page_directory : arch_kernel_address_space();
 
     for (; page < end; page += PAGE_SIZE)
     {
         void *frame = pmm_alloc_page();
         if (!frame)
         {
-            return (int32_t)(uint32_t)-1;
+            return -1;
         }
 
         memset(frame, 0, PAGE_SIZE);
-        arch_map_page(pd, page, (uint32_t)frame, MMU_USER_RW);
+        arch_map_page(pd, page, virt_to_phys(frame), MMU_USER_RW);
     }
 
     usermode_set_brk(new_brk);
-    return (int32_t)old_brk;
+    return (syscall_ret_t)old_brk;
 }
 
 /**
@@ -246,53 +246,53 @@ int32_t sys_sbrk(struct registers *regs)
  *   - device-backed (fd is an open device node): route through vfs_mmap so the
  *     device maps its own memory (e.g. the framebuffer's LFB).
  * ranges come from the per-process mmap bump region. eager, no demand paging.
- * returns the mapped address, or MAP_FAILED ((uint32_t)-1) on error.
+ * returns the mapped address, or MAP_FAILED (-1) on error.
  */
-int32_t sys_mmap(struct registers *regs)
+syscall_ret_t sys_mmap(struct registers *regs)
 {
-    uint32_t length = regs->ebx;
-    int prot = (int)regs->ecx;
-    int flags = (int)regs->edx;
-    int32_t fd = (int32_t)regs->esi;
-    uint32_t offset = regs->edi;
+    size_t length = syscall_arg(regs, 0);
+    int prot = (int)syscall_arg(regs, 1);
+    int flags = (int)syscall_arg(regs, 2);
+    int32_t fd = (int32_t)syscall_arg(regs, 3);
+    uint32_t offset = (uint32_t)syscall_arg(regs, 4);
 
     process_t *proc = process_current();
     if (!proc || length == 0)
     {
-        return (int32_t)(uint32_t)MAP_FAILED;
+        return (syscall_ret_t)MAP_FAILED;
     }
 
     // offset must be page-aligned (file/device mappings start on a page).
     if (!PAGE_IS_ALIGNED(offset))
     {
-        return (int32_t)(uint32_t)MAP_FAILED;
+        return (syscall_ret_t)MAP_FAILED;
     }
 
     // reserve a page-aligned range from the process's mmap bump cursor.
-    uint32_t len_pages = PAGE_ALIGN_UP(length);
-    uint32_t virt = proc->mmap_next;
+    size_t len_pages = PAGE_ALIGN_UP(length);
+    uintptr_t virt = proc->mmap_next;
     if (virt < USER_MMAP_BASE || len_pages > USER_MMAP_END - virt)
     {
-        return (int32_t)(uint32_t)MAP_FAILED; /* region exhausted */
+        return (syscall_ret_t)MAP_FAILED; /* region exhausted */
     }
 
     if (flags & MAP_ANONYMOUS)
     {
         // anonymous: back each page with a fresh zeroed frame, user-accessible.
-        uint32_t mapped = 0;
+        size_t mapped = 0;
         for (; mapped < len_pages; mapped += PAGE_SIZE)
         {
             void *frame = pmm_alloc_page();
             if (!frame)
             {
-                return (int32_t)(uint32_t)MAP_FAILED;
+                return (syscall_ret_t)MAP_FAILED;
             }
             memset(frame, 0, PAGE_SIZE);
 
             uint32_t page_flags = (prot & PROT_WRITE)
                                       ? MMU_USER_RW
                                       : (MMU_FLAG_PRESENT | MMU_FLAG_USER);
-            arch_map_page(proc->page_directory, virt + mapped, (uint32_t)frame, page_flags);
+            arch_map_page(proc->page_directory, virt + mapped, virt_to_phys(frame), page_flags);
         }
     }
     else
@@ -300,22 +300,22 @@ int32_t sys_mmap(struct registers *regs)
         // device-backed: the fd must be an open device node; dispatch to it.
         if (fd < 0)
         {
-            return (int32_t)(uint32_t)MAP_FAILED;
+            return (syscall_ret_t)MAP_FAILED;
         }
 
         fd_entry_t *entry = fd_get(fd);
         if (!entry || entry->type != FD_TYPE_FILE)
         {
-            return (int32_t)(uint32_t)MAP_FAILED;
+            return (syscall_ret_t)MAP_FAILED;
         }
 
         int32_t err = vfs_mmap(&entry->file, proc->page_directory, virt, len_pages, prot, offset);
         if (err != 0)
         {
-            return (int32_t)(uint32_t)MAP_FAILED;
+            return (syscall_ret_t)MAP_FAILED;
         }
     }
 
     proc->mmap_next = virt + len_pages;
-    return (int32_t)virt;
+    return (syscall_ret_t)virt;
 }

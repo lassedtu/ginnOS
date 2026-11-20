@@ -20,7 +20,7 @@
  * as 0 so they don't stall the caller.
  * takes no arguments.
  */
-int32_t sys_pollkey(struct registers *regs)
+syscall_ret_t sys_pollkey(struct registers *regs)
 {
     (void)regs;
 

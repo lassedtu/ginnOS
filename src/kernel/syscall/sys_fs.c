@@ -31,10 +31,10 @@ int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size)
  * the output struct matches vfs_stat_t (fs_stat_t).
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_stat(struct registers *regs)
+syscall_ret_t sys_stat(struct registers *regs)
 {
-    const char *path = (const char *)regs->ebx;
-    vfs_stat_t *stat_out = (vfs_stat_t *)regs->ecx;
+    const char *path = (const char *)syscall_arg(regs, 0);
+    vfs_stat_t *stat_out = (vfs_stat_t *)syscall_arg(regs, 1);
 
     /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
@@ -57,9 +57,9 @@ int32_t sys_stat(struct registers *regs)
  * args: EBX = path string pointer.
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_create(struct registers *regs)
+syscall_ret_t sys_create(struct registers *regs)
 {
-    const char *path = (const char *)regs->ebx;
+    const char *path = (const char *)syscall_arg(regs, 0);
 
     /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
@@ -81,9 +81,9 @@ int32_t sys_create(struct registers *regs)
  * args: EBX = path string pointer.
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_mkdir(struct registers *regs)
+syscall_ret_t sys_mkdir(struct registers *regs)
 {
-    const char *path = (const char *)regs->ebx;
+    const char *path = (const char *)syscall_arg(regs, 0);
 
     /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
@@ -105,9 +105,9 @@ int32_t sys_mkdir(struct registers *regs)
  * args: EBX = path string pointer.
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_unlink(struct registers *regs)
+syscall_ret_t sys_unlink(struct registers *regs)
 {
-    const char *path = (const char *)regs->ebx;
+    const char *path = (const char *)syscall_arg(regs, 0);
 
     /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
@@ -129,9 +129,9 @@ int32_t sys_unlink(struct registers *regs)
  * args: EBX = path string pointer.
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_rmdir(struct registers *regs)
+syscall_ret_t sys_rmdir(struct registers *regs)
 {
-    const char *path = (const char *)regs->ebx;
+    const char *path = (const char *)syscall_arg(regs, 0);
 
     /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
@@ -160,10 +160,10 @@ int32_t sys_rmdir(struct registers *regs)
  *
  * returns 0 on success, negative errno on failure or end of directory.
  */
-int32_t sys_readdir(struct registers *regs)
+syscall_ret_t sys_readdir(struct registers *regs)
 {
-    int fd_num = (int)regs->ebx;
-    fs_dirent_t *user_dirent = (fs_dirent_t *)regs->ecx;
+    int fd_num = (int)syscall_arg(regs, 0);
+    fs_dirent_t *user_dirent = (fs_dirent_t *)syscall_arg(regs, 1);
 
     /* check before reading: the read advances the directory position */
     if (!user_access_ok(user_dirent, sizeof(fs_dirent_t), true))

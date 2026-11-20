@@ -52,6 +52,7 @@ static void syscall_handler(struct registers *regs)
         return;
     }
 
+    // the return value goes back in EAX
     regs->eax = (uint32_t)syscall_table[num](regs);
 }
 

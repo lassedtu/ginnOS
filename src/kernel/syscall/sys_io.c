@@ -16,11 +16,11 @@
  * supports console fds (1, 2), pipe fds, and file fds.
  * returns number of bytes written, or negative errno on error.
  */
-int32_t sys_write(struct registers *regs)
+syscall_ret_t sys_write(struct registers *regs)
 {
-    int32_t fd_num = (int32_t)regs->ebx;
-    const char *buf = (const char *)regs->ecx;
-    uint32_t count = regs->edx;
+    int32_t fd_num = (int32_t)syscall_arg(regs, 0);
+    const char *buf = (const char *)syscall_arg(regs, 1);
+    uint32_t count = syscall_arg(regs, 2);
 
     /* the whole buffer must be readable user memory */
     if (!user_access_ok(buf, count, false))
@@ -70,11 +70,11 @@ int32_t sys_write(struct registers *regs)
  * for files: reads via VFS.
  * returns number of bytes read, or negative errno on error.
  */
-int32_t sys_read(struct registers *regs)
+syscall_ret_t sys_read(struct registers *regs)
 {
-    int fd_num = (int)regs->ebx;
-    char *buf = (char *)regs->ecx;
-    uint32_t count = regs->edx;
+    int fd_num = (int)syscall_arg(regs, 0);
+    char *buf = (char *)syscall_arg(regs, 1);
+    uint32_t count = syscall_arg(regs, 2);
 
     /* the whole buffer must be writable user memory */
     if (!user_access_ok(buf, count, true))
@@ -172,10 +172,10 @@ int32_t sys_read(struct registers *regs)
  * args: EBX = path string pointer, ECX = flags (unused for now).
  * returns fd number on success, negative errno on failure.
  */
-int32_t sys_open(struct registers *regs)
+syscall_ret_t sys_open(struct registers *regs)
 {
-    const char *path = (const char *)regs->ebx;
-    (void)regs->ecx; /* flags reserved for future use */
+    const char *path = (const char *)syscall_arg(regs, 0);
+    /* flags (argument 1) reserved for future use */
 
     /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
@@ -205,9 +205,9 @@ int32_t sys_open(struct registers *regs)
  * args: EBX = fd.
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_close(struct registers *regs)
+syscall_ret_t sys_close(struct registers *regs)
 {
-    int fd = (int)regs->ebx;
+    int fd = (int)syscall_arg(regs, 0);
 
     /* don't allow closing stdin/stdout/stderr */
     if (fd < FD_STDIO_COUNT)
@@ -228,11 +228,11 @@ int32_t sys_close(struct registers *regs)
  * args: EBX = fd, ECX = offset, EDX = whence (0=SET, 1=CUR, 2=END).
  * returns the new cursor position, or negative errno on error.
  */
-int32_t sys_lseek(struct registers *regs)
+syscall_ret_t sys_lseek(struct registers *regs)
 {
-    int fd_num = (int)regs->ebx;
-    int32_t offset = (int32_t)regs->ecx;
-    int whence = (int)regs->edx;
+    int fd_num = (int)syscall_arg(regs, 0);
+    int32_t offset = (int32_t)syscall_arg(regs, 1);
+    int whence = (int)syscall_arg(regs, 2);
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
@@ -280,9 +280,9 @@ int32_t sys_lseek(struct registers *regs)
  * args: EBX = fd.
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_ftruncate(struct registers *regs)
+syscall_ret_t sys_ftruncate(struct registers *regs)
 {
-    int fd_num = (int)regs->ebx;
+    int fd_num = (int)syscall_arg(regs, 0);
     fd_entry_t *entry = fd_get(fd_num);
 
     if (!entry)
@@ -304,10 +304,10 @@ int32_t sys_ftruncate(struct registers *regs)
  * if new_fd is already open, it is closed first.
  * returns new_fd on success, negative errno on failure.
  */
-int32_t sys_dup2(struct registers *regs)
+syscall_ret_t sys_dup2(struct registers *regs)
 {
-    int old_fd = (int)regs->ebx;
-    int new_fd = (int)regs->ecx;
+    int old_fd = (int)syscall_arg(regs, 0);
+    int new_fd = (int)syscall_arg(regs, 1);
     process_t *proc = process_current();
 
     if (!proc)
@@ -340,9 +340,9 @@ int32_t sys_dup2(struct registers *regs)
  * args: EBX = pointer to int[2] array (receives [read_fd, write_fd]).
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_pipe(struct registers *regs)
+syscall_ret_t sys_pipe(struct registers *regs)
 {
-    int *user_fds = (int *)regs->ebx;
+    int *user_fds = (int *)syscall_arg(regs, 0);
     process_t *proc = process_current();
 
     /* checked up front: the fds are allocated before they are copied out */

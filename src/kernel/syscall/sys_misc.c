@@ -11,10 +11,10 @@
  * args: EBX = buffer pointer, ECX = buffer size.
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_getcwd(struct registers *regs)
+syscall_ret_t sys_getcwd(struct registers *regs)
 {
-    char *buf = (char *)regs->ebx;
-    uint32_t size = regs->ecx;
+    char *buf = (char *)syscall_arg(regs, 0);
+    uint32_t size = syscall_arg(regs, 1);
     process_t *proc = process_current();
 
     if (!proc || size == 0)
@@ -36,9 +36,9 @@ int32_t sys_getcwd(struct registers *regs)
  * args: EBX = path string pointer.
  * returns 0 on success, negative errno on failure.
  */
-int32_t sys_chdir(struct registers *regs)
+syscall_ret_t sys_chdir(struct registers *regs)
 {
-    const char *path = (const char *)regs->ebx;
+    const char *path = (const char *)syscall_arg(regs, 0);
     process_t *proc = process_current();
 
     if (!proc)
@@ -75,9 +75,9 @@ int32_t sys_chdir(struct registers *regs)
  * args: EBX = mode (0 = cooked/line-buffered, 1 = raw/event-based).
  * returns the previous mode on success, negative errno on error.
  */
-int32_t sys_ttyctl(struct registers *regs)
+syscall_ret_t sys_ttyctl(struct registers *regs)
 {
-    uint32_t mode = regs->ebx;
+    uint32_t mode = syscall_arg(regs, 0);
     process_t *proc = process_current();
 
     if (!proc)
@@ -101,11 +101,11 @@ int32_t sys_ttyctl(struct registers *regs)
  * note: the arg pointer is request-specific, so its size is only known to the
  * device handler; this layer passes it through and the handler validates it.
  */
-int32_t sys_ioctl(struct registers *regs)
+syscall_ret_t sys_ioctl(struct registers *regs)
 {
-    int32_t fd_num = (int32_t)regs->ebx;
-    uint32_t request = regs->ecx;
-    void *arg = (void *)regs->edx;
+    int32_t fd_num = (int32_t)syscall_arg(regs, 0);
+    uint32_t request = syscall_arg(regs, 1);
+    void *arg = (void *)syscall_arg(regs, 2);
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)

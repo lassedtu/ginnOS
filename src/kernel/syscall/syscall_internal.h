@@ -7,11 +7,42 @@
 #include "kernel/usermode/uaccess.h"
 
 /**
+ * one syscall argument or return value: pointer-width, so a user address
+ * passes through unchanged. handlers cast arguments to what they mean.
+ */
+typedef uintptr_t syscall_arg_t;
+
+/**
+ * read syscall argument n (0-based). the only place that knows the register
+ * convention: int 0x80 on i686 passes EBX, ECX, EDX, ESI, EDI.
+ * @param regs the trap frame of the syscall.
+ * @param n argument index, 0 to 4.
+ * @return the argument.
+ */
+static inline syscall_arg_t syscall_arg(const struct registers *regs, int n)
+{
+    switch (n)
+    {
+    case 0:
+        return regs->ebx;
+    case 1:
+        return regs->ecx;
+    case 2:
+        return regs->edx;
+    case 3:
+        return regs->esi;
+    default:
+        return regs->edi;
+    }
+}
+
+/**
  * syscall function pointer type. takes a pointer to the CPU registers struct and returns an int32_t.
  * the registers struct contains the syscall number in EAX and arguments in EBX, ECX, EDX, ESI, EDI.
  * the return value is placed in EAX.
  */
-typedef int32_t (*syscall_fn_t)(struct registers *regs);
+typedef intptr_t syscall_ret_t;
+typedef syscall_ret_t (*syscall_fn_t)(struct registers *regs);
 
 /* map a kerr_t error to a negative errno value for userspace */
 static inline int32_t kerr_to_errno(kerr_t err)
@@ -49,36 +80,36 @@ static inline int32_t kerr_to_errno(kerr_t err)
 int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size);
 
 /* sys_io.c */
-int32_t sys_write(struct registers *regs);
-int32_t sys_read(struct registers *regs);
-int32_t sys_open(struct registers *regs);
-int32_t sys_close(struct registers *regs);
-int32_t sys_lseek(struct registers *regs);
-int32_t sys_ftruncate(struct registers *regs);
-int32_t sys_dup2(struct registers *regs);
-int32_t sys_pipe(struct registers *regs);
+syscall_ret_t sys_write(struct registers *regs);
+syscall_ret_t sys_read(struct registers *regs);
+syscall_ret_t sys_open(struct registers *regs);
+syscall_ret_t sys_close(struct registers *regs);
+syscall_ret_t sys_lseek(struct registers *regs);
+syscall_ret_t sys_ftruncate(struct registers *regs);
+syscall_ret_t sys_dup2(struct registers *regs);
+syscall_ret_t sys_pipe(struct registers *regs);
 
 /* sys_fs.c */
-int32_t sys_stat(struct registers *regs);
-int32_t sys_create(struct registers *regs);
-int32_t sys_mkdir(struct registers *regs);
-int32_t sys_unlink(struct registers *regs);
-int32_t sys_rmdir(struct registers *regs);
-int32_t sys_readdir(struct registers *regs);
+syscall_ret_t sys_stat(struct registers *regs);
+syscall_ret_t sys_create(struct registers *regs);
+syscall_ret_t sys_mkdir(struct registers *regs);
+syscall_ret_t sys_unlink(struct registers *regs);
+syscall_ret_t sys_rmdir(struct registers *regs);
+syscall_ret_t sys_readdir(struct registers *regs);
 
 /* sys_proc.c */
-int32_t sys_exit(struct registers *regs);
-int32_t sys_exec(struct registers *regs);
-int32_t sys_getpid(struct registers *regs);
-int32_t sys_waitpid(struct registers *regs);
-int32_t sys_sbrk(struct registers *regs);
-int32_t sys_mmap(struct registers *regs);
+syscall_ret_t sys_exit(struct registers *regs);
+syscall_ret_t sys_exec(struct registers *regs);
+syscall_ret_t sys_getpid(struct registers *regs);
+syscall_ret_t sys_waitpid(struct registers *regs);
+syscall_ret_t sys_sbrk(struct registers *regs);
+syscall_ret_t sys_mmap(struct registers *regs);
 
 /* sys_misc.c */
-int32_t sys_getcwd(struct registers *regs);
-int32_t sys_chdir(struct registers *regs);
-int32_t sys_ttyctl(struct registers *regs);
-int32_t sys_ioctl(struct registers *regs);
+syscall_ret_t sys_getcwd(struct registers *regs);
+syscall_ret_t sys_chdir(struct registers *regs);
+syscall_ret_t sys_ttyctl(struct registers *regs);
+syscall_ret_t sys_ioctl(struct registers *regs);
 
 /* sys_fb.c */
-int32_t sys_pollkey(struct registers *regs);
+syscall_ret_t sys_pollkey(struct registers *regs);
