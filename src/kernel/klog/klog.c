@@ -25,11 +25,11 @@ void klog(klog_level_t level, const char *fmt, ...)
 
     serial_write(level_tags[level]);
 
-    // reuse the stdio formatter, writing to serial. argp points just past
-    // fmt (the last named parameter) at the first variadic argument.
-    int *argp = (int *)&fmt;
-    argp++;
-    stdio_format_args(serial_putchar, fmt, argp);
+    // reuse the stdio formatter, writing to serial
+    va_list args;
+    va_start(args, fmt);
+    stdio_format_args(serial_putchar, fmt, args);
+    va_end(args);
 
     serial_putchar('\n');
 }

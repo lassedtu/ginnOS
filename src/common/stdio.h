@@ -1,6 +1,7 @@
 #pragma once
 
 #include "stdint.h"
+#include "stdarg.h"
 
 /**
  * signature of a low-level character output function used by stdio.
@@ -30,6 +31,9 @@ void puts(const char *str);
 
 /**
  * print a formatted string to the output.
+ * conversions: %d %i %u %x %X %o %c %s %p %%, with the length modifiers
+ * hh h l ll z (z: size_t / ssize_t). %p prints 0x and pointer-width hex.
+ * no field width, precision or flags.
  * @param fmt format string.
  */
 void printf(const char *fmt, ...);
@@ -44,15 +48,10 @@ void printf(const char *fmt, ...);
 void stdio_printf_to(StdioPutCharFn out, const char *fmt, ...);
 
 /**
- * format engine entry point for callers that already hold a pointer to the
- * variadic argument list on their own stack frame (obtained as
- * `(int *)&fmt` advanced past the last named parameter).
- *
- * this exists because printf-style forwarding isn't possible with the
- * manual argument-walking used here; a variadic function that wants to
- * reuse the formatter passes its own argp instead of forwarding `...`.
+ * format engine entry point for variadic wrappers: they va_start their own
+ * arguments and pass the list here.
  * @param out  character output callback.
  * @param fmt  format string.
- * @param argp pointer to the first variadic argument.
+ * @param args the caller's argument list.
  */
-void stdio_format_args(StdioPutCharFn out, const char *fmt, int *argp);
+void stdio_format_args(StdioPutCharFn out, const char *fmt, va_list args);
