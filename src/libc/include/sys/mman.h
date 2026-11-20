@@ -14,6 +14,7 @@ typedef unsigned int size_t;
 #define PROT_NONE  0x0
 #define PROT_READ  0x1
 #define PROT_WRITE 0x2
+#define PROT_EXEC  0x4
 
 // mapping flags (flags argument).
 #define MAP_SHARED    0x01

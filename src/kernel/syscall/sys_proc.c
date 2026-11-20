@@ -214,11 +214,38 @@ syscall_ret_t sys_sbrk(struct registers *regs)
         return -1;
     }
 
-    /* allocate and map any new pages between old_brk and new_brk */
-    uintptr_t page = PAGE_ALIGN_DOWN(old_brk);
-    uintptr_t end = PAGE_ALIGN_UP(new_brk);
     process_t *proc = process_current();
-    addr_space_t pd = proc ? proc->page_directory : arch_kernel_address_space();
+    if (!proc)
+    {
+        return -1;
+    }
+
+    /* pages up to PAGE_ALIGN_UP(old_brk) are already mapped (the page
+     * holding old_brk may contain earlier allocations): map only the pages
+     * from there to PAGE_ALIGN_UP(new_brk). */
+    uintptr_t page = PAGE_ALIGN_UP(old_brk);
+    uintptr_t end = PAGE_ALIGN_UP(new_brk);
+
+    if (end > page)
+    {
+        /* the heap area grows to cover the new pages; it may not run into
+         * another area (the stack, an mmap) */
+        if (!vma_range_free(&proc->vmas, page, end))
+        {
+            return -1;
+        }
+
+        vma_t *heap = vma_find_kind(&proc->vmas, VMA_HEAP);
+        if (heap && heap->end == page)
+        {
+            heap->end = end;
+        }
+        else if (kerr_failed(vma_insert(&proc->vmas, page, end, PROT_READ | PROT_WRITE,
+                                        VMA_HEAP)))
+        {
+            return -1;
+        }
+    }
 
     for (; page < end; page += PAGE_SIZE)
     {
@@ -229,7 +256,7 @@ syscall_ret_t sys_sbrk(struct registers *regs)
         }
 
         memset(frame, 0, PAGE_SIZE);
-        arch_map_page(pd, page, virt_to_phys(frame), MMU_USER_RW);
+        arch_map_page(proc->page_directory, page, virt_to_phys(frame), MMU_USER_RW);
     }
 
     usermode_set_brk(new_brk);
@@ -268,12 +295,31 @@ syscall_ret_t sys_mmap(struct registers *regs)
         return (syscall_ret_t)MAP_FAILED;
     }
 
-    // reserve a page-aligned range from the process's mmap bump cursor.
+    // a device mapping needs an open device node behind fd
+    fd_entry_t *entry = NULL;
+    if (!(flags & MAP_ANONYMOUS))
+    {
+        entry = (fd >= 0) ? fd_get(fd) : NULL;
+        if (!entry || entry->type != FD_TYPE_FILE)
+        {
+            return (syscall_ret_t)MAP_FAILED;
+        }
+    }
+
+    // pick the lowest free page-aligned range in the mmap region and
+    // record it as an area before mapping anything into it
     size_t len_pages = PAGE_ALIGN_UP(length);
-    uintptr_t virt = proc->mmap_next;
-    if (virt < USER_MMAP_BASE || len_pages > USER_MMAP_END - virt)
+    uintptr_t virt = vma_find_free(&proc->vmas, len_pages, USER_MMAP_BASE, USER_MMAP_END);
+    if (virt == 0)
     {
         return (syscall_ret_t)MAP_FAILED; /* region exhausted */
+    }
+
+    uint32_t area_prot = (uint32_t)prot & (PROT_READ | PROT_WRITE | PROT_EXEC);
+    vma_kind_t kind = (flags & MAP_ANONYMOUS) ? VMA_ANON : VMA_DEVICE;
+    if (kerr_failed(vma_insert(&proc->vmas, virt, virt + len_pages, area_prot, kind)))
+    {
+        return (syscall_ret_t)MAP_FAILED; /* too many areas */
     }
 
     if (flags & MAP_ANONYMOUS)
@@ -285,6 +331,8 @@ syscall_ret_t sys_mmap(struct registers *regs)
             void *frame = pmm_alloc_page();
             if (!frame)
             {
+                // pages mapped so far stay in the page tables until exit
+                vma_remove(&proc->vmas, virt, virt + len_pages);
                 return (syscall_ret_t)MAP_FAILED;
             }
             memset(frame, 0, PAGE_SIZE);
@@ -297,25 +345,14 @@ syscall_ret_t sys_mmap(struct registers *regs)
     }
     else
     {
-        // device-backed: the fd must be an open device node; dispatch to it.
-        if (fd < 0)
-        {
-            return (syscall_ret_t)MAP_FAILED;
-        }
-
-        fd_entry_t *entry = fd_get(fd);
-        if (!entry || entry->type != FD_TYPE_FILE)
-        {
-            return (syscall_ret_t)MAP_FAILED;
-        }
-
+        // device-backed: let the device map its own memory
         int32_t err = vfs_mmap(&entry->file, proc->page_directory, virt, len_pages, prot, offset);
         if (err != 0)
         {
+            vma_remove(&proc->vmas, virt, virt + len_pages);
             return (syscall_ret_t)MAP_FAILED;
         }
     }
 
-    proc->mmap_next = virt + len_pages;
     return (syscall_ret_t)virt;
 }

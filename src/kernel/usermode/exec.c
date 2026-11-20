@@ -4,6 +4,8 @@
 #include "arch/x86/cpu/gdt.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/heap.h"
+#include "kernel/memory/memory_layout.h"
+#include "kernel/memory/mman.h"
 #include "kernel/elf/elf_loader.h"
 #include "kernel/process/process.h"
 #include "kernel/scheduler/scheduler.h"
@@ -62,8 +64,16 @@ int exec_program(const char *path, const char **argv)
         return -1;
     }
 
-    // load ELF into the child's page directory
-    if (!elf_load(path, child->page_directory, &elf))
+    // load ELF into the child's page directory, recording its segments
+    if (!elf_load(path, child->page_directory, &child->vmas, &elf))
+    {
+        process_destroy(child);
+        return -1;
+    }
+
+    // the user stack area (its pages are mapped when the process first runs)
+    if (kerr_failed(vma_insert(&child->vmas, USER_STACK_BASE, USER_STACK_TOP,
+                               PROT_READ | PROT_WRITE, VMA_STACK)))
     {
         process_destroy(child);
         return -1;

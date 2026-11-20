@@ -80,7 +80,7 @@ process_t *process_create(void)
     // the slot is ours (PROC_STATE_NEW), so it is set up without the lock
     proc->parent_pid = PID_NONE;
     proc->brk = 0;
-    proc->mmap_next = USER_MMAP_BASE;
+    vma_table_init(&proc->vmas);
     proc->exit_code = 0;
     proc->wait_for_pid = PID_NONE;
 
@@ -170,6 +170,7 @@ void process_release_resources(process_t *proc)
         arch_destroy_address_space(proc->page_directory);
         proc->page_directory = 0;
     }
+    vma_table_init(&proc->vmas);
 }
 
 void process_destroy(process_t *proc)

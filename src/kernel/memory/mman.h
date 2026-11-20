@@ -13,6 +13,7 @@
 #define PROT_NONE  0x0 // pages may not be accessed
 #define PROT_READ  0x1 // pages may be read
 #define PROT_WRITE 0x2 // pages may be written
+#define PROT_EXEC  0x4 // pages may be executed
 
 // mapping flags (flags argument).
 #define MAP_SHARED    0x01 // changes are shared (device/shared memory)

@@ -7,6 +7,7 @@
 #include "arch/arch.h"
 #include "common/memory.h"
 #include "kernel/memory/page.h"
+#include "kernel/memory/mman.h"
 
 /**
  * validate an ELF32 header for a static i686 executable.
@@ -132,7 +133,7 @@ static void zero_in_process(addr_space_t as, uintptr_t vaddr, size_t size)
     }
 }
 
-bool elf_load(const char *path, addr_space_t as, elf_load_result_t *result)
+bool elf_load(const char *path, addr_space_t as, vma_table_t *vmas, elf_load_result_t *result)
 {
     vfs_file_t file;
     vfs_stat_t stat;
@@ -210,6 +211,18 @@ bool elf_load(const char *path, addr_space_t as, elf_load_result_t *result)
 
         uintptr_t seg_start = phdr->p_vaddr;
         uintptr_t seg_end = seg_start + phdr->p_memsz;
+
+        /* record the segment as an area; two segments sharing a page would
+         * overwrite each other's frames, so overlap fails the load */
+        uint32_t prot = ((phdr->p_flags & PF_R) ? PROT_READ : 0) |
+                        ((phdr->p_flags & PF_W) ? PROT_WRITE : 0) |
+                        ((phdr->p_flags & PF_X) ? PROT_EXEC : 0);
+        if (kerr_failed(vma_insert(vmas, PAGE_ALIGN_DOWN(seg_start), PAGE_ALIGN_UP(seg_end),
+                                   prot, VMA_ELF)))
+        {
+            kfree(file_data);
+            return false;
+        }
 
         /* allocate and map pages for this segment */
         if (!map_user_range(as, seg_start, seg_end))

@@ -2,6 +2,7 @@
 
 #include "common/stdint.h"
 #include "kernel/memory/page.h"
+#include "kernel/memory/vma.h"
 #include "arch/arch.h"
 #include "kernel/syscall/fd_table.h"
 
@@ -42,7 +43,7 @@ typedef struct process
                             // which the kernel reaps itself when they exit
     process_state_t state;  // current state
     uintptr_t brk;          // program break (for sbrk)
-    uintptr_t mmap_next;    // next free virtual address in the mmap region (bump allocator)
+    vma_table_t vmas;       // what is mapped in the user half (vma.h)
     int32_t exit_code;      // exit code (valid in ZOMBIE state)
     uintptr_t kernel_stack; // lowest address of the kernel stack (kstack.h)
     uintptr_t kernel_esp;   // saved kernel ESP (for context switch)
