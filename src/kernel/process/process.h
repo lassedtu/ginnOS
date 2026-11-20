@@ -18,6 +18,7 @@
 typedef enum
 {
     PROC_STATE_UNUSED = 0, // slot is free
+    PROC_STATE_NEW,        // slot claimed by process_create, not yet runnable
     PROC_STATE_RUNNING,    // currently executing
     PROC_STATE_READY,      // runnable, waiting for CPU
     PROC_STATE_BLOCKED,    // waiting for I/O or event
@@ -68,7 +69,9 @@ void process_init(void);
 /**
  * create a new process and return its PCB.
  * allocates a PID and initializes the fd table with stdin/stdout/stderr.
- * @return pointer to the new process, or NULL if the table is full.
+ * the process starts in PROC_STATE_NEW; scheduler_ready() makes it runnable.
+ * @return pointer to the new process, or NULL if the table is full or its
+ *         kernel stack or address space could not be allocated.
  */
 process_t *process_create(void);
 
@@ -92,7 +95,8 @@ void process_set_current(process_t *proc);
 void process_destroy(process_t *proc);
 
 /**
- * look up a process by PID.
+ * look up a process by PID. the pointer stays valid only while the process
+ * cannot be destroyed (it is the caller, or the caller's unreaped child).
  * @param pid the process identifier.
  * @return pointer to the process, or NULL if not found.
  */
