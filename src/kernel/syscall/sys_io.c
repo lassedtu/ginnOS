@@ -20,7 +20,7 @@ syscall_ret_t sys_write(struct registers *regs)
 {
     int32_t fd_num = (int32_t)syscall_arg(regs, 0);
     const char *buf = (const char *)syscall_arg(regs, 1);
-    uint32_t count = syscall_arg(regs, 2);
+    uint32_t count = (uint32_t)syscall_arg(regs, 2);
 
     /* the whole buffer must be readable user memory */
     if (!user_access_ok(buf, count, false))
@@ -74,7 +74,7 @@ syscall_ret_t sys_read(struct registers *regs)
 {
     int fd_num = (int)syscall_arg(regs, 0);
     char *buf = (char *)syscall_arg(regs, 1);
-    uint32_t count = syscall_arg(regs, 2);
+    uint32_t count = (uint32_t)syscall_arg(regs, 2);
 
     /* the whole buffer must be writable user memory */
     if (!user_access_ok(buf, count, true))

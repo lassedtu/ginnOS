@@ -121,16 +121,16 @@ bool vfs_resolve_path(
     const char *cwd,
     const char *input,
     char *output,
-    uint32_t size)
+    size_t size)
 {
     char combined[512];
     char normalized[512];
-    uint32_t cwd_len;
-    uint32_t cwd_start;
-    uint32_t input_len;
-    uint32_t i;
-    uint32_t pos;
-    uint32_t needed;
+    size_t cwd_len;
+    size_t cwd_start;
+    size_t input_len;
+    size_t i;
+    size_t pos;
+    size_t needed;
 
     if (!cwd || !input || !output || size == 0)
     {
@@ -231,13 +231,13 @@ bool vfs_join_path(
     const char *base,
     const char *name,
     char *out,
-    uint32_t size)
+    size_t size)
 {
-    uint32_t base_len;
-    uint32_t name_len;
-    uint32_t i;
-    uint32_t pos;
-    uint32_t needed;
+    size_t base_len;
+    size_t name_len;
+    size_t i;
+    size_t pos;
+    size_t needed;
 
     if (!base || !name || !out || size == 0)
     {

@@ -14,7 +14,7 @@
 syscall_ret_t sys_getcwd(struct registers *regs)
 {
     char *buf = (char *)syscall_arg(regs, 0);
-    uint32_t size = syscall_arg(regs, 1);
+    size_t size = syscall_arg(regs, 1);
     process_t *proc = process_current();
 
     if (!proc || size == 0)
@@ -22,7 +22,7 @@ syscall_ret_t sys_getcwd(struct registers *regs)
         return -3; /* EINVAL */
     }
 
-    uint32_t len = strlen(proc->cwd);
+    size_t len = strlen(proc->cwd);
     if (len + 1 > size)
     {
         return -17; /* ERANGE */
@@ -77,7 +77,7 @@ syscall_ret_t sys_chdir(struct registers *regs)
  */
 syscall_ret_t sys_ttyctl(struct registers *regs)
 {
-    uint32_t mode = syscall_arg(regs, 0);
+    syscall_arg_t mode = syscall_arg(regs, 0);
     process_t *proc = process_current();
 
     if (!proc)
@@ -104,7 +104,7 @@ syscall_ret_t sys_ttyctl(struct registers *regs)
 syscall_ret_t sys_ioctl(struct registers *regs)
 {
     int32_t fd_num = (int32_t)syscall_arg(regs, 0);
-    uint32_t request = syscall_arg(regs, 1);
+    uint32_t request = (uint32_t)syscall_arg(regs, 1);
     void *arg = (void *)syscall_arg(regs, 2);
 
     fd_entry_t *entry = fd_get(fd_num);

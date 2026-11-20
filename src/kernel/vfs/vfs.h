@@ -126,7 +126,7 @@ bool vfs_resolve_path(
     const char *cwd,
     const char *input,
     char *output,
-    uint32_t size);
+    size_t size);
 
 /**
  * join two path components into an output buffer.
@@ -141,7 +141,7 @@ bool vfs_join_path(
     const char *base,
     const char *name,
     char *out,
-    uint32_t size);
+    size_t size);
 
 /**
  * read data from an open file in the virtual file system.

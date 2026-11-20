@@ -120,7 +120,7 @@ KTEST(heap_free_coalesces)
 KTEST(heap_many_alloc_free_cycles)
 {
     heap_stats_t before = heap_get_stats();
-    uint32_t free_before = heap_free_size();
+    size_t free_before = heap_free_size();
 
     void *ptrs[32];
     for (uint32_t round = 0; round < 50; round++)
@@ -166,7 +166,7 @@ KTEST(heap_reuses_freed_expansion)
     kfree(first);
 
     // the space freed above must be reused rather than growing again.
-    uint32_t total_before = heap_total_size();
+    size_t total_before = heap_total_size();
     uint32_t segments_before = heap_segment_count();
     void *second = kmalloc(size);
     KEXPECT(second != NULL);

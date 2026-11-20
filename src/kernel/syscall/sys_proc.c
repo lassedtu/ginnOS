@@ -132,7 +132,7 @@ syscall_ret_t sys_getpid(struct registers *regs)
  */
 syscall_ret_t sys_waitpid(struct registers *regs)
 {
-    uint32_t child_pid = syscall_arg(regs, 0);
+    uint32_t child_pid = (uint32_t)syscall_arg(regs, 0);
     process_t *parent = process_current();
 
     if (!parent)

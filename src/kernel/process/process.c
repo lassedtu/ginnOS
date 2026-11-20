@@ -85,7 +85,7 @@ process_t *process_create(void)
     proc->wait_for_pid = PID_NONE;
 
     // allocate a guarded kernel stack (zeroed)
-    uint32_t stack = kstack_alloc();
+    uintptr_t stack = kstack_alloc();
     if (!stack)
     {
         release_slot(proc);
@@ -96,7 +96,7 @@ process_t *process_create(void)
     proc->kernel_esp = stack + KERNEL_STACK_SIZE;
 
     // allocate a per-process address space (shares kernel mappings)
-    uint32_t pd = arch_create_address_space();
+    addr_space_t pd = arch_create_address_space();
     if (pd == ADDR_SPACE_NONE)
     {
         kstack_free(stack);

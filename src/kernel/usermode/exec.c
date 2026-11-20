@@ -34,7 +34,7 @@ static char **argv_copy(const char **argv)
 
     for (int i = 0; i < argc; i++)
     {
-        uint32_t len = strlen(argv[i]) + 1;
+        size_t len = strlen(argv[i]) + 1;
         copy[i] = (char *)kmalloc(len);
         if (!copy[i])
         {

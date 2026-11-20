@@ -13,7 +13,7 @@
 #include "arch/x86/cpu/gdt.h"
 
 extern void paging_flush(uint32_t page_directory_phys);
-extern void paging_invalidate(uint32_t virtual_address);
+extern void paging_invalidate(uintptr_t virtual_address);
 extern uint32_t paging_read_cr2(void);
 extern uint32_t paging_read_cr0(void);
 extern void paging_load_cr3(uint32_t page_directory_phys);
@@ -153,13 +153,13 @@ void paging_init(void)
                    "page_directory");
 
     /* the double-fault task switches CR3 to the kernel directory */
-    tss_set_double_fault_cr3(kernel_directory_phys);
+    tss_set_double_fault_cr3((uint32_t)kernel_directory_phys);
 
     /* install dedicated page fault handler (replaces generic exception handler) */
     isr_register_handler(14, page_fault_handler);
 
     /* load CR3 and set CR0.PG paging is now active */
-    paging_flush(kernel_directory_phys);
+    paging_flush((uint32_t)kernel_directory_phys);
 }
 
 bool paging_map(uintptr_t virt, phys_addr_t phys, uint32_t flags)
@@ -451,5 +451,5 @@ bool paging_map_in(phys_addr_t pd_phys, uintptr_t virt, phys_addr_t phys, uint32
 void paging_switch_directory(phys_addr_t pd_phys)
 {
     // paging is already enabled here, so only CR3 changes; CR0 is left alone.
-    paging_load_cr3(pd_phys);
+    paging_load_cr3((uint32_t)pd_phys);
 }

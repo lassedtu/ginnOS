@@ -140,7 +140,7 @@ bool elf_load(const char *path, addr_space_t as, elf_load_result_t *result)
     uint32_t file_size;
     Elf32_Ehdr *ehdr;
     Elf32_Phdr *phdr;
-    uint32_t highest_addr;
+    uintptr_t highest_addr;
     uint32_t i;
 
     if (!path || !result)

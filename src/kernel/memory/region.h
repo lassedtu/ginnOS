@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/stdint.h"
+#include "kernel/memory/phys.h"
 
 /**
  * maximum number of reserved memory regions the table can hold.
@@ -12,8 +13,8 @@
  */
 typedef struct
 {
-    uint32_t start;      // first byte of the reserved region (inclusive).
-    uint32_t end;        // first byte past the reserved region (exclusive).
+    phys_addr_t start;   // first byte of the reserved region (inclusive).
+    phys_addr_t end;     // first byte past the reserved region (exclusive).
     const char *label;   // human-readable name (e.g. "kernel", "stage2").
 
 } region_entry_t;
@@ -25,14 +26,14 @@ typedef struct
  * @param end first byte past the region (exclusive).
  * @param label human-readable name for debug output.
  */
-void region_reserve(uint32_t start, uint32_t end, const char *label);
+void region_reserve(phys_addr_t start, phys_addr_t end, const char *label);
 
 /**
  * check whether a single address falls inside any reserved region.
  * @param address the physical address to test.
  * @return true if the address is reserved, false otherwise.
  */
-bool region_is_reserved(uint32_t address);
+bool region_is_reserved(phys_addr_t address);
 
 /**
  * check whether a range overlaps any reserved region.
@@ -40,7 +41,7 @@ bool region_is_reserved(uint32_t address);
  * @param end first byte past the range (exclusive).
  * @return true if any overlap exists, false otherwise.
  */
-bool region_overlaps(uint32_t start, uint32_t end);
+bool region_overlaps(phys_addr_t start, phys_addr_t end);
 
 /**
  * return the number of currently reserved regions.
