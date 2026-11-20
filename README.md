@@ -44,32 +44,44 @@ today.
   poisoning)
 - Virtual memory: paging with per-process page directories, a page-fault
   handler, and a map/unmap/translate API
+- 8 KiB kernel stacks with an unmapped guard page below each; a double-fault
+  task gate (its own TSS and stack) reports an overflow as a "kernel stack
+  overflow" panic with a backtrace instead of a silent triple-fault reset
 - `SYS_mmap` (anonymous + device-backed) with a per-process mmap region
 
 ### Processes and multitasking
 
 - Process table with per-process page directory, kernel stack, fd table, cwd
+- `/bin/sh` starts as PID 1 through the normal scheduler path; if it exits,
+  the system halts
 - ELF32 loader (`PT_LOAD` mapping) with `argc`/`argv` passing
 - Ring 3 execution via `iret`, TSS kernel-stack switching
 - Round-robin scheduler with an O(1) intrusive ready queue and an idle (hlt)
   task
-- Parent/child relationships, `waitpid` with zombie reaping
+- Parent/child relationships, `waitpid` with zombie reaping; a process frees
+  its fds, argv and address space when it exits, and orphans are reaped by the
+  kernel
 - fd inheritance across `exec` (close-on-exec for pipe fds beyond stdio)
 
 ### Concurrency
 
-- Spinlocks (`spin_lock`/`spin_lock_irqsave`) with nesting-safe
-  `arch_irq_save`/`arch_irq_restore`
-- Generic wait queues (block/wake-one/wake-all); pipes and blocking I/O use them
-  instead of busy-waiting
+- Syscalls are preemptible, so shared kernel state is locked: spinlocks
+  (`spin_lock_irqsave`) on the heap, PMM, process table, pipes, keyboard ring,
+  console, device registry and mount table; a sleeping `mutex_t` serialises
+  ext2 and whole console writes. The rules are written down at the top of
+  `src/kernel/sync/spinlock.h`
+- Generic wait queues (block/wake-one/wake-all), and
+  `wait_queue_block_locked()` to sleep on a condition without losing a wakeup;
+  pipes and keyboard reads sleep instead of busy-waiting
 
 ### Filesystem and I/O
 
 - VFS layer with a mount table (longest-prefix resolution) and a filesystem
   operations vtable (`fs_ops_t`) — the VFS never calls a filesystem directly
-- ext2 driver: read/write, direct + single/double/triple-indirect blocks, inode
-  and block allocation, directory operations (create, remove, read, write,
-  truncate, stat, rename), re-entrant per-volume scratch buffers
+- ext2 driver: reads through direct and single/double/triple-indirect blocks;
+  writes are limited to the 12 direct blocks for now (12 KiB with 1 KiB
+  blocks); inode and block allocation, directory operations (create, remove,
+  read, write, truncate, stat, rename), re-entrant per-volume scratch buffers
 - devfs mounted at `/dev`, enumerating the device registry (`fb0`, `tty0`,
   `hda`, `hda1`, `pit`, `kbd`)
 - Block-device abstraction (ATA PIO driver + MBR partition parsing)
@@ -79,6 +91,9 @@ today.
 ### System calls
 
 - 25 syscalls via `int 0x80` with proper `-errno` returns
+- User pointers are checked against the page tables (`copy_from_user`,
+  `copy_to_user`, `strncpy_from_user`): a bad pointer returns `-EFAULT`
+  instead of crashing the kernel
 - Process/IO: `exit`, `write`, `read`, `open`, `close`, `stat`, `create`,
   `mkdir`, `exec`, `getpid`, `waitpid`, `sbrk`, `getcwd`, `chdir`, `readdir`,
   `unlink`, `rmdir`, `pipe`, `dup2`, `ftruncate`, `lseek`
