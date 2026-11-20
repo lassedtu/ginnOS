@@ -8,19 +8,10 @@
 #include "kernel/process/process.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/panic.h"
+#include "kernel/klog/klog.h"
 #include "common/stdio.h"
 #include "common/memory.h"
 #include "common/string.h"
-
-// jump buffer: 6 x uint32_t (ebx, esi, edi, ebp, esp, eip).
-typedef uint32_t kernel_jmp_buf[6];
-
-extern int kernel_setjmp(kernel_jmp_buf buf);
-extern void kernel_longjmp(kernel_jmp_buf buf, int val) __attribute__((noreturn));
-
-// saved context for returning from userspace to exec_program's caller.
-// used ONLY for kernel-shell synchronous exec (no current process).
-static kernel_jmp_buf exec_jmp_buf;
 
 /**
  * deep-copy a null-terminated argv array into kernel heap.
@@ -57,19 +48,6 @@ static char **argv_copy(const char **argv)
     }
     copy[argc] = NULL;
     return copy;
-}
-
-/**
- * free a heap-allocated argv array created by argv_copy().
- */
-static void argv_free(char **argv)
-{
-    if (!argv)
-        return;
-
-    for (int i = 0; argv[i]; i++)
-        kfree(argv[i]);
-    kfree(argv);
 }
 
 int exec_program(const char *path, const char **argv)
@@ -124,46 +102,13 @@ int exec_program(const char *path, const char **argv)
         }
     }
 
-    if (parent)
-    {
-        // called from userspace: set up child for scheduler dispatch
-        setup_child_stack(child, elf.entry);
-        scheduler_ready(child);
+    // every process, PID 1 included, starts through the scheduler: its
+    // first switch lands in the entry trampoline, which drops to user mode.
+    setup_child_stack(child, elf.entry);
+    scheduler_ready(child);
 
-        // return child PID to parent (for waitpid)
-        return (int)child->pid;
-    }
-    else
-    {
-        // called from kernel shell: synchronous execution
-        child->state = PROC_STATE_RUNNING;
-        process_set_current(child);
-
-        // switch to the child's address space
-        arch_switch_address_space(child->page_directory);
-
-        int code = kernel_setjmp(exec_jmp_buf);
-        if (code != 0)
-        {
-            // returned from usermode_exit, restore kernel segments
-            arch_reload_segments();
-
-            // switch back to the kernel address space
-            arch_switch_address_space(arch_kernel_address_space());
-
-            int exit_code = code - 1;
-            argv_free(child->argv);
-            child->argv = NULL;
-            process_destroy(child);
-            process_set_current(NULL);
-
-            return exit_code;
-        }
-
-        jump_to_usermode(elf.entry, child->page_directory, (const char **)child->argv);
-
-        return -1; // unreachable
-    }
+    // return child PID to parent (for waitpid)
+    return (int)child->pid;
 }
 
 void usermode_exit(int exit_code)
@@ -203,7 +148,11 @@ void usermode_exit(int exit_code)
     }
     else
     {
-        // kernel-shell synchronous path
-        kernel_longjmp(exec_jmp_buf, exit_code + 1);
+        // PID 1 (init, for now /bin/sh) has no parent to reap it. with no
+        // init left the system cannot do anything more: halt.
+        arch_disable_interrupts();
+        KLOG_WARN("kernel: init exited with code %d, system halted", exit_code);
+        printf("init exited with code %d. System halted.\r\n", exit_code);
+        arch_halt_forever();
     }
 }

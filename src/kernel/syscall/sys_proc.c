@@ -17,7 +17,7 @@
 /**
  * SYS_exit: terminate the current process.
  * arg: EBX = exit code.
- * returns control to the kernel (exec_program caller).
+ * never returns: the process becomes a zombie until its parent reaps it.
  */
 int32_t sys_exit(struct registers *regs)
 {
@@ -30,9 +30,9 @@ int32_t sys_exit(struct registers *regs)
 }
 
 /**
- * SYS_exec: load and execute an ELF binary.
+ * SYS_exec: start an ELF binary as a child process (spawn, not execve).
  * args: EBX = path string pointer, ECX = argv array pointer (may be NULL).
- * does not return on success. returns negative errno on failure.
+ * returns the child's PID, or negative errno on failure.
  */
 int32_t sys_exec(struct registers *regs)
 {

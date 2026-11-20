@@ -20,20 +20,21 @@ typedef struct process process_t;
 void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv);
 
 /**
- * load and execute an ELF binary from the filesystem.
- * loads the ELF at the given path, allocates a user stack, pushes
- * argc/argv, and jumps to the entry point in ring 3.
- * returns when the program calls SYS_exit.
+ * start a program as a new process. creates the process, loads the ELF at
+ * path into its address space, copies argv, inherits the caller's cwd and
+ * stdio (when called from a process) and queues it on the scheduler. with
+ * no current process (boot), the new process has no parent: PID 1.
  *
  * @param path absolute path to the ELF executable.
  * @param argv null-terminated array of argument strings (may be NULL).
- * @return exit code from the user program, or -1 on load failure.
+ * @return the new process's PID, or -1 on failure.
  */
 int exec_program(const char *path, const char **argv);
 
 /**
- * called by SYS_exit to return control to the caller of exec_program.
- * restores the saved kernel context and resumes after jump_to_usermode.
+ * called by SYS_exit: the current process becomes a zombie for its parent
+ * to reap, and never runs again. if it has no parent (PID 1), the system
+ * halts.
  * @param exit_code the exit code passed by the user program.
  */
 void usermode_exit(int exit_code);

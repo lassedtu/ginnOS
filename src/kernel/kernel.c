@@ -166,17 +166,16 @@ void kernel_main(boot_info_t *boot)
 
     KLOG_INFO("kernel: root filesystem mounted, launching /bin/sh");
 
-    // launch the userspace shell as the first process
+    // start the shell as PID 1 through the normal scheduler path. it has no
+    // parent; if it ever exits, usermode_exit halts the system.
     const char *argv[] = {"sh", NULL};
-    int ret = exec_program("/bin/sh", argv);
-    if (ret < 0)
+    if (exec_program("/bin/sh", argv) < 0)
     {
         kernel_panic("failed to launch /bin/sh");
     }
 
-    // shell exited. halt
-    KLOG_WARN("kernel: shell exited with code %d, system halted", ret);
-    printf("Shell exited with code %d. System halted.\r\n", ret);
-    for (;;)
-        ;
+    // hand the CPU to PID 1. the boot context is never resumed: from here on
+    // the scheduler runs processes, or the idle process when none is ready.
+    scheduler_yield();
+    kernel_panic("kernel_main: the boot context was scheduled again");
 }
