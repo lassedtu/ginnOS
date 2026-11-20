@@ -8,6 +8,7 @@
 #include "kernel/memory/pmm_layout.h"
 #include "kernel/memory/region.h"
 #include "kernel/panic.h"
+#include "kernel/memory/fault.h"
 #include "kernel/memory/kstack.h"
 #include "kernel/assert.h"
 #include "arch/x86/cpu/gdt.h"
@@ -29,13 +30,21 @@ extern void paging_load_cr3(uint32_t page_directory_phys);
 
 /**
  * dedicated page fault handler.
- * decodes CR2 (faulting address) and the error code bits, prints a diagnostic,
- * and panics. in the future this can be extended for demand paging or COW.
+ * a fault raised by user code goes to the memory manager, which backs the
+ * page on demand or kills the process. a kernel fault decodes CR2 and the
+ * error code bits, prints a diagnostic, and panics.
  */
 static void page_fault_handler(struct registers *regs)
 {
     uint32_t faulting_address = paging_read_cr2();
     uint32_t err = regs->error;
+
+    if (err & PF_USER)
+    {
+        mm_handle_user_fault(faulting_address, (err & PF_WRITE) != 0, (err & PF_PRESENT) != 0,
+                             regs->eip);
+        return;
+    }
 
     printf("\r\n=== PAGE FAULT ===\r\n");
     printf("faulting address: 0x%x\r\n", faulting_address);

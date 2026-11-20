@@ -4,6 +4,7 @@
 #include "common/memory.h"
 #include "kernel/memory/memory_layout.h"
 #include "kernel/memory/page.h"
+#include "kernel/memory/fault.h"
 #include "kernel/process/process.h"
 
 bool user_access_ok(const void *ptr, size_t len, bool write)
@@ -25,7 +26,24 @@ bool user_access_ok(const void *ptr, size_t len, bool write)
         return false;
     }
 
-    return arch_user_access_ok(proc->page_directory, (uintptr_t)ptr, len, write);
+    // pages of the heap, the stack or an anonymous mmap may not be backed
+    // yet: back them now (as a user access would), page by page
+    uintptr_t start = (uintptr_t)ptr;
+    uintptr_t last = start + len - 1;
+    for (uintptr_t page = PAGE_ALIGN_DOWN(start);; page += PAGE_SIZE)
+    {
+        uintptr_t first = page < start ? start : page;
+        if (!arch_user_access_ok(proc->page_directory, first, 1, write) &&
+            (!mm_fault_in(proc, first, write) ||
+             !arch_user_access_ok(proc->page_directory, first, 1, write)))
+        {
+            return false;
+        }
+        if (page >= PAGE_ALIGN_DOWN(last))
+        {
+            return true;
+        }
+    }
 }
 
 kerr_t copy_from_user(void *dst, const void *user_src, size_t len)

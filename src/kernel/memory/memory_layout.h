@@ -10,7 +10,7 @@
  *   0x00400000 - ...        : user program text/data/bss (linker/user.ld)
  *   ...        - ...        : user heap (grows up via sbrk from the ELF end)
  *   0x40000000 - 0xAFFFFFFF : user mmap region
- *   0xBFFFB000 - 0xBFFFEFFF : user stack (16 KiB, grows down)
+ *   0xBEFFF000 - 0xBFFFEFFF : user stack (up to 16 MiB, grows down on demand)
  *   0xBFFFF000 - 0xBFFFFFFF : user stack guard (never mapped)
  *   0xC0000000 - 0xDFFFFFFF : kernel: direct map of RAM (phys_to_virt)
  *   0xE0000000 - ...        : kernel stacks (kstack.h)
@@ -35,10 +35,17 @@
 /* top of the user stack (exclusive); the page above it is an unmapped guard */
 #define USER_STACK_TOP   0xBFFFF000u
 
-/* size of the user stack, mapped eagerly below USER_STACK_TOP */
+/* the user stack area: up to 16 MiB below USER_STACK_TOP, backed on demand
+ * as the stack grows down */
+#define USER_STACK_MAX   0x01000000u
+
+/* lowest address the user stack may grow to */
+#define USER_STACK_LIMIT (USER_STACK_TOP - USER_STACK_MAX)
+
+/* the top of the stack, mapped before the process starts (argc/argv) */
 #define USER_STACK_SIZE  0x00004000u
 
-/* lowest address of the user stack */
+/* lowest address of the initially mapped part of the stack */
 #define USER_STACK_BASE  (USER_STACK_TOP - USER_STACK_SIZE)
 
 /* the kernel half: every address from here up is kernel-only and shared by

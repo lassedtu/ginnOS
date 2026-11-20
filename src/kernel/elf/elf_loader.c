@@ -59,10 +59,11 @@ static uintptr_t page_align_up(uintptr_t addr)
 }
 
 /**
- * map a range of virtual pages as user-accessible in the given page directory,
- * allocating physical frames. pages already mapped are skipped.
+ * map a range of virtual pages in the given address space, each backed by a
+ * fresh zeroed frame, with the given MMU_FLAG_* bits.
  */
-static bool map_user_range(addr_space_t as, uintptr_t vaddr_start, uintptr_t vaddr_end)
+static bool map_user_range(addr_space_t as, uintptr_t vaddr_start, uintptr_t vaddr_end,
+                           uint32_t mmu_flags)
 {
     uintptr_t page;
 
@@ -78,7 +79,7 @@ static bool map_user_range(addr_space_t as, uintptr_t vaddr_start, uintptr_t vad
         }
 
         memset(frame, 0, PAGE_SIZE);
-        arch_map_page(as, page, virt_to_phys(frame), MMU_USER_RW);
+        arch_map_page(as, page, virt_to_phys(frame), mmu_flags);
     }
 
     return true;
@@ -224,8 +225,12 @@ bool elf_load(const char *path, addr_space_t as, vma_table_t *vmas, elf_load_res
             return false;
         }
 
-        /* allocate and map pages for this segment */
-        if (!map_user_range(as, seg_start, seg_end))
+        /* allocate and map pages for this segment, writable only if the
+         * segment is (the loader fills them through the kernel's direct map,
+         * so a read-only mapping does not get in its way) */
+        uint32_t mmu_flags = MMU_FLAG_PRESENT | MMU_FLAG_USER |
+                             ((prot & PROT_WRITE) ? MMU_FLAG_WRITE : 0);
+        if (!map_user_range(as, seg_start, seg_end, mmu_flags))
         {
             kfree(file_data);
             return false;

@@ -7,7 +7,8 @@
  * buffer that runs off the end of a mapping. touching it blindly page-faults
  * in the kernel (a panic) or lets a program read or write kernel memory.
  * these helpers check the current process's page tables first, so a bad
- * pointer becomes KERR_FAULT (-EFAULT) instead.
+ * pointer becomes KERR_FAULT (-EFAULT) instead. pages an area allows but
+ * that are not backed yet (demand paging) are backed before the access.
  *
  * the check and the access are not atomic, which is fine for now: there is
  * one CPU and one thread per address space, and only the process itself can

@@ -186,8 +186,8 @@ syscall_ret_t sys_waitpid(struct registers *regs)
  * returns the previous break address on success, or -1 on failure.
  *
  * if increment is 0, simply returns the current break without changing it.
- * for positive increments, allocates physical pages and maps them as
- * user-accessible for any new pages between the old and new break.
+ * for positive increments, grows the heap area; the new pages are backed
+ * with zeroed frames on first touch.
  */
 syscall_ret_t sys_sbrk(struct registers *regs)
 {
@@ -247,18 +247,7 @@ syscall_ret_t sys_sbrk(struct registers *regs)
         }
     }
 
-    for (; page < end; page += PAGE_SIZE)
-    {
-        void *frame = pmm_alloc_page();
-        if (!frame)
-        {
-            return -1;
-        }
-
-        memset(frame, 0, PAGE_SIZE);
-        arch_map_page(proc->page_directory, page, virt_to_phys(frame), MMU_USER_RW);
-    }
-
+    /* the new pages are backed on first touch (demand paging) */
     usermode_set_brk(new_brk);
     return (syscall_ret_t)old_brk;
 }
@@ -269,10 +258,11 @@ syscall_ret_t sys_sbrk(struct registers *regs)
  * (POSIX's advisory addr is dropped; the kernel always picks the range.)
  *
  * two forms:
- *   - anonymous (MAP_ANONYMOUS, fd < 0): allocate zeroed physical pages.
+ *   - anonymous (MAP_ANONYMOUS, fd < 0): zero-filled pages, backed on first
+ *     touch.
  *   - device-backed (fd is an open device node): route through vfs_mmap so the
  *     device maps its own memory (e.g. the framebuffer's LFB).
- * ranges come from the per-process mmap bump region. eager, no demand paging.
+ * ranges are the lowest free ones in the process's mmap region (its areas).
  * returns the mapped address, or MAP_FAILED (-1) on error.
  */
 syscall_ret_t sys_mmap(struct registers *regs)
@@ -322,30 +312,11 @@ syscall_ret_t sys_mmap(struct registers *regs)
         return (syscall_ret_t)MAP_FAILED; /* too many areas */
     }
 
-    if (flags & MAP_ANONYMOUS)
+    // anonymous memory needs nothing now: each page is backed with a zeroed
+    // frame the first time it is touched (demand paging). a device maps its
+    // own memory up front.
+    if (!(flags & MAP_ANONYMOUS))
     {
-        // anonymous: back each page with a fresh zeroed frame, user-accessible.
-        size_t mapped = 0;
-        for (; mapped < len_pages; mapped += PAGE_SIZE)
-        {
-            void *frame = pmm_alloc_page();
-            if (!frame)
-            {
-                // pages mapped so far stay in the page tables until exit
-                vma_remove(&proc->vmas, virt, virt + len_pages);
-                return (syscall_ret_t)MAP_FAILED;
-            }
-            memset(frame, 0, PAGE_SIZE);
-
-            uint32_t page_flags = (prot & PROT_WRITE)
-                                      ? MMU_USER_RW
-                                      : (MMU_FLAG_PRESENT | MMU_FLAG_USER);
-            arch_map_page(proc->page_directory, virt + mapped, virt_to_phys(frame), page_flags);
-        }
-    }
-    else
-    {
-        // device-backed: let the device map its own memory
         int32_t err = vfs_mmap(&entry->file, proc->page_directory, virt, len_pages, prot, offset);
         if (err != 0)
         {

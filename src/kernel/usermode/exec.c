@@ -71,8 +71,9 @@ int exec_program(const char *path, const char **argv)
         return -1;
     }
 
-    // the user stack area (its pages are mapped when the process first runs)
-    if (kerr_failed(vma_insert(&child->vmas, USER_STACK_BASE, USER_STACK_TOP,
+    // the user stack area: its top pages are mapped when the process first
+    // runs, the rest on demand as the stack grows down
+    if (kerr_failed(vma_insert(&child->vmas, USER_STACK_LIMIT, USER_STACK_TOP,
                                PROT_READ | PROT_WRITE, VMA_STACK)))
     {
         process_destroy(child);
