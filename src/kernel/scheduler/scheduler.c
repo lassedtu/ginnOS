@@ -238,11 +238,11 @@ static void schedule(void)
     // update TSS kernel stack to the new process's kernel stack top
     tss_set_kernel_stack(next->kernel_stack + KERNEL_STACK_SIZE);
 
-    // switch to the new process's address space
-    if (next->page_directory)
-    {
-        arch_switch_address_space(next->page_directory);
-    }
+    // switch to the new process's address space. the idle process and an
+    // exiting process that already released its own have none: use the
+    // kernel's, never a space some other process may free meanwhile.
+    arch_switch_address_space(next->page_directory ? next->page_directory
+                                                   : arch_kernel_address_space());
 
     // reset time slice
     ticks_remaining = SCHED_TIME_SLICE;
@@ -251,6 +251,10 @@ static void schedule(void)
     if (current)
     {
         arch_context_switch(&current->kernel_esp, next->kernel_esp);
+
+        // back on some process's stack: an orphan that just exited is off
+        // its own stack now, so it can be freed
+        process_reap_orphans();
     }
     else
     {

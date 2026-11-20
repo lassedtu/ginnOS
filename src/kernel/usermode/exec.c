@@ -115,38 +115,7 @@ void usermode_exit(int exit_code)
 {
     process_t *proc = process_current();
 
-    if (proc && proc->parent_pid != PID_NONE)
-    {
-        // masked from here on: becoming a zombie, waking the parent and
-        // switching away must not be split by a timer tick. this context
-        // never resumes, so the state is never restored.
-        arch_disable_interrupts();
-
-        // child of another process: transition to ZOMBIE, wake parent
-        proc->state = PROC_STATE_ZOMBIE;
-        proc->exit_code = exit_code;
-
-        // remove from scheduler (it's no longer runnable)
-        scheduler_remove(proc);
-
-        // check if parent is blocked waiting for us
-        process_t *parent = process_get(proc->parent_pid);
-        if (parent && parent->state == PROC_STATE_BLOCKED &&
-            parent->wait_for_pid == proc->pid)
-        {
-            // wake the parent
-            parent->state = PROC_STATE_READY;
-            parent->wait_for_pid = PID_NONE;
-            scheduler_ready(parent);
-        }
-
-        // yield this process is now a zombie and will never run again
-        scheduler_yield();
-
-        // unreachable
-        kernel_panic("usermode_exit: a zombie woke up... run.");
-    }
-    else
+    if (proc->pid == PID_INIT)
     {
         // PID 1 (init, for now /bin/sh) has no parent to reap it. with no
         // init left the system cannot do anything more: halt.
@@ -155,4 +124,46 @@ void usermode_exit(int exit_code)
         printf("init exited with code %d. System halted.\r\n", exit_code);
         arch_halt_forever();
     }
+
+    // release everything but the kernel stack and slot now, while this
+    // process can still sleep (closing a file may wait for the fs mutex).
+    // closing the fds here also gives pipe readers EOF as soon as the
+    // writer exits, not when the parent gets round to reaping it.
+    process_release_resources(proc);
+
+    // children outlive us: zombie ones are destroyed now, running ones are
+    // reaped by the kernel when they exit
+    process_orphan_children(proc);
+
+    // masked from here on: becoming a zombie, waking the parent and
+    // switching away must not be split by a timer tick. this context never
+    // resumes, so the state is never restored.
+    arch_disable_interrupts();
+
+    proc->state = PROC_STATE_ZOMBIE;
+    proc->exit_code = exit_code;
+    scheduler_remove(proc);
+
+    // parent_pid is PID_NONE if our parent exited first
+    process_t *parent = process_get(proc->parent_pid);
+    if (parent)
+    {
+        // wake the parent if it is blocked in waitpid for us
+        if (parent->state == PROC_STATE_BLOCKED && parent->wait_for_pid == proc->pid)
+        {
+            parent->state = PROC_STATE_READY;
+            parent->wait_for_pid = PID_NONE;
+            scheduler_ready(parent);
+        }
+    }
+    else
+    {
+        // nobody will waitpid for us: the scheduler reaps us once we're gone
+        process_note_orphan_zombie();
+    }
+
+    scheduler_yield();
+
+    // unreachable
+    kernel_panic("usermode_exit: a zombie woke up... run.");
 }

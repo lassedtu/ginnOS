@@ -9,6 +9,9 @@
 // invalid PID sentinel.
 #define PID_NONE 0
 
+// the first process (/bin/sh for now); the system halts if it exits.
+#define PID_INIT 1
+
 // size of per-process kernel stack (4 KiB).
 #define KERNEL_STACK_SIZE 8192
 
@@ -33,7 +36,8 @@ typedef enum
 typedef struct process
 {
     uint32_t pid;           // process identifier
-    uint32_t parent_pid;    // parent process PID (PID_NONE if orphan)
+    uint32_t parent_pid;    // parent PID; PID_NONE for PID 1 and for orphans,
+                            // which the kernel reaps itself when they exit
     process_state_t state;  // current state
     uint32_t brk;           // program break (for sbrk)
     uint32_t mmap_next;     // next free virtual address in the mmap region (bump allocator)
@@ -43,7 +47,7 @@ typedef struct process
     uint32_t entry;         // ELF entry point (used by trampoline on first schedule)
     uint32_t page_directory; // physical address of this process's page directory
     uint32_t wait_for_pid;  // PID this process is waiting for (0 = not waiting)
-    char **argv;            // kernel-heap copy of argv (freed after first schedule)
+    char **argv;            // kernel-heap copy of argv (freed at exit)
     uint8_t tty_raw;        // 0 = cooked (line-buffered), 1 = raw (event-based)
 
     // intrusive doubly-linked list for the scheduler ready queue.
@@ -93,6 +97,37 @@ void process_set_current(process_t *proc);
  * @param proc the process to destroy.
  */
 void process_destroy(process_t *proc);
+
+/**
+ * release what a process owns apart from its kernel stack and table slot:
+ * close its fds, free its argv copy and destroy its address space (after
+ * switching away from it, when it is the current process). run by an
+ * exiting process in its own context, since closing a file may sleep.
+ * safe to call more than once.
+ * @param proc the process.
+ */
+void process_release_resources(process_t *proc);
+
+/**
+ * detach the children of an exiting process: zombie children are destroyed
+ * now, running ones lose their parent (PID_NONE) and are reaped by the
+ * kernel when they exit.
+ * @param parent the exiting process.
+ */
+void process_orphan_children(process_t *parent);
+
+/**
+ * record that an orphan (no parent) has become a zombie and must be reaped
+ * by the kernel. call with interrupts masked, just before it switches away.
+ */
+void process_note_orphan_zombie(void);
+
+/**
+ * destroy orphan zombies. called by the scheduler right after a context
+ * switch, on the next process's stack, so a dead process's own stack is
+ * never freed while in use. runs with interrupts masked.
+ */
+void process_reap_orphans(void);
 
 /**
  * look up a process by PID. the pointer stays valid only while the process

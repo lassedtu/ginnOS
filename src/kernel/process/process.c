@@ -4,6 +4,8 @@
 #include "kernel/memory/memory_layout.h"
 #include "arch/arch.h"
 #include "kernel/sync/spinlock.h"
+#include "kernel/memory/heap.h"
+#include "kernel/assert.h"
 #include "common/memory.h"
 
 // the process table fixed array of PCBs.
@@ -14,6 +16,9 @@ static uint32_t next_pid = 1;
 
 // pointer to the currently running process.
 static process_t *current_process = NULL;
+
+// orphan zombies waiting for process_reap_orphans (changed with IRQs masked)
+static volatile uint32_t orphan_zombies;
 
 // guards slot ownership (a slot's state leaving or entering UNUSED, and its
 // pid) and next_pid, so two processes in exec at once can't claim the same
@@ -122,6 +127,51 @@ void process_set_current(process_t *proc)
     current_process = proc;
 }
 
+/**
+ * free a kernel-heap argv copy (an array of strings, NULL-terminated).
+ */
+static void free_argv(char **argv)
+{
+    if (!argv)
+    {
+        return;
+    }
+
+    for (uint32_t i = 0; argv[i]; i++)
+    {
+        kfree(argv[i]);
+    }
+    kfree(argv);
+}
+
+void process_release_resources(process_t *proc)
+{
+    // close all open file descriptors (including pipes and fds 0-2). this
+    // may run for a process that isn't the current one (a parent reaping a
+    // child that never ran), so it works on the entries directly rather
+    // than through fd_free(), which operates on process_current().
+    for (int i = 0; i < FD_MAX; i++)
+    {
+        fd_close_entry(&proc->fds[i]);
+    }
+
+    free_argv(proc->argv);
+    proc->argv = NULL;
+
+    // free the per-process address space (and user page tables/frames).
+    // a process tearing down its own space moves to the kernel's first; its
+    // kernel stack lives in the shared kernel region, so it stays mapped.
+    if (proc->page_directory)
+    {
+        if (proc == current_process)
+        {
+            arch_switch_address_space(arch_kernel_address_space());
+        }
+        arch_destroy_address_space(proc->page_directory);
+        proc->page_directory = 0;
+    }
+}
+
 void process_destroy(process_t *proc)
 {
     if (!proc)
@@ -129,14 +179,7 @@ void process_destroy(process_t *proc)
         return;
     }
 
-    // close all open file descriptors (including pipes and fds 0-2).
-    // this may run for a process that isn't the current one (a parent
-    // reaping a zombie child), so it works on the entries directly rather
-    // than through fd_free(), which operates on process_current().
-    for (int i = 0; i < FD_MAX; i++)
-    {
-        fd_close_entry(&proc->fds[i]);
-    }
+    process_release_resources(proc);
 
     // free the kernel stack
     if (proc->kernel_stack)
@@ -145,14 +188,69 @@ void process_destroy(process_t *proc)
         proc->kernel_stack = 0;
     }
 
-    // free the per-process address space (and user page tables/frames)
-    if (proc->page_directory)
+    release_slot(proc);
+}
+
+void process_orphan_children(process_t *parent)
+{
+    process_t *zombies[PROCESS_MAX];
+    uint32_t zombie_count = 0;
+
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX; i++)
     {
-        arch_destroy_address_space(proc->page_directory);
-        proc->page_directory = 0;
+        process_t *child = &proc_table[i];
+        if (child->state == PROC_STATE_UNUSED || child->parent_pid != parent->pid)
+        {
+            continue;
+        }
+
+        if (child->state == PROC_STATE_ZOMBIE)
+        {
+            // exited and never reaped: nobody else will, so destroy it below
+            zombies[zombie_count++] = child;
+        }
+        else
+        {
+            // still running: the kernel reaps it when it exits
+            child->parent_pid = PID_NONE;
+        }
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+
+    // zombies have switched away for good, so their stacks are free to go
+    for (uint32_t i = 0; i < zombie_count; i++)
+    {
+        process_destroy(zombies[i]);
+    }
+}
+
+void process_note_orphan_zombie(void)
+{
+    KASSERT(!arch_irqs_enabled(), "process_note_orphan_zombie: interrupts enabled");
+    orphan_zombies++;
+}
+
+void process_reap_orphans(void)
+{
+    if (orphan_zombies == 0)
+    {
+        return;
     }
 
-    release_slot(proc);
+    for (int i = 0; i < PROCESS_MAX; i++)
+    {
+        process_t *proc = &proc_table[i];
+        if (proc->state == PROC_STATE_ZOMBIE && proc->parent_pid == PID_NONE &&
+            proc != current_process)
+        {
+            // an orphan released everything else before it exited, so only
+            // its stack and slot are left and nothing here can sleep
+            KASSERT(proc->page_directory == 0, "orphan zombie still has an address space");
+            process_destroy(proc);
+            orphan_zombies--;
+        }
+    }
 }
 
 process_t *process_get(uint32_t pid)
