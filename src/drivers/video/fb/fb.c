@@ -73,8 +73,8 @@ static void mark_dirty(uint32_t y, uint32_t h)
  */
 static void map_framebuffer(uint32_t phys_base, uint32_t bytes)
 {
-    uint32_t start = phys_base & ~(PAGE_SIZE - 1);
-    uint32_t end = (phys_base + bytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint32_t start = PAGE_ALIGN_DOWN(phys_base);
+    uint32_t end = PAGE_ALIGN_UP(phys_base + bytes);
 
     for (uint32_t addr = start; addr < end; addr += PAGE_SIZE)
     {
@@ -115,8 +115,8 @@ static int32_t fb_dev_mmap(device_t *dev, uint32_t page_directory, uint32_t virt
     uint32_t flags = (prot & PROT_WRITE) ? MMU_USER_RW : MMU_FLAG_PRESENT | MMU_FLAG_USER;
 
     uint32_t phys = (uint32_t)fb.addr + offset; // identity-mapped: virt == phys
-    uint32_t phys_start = phys & ~(PAGE_SIZE - 1);
-    uint32_t phys_end = (phys + length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint32_t phys_start = PAGE_ALIGN_DOWN(phys);
+    uint32_t phys_end = PAGE_ALIGN_UP(phys + length);
 
     uint32_t v = virt;
     for (uint32_t p = phys_start; p < phys_end; p += PAGE_SIZE)

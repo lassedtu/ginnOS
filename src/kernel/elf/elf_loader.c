@@ -6,8 +6,7 @@
 #include "kernel/memory/heap.h"
 #include "arch/arch.h"
 #include "common/memory.h"
-
-#define PAGE_SIZE 4096u
+#include "kernel/memory/page.h"
 
 /**
  * validate an ELF32 header for a static i686 executable.
@@ -55,7 +54,7 @@ static bool elf_validate(const Elf32_Ehdr *ehdr)
  */
 static uint32_t page_align_up(uint32_t addr)
 {
-    return (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    return PAGE_ALIGN_UP(addr);
 }
 
 /**
@@ -66,7 +65,7 @@ static bool map_user_range(uint32_t pd_phys, uint32_t vaddr_start, uint32_t vadd
 {
     uint32_t page;
 
-    vaddr_start &= ~(PAGE_SIZE - 1);
+    vaddr_start = PAGE_ALIGN_DOWN(vaddr_start);
     vaddr_end = page_align_up(vaddr_end);
 
     for (page = vaddr_start; page < vaddr_end; page += PAGE_SIZE)
@@ -96,7 +95,7 @@ static void copy_to_process(uint32_t pd_phys, uint32_t vaddr, const void *src, u
     while (size > 0)
     {
         uint32_t phys = arch_translate_in(pd_phys, vaddr);
-        uint32_t offset_in_page = vaddr & (PAGE_SIZE - 1);
+        uint32_t offset_in_page = vaddr & PAGE_OFFSET_MASK;
         uint32_t chunk = PAGE_SIZE - offset_in_page;
         if (chunk > size)
         {
@@ -119,7 +118,7 @@ static void zero_in_process(uint32_t pd_phys, uint32_t vaddr, uint32_t size)
     while (size > 0)
     {
         uint32_t phys = arch_translate_in(pd_phys, vaddr);
-        uint32_t offset_in_page = vaddr & (PAGE_SIZE - 1);
+        uint32_t offset_in_page = vaddr & PAGE_OFFSET_MASK;
         uint32_t chunk = PAGE_SIZE - offset_in_page;
         if (chunk > size)
         {

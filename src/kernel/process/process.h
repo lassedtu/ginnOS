@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/stdint.h"
+#include "kernel/memory/page.h"
 #include "kernel/syscall/fd_table.h"
 
 // maximum number of concurrent processes.
@@ -13,7 +14,7 @@
 #define PID_INIT 1
 
 // size of per-process kernel stack (4 KiB).
-#define KERNEL_STACK_SIZE 8192
+#define KERNEL_STACK_SIZE (2 * PAGE_SIZE)
 
 /**
  * process states.

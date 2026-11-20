@@ -12,6 +12,13 @@ typedef unsigned long int uint32_t;
 typedef signed long long int int64_t;
 typedef unsigned long long int uint64_t;
 
+// integers wide enough to hold a pointer: the only way pointers and integers
+// should be converted. the compiler names the right type for each target.
+typedef __INTPTR_TYPE__ intptr_t;
+typedef __UINTPTR_TYPE__ uintptr_t;
+
+#define UINTPTR_MAX __UINTPTR_MAX__
+
 typedef uint8_t bool;
 
 #define false 0

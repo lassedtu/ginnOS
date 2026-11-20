@@ -184,7 +184,7 @@ bool paging_map(uint32_t virt, uint32_t phys, uint32_t flags)
     }
 
     table = (uint32_t *)PAGE_FRAME(kernel_directory[dir_index]);
-    table[tbl_index] = (phys & 0xFFFFF000u) | (flags & 0xFFFu);
+    table[tbl_index] = PAGE_ALIGN_DOWN(phys) | (flags & PAGE_OFFSET_MASK);
 
     paging_invalidate(virt);
     return true;
@@ -225,7 +225,7 @@ uint32_t paging_get_physical(uint32_t virt)
         return 0;
     }
 
-    return PAGE_FRAME(table[tbl_index]) | (virt & 0xFFF);
+    return PAGE_FRAME(table[tbl_index]) | (virt & PAGE_OFFSET_MASK);
 }
 
 uint32_t paging_get_physical_in(uint32_t pd_phys, uint32_t virt)
@@ -247,7 +247,7 @@ uint32_t paging_get_physical_in(uint32_t pd_phys, uint32_t virt)
         return 0;
     }
 
-    return PAGE_FRAME(table[tbl_index]) | (virt & 0xFFF);
+    return PAGE_FRAME(table[tbl_index]) | (virt & PAGE_OFFSET_MASK);
 }
 
 uint32_t paging_directory_address(void)
@@ -301,7 +301,7 @@ bool paging_user_range_ok(uint32_t pd_phys, uint32_t addr, uint32_t len, bool wr
     uint32_t pde_need = PDE_PRESENT | PDE_USER | (write ? PDE_READ_WRITE : 0);
     uint32_t pte_need = PTE_PRESENT | PTE_USER | (write ? PTE_READ_WRITE : 0);
 
-    for (uint32_t page = addr & ~(PAGE_SIZE - 1);; page += PAGE_SIZE)
+    for (uint32_t page = PAGE_ALIGN_DOWN(addr);; page += PAGE_SIZE)
     {
         uint32_t pde = dir[PAGE_DIR_INDEX(page)];
         if ((pde & pde_need) != pde_need)
@@ -316,7 +316,7 @@ bool paging_user_range_ok(uint32_t pd_phys, uint32_t addr, uint32_t len, bool wr
             return false;
         }
 
-        if (page >= (last & ~(PAGE_SIZE - 1)))
+        if (page >= PAGE_ALIGN_DOWN(last))
         {
             return true;
         }
@@ -443,7 +443,7 @@ bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flag
     }
 
     table = (uint32_t *)PAGE_FRAME(dir[dir_index]);
-    table[tbl_index] = (phys & 0xFFFFF000u) | (flags & 0xFFFu);
+    table[tbl_index] = PAGE_ALIGN_DOWN(phys) | (flags & PAGE_OFFSET_MASK);
 
     return true;
 }

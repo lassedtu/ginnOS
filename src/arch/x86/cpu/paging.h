@@ -1,9 +1,7 @@
 #pragma once
 
 #include "common/stdint.h"
-
-// Page size
-#define PAGE_SIZE 4096u
+#include "kernel/memory/page.h"
 
 // Page Directory Entry (PDE) flags
 #define PDE_PRESENT 0x001u       // page table is present in memory
@@ -31,7 +29,7 @@
 #define PAGE_TABLE_INDEX(vaddr) (((uint32_t)(vaddr) >> 12) & 0x3FF)
 
 // extract the physical frame address from a PDE or PTE (upper 20 bits).
-#define PAGE_FRAME(entry) ((uint32_t)(entry) & 0xFFFFF000u)
+#define PAGE_FRAME(entry) ((uint32_t)(entry) & ~PAGE_OFFSET_MASK)
 
 // number of entries in a page directory or page table.
 #define PAGE_ENTRIES 1024u

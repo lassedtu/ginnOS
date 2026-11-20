@@ -3,9 +3,8 @@
 #include "arch/arch.h"
 #include "common/memory.h"
 #include "kernel/memory/memory_layout.h"
+#include "kernel/memory/page.h"
 #include "kernel/process/process.h"
-
-#define UACCESS_PAGE_SIZE 4096u
 
 bool user_access_ok(const void *ptr, uint32_t len, bool write)
 {
@@ -66,7 +65,7 @@ int32_t strncpy_from_user(char *dst, const char *user_src, uint32_t size)
         if (addr + i >= checked_end)
         {
             // check the rest of this page before reading any of it
-            uint32_t page_end = ((addr + i) & ~(UACCESS_PAGE_SIZE - 1)) + UACCESS_PAGE_SIZE;
+            uint32_t page_end = PAGE_ALIGN_DOWN(addr + i) + PAGE_SIZE;
             if (!user_access_ok((const void *)(addr + i), page_end - (addr + i), false))
             {
                 return KERR_FAULT;

@@ -94,7 +94,7 @@ void pmm_init(boot_info_t *boot)
         }
 
         /* align start up to page boundary, end down to page boundary */
-        uint32_t page_start = (region_start + PAGE_SIZE - 1) / PAGE_SIZE;
+        uint32_t page_start = PAGE_COUNT(region_start);
         uint32_t page_end = region_end / PAGE_SIZE;
 
         /* skip page 0 (null page, never allocate) */

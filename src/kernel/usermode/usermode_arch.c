@@ -10,7 +10,7 @@
 #include "common/string.h"
 
 // size of the user stack in bytes (4 pages = 16 KiB).
-#define USER_STACK_SIZE (4096 * 4)
+#define USER_STACK_SIZE (4 * PAGE_SIZE)
 
 // maximum number of command-line arguments passed to a user program.
 #define ARGV_MAX 64
@@ -20,7 +20,7 @@ void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv)
     // allocate physical pages for the user stack and map them at a fixed
     // virtual address range just below the program load address.
     // stack region: USER_STACK_BASE - USER_LOAD_ADDR (16 KiB, 4 pages)
-    uint32_t stack_pages = USER_STACK_SIZE / 4096;
+    uint32_t stack_pages = USER_STACK_SIZE / PAGE_SIZE;
     uint32_t stack_virt_base = USER_LOAD_ADDR - USER_STACK_SIZE;
 
     for (uint32_t p = 0; p < stack_pages; p++)
@@ -30,8 +30,8 @@ void jump_to_usermode(uint32_t entry, uint32_t pd_phys, const char **argv)
         {
             kernel_panic("jump_to_usermode: failed to allocate user stack page");
         }
-        memset(frame, 0, 4096);
-        paging_map_in(pd_phys, stack_virt_base + p * 4096, (uint32_t)frame, PTE_USER_RW);
+        memset(frame, 0, PAGE_SIZE);
+        paging_map_in(pd_phys, stack_virt_base + p * PAGE_SIZE, (uint32_t)frame, PTE_USER_RW);
     }
 
     // user stack grows downward. start at the top of the stack region

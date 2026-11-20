@@ -2,8 +2,7 @@
 
 #include "common/stdint.h"
 #include "common/boot/boot_info.h"
-
-#define PAGE_SIZE 4096u
+#include "kernel/memory/page.h"
 
 /**
  * initialize PMM layout by computing bitmap placement from the E820 map.

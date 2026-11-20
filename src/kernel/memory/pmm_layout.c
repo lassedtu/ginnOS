@@ -13,7 +13,7 @@ static uint32_t total_pages;
  */
 static uint32_t page_align_up(uint32_t addr)
 {
-    return (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    return PAGE_ALIGN_UP(addr);
 }
 
 void pmm_layout_init(boot_info_t *boot)

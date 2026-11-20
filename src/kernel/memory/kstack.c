@@ -13,8 +13,7 @@
 // one slot per possible process
 #define KSTACK_SLOTS PROCESS_MAX
 
-#define KSTACK_PAGE_SIZE 4096u
-#define KSTACK_PAGES (KERNEL_STACK_SIZE / KSTACK_PAGE_SIZE)
+#define KSTACK_PAGES (KERNEL_STACK_SIZE / PAGE_SIZE)
 
 #define KSTACK_REGION_END (KSTACK_REGION_BASE + KSTACK_SLOTS * KSTACK_SLOT_SIZE)
 
@@ -39,7 +38,7 @@ static void unmap_pages(uint32_t base, uint32_t pages)
 
     for (uint32_t i = 0; i < pages; i++)
     {
-        uint32_t virt = base + i * KSTACK_PAGE_SIZE;
+        uint32_t virt = base + i * PAGE_SIZE;
         uint32_t phys = arch_translate_in(kernel_as, virt);
         arch_unmap_kernel_page(virt);
         if (phys)
@@ -102,7 +101,7 @@ uint32_t kstack_alloc(void)
             release_slot(slot);
             return 0;
         }
-        arch_map_kernel_page(base + i * KSTACK_PAGE_SIZE, (uint32_t)frame);
+        arch_map_kernel_page(base + i * PAGE_SIZE, (uint32_t)frame);
     }
 
     memset((void *)base, 0, KERNEL_STACK_SIZE);

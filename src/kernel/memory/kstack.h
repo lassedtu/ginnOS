@@ -13,9 +13,10 @@
  */
 
 #include "common/stdint.h"
+#include "kernel/memory/page.h"
 
 // size of the unmapped guard page below each stack
-#define KSTACK_GUARD_SIZE 4096u
+#define KSTACK_GUARD_SIZE PAGE_SIZE
 
 /**
  * reserve the kernel stack region. must run after paging_init() and before

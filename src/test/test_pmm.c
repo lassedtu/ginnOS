@@ -1,8 +1,8 @@
 #include "ktest.h"
 
+#include "kernel/memory/page.h"
 #include "kernel/memory/pmm.h"
 
-#define PAGE_BYTES 4096u
 
 KTEST(pmm_alloc_free_single)
 {
@@ -10,7 +10,7 @@ KTEST(pmm_alloc_free_single)
 
     void *page = pmm_alloc_page();
     KEXPECT(page != NULL);
-    KEXPECT_EQ((uint32_t)page % PAGE_BYTES, 0);
+    KEXPECT_EQ((uint32_t)page % PAGE_SIZE, 0);
     KEXPECT_EQ(pmm_free_count(), free_before - 1);
     KEXPECT(pmm_owns((uint32_t)page));
 
@@ -63,7 +63,7 @@ KTEST(pmm_alloc_contiguous_run)
 
     uint8_t *run = pmm_alloc_contiguous(8);
     KEXPECT(run != NULL);
-    KEXPECT_EQ((uint32_t)run % PAGE_BYTES, 0);
+    KEXPECT_EQ((uint32_t)run % PAGE_SIZE, 0);
     KEXPECT_EQ(pmm_free_count(), free_before - 8);
 
     if (run)
@@ -72,16 +72,16 @@ KTEST(pmm_alloc_contiguous_run)
         bool all_used = true;
         for (uint32_t i = 0; i < 8; i++)
         {
-            if (pmm_is_page_free(((uint32_t)run / PAGE_BYTES) + i))
+            if (pmm_is_page_free(((uint32_t)run / PAGE_SIZE) + i))
                 all_used = false;
         }
         KEXPECT(all_used);
         run[0] = 1;
-        run[8 * PAGE_BYTES - 1] = 2;
-        KEXPECT(run[0] == 1 && run[8 * PAGE_BYTES - 1] == 2);
+        run[8 * PAGE_SIZE - 1] = 2;
+        KEXPECT(run[0] == 1 && run[8 * PAGE_SIZE - 1] == 2);
 
         for (uint32_t i = 0; i < 8; i++)
-            pmm_free_page(run + i * PAGE_BYTES);
+            pmm_free_page(run + i * PAGE_SIZE);
     }
     KEXPECT_EQ(pmm_free_count(), free_before);
 }
@@ -101,11 +101,11 @@ KTEST(pmm_claim_pages_all_or_nothing)
     if (!run)
         return;
 
-    uint32_t first = (uint32_t)run / PAGE_BYTES;
+    uint32_t first = (uint32_t)run / PAGE_SIZE;
 
     // free pages 1-3 of the run, keep page 0 used
     for (uint32_t i = 1; i < 4; i++)
-        pmm_free_page(run + i * PAGE_BYTES);
+        pmm_free_page(run + i * PAGE_SIZE);
     uint32_t free_before = pmm_free_count();
 
     // a range that includes a used page claims nothing
@@ -123,5 +123,5 @@ KTEST(pmm_claim_pages_all_or_nothing)
     KEXPECT(!pmm_claim_pages(first, 0xFFFFFFFFu));
 
     for (uint32_t i = 0; i < 4; i++)
-        pmm_free_page(run + i * PAGE_BYTES);
+        pmm_free_page(run + i * PAGE_SIZE);
 }

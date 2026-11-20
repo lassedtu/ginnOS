@@ -76,7 +76,7 @@ static bool frame_word_readable(uint32_t addr)
     {
         return true;
     }
-    return paging_get_physical(addr & ~0xFFFu) != 0;
+    return paging_get_physical(PAGE_ALIGN_DOWN(addr)) != 0;
 }
 
 int arch_stack_walk(uint32_t frame, uint32_t *pcs, int max)

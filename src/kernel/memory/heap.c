@@ -162,7 +162,7 @@ static void heap_poison(void *ptr, uint32_t size)
 void heap_init(void)
 {
     // place the heap right after the PMM bitmap (page-aligned)
-    uint32_t heap_start = (pmm_bitmap_end() + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint32_t heap_start = PAGE_ALIGN_UP(pmm_bitmap_end());
     uint32_t heap_end = heap_start + (HEAP_INITIAL_PAGES * PAGE_SIZE);
 
     memory_reserve_heap(heap_start, heap_end);
@@ -213,7 +213,7 @@ static bool heap_grow_in_place(uint32_t pages)
 static bool heap_expand(uint32_t needed)
 {
     uint32_t bytes_needed = needed + sizeof(heap_block_t);
-    uint32_t pages_needed = (bytes_needed + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint32_t pages_needed = PAGE_COUNT(bytes_needed);
     if (pages_needed < HEAP_EXPAND_PAGES)
     {
         pages_needed = HEAP_EXPAND_PAGES;

@@ -215,8 +215,8 @@ int32_t sys_sbrk(struct registers *regs)
     }
 
     /* allocate and map any new pages between old_brk and new_brk */
-    uint32_t page = old_brk & ~(PAGE_SIZE - 1);
-    uint32_t end = (new_brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint32_t page = PAGE_ALIGN_DOWN(old_brk);
+    uint32_t end = PAGE_ALIGN_UP(new_brk);
     process_t *proc = process_current();
     uint32_t pd = proc ? proc->page_directory : arch_kernel_address_space();
 
@@ -263,13 +263,13 @@ int32_t sys_mmap(struct registers *regs)
     }
 
     // offset must be page-aligned (file/device mappings start on a page).
-    if (offset & (PAGE_SIZE - 1))
+    if (!PAGE_IS_ALIGNED(offset))
     {
         return (int32_t)(uint32_t)MAP_FAILED;
     }
 
     // reserve a page-aligned range from the process's mmap bump cursor.
-    uint32_t len_pages = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint32_t len_pages = PAGE_ALIGN_UP(length);
     uint32_t virt = proc->mmap_next;
     if (virt < USER_MMAP_BASE || len_pages > USER_MMAP_END - virt)
     {
