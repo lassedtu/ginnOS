@@ -189,21 +189,7 @@ void heap_init(void)
 static bool heap_grow_in_place(uint32_t pages)
 {
     heap_segment_t *newest = &segments[segment_count - 1];
-    uint32_t first_page = newest->end / PAGE_SIZE;
-
-    for (uint32_t i = 0; i < pages; i++)
-    {
-        if (!pmm_is_page_free(first_page + i))
-        {
-            return false;
-        }
-    }
-
-    for (uint32_t i = 0; i < pages; i++)
-    {
-        pmm_mark_page_used(first_page + i);
-    }
-    return true;
+    return pmm_claim_pages(newest->end / PAGE_SIZE, pages);
 }
 
 /**

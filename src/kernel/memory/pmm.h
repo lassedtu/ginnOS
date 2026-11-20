@@ -1,5 +1,13 @@
 #pragma once
 
+/**
+ * physical memory manager: a bitmap of 4 KiB page frames.
+ *
+ * every function is safe to call from preemptible kernel code: the bitmap
+ * and counters are guarded by a spinlock that masks interrupts, so a
+ * process switch can never land in the middle of an update.
+ */
+
 #include "common/stdint.h"
 #include "common/boot/boot_info.h"
 
@@ -63,14 +71,19 @@ bool pmm_owns(uint32_t phys);
 void pmm_mark_region_used(uint32_t start, uint32_t end);
 
 /**
- * check whether a specific page frame is free.
+ * check whether a specific page frame is free. the answer can be stale as
+ * soon as it returns; to take pages, use pmm_claim_pages().
  * @param page_index index of the page frame to check.
  * @return true if the page is free, false if used or out of range.
  */
 bool pmm_is_page_free(uint32_t page_index);
 
 /**
- * mark a single page frame as used.
- * @param page_index index of the page frame to mark.
+ * claim a run of specific page frames, only if every one of them is free.
+ * the check and the claim are one atomic step.
+ * @param first_page index of the first page frame.
+ * @param count number of page frames.
+ * @return true if all pages were free and are now used; false (nothing
+ *         claimed) otherwise.
  */
-void pmm_mark_page_used(uint32_t page_index);
+bool pmm_claim_pages(uint32_t first_page, uint32_t count);

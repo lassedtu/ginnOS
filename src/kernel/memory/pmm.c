@@ -3,6 +3,7 @@
 #include "pmm_layout.h"
 #include "region.h"
 #include "kernel/panic.h"
+#include "kernel/sync/spinlock.h"
 #include "common/memory.h"
 #include "common/stdio.h"
 
@@ -17,6 +18,9 @@ static uint32_t free_pages;
 
 /* index hint for next-fit allocation (avoids O(n) scan from 0 every time) */
 static uint32_t search_start;
+
+// guards the bitmap, free_pages and search_start after pmm_init()
+static spinlock_t pmm_lock;
 
 /**
  * set the bit corresponding to the given page index in the bitmap.
@@ -53,6 +57,7 @@ void pmm_init(boot_info_t *boot)
     total_pages = pmm_total_pages();
     free_pages = 0;
     search_start = 0;
+    spinlock_init(&pmm_lock);
 
     /* start with all pages marked as used (zeroed bitmap = all used) */
     memset(bitmap, 0, pmm_bitmap_size());
@@ -118,10 +123,11 @@ void pmm_init(boot_info_t *boot)
 
 void *pmm_alloc_page(void)
 {
-    uint32_t i;
+    void *page = NULL;
+    uint32_t flags = spin_lock_irqsave(&pmm_lock);
 
     /* next-fit scan starting from search_start */
-    for (i = 0; i < total_pages; i++)
+    for (uint32_t i = 0; i < total_pages; i++)
     {
         uint32_t index = (search_start + i) % total_pages;
 
@@ -130,17 +136,23 @@ void *pmm_alloc_page(void)
             bitmap_clear(index);
             free_pages--;
             search_start = (index + 1) % total_pages;
-            return (void *)(index * PAGE_SIZE);
+            page = (void *)(index * PAGE_SIZE);
+            break;
         }
     }
 
-    return NULL;
+    spin_unlock_irqrestore(&pmm_lock, flags);
+    return page;
 }
 
 void *pmm_alloc_contiguous(uint32_t count)
 {
+    void *run = NULL;
+    uint32_t flags = spin_lock_irqsave(&pmm_lock);
+
     if (count == 0 || count > free_pages)
     {
+        spin_unlock_irqrestore(&pmm_lock, flags);
         return NULL;
     }
 
@@ -170,11 +182,13 @@ void *pmm_alloc_contiguous(uint32_t count)
                 bitmap_clear(page);
             }
             free_pages -= count;
-            return (void *)(run_start * PAGE_SIZE);
+            run = (void *)(run_start * PAGE_SIZE);
+            break;
         }
     }
 
-    return NULL;
+    spin_unlock_irqrestore(&pmm_lock, flags);
+    return run;
 }
 
 void pmm_free_page(void *address)
@@ -193,6 +207,8 @@ void pmm_free_page(void *address)
         kernel_panic("pmm_free_page: address out of range");
     }
 
+    uint32_t flags = spin_lock_irqsave(&pmm_lock);
+
     if (bitmap_test(index))
     {
         kernel_panic("pmm_free_page: double free detected");
@@ -200,6 +216,8 @@ void pmm_free_page(void *address)
 
     bitmap_set(index);
     free_pages++;
+
+    spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
 uint32_t pmm_free_count(void)
@@ -221,9 +239,9 @@ void pmm_mark_region_used(uint32_t start, uint32_t end)
 {
     uint32_t page_start = start / PAGE_SIZE;
     uint32_t page_end = end / PAGE_SIZE;
-    uint32_t page;
+    uint32_t flags = spin_lock_irqsave(&pmm_lock);
 
-    for (page = page_start; page < page_end && page < total_pages; page++)
+    for (uint32_t page = page_start; page < page_end && page < total_pages; page++)
     {
         if (bitmap_test(page))
         {
@@ -231,6 +249,8 @@ void pmm_mark_region_used(uint32_t start, uint32_t end)
             free_pages--;
         }
     }
+
+    spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
 bool pmm_is_page_free(uint32_t page_index)
@@ -243,16 +263,30 @@ bool pmm_is_page_free(uint32_t page_index)
     return bitmap_test(page_index);
 }
 
-void pmm_mark_page_used(uint32_t page_index)
+bool pmm_claim_pages(uint32_t first_page, uint32_t count)
 {
-    if (page_index >= total_pages)
+    if (first_page >= total_pages || count > total_pages - first_page)
     {
-        return;
+        return false;
     }
 
-    if (bitmap_test(page_index))
+    uint32_t flags = spin_lock_irqsave(&pmm_lock);
+
+    for (uint32_t i = 0; i < count; i++)
     {
-        bitmap_clear(page_index);
-        free_pages--;
+        if (!bitmap_test(first_page + i))
+        {
+            spin_unlock_irqrestore(&pmm_lock, flags);
+            return false;
+        }
     }
+
+    for (uint32_t i = 0; i < count; i++)
+    {
+        bitmap_clear(first_page + i);
+    }
+    free_pages -= count;
+
+    spin_unlock_irqrestore(&pmm_lock, flags);
+    return true;
 }

@@ -93,3 +93,35 @@ KTEST(pmm_alloc_contiguous_rejects_impossible)
     KEXPECT(pmm_alloc_contiguous(pmm_total_count() + 1) == NULL);
     KEXPECT_EQ(pmm_free_count(), free_before);
 }
+
+KTEST(pmm_claim_pages_all_or_nothing)
+{
+    uint8_t *run = pmm_alloc_contiguous(4);
+    KEXPECT(run != NULL);
+    if (!run)
+        return;
+
+    uint32_t first = (uint32_t)run / PAGE_BYTES;
+
+    // free pages 1-3 of the run, keep page 0 used
+    for (uint32_t i = 1; i < 4; i++)
+        pmm_free_page(run + i * PAGE_BYTES);
+    uint32_t free_before = pmm_free_count();
+
+    // a range that includes a used page claims nothing
+    KEXPECT(!pmm_claim_pages(first, 4));
+    KEXPECT_EQ(pmm_free_count(), free_before);
+    KEXPECT(pmm_is_page_free(first + 1));
+
+    // a range of free pages is claimed in full
+    KEXPECT(pmm_claim_pages(first + 1, 3));
+    KEXPECT_EQ(pmm_free_count(), free_before - 3);
+    KEXPECT(!pmm_is_page_free(first + 3));
+
+    // out of range never claims
+    KEXPECT(!pmm_claim_pages(pmm_total_count(), 1));
+    KEXPECT(!pmm_claim_pages(first, 0xFFFFFFFFu));
+
+    for (uint32_t i = 0; i < 4; i++)
+        pmm_free_page(run + i * PAGE_BYTES);
+}
