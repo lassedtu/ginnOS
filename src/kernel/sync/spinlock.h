@@ -1,6 +1,35 @@
 #pragma once
 
 /**
+ * kernel locking rules (uniprocessor):
+ *
+ * - syscalls run with interrupts enabled (int 0x80 is a trap gate) and the
+ *   timer can switch processes anywhere in kernel code, so any data shared
+ *   between processes needs a lock, not just data shared with IRQs.
+ * - IRQ handlers run with interrupts masked and must never sleep.
+ * - short critical sections, and anything an IRQ handler touches: a
+ *   spinlock with spin_lock_irqsave / spin_unlock_irqrestore. examples:
+ *   heap, pmm, process table, pipes, keyboard ring, console.
+ * - long sections in process context (disk and filesystem I/O, a whole
+ *   console write): a mutex_t (kernel/sync/mutex.h), which sleeps instead
+ *   of masking interrupts.
+ * - to wait for a condition guarded by a spinlock, test it with the lock
+ *   held and sleep with wait_queue_block_locked(), which releases the lock
+ *   only once the process is queued, so a wakeup cannot be lost. re-test
+ *   in a loop after waking.
+ * - nothing can block before the scheduler is active (the first /bin/sh
+ *   runs on the boot stack until it starts a child); see
+ *   scheduler_is_active().
+ * - never sleep (mutex, wait queue) while holding a spinlock, except
+ *   through wait_queue_block_locked() on that same lock. locks don't nest
+ *   except heap_lock -> pmm_lock (heap growth).
+ * - avoid spin_lock / spin_unlock: spin_unlock enables interrupts
+ *   unconditionally, which is wrong whenever the caller had them masked.
+ * - lock assertions (KASSERT) are compiled out under NDEBUG; they only fire
+ *   in `make debug` builds.
+ */
+
+/**
  * spinlock primitive for protecting data shared between process context
  * and interrupt handlers.
  *
