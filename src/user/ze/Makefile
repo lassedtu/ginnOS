@@ -60,17 +60,10 @@ $(OBJDIR)/core/%.o: $(ZE_SRC)/src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Platform: compile from zen-editor/platforms/ginnos/. compat/ze_compat.h
-# adapts its open() calls to access-mode checks (see that file).
-$(OBJDIR)/plat/%.o: $(ZE_SRC)/platforms/ginnos/%.c compat/ze_compat.h
+# Platform: compile from zen-editor/platforms/ginnos/
+$(OBJDIR)/plat/%.o: $(ZE_SRC)/platforms/ginnos/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -include compat/ze_compat.h -c $< -o $@
-
-# terminal.c declares its own size_t and ssize_t (see compat/ze_terminal_compat.h)
-$(OBJDIR)/plat/terminal.o: $(ZE_SRC)/platforms/ginnos/terminal.c compat/ze_compat.h \
-                           compat/ze_terminal_compat.h
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -include compat/ze_compat.h -include compat/ze_terminal_compat.h -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(TARGET): $(OBJS) $(CRT0) $(LIBC)
 	@mkdir -p $(dir $@)
