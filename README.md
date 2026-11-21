@@ -242,13 +242,16 @@ today.
 
 ### Portability and tooling
 
+- Two architectures from one source tree: i686 (32-bit, Multiboot 2 or the
+  custom bootloader) and x86_64 (64-bit, the Limine boot protocol, 4-level
+  paging, the `syscall` instruction, ELF64 programs). `make ARCH=x86_64`
+  builds the 64-bit kernel, libc and all programs into `build/x86_64/`
 - Architecture-neutral abstraction layers (`arch_*` for interrupts, MMU,
-  context switch, boot protocol) with x86 as the only current backend,
-  groundwork for a future x86_64 port
+  context switch, boot protocol); `src/arch/x86` holds both x86 ports
 - Pointer-width types throughout (`uintptr_t`/`size_t`/`phys_addr_t`, one
   `PAGE_SIZE`, `phys_to_virt`/`virt_to_phys`, a `syscall_arg()` accessor) and
   compiler-checked printf formats
-- Multi-arch-ready build system (`ARCH` switch), `make lint` (clang-tidy),
+- Multi-arch build system (`ARCH=i686` or `ARCH=x86_64`), `make lint` (clang-tidy),
   `make check64` (x86_64 portability check), `make format` (clang-format),
   `make gdb`/`make debug` (QEMU + gdb attached), `make run-uefi` (QEMU with
   UEFI firmware), and `compile_commands.json`
@@ -271,6 +274,7 @@ Only install what this two-stage build needs:
 
 ```bash
 brew install gmp mpfr libmpc texinfo nasm qemu mtools e2fsprogs
+brew install x86_64-elf-gcc   # only for the 64-bit build (make ARCH=x86_64)
 brew install gdb   # optional, for make gdb / make debug
 ```
 
@@ -343,7 +347,7 @@ qemu-system-i386 --version
 
 ## NixOS / Nix Toolchain Setup
 
-A `shell.nix` is included at the project root. It pulls in the `i686-elf` cross-compiler, binutils, NASM, QEMU, and Python 3, no manual toolchain build required.
+A `shell.nix` is included at the project root. It pulls in the `i686-elf` and `x86_64-elf` cross-compilers, binutils, NASM, QEMU, Python 3, mtools, e2fsprogs and OVMF, no manual toolchain build required.
 
 ### Enter the dev shell
 
@@ -549,11 +553,21 @@ with the result):
 make test
 ```
 
+Build and run the 64-bit system (needs `x86_64-elf-gcc`; the output goes to
+`build/x86_64/`, so both builds can live side by side). Every make target
+takes `ARCH`:
+
+```bash
+make ARCH=x86_64
+make run ARCH=x86_64
+make run-uefi ARCH=x86_64
+make test ARCH=x86_64
+```
+
 Check the kernel for 64-bit portability (needs a host `clang`; nothing is
 built or run). It compiles every kernel, driver, filesystem and test source
-for x86_64 without linking, and fails on any pointer/integer cast, 64-to-32-bit
-narrowing or printf format mismatch, so code that only works with 32-bit
-pointers is caught before the x86_64 port:
+for x86_64 with clang's stricter warnings, and fails on any pointer/integer
+cast, 64-to-32-bit narrowing or printf format mismatch:
 
 ```bash
 make check64
