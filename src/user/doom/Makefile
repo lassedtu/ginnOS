@@ -2,7 +2,9 @@
 #
 # Builds the doomgeneric engine (a git submodule at src/user/doom/doomgeneric,
 # not changed) with the ginnOS platform files doomgeneric_ginnos.c (screen,
-# keys, time) and doomgeneric_ginnos_sound.c (sound effects on /dev/dsp).
+# keys, time), doomgeneric_ginnos_sound.c (sound effects on /dev/dsp) and
+# doomgeneric_ginnos_opl.c (the OPL interface for Chocolate Doom's music
+# player, from the chocolate-doom submodule).
 # After cloning ginnOS, run: git submodule update --init
 
 PROG := doom
@@ -18,6 +20,9 @@ TOOLCHAIN_FLAGS ?=
 
 BUILD    := $(BUILD_ROOT)/user
 DG_SRC   := doomgeneric/doomgeneric
+# Chocolate Doom 2.3.0 (a submodule, not changed): the OPL music player and
+# the OPL3 emulator
+CHOCO    := chocolate-doom
 
 CROSS   ?= i686-elf-
 CC      := $(CROSS)gcc
@@ -28,7 +33,7 @@ LD      := $(CROSS)ld
 ENGINE_WARNINGS := -w
 CFLAGS  := -std=gnu99 -ffreestanding -O2 $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
            -fno-pie -fno-stack-protector -nostdlib -fno-builtin-malloc \
-           -I$(DG_SRC) -Iinclude -I$(LIBC_INC) -MMD -MP -DNORMALUNIX -D_DEFAULT_SOURCE -DFEATURE_SOUND
+           -I$(DG_SRC) -Iinclude -I$(CHOCO)/opl -I$(LIBC_INC) -MMD -MP -DNORMALUNIX -D_DEFAULT_SOURCE -DFEATURE_SOUND
 
 LDFLAGS := -T $(USER_LD_SCRIPT) -nostdlib
 
@@ -50,11 +55,17 @@ ENGINE_SRCS := dummy.c am_map.c doomdef.c doomstat.c dstrings.c d_event.c d_item
     p_sight.c p_spec.c p_switch.c p_telept.c p_tick.c p_user.c r_bsp.c r_data.c r_draw.c \
     r_main.c r_plane.c r_segs.c r_sky.c r_things.c sha1.c sounds.c statdump.c st_lib.c \
     st_stuff.c s_sound.c tables.c v_video.c wi_stuff.c w_checksum.c w_file.c w_main.c \
-    w_wad.c z_zone.c w_file_stdc.c i_input.c i_video.c doomgeneric.c
+    w_wad.c z_zone.c w_file_stdc.c i_input.c i_video.c doomgeneric.c mus2mid.c
+
+# the music files from Chocolate Doom (they include their own headers, next
+# to them, before doomgeneric's)
+CHOCO_SRCS := src/i_oplmusic.c src/midifile.c opl/opl3.c opl/opl_queue.c
 
 ENGINE_OBJS := $(patsubst %.c,$(OBJDIR)/engine/%.o,$(ENGINE_SRCS))
-PLAT_OBJS   := $(OBJDIR)/doomgeneric_ginnos.o $(OBJDIR)/doomgeneric_ginnos_sound.o
-OBJS        := $(ENGINE_OBJS) $(PLAT_OBJS)
+CHOCO_OBJS  := $(patsubst %.c,$(OBJDIR)/choco/%.o,$(CHOCO_SRCS))
+PLAT_OBJS   := $(OBJDIR)/doomgeneric_ginnos.o $(OBJDIR)/doomgeneric_ginnos_sound.o \
+               $(OBJDIR)/doomgeneric_ginnos_opl.o
+OBJS        := $(ENGINE_OBJS) $(CHOCO_OBJS) $(PLAT_OBJS)
 
 DEP_FILES := $(OBJS:.o=.d)
 
@@ -64,8 +75,15 @@ all: $(TARGET)
 ifeq ($(wildcard $(DG_SRC)/doomgeneric.c),)
 $(error doomgeneric submodule not found. Run: git submodule update --init)
 endif
+ifeq ($(wildcard $(CHOCO)/src/i_oplmusic.c),)
+$(error chocolate-doom submodule not found. Run: git submodule update --init)
+endif
 
 $(OBJDIR)/engine/%.o: $(DG_SRC)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(ENGINE_WARNINGS) -c $< -o $@
+
+$(OBJDIR)/choco/%.o: $(CHOCO)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(ENGINE_WARNINGS) -c $< -o $@
 

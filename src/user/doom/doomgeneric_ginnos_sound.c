@@ -13,9 +13,13 @@
  * sound is queued in the kernel. a slow frame then plays from the queue
  * instead of breaking up.
  *
- * the music module is empty for now: Doom plays without music.
+ * music: Chocolate Doom's OPL music player (music_opl_module) plays the
+ * MUS songs on an emulated OPL3 chip (doomgeneric_ginnos_opl.c). its
+ * samples are made at the device rate and added to the effects in the
+ * same mix.
  */
 
+#include "doomgeneric_ginnos_opl.h"
 #include "doomtype.h"
 #include "i_sound.h"
 #include "w_wad.h"
@@ -58,6 +62,10 @@ static int device_rate;
 static boolean sfx_prefix;
 static channel_t channels[CHANNELS];
 static int16_t mix_buffer[MIX_FRAMES * 2];
+static int16_t music_buffer[MIX_FRAMES * 2];
+
+// the rate the music player gives the OPL emulator (i_sound.c)
+extern int snd_samplerate;
 
 /**
  * the lump of a sound: the linked sound's, with the "ds" prefix in Doom.
@@ -94,6 +102,7 @@ static boolean sound_init(boolean use_sfx_prefix)
         dsp = -1;
         return false;
     }
+    snd_samplerate = device_rate; // the music is made at the device rate
     return true;
 }
 
@@ -206,10 +215,12 @@ static int32_t clamp16(int32_t value)
  */
 static void mix(int frames)
 {
+    opl_ginnos_generate(music_buffer, (unsigned int)frames);
+
     for (int i = 0; i < frames; i++)
     {
-        int32_t left = 0;
-        int32_t right = 0;
+        int32_t left = music_buffer[i * 2];
+        int32_t right = music_buffer[i * 2 + 1];
         for (int n = 0; n < CHANNELS; n++)
         {
             channel_t *c = &channels[n];
@@ -289,57 +300,76 @@ sound_module_t DG_sound_module = {
     sound_cache,
 };
 
-/* ---- music (not yet: audio plan A5, the OPL emulator) -------------------- */
+/* ---- music: Chocolate Doom's OPL music player ------------------------ */
+
+extern music_module_t music_opl_module;
 
 static boolean music_init(void)
 {
-    return true;
+    if (dsp < 0)
+    {
+        return false; // no sound device: the samples would go nowhere
+    }
+    return music_opl_module.Init();
 }
 
-static void music_nothing(void)
+static void music_shutdown(void)
 {
+    music_opl_module.Shutdown();
 }
 
 static void music_set_volume(int volume)
 {
-    (void)volume;
+    music_opl_module.SetMusicVolume(volume);
+}
+
+static void music_pause(void)
+{
+    music_opl_module.PauseMusic();
+}
+
+static void music_resume(void)
+{
+    music_opl_module.ResumeMusic();
 }
 
 static void *music_register(void *data, int len)
 {
-    (void)data;
-    (void)len;
-    return NULL;
+    return music_opl_module.RegisterSong(data, len);
 }
 
 static void music_unregister(void *handle)
 {
-    (void)handle;
+    music_opl_module.UnRegisterSong(handle);
 }
 
 static void music_play(void *handle, boolean looping)
 {
-    (void)handle;
-    (void)looping;
+    music_opl_module.PlaySong(handle, looping);
+}
+
+static void music_stop(void)
+{
+    music_opl_module.StopSong();
 }
 
 static boolean music_is_playing(void)
 {
-    return false;
+    return music_opl_module.MusicIsPlaying();
 }
 
 music_module_t DG_music_module = {
     sound_devices,
     sizeof(sound_devices) / sizeof(sound_devices[0]),
     music_init,
-    music_nothing,
+    music_shutdown,
     music_set_volume,
-    music_nothing,
-    music_nothing,
+    music_pause,
+    music_resume,
     music_register,
     music_unregister,
     music_play,
-    music_nothing,
+    music_stop,
     music_is_playing,
     NULL,
 };

@@ -4,3 +4,6 @@
 [submodule "src/user/doom/doomgeneric"]
 	path = src/user/doom/doomgeneric
 	url = https://github.com/ozkl/doomgeneric.git
+[submodule "src/user/doom/chocolate-doom"]
+	path = src/user/doom/chocolate-doom
+	url = https://github.com/chocolate-doom/chocolate-doom.git
