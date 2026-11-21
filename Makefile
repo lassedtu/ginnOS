@@ -152,6 +152,23 @@ DOOM_WAD_DIR ?= .hidden
 FREEDOOM_FETCH := tools/freedoom/fetch.sh
 FREEDOOM_CACHE := build/freedoom
 
+# the TrueType fonts for bragi (Inter and JetBrains Mono, SIL OFL 1.1) go
+# into /usr/share/fonts. tools/fonts/fetch.sh downloads the pinned
+# releases once into build/fonts (kept by make clean, like Freedoom).
+# FONTS=0 leaves them out.
+FONTS ?= 1
+FONTS_FETCH := tools/fonts/fetch.sh
+FONTS_CACHE := build/fonts
+
+# the icon packs (Lucide, ISC, and Tela, GPL-3.0) go into /usr/share/icons.
+# tools/icons/fetch.sh downloads the pinned releases into build/icons (kept
+# by make clean), and tools/icons/build.py draws the listed icons into the
+# packs with rsvg-convert or resvg. ICONS=0 leaves them out.
+ICONS ?= 1
+ICONS_CACHE := build/icons
+ICONS_OUT   := $(ICONS_CACHE)/out
+ICONS_PACKS := $(ICONS_OUT)/lucide.pack $(ICONS_OUT)/tela.pack
+
 LIMINE_DIR       := build/limine
 LIMINE_FETCH     := tools/limine/fetch.sh
 LIMINE_DISK_TOOL := tools/limine/make_disk.py
@@ -341,7 +358,7 @@ ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run run-uefi rootfs-image clean distclean check-tools debug gdb lint check64 format compile_commands test test-image FORCE
+.PHONY: all run run-uefi rootfs-image clean distclean check-tools debug gdb lint check64 format compile_commands test test-image FORCE user-libs host-test icons
 
 all: check-tools $(DISK_IMAGE)
 
@@ -505,10 +522,29 @@ $(USER_CRT0): $(USER_CRT0_SRC)
 	@mkdir -p $(dir $@)
 	$(AS) -f $(ASM_FORMAT) $< -o $@
 
+# user libraries (src/lib/<name>/, see src/lib/lib.mk), built before the
+# programs that use them
+USER_LIB_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/Makefile)))
+
+user-libs: $(LIBC_A)
+	@for d in $(USER_LIB_DIRS); do \
+		$(MAKE) --no-print-directory -C $$d $(USER_MAKE_VARS) || exit 1; \
+	done
+
 # delegate to per-program Makefiles
-user-programs: $(USER_CRT0) $(LIBC_A)
+user-programs: $(USER_CRT0) $(LIBC_A) user-libs
 	@for d in $(USER_PROG_DIRS); do \
 		$(MAKE) --no-print-directory -C $$d $(USER_MAKE_VARS) || exit 1; \
+	done
+
+# library tests on the host, with the host compiler (src/lib/host-test.mk).
+# GOLDEN=update writes the golden images again.
+HOST_TEST_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/test/Makefile)))
+
+host-test:
+	@for d in $(HOST_TEST_DIRS); do \
+		$(MAKE) --no-print-directory -C $$d GOLDEN=$(GOLDEN) \
+			$(if $(SANITIZE),SANITIZE=$(SANITIZE)) || exit 1; \
 	done
 
 # root filesystem and disk image
@@ -517,7 +553,16 @@ ifeq ($(ARCH),i686)
 ROOTFS_KERNEL := $(KERNEL_BIN)
 endif
 
-rootfs-image: $(ROOTFS_KERNEL) user-programs
+# both packs come from one run of build.py
+$(ICONS_OUT)/tela.pack: $(ICONS_OUT)/lucide.pack
+$(ICONS_OUT)/lucide.pack: tools/icons/build.py tools/icons/fetch.sh tools/icons/lucide.list \
+                          tools/icons/tela.list
+	./tools/icons/fetch.sh $(ICONS_CACHE)
+	$(PYTHON) -I tools/icons/build.py $(ICONS_CACHE)/src $(ICONS_OUT)
+
+icons: $(ICONS_PACKS)
+
+rootfs-image: $(ROOTFS_KERNEL) user-programs $(if $(filter 1,$(ICONS)),$(ICONS_PACKS))
 	rm -rf $(ROOTFS_STAGING)
 	@mkdir -p $(ROOTFS_STAGING) $(dir $(ROOTFS_IMAGE))
 	cp -R $(EXT2_SOURCE_DIR)/. $(ROOTFS_STAGING)/
@@ -528,6 +573,10 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs
 	done
 	$(PYTHON) tools/sounds/make_sounds.py $(ROOTFS_STAGING)/usr/share/sounds
 	$(if $(filter 1,$(FREEDOOM)),./$(FREEDOOM_FETCH) $(FREEDOOM_CACHE) $(ROOTFS_STAGING)/usr/share/doom)
+	$(if $(filter 1,$(FONTS)),./$(FONTS_FETCH) $(FONTS_CACHE) $(ROOTFS_STAGING)/usr/share/fonts)
+	$(if $(filter 1,$(ICONS)),mkdir -p $(ROOTFS_STAGING)/usr/share/icons && \
+		cp $(ICONS_PACKS) $(ICONS_OUT)/LICENSE-lucide.txt $(ICONS_OUT)/COPYING-tela.txt \
+		$(ROOTFS_STAGING)/usr/share/icons/)
 	@if [ "$(DOOM)" = 1 ] && [ -d "$(DOOM_WAD_DIR)" ]; then \
 		for wad in "$(DOOM_WAD_DIR)"/*.[wW][aA][dD]; do \
 			[ -f "$$wad" ] || continue; \
@@ -624,7 +673,7 @@ endif
 # build/freedoom); distclean removes them
 clean:
 	@if [ -d $(BUILD_DIR) ]; then \
-		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine ! -name freedoom -exec rm -rf {} +; \
+		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine ! -name freedoom ! -name fonts ! -name icons -exec rm -rf {} +; \
 	fi
 	rm -rf $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)

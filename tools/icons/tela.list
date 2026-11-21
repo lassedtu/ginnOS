@@ -1,0 +1,37 @@
+# Tela icons in /usr/share/icons/tela.pack (full colour, standard variant).
+# one freedesktop icon name per line.
+
+# apps
+utilities-terminal
+system-file-manager
+preferences-system
+utilities-system-monitor
+image-viewer
+text-editor
+doom
+
+# places
+folder
+user-home
+user-desktop
+folder-documents
+folder-download
+folder-pictures
+folder-music
+user-trash
+user-trash-full
+
+# file types
+text-x-generic
+text-x-script
+text-x-csrc
+image-x-generic
+audio-x-generic
+application-x-executable
+application-x-archive
+unknown
+
+# devices
+drive-harddisk
+drive-removable-media
+computer

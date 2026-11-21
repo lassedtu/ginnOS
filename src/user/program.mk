@@ -6,6 +6,8 @@
 #
 # Optional:
 #   EXTRA_CFLAGS - additional compiler flags
+#   LIBS         - user libraries to link, by name (src/lib/<name>, e.g. gfx);
+#                  a library that uses another comes before it
 
 ROOT     := ../../..
 # the top Makefile passes these for the architecture it builds
@@ -24,11 +26,13 @@ AS      := nasm
 
 CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
            -fno-pie -fno-stack-protector -nostdlib \
-           -I$(LIBC_INC) -I. -MMD -MP $(EXTRA_CFLAGS)
+           -I$(LIBC_INC) -I. $(foreach lib,$(LIBS),-I$(ROOT)/src/lib/$(lib)/include) \
+           -MMD -MP $(EXTRA_CFLAGS)
 LDFLAGS := -T $(USER_LD_SCRIPT) -nostdlib
 
 CRT0    := $(BUILD)/lib/crt0.o
 LIBC    := $(BUILD_ROOT)/libc/libc.a
+LIB_ARCHIVES := $(foreach lib,$(LIBS),$(BUILD_ROOT)/lib/lib$(lib).a)
 # gcc's helper functions (64-bit division on i686, for example)
 LIBGCC  := $(shell $(CC) $(ARCH_CFLAGS) -print-libgcc-file-name)
 
@@ -45,8 +49,8 @@ $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(TARGET): $(OBJS) $(CRT0) $(LIBC)
+$(TARGET): $(OBJS) $(CRT0) $(LIB_ARCHIVES) $(LIBC)
 	@mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIBC) $(LIBGCC)
+	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIB_ARCHIVES) $(LIBC) $(LIBGCC)
 
 -include $(DEP_FILES)

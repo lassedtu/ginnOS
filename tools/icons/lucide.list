@@ -1,0 +1,50 @@
+# Lucide icons in /usr/share/icons/lucide.pack (line icons that take the
+# theme colour). one name per line, as on https://lucide.dev/icons/.
+
+# window controls
+x
+minus
+square
+copy
+
+# navigation
+chevron-left
+chevron-right
+chevron-up
+chevron-down
+arrow-left
+arrow-right
+arrow-up
+arrow-down
+menu
+search
+
+# actions
+plus
+check
+trash
+pencil
+folder-plus
+file-plus
+scissors
+clipboard
+refresh-cw
+eye
+eye-off
+list
+layout-grid
+
+# system
+settings
+volume-2
+volume-x
+wifi
+battery
+keyboard
+sun
+moon
+info
+triangle-alert
+lock
+power
+log-out

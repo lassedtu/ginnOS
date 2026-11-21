@@ -7,3 +7,6 @@
 [submodule "src/user/doom/chocolate-doom"]
 	path = src/user/doom/chocolate-doom
 	url = https://github.com/chocolate-doom/chocolate-doom.git
+[submodule "src/lib/stb"]
+	path = src/lib/stb
+	url = https://github.com/nothings/stb.git
