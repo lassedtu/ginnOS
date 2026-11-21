@@ -81,6 +81,14 @@ void pmm_layout_init(boot_info_t *boot)
         bitmap_start = LOW_MEMORY_END;
     }
 
+    /* a multiboot 2 bootloader puts a module (the root filesystem image)
+     * after the kernel. the bitmap and the heap must not overwrite it. */
+    if (boot->initrd_end != 0 && boot->initrd_start < PHYS_MAP_SIZE &&
+        bitmap_start < boot->initrd_end)
+    {
+        bitmap_start = page_align_up(boot->initrd_end);
+    }
+
     /* the reference counts (one uint16_t per page) follow the bitmap. the
      * reserved range covers both. */
     refcount_start = (bitmap_start + bitmap_bytes + 3u) & ~(phys_addr_t)3u;

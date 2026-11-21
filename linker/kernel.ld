@@ -1,6 +1,7 @@
 ENTRY(_start)
 
-/* stage2 loads kernel.bin at this physical address and calls it */
+/* stage2 loads kernel.bin at this physical address and calls it. a
+ * multiboot 2 bootloader loads kernel.elf at the same address. */
 KERNEL_PHYS_BASE = 0x10000;
 
 /* the kernel runs in the higher half: RAM is direct-mapped from here, so
@@ -22,6 +23,7 @@ SECTIONS
     .boot :
     {
         *(.boot.text)
+        *(.boot.header)
         *(.boot.data)
     } :boot
 

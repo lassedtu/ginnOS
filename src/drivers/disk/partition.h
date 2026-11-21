@@ -29,3 +29,15 @@ bool partition_initialize(partition_device_t *part, block_device_t *parent, uint
  * @return true if an EXT2 partition was found and initialized, false otherwise.
  */
 bool partition_detect_ext2(partition_device_t *part, block_device_t *parent);
+
+/* the volume label that tools/ext2/make_image.py gives a ginnOS root */
+#define GINNOS_ROOT_LABEL "GINNOS_EXT2"
+
+/**
+ * check that an ext2 filesystem on a block device has the ginnOS root label.
+ * the kernel uses this to not mount a disk of another operating system on
+ * real hardware.
+ * @param device the block device (a partition) with the filesystem.
+ * @return true if the superblock has the ext2 magic and GINNOS_ROOT_LABEL.
+ */
+bool partition_is_ginnos_root(block_device_t *device);

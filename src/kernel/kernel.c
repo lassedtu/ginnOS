@@ -19,14 +19,17 @@
 
 #include "drivers/disk/ata.h"
 #include "drivers/disk/partition.h"
+#include "drivers/disk/ramdisk.h"
 #include "drivers/keyboard/keyboard.h"
 
 #include "console/console.h"
 #include "kernel/device/device.h"
 #include "drivers/video/fb/fb.h"
+#include "common/memory.h"
 #include "common/string.h"
 #include "klog/klog.h"
 #include "memory/kernel_layout.h"
+#include "arch/x86/boot/multiboot2.h"
 #include "memory/pmm.h"
 #include "memory/pmm_layout.h"
 #include "memory/region.h"
@@ -44,21 +47,109 @@
 #include "test/ktest.h"
 #endif
 
-void cstart(phys_addr_t boot_phys)
+// the kernel's copy of the boot information. the bootloader's copy is in
+// memory that the PMM gives away later.
+static boot_info_t boot_info;
+
+void cstart(phys_addr_t boot_phys, uint32_t magic)
 {
     if (!boot_phys)
     {
-        kernel_panic("missing boot_info_t");
+        kernel_panic("missing boot information");
     }
 
-    // stage2 passes the physical address of its boot_info_t
-    kernel_main((boot_info_t *)phys_to_virt(boot_phys));
+    if (magic == MULTIBOOT2_BOOT_MAGIC)
+    {
+        if (!multiboot2_read(boot_phys, &boot_info))
+        {
+            kernel_panic("multiboot 2 information is not usable");
+        }
+    }
+    else
+    {
+        // stage2 passes the physical address of its boot_info_t. it fills
+        // in only the first part; the rest of boot_info stays zero.
+        memcpy(&boot_info, phys_to_virt(boot_phys), BOOT_INFO_STAGE2_SIZE);
+        boot_info.boot_protocol = BOOT_PROTOCOL_STAGE2;
+    }
+
+    kernel_main(&boot_info);
+}
+
+/**
+ * register a block device with the device model. the device must exist
+ * for the life of the kernel.
+ */
+static void register_block_device(device_t *device, const char *name, block_device_t *block)
+{
+    strncpy(device->name, name, DEVICE_NAME_MAX - 1);
+    device->name[DEVICE_NAME_MAX - 1] = '\0';
+    device->type = DEVICE_TYPE_BLOCK;
+    device->ops = NULL;
+    device->driver_data = block;
+    device_register(device);
+}
+
+/**
+ * find the block device with the root filesystem:
+ *   1. an ext2 partition on the primary ATA disk with the ginnOS root label.
+ *      other disks are not used, so the kernel does not write to a disk of
+ *      another operating system on real hardware.
+ *   2. a root image that the bootloader loaded as a module (a boot from a
+ *      USB stick: the kernel has no USB storage driver). the changes are
+ *      lost at the next boot.
+ * a disk root is read through a sector cache.
+ * @return the root device, or NULL if there is none.
+ */
+static block_device_t *find_root_device(const boot_info_t *boot)
+{
+    // all static: the devices exist for the life of the kernel
+    static ata_device_t ata;
+    static partition_device_t part;
+    static ramdisk_t ramdisk;
+    static block_cache_t root_cache;
+    static device_t disk_device;
+    static device_t part_device;
+    static device_t ram_device;
+
+    if (ata_initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
+    {
+        register_block_device(&disk_device, "hda", &ata.block);
+
+        if (partition_detect_ext2(&part, &ata.block))
+        {
+            register_block_device(&part_device, "hda1", &part.block);
+
+            if (partition_is_ginnos_root(&part.block))
+            {
+                KLOG_INFO("kernel: root filesystem on the ATA disk");
+                if (kerr_failed(block_cache_init(&root_cache, &part.block)))
+                {
+                    KLOG_WARN("kernel: no memory for the block cache; reading the disk directly");
+                    return &part.block;
+                }
+                block_cache_root = &root_cache;
+                return &root_cache.block;
+            }
+            KLOG_WARN("kernel: the ATA disk has no ginnOS root label; not used");
+        }
+    }
+
+    if (boot->initrd_end > boot->initrd_start && boot->initrd_end <= PHYS_MAP_SIZE &&
+        ramdisk_initialize(&ramdisk, phys_to_virt(boot->initrd_start),
+                           boot->initrd_end - boot->initrd_start))
+    {
+        register_block_device(&ram_device, "ram0", &ramdisk.block);
+        KLOG_INFO("kernel: root filesystem in RAM (a boot module); changes are lost at reboot");
+        printf("Kernel: the root filesystem is in RAM. Changes are lost at reboot.\r\n");
+        return &ramdisk.block;
+    }
+
+    return NULL;
 }
 
 void kernel_main(boot_info_t *boot)
 {
-    ata_device_t ata;
-    partition_device_t part;
     fs_mount_t mount;
 
     // bring up serial logging first: it needs no interrupts and works before
@@ -79,6 +170,7 @@ void kernel_main(boot_info_t *boot)
 
     memory_reserve_kernel();
     memory_reserve_stage2();
+    memory_reserve_initrd(boot->initrd_start, boot->initrd_end);
 
     pmm_layout_init(boot);
     memory_reserve_pmm_bitmap(pmm_bitmap_start(), pmm_bitmap_end());
@@ -129,45 +221,10 @@ void kernel_main(boot_info_t *boot)
     // can arrive before this point because the CPU holds IF=0 from boot.
     arch_enable_interrupts();
 
-    if (!ata_initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
+    block_device_t *root_device = find_root_device(boot);
+    if (!root_device)
     {
-        kernel_panic("ATA initialization failed");
-    }
-
-    // register the disk with the device model. ata/part live for the lifetime
-    // of the kernel (kernel_main never returns), so pointing at them is safe.
-    static device_t disk_device;
-    strncpy(disk_device.name, "hda", DEVICE_NAME_MAX - 1);
-    disk_device.name[DEVICE_NAME_MAX - 1] = '\0';
-    disk_device.type = DEVICE_TYPE_BLOCK;
-    disk_device.ops = NULL;
-    disk_device.driver_data = &ata.block;
-    device_register(&disk_device);
-
-    if (!partition_detect_ext2(&part, &ata.block))
-    {
-        kernel_panic("EXT2 partition detection failed");
-    }
-
-    static device_t part_device;
-    strncpy(part_device.name, "hda1", DEVICE_NAME_MAX - 1);
-    part_device.name[DEVICE_NAME_MAX - 1] = '\0';
-    part_device.type = DEVICE_TYPE_BLOCK;
-    part_device.ops = NULL;
-    part_device.driver_data = &part.block;
-    device_register(&part_device);
-
-    // the root filesystem reads through a sector cache (write-through)
-    static block_cache_t root_cache;
-    block_device_t *root_device = &part.block;
-    if (kerr_ok(block_cache_init(&root_cache, &part.block)))
-    {
-        root_device = &root_cache.block;
-        block_cache_root = &root_cache;
-    }
-    else
-    {
-        KLOG_WARN("kernel: no memory for the block cache; reading the disk directly");
+        kernel_panic("no root filesystem: no ginnOS disk and no root image");
     }
 
     if (!fs_mount(&mount, root_device))

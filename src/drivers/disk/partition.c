@@ -138,15 +138,21 @@ bool partition_detect_ext2(partition_device_t *part, block_device_t *parent)
         return false;
     }
 
-    // check MBR partition table at sector 0
-    if (block_device_read(parent, 0, 1, sector0))
+    // look for ext2 in each of the four primary MBR partitions. a limine
+    // disk has the FAT boot partition first and ext2 second.
+    if (block_device_read(parent, 0, 1, sector0) && sector0[510] == 0x55 &&
+        sector0[511] == 0xAA)
     {
-        mbr_lba = (uint32_t)sector0[0x1BE + 8] | ((uint32_t)sector0[0x1BE + 9] << 8) |
-                  ((uint32_t)sector0[0x1BE + 10] << 16) | ((uint32_t)sector0[0x1BE + 11] << 24);
-
-        if (mbr_lba > 0 && check_ext2_at_lba(parent, mbr_lba))
+        for (uint32_t i = 0; i < 4; i++)
         {
-            return partition_initialize(part, parent, mbr_lba);
+            const uint8_t *entry = &sector0[0x1BE + i * 16];
+            mbr_lba = (uint32_t)entry[8] | ((uint32_t)entry[9] << 8) |
+                      ((uint32_t)entry[10] << 16) | ((uint32_t)entry[11] << 24);
+
+            if (entry[4] != 0 && mbr_lba > 0 && check_ext2_at_lba(parent, mbr_lba))
+            {
+                return partition_initialize(part, parent, mbr_lba);
+            }
         }
     }
 
@@ -168,4 +174,33 @@ bool partition_detect_ext2(partition_device_t *part, block_device_t *parent)
 
     // fallback: initialize at offset 0
     return partition_initialize(part, parent, 0u);
+}
+
+bool partition_is_ginnos_root(block_device_t *device)
+{
+    static const char label[] = GINNOS_ROOT_LABEL;
+    uint8_t buf[512];
+
+    // the superblock is at byte 1024: sector 2. the label is at offset 120
+    // (16 bytes, padded with zeros).
+    if (!device || !block_device_read(device, 2u, 1, buf))
+    {
+        return false;
+    }
+
+    uint16_t magic = (uint16_t)buf[56] | ((uint16_t)buf[57] << 8);
+    if (magic != EXT2_SUPERBLOCK_MAGIC)
+    {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < 16u; i++)
+    {
+        char expected = i < sizeof(label) - 1 ? label[i] : '\0';
+        if ((char)buf[120 + i] != expected)
+        {
+            return false;
+        }
+    }
+    return true;
 }

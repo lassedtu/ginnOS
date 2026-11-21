@@ -28,3 +28,10 @@ void memory_reserve_pmm_bitmap(phys_addr_t start, phys_addr_t end);
  * @param end first byte past the heap (exclusive).
  */
 void memory_reserve_heap(phys_addr_t start, phys_addr_t end);
+/**
+ * reserve a root filesystem image that the bootloader loaded into RAM.
+ * nothing is reserved if end <= start.
+ * @param start first byte of the image (inclusive).
+ * @param end first byte past the image (exclusive).
+ */
+void memory_reserve_initrd(phys_addr_t start, phys_addr_t end);

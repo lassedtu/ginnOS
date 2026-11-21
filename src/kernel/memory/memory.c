@@ -20,6 +20,9 @@ _Static_assert(__builtin_offsetof(boot_info_t, framebuffer_bpp) == 668, "fb_bpp 
 _Static_assert(__builtin_offsetof(boot_info_t, framebuffer_type) == 669, "fb_type @ 669");
 _Static_assert(__builtin_offsetof(boot_info_t, framebuffer_red_size) == 670, "fb_red_size @ 670");
 
+// stage2 fills in 676 bytes (main.asm, BOOT_INFO_TOTAL_SIZE)
+_Static_assert(BOOT_INFO_STAGE2_SIZE == 676, "stage2 part is 676 bytes");
+
 void memory_print_map(boot_info_t *boot)
 {
     uint32_t i;
