@@ -2,10 +2,6 @@
 #include "kernel/process/process.h"
 #include "common/memory.h"
 
-void fd_table_init(void)
-{
-    pipe_init();
-}
 
 int fd_alloc(vfs_file_t *file)
 {

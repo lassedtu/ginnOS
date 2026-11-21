@@ -63,14 +63,19 @@ today.
 - Process table with per-process page directory, kernel stack, fd table, cwd
 - `/bin/sh` starts as PID 1 through the normal scheduler path; if it exits,
   the system halts
-- ELF32 loader (`PT_LOAD` mapping) with `argc`/`argv` passing
+- ELF32 loader (`PT_LOAD` mapping) with `argc`/`argv`/`envp` passing
+- `fork` with copy-on-write: parent and child share their pages read-only
+  (each frame has a reference count) until one of them writes
+- `execve` replaces the calling program and keeps its pid, cwd and fds; a
+  failed `execve` returns to the old program. The shell runs every command
+  and pipeline stage with `fork` + `execve`
 - Ring 3 execution via `iret`, TSS kernel-stack switching
 - Round-robin scheduler with an O(1) intrusive ready queue and an idle (hlt)
   task
-- Parent/child relationships, `waitpid` with zombie reaping; a process frees
-  its fds, argv and address space when it exits, and orphans are reaped by the
-  kernel
-- fd inheritance across `exec` (close-on-exec for pipe fds beyond stdio)
+- Parent/child relationships, `waitpid(pid, &status, options)` with `-1`
+  (any child), `WNOHANG` and POSIX status words (exit code or killing
+  signal), `getppid`, `sched_yield`; a process frees its fds, argv and address
+  space when it exits, and orphans are reaped by the kernel
 
 ### Concurrency
 
@@ -94,18 +99,21 @@ today.
 - devfs mounted at `/dev`, enumerating the device registry (`fb0`, `tty0`,
   `hda`, `hda1`, `pit`, `kbd`)
 - Block-device abstraction (ATA PIO driver + MBR partition parsing)
-- Pipes (circular buffers) with blocking, EOF/EPIPE, reference-counted endpoints
+- Pipes (16 KiB ring buffers on the kernel heap, no fixed limit) with
+  blocking, EOF/EPIPE, reference-counted endpoints, and atomic writes of up
+  to `PIPE_BUF` (4 KiB)
 - `dup2` fd redirection
 
 ### System calls
 
-- 27 syscalls via `int 0x80` with proper `-errno` returns
+- 31 syscalls via `int 0x80` with proper `-errno` returns
 - User pointers are checked against the page tables (`copy_from_user`,
   `copy_to_user`, `strncpy_from_user`): a bad pointer returns `-EFAULT`
   instead of crashing the kernel
 - Process/IO: `exit`, `write`, `read`, `open`, `close`, `stat`, `create`,
-  `mkdir`, `exec`, `getpid`, `waitpid`, `sbrk`, `getcwd`, `chdir`, `readdir`,
-  `unlink`, `rmdir`, `pipe`, `dup2`, `ftruncate`, `lseek`
+  `mkdir`, `exec` (spawn), `fork`, `execve`, `getpid`, `getppid`, `waitpid`,
+  `sched_yield`, `sbrk`, `getcwd`, `chdir`, `readdir`, `unlink`, `rmdir`,
+  `pipe`, `dup2`, `ftruncate`, `lseek`
 - Device/terminal/graphics: `ttyctl`, `ioctl` (general device control),
   `mmap`, `munmap`, `mprotect`, `pollkey`
 
@@ -130,12 +138,13 @@ today.
 - `<string.h>`: `strlen`, `strcpy`/`strncpy`, `strcat`, `strcmp`/`strncmp`,
   `strchr`/`strrchr`, `strstr`, `strtok`, `memcpy`/`memmove`/`memset`/`memcmp`
 - `<stdio.h>`: `printf`/`fprintf` (`%s %d %u %x %c %%`), `puts`, `putchar`
-- `<stdlib.h>`: `atoi`, `malloc`/`free`, `exit`
+- `<stdlib.h>`: `atoi`, `malloc`/`free`, `exit`/`atexit`, `getenv`/`environ`
 - `<unistd.h>`: the full syscall surface (`read`/`write`/`open`/`close`/`exec`/
-  `waitpid`/`pipe`/`dup2`/`lseek`/`ioctl`/`readdir`/… and `read_event`)
+  `fork`/`execve`/`pipe`/`dup2`/`lseek`/`ioctl`/`readdir`/… and `read_event`)
+- `<sys/wait.h>` (`waitpid`, `wait`, `W*` macros), `<limits.h>`
 - `<sys/mman.h>` (`mmap`, `munmap`, `mprotect`), `<sys/fb.h>` (framebuffer)
 - `<errno.h>`: `errno`, `perror`, `strerror`
-- `crt0` with `argc`/`argv` setup; `int 0x80` syscall stubs
+- `crt0` with `argc`/`argv`/`envp` setup; `int 0x80` syscall stubs
 
 ### Userspace shell (skl -> /bin/sh)
 
@@ -154,7 +163,9 @@ today.
 - `cat`, `clear`, `echo`, `ls`, `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `touch`,
   `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
   tests the kernel's handling of user memory (heap, stack growth, `mmap`,
-  `munmap`, `mprotect`, and faults that must kill only the process)
+  `munmap`, `mprotect`, and faults that must kill only the process), and
+  `proctest`, which tests the process model (`fork`, copy-on-write, pipes,
+  atomic pipe writes, `waitpid`, `execve`)
 
 ### Portability and tooling
 

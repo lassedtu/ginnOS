@@ -2,17 +2,18 @@
 
 #include "common/memory.h"
 #include "kernel/syscall/pipe.h"
+#include "kernel/memory/heap.h"
 
 // tests run on the boot stack with no current process, so they only take
 // paths that never block: reads with data buffered or at EOF, and writes
 // that fit or hit a broken pipe.
 
 // static: test bodies run on the boot stack, keep big buffers off it.
-static char write_buf[PIPE_BUF_SIZE];
-static char read_buf[PIPE_BUF_SIZE];
+static char write_buf[PIPE_CAPACITY];
+static char read_buf[PIPE_CAPACITY];
 
 /**
- * close both ends of a test pipe so it returns to the pool.
+ * close both ends of a test pipe, which frees it.
  */
 static void close_pipe(pipe_buf_t *pipe)
 {
@@ -47,20 +48,20 @@ KTEST(pipe_wraps_around)
     if (!pipe)
         return;
 
-    for (uint32_t i = 0; i < PIPE_BUF_SIZE; i++)
+    for (uint32_t i = 0; i < PIPE_CAPACITY; i++)
         write_buf[i] = (char)(i * 13 + 1);
 
     // move the ring positions near the end, then fill it completely so the
     // next write and read both cross the end of the buffer
-    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_BUF_SIZE - 10), PIPE_BUF_SIZE - 10);
-    KEXPECT_EQ(pipe_read(pipe, read_buf, PIPE_BUF_SIZE), PIPE_BUF_SIZE - 10);
+    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_CAPACITY - 10), PIPE_CAPACITY - 10);
+    KEXPECT_EQ(pipe_read(pipe, read_buf, PIPE_CAPACITY), PIPE_CAPACITY - 10);
 
-    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_BUF_SIZE), PIPE_BUF_SIZE);
-    KEXPECT_EQ(pipe->count, PIPE_BUF_SIZE);
+    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_CAPACITY), PIPE_CAPACITY);
+    KEXPECT_EQ(pipe->count, PIPE_CAPACITY);
 
     memset(read_buf, 0, sizeof(read_buf));
-    KEXPECT_EQ(pipe_read(pipe, read_buf, PIPE_BUF_SIZE), PIPE_BUF_SIZE);
-    KEXPECT(memcmp(read_buf, write_buf, PIPE_BUF_SIZE) == 0);
+    KEXPECT_EQ(pipe_read(pipe, read_buf, PIPE_CAPACITY), PIPE_CAPACITY);
+    KEXPECT(memcmp(read_buf, write_buf, PIPE_CAPACITY) == 0);
 
     close_pipe(pipe);
 }
@@ -98,37 +99,26 @@ KTEST(pipe_broken_after_last_reader_closes)
     pipe_unref(pipe, PIPE_WRITE);
 }
 
-KTEST(pipe_pool_exhausts_and_reuses)
+KTEST(pipes_are_not_limited_to_a_pool)
 {
-    pipe_buf_t *pipes[PIPE_MAX];
+    // more pipes than the old fixed pool of 16 had
+    pipe_buf_t *pipes[64];
     uint32_t allocated = 0;
+    heap_stats_t before = heap_get_stats();
 
-    // other tests closed their pipes, so the whole pool is free
-    while (allocated < PIPE_MAX)
+    while (allocated < 64)
     {
         pipes[allocated] = pipe_alloc();
         if (!pipes[allocated])
             break;
         allocated++;
     }
-    KEXPECT_EQ(allocated, PIPE_MAX);
-    KEXPECT(pipe_alloc() == NULL);
+    KEXPECT_EQ(allocated, 64);
 
-    // a pipe returns to the pool only once both ends are closed
-    pipe_unref(pipes[0], PIPE_READ);
-    KEXPECT(pipe_alloc() == NULL);
-    pipe_unref(pipes[0], PIPE_WRITE);
-
-    pipe_buf_t *reused = pipe_alloc();
-    KEXPECT(reused == pipes[0]);
-    if (reused)
-    {
-        // a reused pipe starts empty with both ends open
-        KEXPECT_EQ(reused->count, 0);
-        KEXPECT_EQ(reused->read_refs, 1);
-        KEXPECT_EQ(reused->write_refs, 1);
-    }
-
+    // a pipe is freed only once both ends are closed
     for (uint32_t i = 0; i < allocated; i++)
         close_pipe(pipes[i]);
+
+    heap_stats_t after = heap_get_stats();
+    KEXPECT_EQ(after.current_usage, before.current_usage);
 }

@@ -38,10 +38,6 @@ typedef struct
     };
 } fd_entry_t;
 
-/**
- * initialize the file descriptor layer (the pipe pool).
- */
-void fd_table_init(void);
 
 /**
  * allocate a file descriptor for an open VFS file.

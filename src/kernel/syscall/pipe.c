@@ -1,23 +1,16 @@
 #include "pipe.h"
 
 #include "common/memory.h"
+#include "kernel/memory/heap.h"
 #include "kernel/assert.h"
 
-// system-wide pipe pool
-static pipe_buf_t pipe_pool[PIPE_MAX];
-
-// guards pipe_buf_t::in_use for every pipe in the pool
-static spinlock_t pool_lock;
-
 /**
- * return a fully closed pipe to the pool. nothing references it any more,
- * so only the in_use flag needs the pool lock.
+ * free a fully closed pipe. nothing references it any more.
  */
 static void pipe_free(pipe_buf_t *pipe)
 {
-    uint32_t flags = spin_lock_irqsave(&pool_lock);
-    pipe->in_use = false;
-    spin_unlock_irqrestore(&pool_lock, flags);
+    kfree(pipe->data);
+    kfree(pipe);
 }
 
 /**
@@ -26,7 +19,7 @@ static void pipe_free(pipe_buf_t *pipe)
  */
 static void ring_put(pipe_buf_t *pipe, const char *src, uint32_t count)
 {
-    uint32_t first = PIPE_BUF_SIZE - pipe->write_pos;
+    uint32_t first = PIPE_CAPACITY - pipe->write_pos;
     if (first > count)
     {
         first = count;
@@ -35,7 +28,7 @@ static void ring_put(pipe_buf_t *pipe, const char *src, uint32_t count)
     memcpy(pipe->data + pipe->write_pos, src, first);
     memcpy(pipe->data, src + first, count - first);
 
-    pipe->write_pos = (pipe->write_pos + count) % PIPE_BUF_SIZE;
+    pipe->write_pos = (pipe->write_pos + count) % PIPE_CAPACITY;
     pipe->count += count;
 }
 
@@ -45,7 +38,7 @@ static void ring_put(pipe_buf_t *pipe, const char *src, uint32_t count)
  */
 static void ring_get(pipe_buf_t *pipe, char *dst, uint32_t count)
 {
-    uint32_t first = PIPE_BUF_SIZE - pipe->read_pos;
+    uint32_t first = PIPE_CAPACITY - pipe->read_pos;
     if (first > count)
     {
         first = count;
@@ -54,41 +47,23 @@ static void ring_get(pipe_buf_t *pipe, char *dst, uint32_t count)
     memcpy(dst, pipe->data + pipe->read_pos, first);
     memcpy(dst + first, pipe->data, count - first);
 
-    pipe->read_pos = (pipe->read_pos + count) % PIPE_BUF_SIZE;
+    pipe->read_pos = (pipe->read_pos + count) % PIPE_CAPACITY;
     pipe->count -= count;
-}
-
-void pipe_init(void)
-{
-    spinlock_init(&pool_lock);
-    for (uint32_t i = 0; i < PIPE_MAX; i++)
-    {
-        pipe_pool[i].in_use = false;
-    }
 }
 
 pipe_buf_t *pipe_alloc(void)
 {
-    pipe_buf_t *pipe = NULL;
-
-    uint32_t flags = spin_lock_irqsave(&pool_lock);
-    for (uint32_t i = 0; i < PIPE_MAX; i++)
+    pipe_buf_t *pipe = kmalloc(sizeof(pipe_buf_t));
+    char *data = kmalloc(PIPE_CAPACITY);
+    if (!pipe || !data)
     {
-        if (!pipe_pool[i].in_use)
-        {
-            pipe = &pipe_pool[i];
-            pipe->in_use = true;
-            break;
-        }
-    }
-    spin_unlock_irqrestore(&pool_lock, flags);
-
-    if (!pipe)
-    {
+        kfree(pipe);
+        kfree(data);
         return NULL;
     }
 
-    // claimed and not yet handed out, so nothing else can see it
+    // not yet handed out, so nothing else can see it
+    pipe->data = data;
     pipe->read_pos = 0;
     pipe->write_pos = 0;
     pipe->count = 0;
@@ -191,8 +166,11 @@ uint32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count)
             break;
         }
 
-        uint32_t space = PIPE_BUF_SIZE - pipe->count;
-        if (space == 0)
+        // a write of up to PIPE_BUF bytes waits for room for all of it,
+        // so no other writer's bytes land in the middle
+        uint32_t space = PIPE_CAPACITY - pipe->count;
+        uint32_t needed = count <= PIPE_BUF ? count : 1;
+        if (space < needed)
         {
             wait_queue_block_locked(&pipe->writers, &pipe->lock);
             continue;

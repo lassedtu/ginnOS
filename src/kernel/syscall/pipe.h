@@ -1,7 +1,13 @@
 #pragma once
 
 /**
- * pipes: a fixed-size ring buffer shared by a read end and a write end.
+ * pipes: a ring buffer shared by a read end and a write end. each pipe and
+ * its buffer come from the kernel heap, so the number of pipes is limited
+ * only by memory (and by the fds that hold their ends).
+ *
+ * a write of at most PIPE_BUF bytes is atomic: it waits until there is room
+ * for all of it, so its bytes are never mixed with another writer's. larger
+ * writes can be split.
  *
  * every field of a pipe is guarded by its spinlock, so reads, writes and
  * reference changes are atomic against preemption (syscalls run with
@@ -15,11 +21,11 @@
 #include "kernel/sync/spinlock.h"
 #include "kernel/sync/wait_queue.h"
 
-// pipe buffer size (4 KiB)
-#define PIPE_BUF_SIZE 4096
+// bytes a pipe can hold before a writer waits
+#define PIPE_CAPACITY 16384
 
-// maximum number of simultaneous pipes system-wide
-#define PIPE_MAX 16
+// largest write that is never split (POSIX PIPE_BUF; also in libc limits.h)
+#define PIPE_BUF 4096
 
 /**
  * pipe endpoint direction.
@@ -35,28 +41,21 @@ typedef enum
  */
 typedef struct pipe_buf
 {
-    char data[PIPE_BUF_SIZE];
+    char *data;          // PIPE_CAPACITY bytes from the heap
     uint32_t read_pos;   // next byte to read
     uint32_t write_pos;  // next byte to write
     uint32_t count;      // bytes currently in buffer
     int32_t read_refs;   // number of open read ends
     int32_t write_refs;  // number of open write ends
     spinlock_t lock;     // guards every field above
-    bool in_use;         // allocated from the pool (guarded by the pool lock)
 
     wait_queue_t readers; // readers blocked waiting for data
     wait_queue_t writers; // writers blocked waiting for free space
 } pipe_buf_t;
 
 /**
- * initialize the system pipe pool. every pipe starts free.
- */
-void pipe_init(void);
-
-/**
- * allocate a pipe from the system pool, with one open read end and one
- * open write end.
- * @return the new pipe, or NULL if the pool is exhausted.
+ * allocate a pipe with one open read end and one open write end.
+ * @return the new pipe, or NULL if the heap is out of memory.
  */
 pipe_buf_t *pipe_alloc(void);
 
@@ -70,8 +69,8 @@ void pipe_ref(pipe_buf_t *pipe, pipe_dir_t dir);
 /**
  * close one end of a pipe. closing the last read end wakes blocked writers
  * (they then see a broken pipe); closing the last write end wakes blocked
- * readers (they then see EOF). the pipe returns to the pool once both ends
- * are fully closed.
+ * readers (they then see EOF). the pipe is freed once both ends are fully
+ * closed.
  * @param pipe the pipe.
  * @param dir which end is being closed.
  */
@@ -87,7 +86,8 @@ void pipe_unref(pipe_buf_t *pipe, pipe_dir_t dir);
 uint32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count);
 
 /**
- * write every byte to a pipe, sleeping whenever it is full.
+ * write every byte to a pipe, sleeping whenever it is full. a write of at
+ * most PIPE_BUF bytes goes in as one piece.
  * @param pipe the pipe.
  * @param buf source buffer.
  * @param count number of bytes to write.

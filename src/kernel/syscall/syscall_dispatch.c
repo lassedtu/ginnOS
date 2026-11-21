@@ -64,7 +64,6 @@ static void syscall_handler(struct registers *regs)
 
 void syscall_initialize(void)
 {
-    fd_table_init();
 
     /* register the handler in the ISR dispatch table */
     isr_register_handler(SYSCALL_VECTOR, syscall_handler);

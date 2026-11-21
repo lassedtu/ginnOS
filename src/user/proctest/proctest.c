@@ -7,6 +7,8 @@
  *          child, and check that the parent still sees its own values
  *          (copy-on-write)
  *   pipe   fork with a pipe between parent and child
+ *   atomic two children write 4 KiB blocks into one pipe at the same time;
+ *          every block must arrive in one piece (PIPE_BUF)
  *   many   fork until the process table is full, then reap every child
  *   wait   waitpid with WNOHANG and pid -1, ECHILD, the status of a child
  *          killed by SIGSEGV, and getppid
@@ -25,6 +27,8 @@
 #include <unistd.h>
 
 #define MANY_MAX 100
+#define BLOCK_SIZE 4096
+#define BLOCKS_PER_WRITER 16
 
 static int global_value = 1;
 
@@ -130,6 +134,79 @@ static int test_pipe(void)
     }
 
     printf("proctest pipe: ok\n");
+    return 0;
+}
+
+/**
+ * in a child: write BLOCKS_PER_WRITER blocks filled with value, then exit.
+ */
+static void write_blocks(int fd, char value)
+{
+    static char block[BLOCK_SIZE];
+    memset(block, value, BLOCK_SIZE);
+    for (int i = 0; i < BLOCKS_PER_WRITER; i++)
+    {
+        if (write(fd, block, BLOCK_SIZE) != BLOCK_SIZE)
+            _exit(1);
+    }
+    _exit(0);
+}
+
+static int test_atomic(void)
+{
+    int fds[2];
+    if (pipe(fds) != 0)
+    {
+        printf("proctest atomic: pipe failed\n");
+        return 1;
+    }
+
+    pid_t writers[2];
+    for (int w = 0; w < 2; w++)
+    {
+        writers[w] = fork();
+        if (writers[w] == 0)
+        {
+            close(fds[0]);
+            write_blocks(fds[1], (char)('A' + w));
+        }
+    }
+    close(fds[1]);
+
+    // read the whole stream; every BLOCK_SIZE run must hold one value
+    static char block[BLOCK_SIZE];
+    int blocks[2] = {0, 0};
+    int filled = 0;
+    int n;
+    while ((n = read(fds[0], block + filled, BLOCK_SIZE - filled)) > 0)
+    {
+        filled += n;
+        if (filled < BLOCK_SIZE)
+            continue;
+        filled = 0;
+        for (int i = 1; i < BLOCK_SIZE; i++)
+        {
+            if (block[i] != block[0])
+            {
+                printf("proctest atomic: block mixes '%c' and '%c'\n", block[0], block[i]);
+                return 1;
+            }
+        }
+        if (block[0] == 'A' || block[0] == 'B')
+            blocks[block[0] - 'A']++;
+    }
+    close(fds[0]);
+
+    for (int w = 0; w < 2; w++)
+        waitpid(writers[w], NULL, 0);
+
+    if (filled != 0 || blocks[0] != BLOCKS_PER_WRITER || blocks[1] != BLOCKS_PER_WRITER)
+    {
+        printf("proctest atomic: got %d and %d blocks\n", blocks[0], blocks[1]);
+        return 1;
+    }
+
+    printf("proctest atomic: ok\n");
     return 0;
 }
 
@@ -298,7 +375,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: proctest fork|pipe|many|wait|exec\n");
+        printf("usage: proctest fork|pipe|atomic|many|wait|exec\n");
         return 1;
     }
 
@@ -306,6 +383,8 @@ int main(int argc, char **argv)
         return test_fork();
     if (strcmp(argv[1], "pipe") == 0)
         return test_pipe();
+    if (strcmp(argv[1], "atomic") == 0)
+        return test_atomic();
     if (strcmp(argv[1], "many") == 0)
         return test_many();
     if (strcmp(argv[1], "wait") == 0)
