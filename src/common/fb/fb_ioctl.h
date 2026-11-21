@@ -58,3 +58,21 @@ typedef struct
 #define FBIOGET_VSCREENINFO 0x4600
 #define FBIOPUT_VSCREENINFO 0x4601
 #define FBIOGET_FSCREENINFO 0x4602
+
+/**
+ * FBIOGET_MODE: one video mode the firmware offers. the caller sets index
+ * (0, 1, ...); the kernel fills in the rest, or fails with EINVAL past the
+ * last mode. when the bootloader gave no list, the only mode is the
+ * current one. the mode is chosen at boot (limine.conf); the kernel
+ * cannot change it.
+ */
+typedef struct
+{
+    uint32_t index;
+    uint32_t width;
+    uint32_t height;
+    uint32_t bpp;
+    uint32_t current; // 1 for the mode in use
+} fb_mode_t;
+
+#define FBIOGET_MODE 0x46F0

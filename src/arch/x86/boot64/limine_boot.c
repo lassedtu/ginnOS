@@ -16,6 +16,7 @@
 #ifdef __x86_64__
 
 #include "common/boot/boot_info.h"
+#include "common/boot/video_modes.h"
 #include "common/memory.h"
 #include "common/stdint.h"
 #include "kernel/kernel.h"
@@ -53,6 +54,21 @@ struct limine_memmap_response
     struct limine_memmap_entry **entries;
 };
 
+struct limine_video_mode
+{
+    uint64_t pitch;
+    uint64_t width;
+    uint64_t height;
+    uint16_t bpp;
+    uint8_t memory_model;
+    uint8_t red_mask_size;
+    uint8_t red_mask_shift;
+    uint8_t green_mask_size;
+    uint8_t green_mask_shift;
+    uint8_t blue_mask_size;
+    uint8_t blue_mask_shift;
+};
+
 struct limine_framebuffer
 {
     void *address;
@@ -67,6 +83,12 @@ struct limine_framebuffer
     uint8_t green_mask_shift;
     uint8_t blue_mask_size;
     uint8_t blue_mask_shift;
+    uint8_t unused[7];
+    uint64_t edid_size;
+    void *edid;
+    // response revision 1 and later
+    uint64_t mode_count;
+    struct limine_video_mode **modes;
 };
 
 struct limine_framebuffer_response
@@ -134,8 +156,9 @@ REQUESTS static volatile struct limine_request hhdm_request = {
 REQUESTS static volatile struct limine_request memmap_request = {
     {LIMINE_MAGIC, 0x67cf3d9d378a806ful, 0xe304acdfc50c3c62ul}, 0, NULL};
 
+// revision 1: the response lists the modes the firmware offers
 REQUESTS static volatile struct limine_request framebuffer_request = {
-    {LIMINE_MAGIC, 0x9d5827dcd881dd75ul, 0xa3148604f6fab11bul}, 0, NULL};
+    {LIMINE_MAGIC, 0x9d5827dcd881dd75ul, 0xa3148604f6fab11bul}, 1, NULL};
 
 REQUESTS static volatile struct limine_request module_request = {
     {LIMINE_MAGIC, 0x3e7e279702be32aful, 0xca1c4f3bd1280ceeul}, 0, NULL};
@@ -217,6 +240,54 @@ static void read_memmap(const struct limine_memmap_response *map)
     }
 }
 
+// the modes, copied out of bootloader memory (which the kernel reuses)
+static boot_video_mode_t video_modes[BOOT_VIDEO_MODES_MAX];
+static uint32_t video_mode_count;
+
+uint32_t boot_video_modes(const boot_video_mode_t **modes)
+{
+    *modes = video_modes;
+    return video_mode_count;
+}
+
+/**
+ * copy the RGB modes with 24 or 32 bits per pixel (what the fb driver
+ * can draw), without repeats.
+ */
+static void read_video_modes(const struct limine_framebuffer_response *response,
+                             const struct limine_framebuffer *fb)
+{
+    if (response->revision < 1 || !fb->modes)
+    {
+        return;
+    }
+    for (uint64_t i = 0; i < fb->mode_count && video_mode_count < BOOT_VIDEO_MODES_MAX; i++)
+    {
+        const struct limine_video_mode *mode = fb->modes[i];
+        if (!mode || mode->memory_model != LIMINE_FRAMEBUFFER_RGB ||
+            (mode->bpp != 24 && mode->bpp != 32))
+        {
+            continue;
+        }
+        bool seen = false;
+        for (uint32_t j = 0; j < video_mode_count; j++)
+        {
+            if (video_modes[j].width == mode->width && video_modes[j].height == mode->height &&
+                video_modes[j].bpp == mode->bpp)
+            {
+                seen = true;
+            }
+        }
+        if (!seen)
+        {
+            video_modes[video_mode_count].width = (uint32_t)mode->width;
+            video_modes[video_mode_count].height = (uint32_t)mode->height;
+            video_modes[video_mode_count].bpp = mode->bpp;
+            video_mode_count++;
+        }
+    }
+}
+
 static void read_framebuffer(const struct limine_framebuffer_response *response)
 {
     if (response->framebuffer_count == 0)
@@ -243,6 +314,7 @@ static void read_framebuffer(const struct limine_framebuffer_response *response)
     boot_info.framebuffer_green_shift = fb->green_mask_shift;
     boot_info.framebuffer_blue_size = fb->blue_mask_size;
     boot_info.framebuffer_blue_shift = fb->blue_mask_shift;
+    read_video_modes(response, fb);
 }
 
 /**
@@ -339,3 +411,15 @@ void cstart(void)
 }
 
 #endif // __x86_64__
+
+#ifndef __x86_64__
+#include "common/boot/video_modes.h"
+#include "common/stddef.h"
+
+// i686 boots through stage2 or multiboot 2, which give no list of modes
+uint32_t boot_video_modes(const boot_video_mode_t **modes)
+{
+    *modes = NULL;
+    return 0;
+}
+#endif

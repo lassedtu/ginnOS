@@ -9,6 +9,7 @@
 #include "kernel/memory/mman.h"
 #include "kernel/memory/mmio.h"
 #include "common/fb/fb_ioctl.h"
+#include "common/boot/video_modes.h"
 #include "common/memory.h"
 #include "common/string.h"
 
@@ -250,6 +251,40 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
             return 0;
         }
         return -EINVAL;
+    }
+
+    case FBIOGET_MODE:
+    {
+        fb_mode_t mode;
+        if (kerr_failed(copy_from_user(&mode, arg, sizeof(mode))))
+        {
+            return -EFAULT;
+        }
+        const boot_video_mode_t *modes;
+        uint32_t count = boot_video_modes(&modes);
+        if (count == 0)
+        {
+            // no list from the bootloader: the current mode is the only one
+            if (mode.index != 0)
+            {
+                return -EINVAL;
+            }
+            mode.width = fb.width;
+            mode.height = fb.height;
+            mode.bpp = fb.bpp;
+        }
+        else
+        {
+            if (mode.index >= count)
+            {
+                return -EINVAL;
+            }
+            mode.width = modes[mode.index].width;
+            mode.height = modes[mode.index].height;
+            mode.bpp = modes[mode.index].bpp;
+        }
+        mode.current = mode.width == fb.width && mode.height == fb.height && mode.bpp == fb.bpp;
+        return kerr_failed(copy_to_user(arg, &mode, sizeof(mode))) ? -EFAULT : 0;
     }
 
     default:
