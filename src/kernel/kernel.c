@@ -23,6 +23,7 @@
 #include "drivers/disk/ahci.h"
 #include "drivers/disk/nvme.h"
 #include "drivers/pci/pci.h"
+#include "drivers/sound/ac97.h"
 #include "drivers/usb/xhci.h"
 #include "acpi/acpi.h"
 #include "arch/x86/cpu/apic.h"
@@ -256,6 +257,9 @@ void kernel_main(boot_info_t *boot)
 
     // USB keyboards (many machines have no PS/2 keyboard)
     xhci_init();
+
+    // sound output (/dev/dsp, /dev/mixer)
+    ac97_init();
 
     // bring up the linear framebuffer (if the bootloader set a graphics mode).
     // must follow paging_init: the LFB lives above identity-mapped RAM.

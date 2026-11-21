@@ -37,6 +37,16 @@ static inline uint16_t io_inw(uint16_t port)
 }
 
 /**
+ * write a 16-bit word to an I/O port.
+ * @param port the I/O port number.
+ * @param value the value to write.
+ */
+static inline void io_outw(uint16_t port, uint16_t value)
+{
+    __asm__ __volatile__("outw %0, %1" : : "a"(value), "Nd"(port));
+}
+
+/**
  * write a 32-bit value to an I/O port.
  * @param port the I/O port number.
  * @param value the value to write.
