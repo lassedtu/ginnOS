@@ -536,8 +536,26 @@ $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) rootfs-image
 	$(call assemble_disk,$@,$(ROOTFS_IMAGE))
 endif
 
+# the sound card for make run and run-uefi: an Intel HDA controller with a
+# line out, played through the host's sound system (coreaudio on macOS,
+# pa on Linux). AUDIO=ac97 uses an AC'97 card instead, AUDIO=0 none, and
+# QEMU_AUDIODEV=<backend> picks another backend (alsa, sdl, wav,path=x.wav).
+AUDIO ?= hda
+ifeq ($(shell uname -s),Darwin)
+QEMU_AUDIODEV ?= coreaudio
+else
+QEMU_AUDIODEV ?= pa
+endif
+ifeq ($(AUDIO),hda)
+QEMU_AUDIO_FLAGS := -audiodev $(QEMU_AUDIODEV),id=snd0 -device intel-hda -device hda-output,audiodev=snd0
+else ifeq ($(AUDIO),ac97)
+QEMU_AUDIO_FLAGS := -audiodev $(QEMU_AUDIODEV),id=snd0 -device AC97,audiodev=snd0
+else
+QEMU_AUDIO_FLAGS :=
+endif
+
 run: check-tools $(DISK_IMAGE)
-	$(QEMU) $(QEMU_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+	$(QEMU) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 # boot the disk image with UEFI firmware (limine only: stage1 is BIOS-only).
 # the i686 kernel also runs on an x86_64 CPU, so this uses the x86_64
@@ -545,7 +563,8 @@ run: check-tools $(DISK_IMAGE)
 run-uefi: check-tools $(DISK_IMAGE)
 	@test "$(BOOTLOADER)" = limine || { echo "make run-uefi needs BOOTLOADER=limine"; exit 1; }
 	@test -n "$(OVMF_CODE)" || { echo "no OVMF firmware found: set OVMF_CODE=<path to OVMF_CODE.fd>"; exit 1; }
-	$(QEMU_UEFI) $(QEMU_FLAGS) -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+	$(QEMU_UEFI) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) \
+		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 # in-kernel tests: build the test kernel into its own disk image (a copy of the

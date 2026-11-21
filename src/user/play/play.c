@@ -48,7 +48,8 @@ static uint16_t le16(const uint8_t *p)
 static const char *read_header(int fd, wav_t *wav)
 {
     uint8_t head[12];
-    if (read(fd, head, 12) != 12 || memcmp(head, "RIFF", 4) != 0 || memcmp(head + 8, "WAVE", 4) != 0)
+    if (read(fd, head, 12) != 12 || memcmp(head, "RIFF", 4) != 0 ||
+        memcmp(head + 8, "WAVE", 4) != 0)
         return "not a WAV file";
 
     bool have_format = false;
