@@ -14,7 +14,7 @@
 // invalid PID sentinel.
 #define PID_NONE 0
 
-// the first process (/bin/sh for now); the system halts if it exits.
+// the first process (/bin/init); the system halts if it exits.
 #define PID_INIT 1
 
 // size of per-process kernel stack (4 KiB).
@@ -55,8 +55,8 @@ typedef enum
 typedef struct process
 {
     uint32_t pid;           // process identifier
-    uint32_t parent_pid;    // parent PID; PID_NONE for PID 1 and for orphans,
-                            // which the kernel reaps itself when they exit
+    uint32_t parent_pid;    // parent PID; PID_NONE for PID 1 (and for orphans
+                            // when there is no init, which the kernel reaps)
     uint32_t pgid;          // process group (job control)
     uint32_t sid;           // session
     uint32_t uid, euid, suid; // real, effective and saved user id
@@ -163,8 +163,9 @@ void process_release_resources(process_t *proc);
 
 /**
  * detach the children of an exiting process: zombie children are destroyed
- * now, running ones lose their parent (PID_NONE) and are reaped by the
- * kernel when they exit.
+ * now (nobody wants their status), running ones get init (PID 1) as their
+ * parent, which reaps them. without init they lose their parent
+ * (PID_NONE) and the kernel reaps them when they exit.
  * @param parent the exiting process.
  */
 void process_orphan_children(process_t *parent);

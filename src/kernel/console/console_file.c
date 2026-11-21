@@ -363,12 +363,14 @@ static int32_t console_file_ioctl(file_t *file, uint32_t request, void *arg)
         return set_foreground(arg);
 
     case TIOCSCTTY:
-        // a session leader takes the terminal if no session has it
+        // a session leader takes the terminal if no session has it, or,
+        // with argument 1, root takes it from the session that has it
         if (!proc || proc->sid != proc->pid)
         {
             return -EPERM;
         }
-        if (terminal_session != 0 && terminal_session != proc->sid)
+        if (terminal_session != 0 && terminal_session != proc->sid &&
+            !((uintptr_t)arg == 1 && proc->euid == 0))
         {
             return -EPERM;
         }

@@ -247,6 +247,23 @@ void process_destroy(process_t *proc)
     release_slot(proc);
 }
 
+/**
+ * true if PID 1 exists and has not exited. call with the table locked.
+ */
+static bool process_init_alive(void)
+{
+    for (int i = 0; i < PROCESS_MAX; i++)
+    {
+        process_t *proc = &proc_table[i];
+        if (proc->pid == PID_INIT && proc->state != PROC_STATE_UNUSED &&
+            proc->state != PROC_STATE_ZOMBIE)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void process_orphan_children(process_t *parent)
 {
     process_t *zombies[PROCESS_MAX];
@@ -266,9 +283,14 @@ void process_orphan_children(process_t *parent)
             // exited and never reaped: nobody else will, so destroy it below
             zombies[zombie_count++] = child;
         }
+        else if (parent->pid != PID_INIT && process_init_alive())
+        {
+            // still running: init adopts it and reaps it when it exits
+            child->parent_pid = PID_INIT;
+        }
         else
         {
-            // still running: the kernel reaps it when it exits
+            // no init to adopt it: the kernel reaps it when it exits
             child->parent_pid = PID_NONE;
         }
     }

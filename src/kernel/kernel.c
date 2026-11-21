@@ -209,17 +209,25 @@ void kernel_main(boot_info_t *boot)
     ktest_run_all();
 #endif
 
-    KLOG_INFO("kernel: root filesystem mounted, launching /bin/sh");
-
     // the console is the controlling terminal of init's session
     console_terminal_init(PID_INIT);
 
-    // start the shell as PID 1 through the normal scheduler path. it has no
-    // parent; if it ever exits, usermode_exit halts the system.
-    const char *argv[] = {"sh", NULL};
-    if (exec_program("/bin/sh", argv) < 0)
+    // start init as PID 1 through the normal scheduler path. it has no
+    // parent; if it ever exits, usermode_exit halts the system. without
+    // /bin/init, the shell is PID 1 itself.
+    const char *init_argv[] = {"init", NULL};
+    const char *shell_argv[] = {"sh", NULL};
+    if (exec_program("/bin/init", init_argv) >= 0)
     {
-        kernel_panic("failed to launch /bin/sh");
+        KLOG_INFO("kernel: root filesystem mounted, launching /bin/init");
+    }
+    else if (exec_program("/bin/sh", shell_argv) >= 0)
+    {
+        KLOG_WARN("kernel: no /bin/init; launching /bin/sh as PID 1");
+    }
+    else
+    {
+        kernel_panic("failed to launch /bin/init or /bin/sh");
     }
 
     // hand the CPU to PID 1. the boot context is never resumed: from here on
