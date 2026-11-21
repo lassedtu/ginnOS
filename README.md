@@ -49,7 +49,14 @@ today.
 - 8 KiB kernel stacks with an unmapped guard page below each; a double-fault
   task gate (its own TSS and stack) reports an overflow as a "kernel stack
   overflow" panic with a backtrace instead of a silent triple-fault reset
-- `SYS_mmap` (anonymous + device-backed) with a per-process mmap region
+- User address space: the program at `0x400000` with read-only code, an
+  unmapped null page, a heap after the program, an mmap region at
+  `0x40000000`, and a stack below `0xC0000000` that grows on demand up to
+  16 MiB with a guard page under it
+- Each process keeps a table of its memory areas (VMAs). Pages are allocated
+  when they are first touched, and a bad access kills only the process
+  ("segmentation fault", exit status 139) instead of the kernel
+- `mmap` (anonymous and device-backed, `MAP_FIXED`), `munmap` and `mprotect`
 
 ### Processes and multitasking
 
@@ -92,7 +99,7 @@ today.
 
 ### System calls
 
-- 25 syscalls via `int 0x80` with proper `-errno` returns
+- 27 syscalls via `int 0x80` with proper `-errno` returns
 - User pointers are checked against the page tables (`copy_from_user`,
   `copy_to_user`, `strncpy_from_user`): a bad pointer returns `-EFAULT`
   instead of crashing the kernel
@@ -100,7 +107,7 @@ today.
   `mkdir`, `exec`, `getpid`, `waitpid`, `sbrk`, `getcwd`, `chdir`, `readdir`,
   `unlink`, `rmdir`, `pipe`, `dup2`, `ftruncate`, `lseek`
 - Device/terminal/graphics: `ttyctl`, `ioctl` (general device control),
-  `mmap`, `pollkey`
+  `mmap`, `munmap`, `mprotect`, `pollkey`
 
 ### Terminal and graphics (Bifröst framebuffer)
 
@@ -126,7 +133,7 @@ today.
 - `<stdlib.h>`: `atoi`, `malloc`/`free`, `exit`
 - `<unistd.h>`: the full syscall surface (`read`/`write`/`open`/`close`/`exec`/
   `waitpid`/`pipe`/`dup2`/`lseek`/`ioctl`/`readdir`/… and `read_event`)
-- `<sys/mman.h>` (`mmap`), `<sys/fb.h>` (framebuffer)
+- `<sys/mman.h>` (`mmap`, `munmap`, `mprotect`), `<sys/fb.h>` (framebuffer)
 - `<errno.h>`: `errno`, `perror`, `strerror`
 - `crt0` with `argc`/`argv` setup; `int 0x80` syscall stubs
 
@@ -145,7 +152,9 @@ today.
 ### Bundled userspace programs
 
 - `cat`, `clear`, `echo`, `ls`, `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `touch`,
-  `ze` (text editor), and a `metaballs` framebuffer demo
+  `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
+  tests the kernel's handling of user memory (heap, stack growth, `mmap`,
+  `munmap`, `mprotect`, and faults that must kill only the process)
 
 ### Portability and tooling
 

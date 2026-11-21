@@ -8,6 +8,11 @@
  *          switch (a child process runs in between, flushing the TLB)
  *   stack  recurse about 1 MiB deep (the stack grows on demand)
  *   mmap   touch every page of an anonymous mapping (backed on demand)
+ *   munmap unmap the middle of a mapping, check that the rest keeps its
+ *          data, and map a new zeroed page into the hole with MAP_FIXED
+ *   mprotect
+ *          make a mapping read-only and write to it (the process must be
+ *          killed)
  *   null   read through a NULL pointer (the process must be killed)
  *   text   write into the program's own code (the process must be killed)
  *
@@ -118,6 +123,79 @@ static int test_mmap(void)
     return 0;
 }
 
+__attribute__((noinline)) static int test_munmap(void)
+{
+    unsigned char *mem = mmap(NULL, 4 * 4096, PROT_READ | PROT_WRITE, MAP_ANONYMOUS, -1, 0);
+    if (mem == MAP_FAILED)
+    {
+        printf("memtest munmap: mmap failed\n");
+        return 1;
+    }
+    for (int page = 0; page < 4; page++)
+    {
+        memset(mem + page * 4096, 0x10 + page, 4096);
+    }
+
+    if (munmap(mem + 4096, 2 * 4096) != 0)
+    {
+        printf("memtest munmap: munmap failed\n");
+        return 1;
+    }
+    if (mem[0] != 0x10 || mem[3 * 4096 + 4095] != 0x13)
+    {
+        printf("memtest munmap: data next to the hole lost\n");
+        return 1;
+    }
+
+    // the hole can now take a new mapping, which starts zeroed
+    unsigned char *hole = mmap(mem + 4096, 4096, PROT_READ | PROT_WRITE,
+                               MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+    if (hole != mem + 4096)
+    {
+        printf("memtest munmap: MAP_FIXED did not use the hole\n");
+        return 1;
+    }
+    for (int i = 0; i < 4096; i++)
+    {
+        if (hole[i] != 0)
+        {
+            printf("memtest munmap: old data at byte %d of the new page\n", i);
+            return 1;
+        }
+    }
+
+    // mprotect on the page that is still unmapped must fail
+    if (mprotect(mem + 2 * 4096, 4096, PROT_READ) == 0)
+    {
+        printf("memtest munmap: mprotect of an unmapped page succeeded\n");
+        return 1;
+    }
+
+    printf("memtest munmap: ok\n");
+    return 0;
+}
+
+static int test_mprotect(void)
+{
+    volatile unsigned char *mem = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_ANONYMOUS, -1, 0);
+    if (mem == MAP_FAILED)
+    {
+        printf("memtest mprotect: mmap failed\n");
+        return 1;
+    }
+    mem[0] = 42;
+
+    if (mprotect((void *)mem, 4096, PROT_READ) != 0)
+    {
+        printf("memtest mprotect: mprotect failed\n");
+        return 1;
+    }
+    printf("memtest mprotect: read %d, now writing\n", mem[0]);
+    mem[0] = 43;
+    printf("memtest mprotect: survived\n");
+    return 1;
+}
+
 static int test_null(void)
 {
     volatile int *null = NULL;
@@ -142,7 +220,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: memtest heap|stack|mmap|null|text\n");
+        printf("usage: memtest heap|stack|mmap|munmap|mprotect|null|text\n");
         return 1;
     }
 
@@ -152,6 +230,10 @@ int main(int argc, char **argv)
         return test_stack();
     if (strcmp(argv[1], "mmap") == 0)
         return test_mmap();
+    if (strcmp(argv[1], "munmap") == 0)
+        return test_munmap();
+    if (strcmp(argv[1], "mprotect") == 0)
+        return test_mprotect();
     if (strcmp(argv[1], "null") == 0)
         return test_null();
     if (strcmp(argv[1], "text") == 0)
