@@ -92,6 +92,14 @@ struct registers;
 void signal_send(struct process *proc, int sig);
 
 /**
+ * send a signal to every process of a process group.
+ * @param pgid the group.
+ * @param sig the signal.
+ * @return the number of processes it went to.
+ */
+int signal_send_group(uint32_t pgid, int sig);
+
+/**
  * send a signal caused by the process's own instruction (a fault). it is
  * delivered even if blocked or ignored: blocked or ignored, it kills.
  * @param proc the process.

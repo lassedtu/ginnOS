@@ -118,6 +118,19 @@ unsigned int alarm(unsigned int seconds);
 int pause(void);
 
 /**
+ * process groups and sessions (job control).
+ * setpgid(pid, pgid): pid 0 is the caller, pgid 0 makes a new group led
+ * by pid. getpgrp() is getpgid(0). setsid() starts a session and returns
+ * its id.
+ * @return as named, or -1 (errno set).
+ */
+int setpgid(pid_t pid, pid_t pgid);
+pid_t getpgid(pid_t pid);
+pid_t getpgrp(void);
+pid_t setsid(void);
+pid_t getsid(pid_t pid);
+
+/**
  * get the parent's process ID.
  * @return the parent's PID, or 0 if the parent has exited.
  */

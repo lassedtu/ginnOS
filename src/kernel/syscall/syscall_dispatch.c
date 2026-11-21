@@ -58,6 +58,10 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_SIGPENDING] = sys_sigpending,
     [SYS_SIGSUSPEND] = sys_sigsuspend,
     [SYS_ALARM] = sys_alarm,
+    [SYS_SETPGID] = sys_setpgid,
+    [SYS_GETPGID] = sys_getpgid,
+    [SYS_SETSID] = sys_setsid,
+    [SYS_GETSID] = sys_getsid,
 };
 
 /**

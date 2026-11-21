@@ -511,3 +511,80 @@ syscall_ret_t sys_mprotect(struct registers *regs)
     }
     return kerr_to_errno(err);
 }
+
+/**
+ * the process a pid names for setpgid and friends: 0 is the caller.
+ */
+static process_t *target_process(int32_t pid)
+{
+    if (pid < 0)
+        return NULL;
+    return pid == 0 ? process_current() : process_get((uint32_t)pid);
+}
+
+/**
+ * SYS_setpgid: move a process into a process group.
+ * args: EBX = pid (0: the caller; else the caller or one of its children),
+ *       ECX = pgid (0: the target's own pid, a new group).
+ * the group must be new or exist in the caller's session.
+ * returns 0, or -ESRCH, -EPERM, -EINVAL.
+ */
+syscall_ret_t sys_setpgid(struct registers *regs)
+{
+    int32_t pid = (int32_t)syscall_arg(regs, 0);
+    int32_t pgid = (int32_t)syscall_arg(regs, 1);
+    process_t *caller = process_current();
+
+    if (pgid < 0)
+        return -EINVAL;
+
+    process_t *target = target_process(pid);
+    if (!target || (target != caller && target->parent_pid != caller->pid) ||
+        target->state == PROC_STATE_ZOMBIE)
+        return -ESRCH;
+    if (target->sid != caller->sid || target->sid == target->pid)
+        return -EPERM; // another session, or a session leader
+
+    uint32_t group = pgid == 0 ? target->pid : (uint32_t)pgid;
+    if (group != target->pid && !process_group_exists(group, caller->sid))
+        return -EPERM;
+
+    target->pgid = group;
+    return 0;
+}
+
+/**
+ * SYS_getpgid: the process group of a process (pid 0: the caller).
+ */
+syscall_ret_t sys_getpgid(struct registers *regs)
+{
+    process_t *target = target_process((int32_t)syscall_arg(regs, 0));
+    return target ? (syscall_ret_t)target->pgid : -ESRCH;
+}
+
+/**
+ * SYS_setsid: start a new session, with the caller as the leader of it and
+ * of a new process group, and no controlling terminal.
+ * returns the new session id, or -EPERM if the caller leads a group.
+ */
+syscall_ret_t sys_setsid(struct registers *regs)
+{
+    (void)regs;
+    process_t *caller = process_current();
+
+    if (caller->pgid == caller->pid || process_group_exists(caller->pid, caller->sid))
+        return -EPERM;
+
+    caller->sid = caller->pid;
+    caller->pgid = caller->pid;
+    return (syscall_ret_t)caller->sid;
+}
+
+/**
+ * SYS_getsid: the session of a process (pid 0: the caller).
+ */
+syscall_ret_t sys_getsid(struct registers *regs)
+{
+    process_t *target = target_process((int32_t)syscall_arg(regs, 0));
+    return target ? (syscall_ret_t)target->sid : -ESRCH;
+}

@@ -14,6 +14,7 @@
  *           instruction kill only the process
  *   pipe    SIGPIPE ends a writer; ignored, the write fails with EPIPE
  *   chld    SIGCHLD reaches the parent when a child exits
+ *   group   process groups and sessions: setpgid, kill of a group, setsid
  *
  * each mode prints "sigtest <mode>: ok" when it passes.
  */
@@ -288,11 +289,61 @@ static int test_chld(void)
     return ok();
 }
 
+static void busy_forever(void)
+{
+    for (;;)
+        ;
+}
+
+static int test_group(void)
+{
+    // two children in a new group led by the first
+    pid_t first = fork();
+    if (first == 0)
+        busy_forever();
+    setpgid(first, first);
+    pid_t second = fork();
+    if (second == 0)
+        busy_forever();
+    if (setpgid(second, first) != 0)
+        return failed("setpgid into an existing group");
+    if (getpgid(first) != first || getpgid(second) != first || getpgrp() == first)
+        return failed("getpgid");
+    if (setpgid(second, 9999) != -1 || errno != EPERM)
+        return failed("setpgid into a missing group");
+
+    // one signal to the group ends both
+    kill(-first, SIGTERM);
+    int status;
+    int ended = 0;
+    for (int i = 0; i < 2; i++)
+    {
+        if (wait(&status) > 0 && WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM)
+            ended++;
+    }
+    if (ended != 2)
+        return failed("kill of a process group");
+
+    // a child that starts a session leads it and its group
+    pid_t leader = fork();
+    if (leader == 0)
+    {
+        pid_t sid = setsid();
+        _exit(sid == getpid() && getsid(0) == sid && getpgrp() == sid ? 0 : 1);
+    }
+    waitpid(leader, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        return failed("setsid in a child");
+    if (getsid(0) == getpid() && setsid() != -1)
+        return failed("setsid by a group leader");
+    return ok();
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: sigtest handler|mask|kill|eintr|stop|fault|pipe|chld\n");
+        printf("usage: sigtest handler|mask|kill|eintr|stop|fault|pipe|chld|group\n");
         return 1;
     }
 
@@ -313,6 +364,8 @@ int main(int argc, char **argv)
         return test_pipe();
     if (strcmp(argv[1], "chld") == 0)
         return test_chld();
+    if (strcmp(argv[1], "group") == 0)
+        return test_group();
 
     printf("sigtest: unknown mode %s\n", argv[1]);
     return 1;

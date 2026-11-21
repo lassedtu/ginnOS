@@ -465,15 +465,26 @@ void signal_alarm_tick(uint64_t now)
     }
 }
 
+int signal_send_group(uint32_t pgid, int sig)
+{
+    uint32_t pids[PROCESS_MAX];
+    uint32_t count = process_list_group(pgid, pids, PROCESS_MAX);
+    for (uint32_t i = 0; i < count; i++)
+    {
+        signal_send(process_get(pids[i]), sig);
+    }
+    return (int)count;
+}
+
 /*
  * the syscalls
  */
 
 /**
  * SYS_kill: send a signal.
- * args: EBX = pid (a process, or -1 for every process but init),
+ * args: EBX = pid: a process (> 0), the caller's process group (0), every
+ *             process but init (-1), or the process group -pid (< -1);
  *       ECX = signal (0 only checks that the target exists).
- * process groups (pid 0 and below -1) come with job control.
  * returns 0, or -ESRCH, -EINVAL.
  */
 syscall_ret_t sys_kill(struct registers *regs)
@@ -491,6 +502,14 @@ syscall_ret_t sys_kill(struct registers *regs)
             return -ESRCH;
         signal_send(target, sig);
         return 0;
+    }
+
+    if (pid == 0 || pid < -1)
+    {
+        uint32_t pgid = pid == 0 ? process_current()->pgid : (uint32_t)-pid;
+        if (sig == 0)
+            return process_list_group(pgid, &(uint32_t){0}, 1) ? 0 : -ESRCH;
+        return signal_send_group(pgid, sig) > 0 ? 0 : -ESRCH;
     }
 
     if (pid == -1)

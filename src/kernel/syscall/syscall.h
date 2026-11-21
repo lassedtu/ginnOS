@@ -53,9 +53,13 @@
 #define SYS_SIGPENDING 44
 #define SYS_SIGSUSPEND 45
 #define SYS_ALARM 46
+#define SYS_SETPGID 47
+#define SYS_GETPGID 48
+#define SYS_SETSID 49
+#define SYS_GETSID 50
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 47
+#define SYSCALL_COUNT 51
 
 /**
  * initialize the system call interface.

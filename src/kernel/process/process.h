@@ -57,6 +57,8 @@ typedef struct process
     uint32_t pid;           // process identifier
     uint32_t parent_pid;    // parent PID; PID_NONE for PID 1 and for orphans,
                             // which the kernel reaps itself when they exit
+    uint32_t pgid;          // process group (job control)
+    uint32_t sid;           // session
     process_state_t state;  // current state
     uintptr_t brk;          // program break (for sbrk)
     vma_table_t vmas;       // what is mapped in the user half (vma.h)
@@ -184,6 +186,20 @@ void process_reap_orphans(void);
  */
 process_t *process_find_waitable_child(process_t *parent, int32_t pid, uint32_t options,
                                        bool *has_child);
+
+/**
+ * list the pids of a process group.
+ * @param pgid the group.
+ * @param pids receives up to max pids.
+ * @param max capacity of pids.
+ * @return the number stored.
+ */
+uint32_t process_list_group(uint32_t pgid, uint32_t *pids, uint32_t max);
+
+/**
+ * true if some live process is in the group and the session.
+ */
+bool process_group_exists(uint32_t pgid, uint32_t sid);
 
 /**
  * call fn for every process in the table, with the table locked and

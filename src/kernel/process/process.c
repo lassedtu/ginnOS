@@ -146,6 +146,8 @@ process_t *process_fork(const struct registers *regs)
     child->brk = parent->brk;
 
     child->parent_pid = parent->pid;
+    child->pgid = parent->pgid;
+    child->sid = parent->sid;
     child->tty_raw = parent->tty_raw;
     memcpy(child->name, parent->name, sizeof(child->name));
     signal_fork(child, parent);
@@ -325,6 +327,37 @@ process_t *process_find_waitable_child(process_t *parent, int32_t pid, uint32_t 
             found = child;
             break;
         }
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+    return found;
+}
+
+uint32_t process_list_group(uint32_t pgid, uint32_t *pids, uint32_t max)
+{
+    uint32_t count = 0;
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX && count < max; i++)
+    {
+        process_t *proc = &proc_table[i];
+        if (proc->state != PROC_STATE_UNUSED && proc->state != PROC_STATE_ZOMBIE &&
+            proc->pgid == pgid)
+        {
+            pids[count++] = proc->pid;
+        }
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+    return count;
+}
+
+bool process_group_exists(uint32_t pgid, uint32_t sid)
+{
+    bool found = false;
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX && !found; i++)
+    {
+        process_t *proc = &proc_table[i];
+        found = proc->state != PROC_STATE_UNUSED && proc->state != PROC_STATE_ZOMBIE &&
+                proc->pgid == pgid && proc->sid == sid;
     }
     spin_unlock_irqrestore(&table_lock, flags);
     return found;

@@ -88,6 +88,11 @@ int exec_program(const char *path, const char **argv)
     child->parent_pid = parent ? parent->pid : PID_NONE;
     process_set_name(child, path);
 
+    // the child joins the caller's group and session; the first process
+    // (init) leads its own of both
+    child->pgid = parent ? parent->pgid : child->pid;
+    child->sid = parent ? parent->sid : child->pid;
+
     // deep-copy argv into kernel heap (survives until trampoline consumes it)
     child->argv = argv_copy(argv);
 

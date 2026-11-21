@@ -336,3 +336,28 @@ int fsync(int fd)
 {
     return check(_syscall(SYS_FSYNC, fd, 0, 0, 0, 0));
 }
+
+int setpgid(pid_t pid, pid_t pgid)
+{
+    return check(_syscall(SYS_SETPGID, pid, pgid, 0, 0, 0));
+}
+
+pid_t getpgid(pid_t pid)
+{
+    return check(_syscall(SYS_GETPGID, pid, 0, 0, 0, 0));
+}
+
+pid_t getpgrp(void)
+{
+    return getpgid(0);
+}
+
+pid_t setsid(void)
+{
+    return check(_syscall(SYS_SETSID, 0, 0, 0, 0, 0));
+}
+
+pid_t getsid(pid_t pid)
+{
+    return check(_syscall(SYS_GETSID, pid, 0, 0, 0, 0));
+}
