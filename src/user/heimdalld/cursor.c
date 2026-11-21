@@ -1,0 +1,129 @@
+/**
+ * @file cursor.c
+ * @brief the pointer shapes, drawn from text pictures at start-up.
+ *
+ * Lucide has no pointer shapes, so they are made here: '#' is black, '.'
+ * is white, a space is see-through.
+ */
+
+#include "heimdalld.h"
+
+#include <string.h>
+
+typedef struct
+{
+    gfx_buffer_t *image;
+    int32_t hot_x; // the pixel that points
+    int32_t hot_y;
+} cursor_t;
+
+static cursor_t cursors[CURSOR_COUNT];
+
+static const char *const arrow[] = {
+    "#           ", "##          ", "#.#         ", "#..#        ", "#...#       ",
+    "#....#      ", "#.....#     ", "#......#    ", "#.......#   ", "#........#  ",
+    "#.........# ", "#..........#", "#......#####", "#...#..#    ", "#..##..#    ",
+    "#.#  #..#   ", "##   #..#   ", "#     #..#  ", "      #..#  ", "       ##   ",
+};
+
+static const char *const beam[] = {
+    ".......", ".##.##.", "...#...", "  .#.  ", "  .#.  ", "  .#.  ", "  .#.  ", "  .#.  ",
+    "  .#.  ", "  .#.  ", "  .#.  ", "  .#.  ", "  .#.  ", "  .#.  ", "...#...", ".##.##.",
+    ".......",
+};
+
+static const char *const hand[] = {
+    "     ##         ", "    #..#        ", "    #..#        ", "    #..#        ",
+    "    #..###      ", "    #..#..###   ", "    #..#..#..## ", " ## #..#..#..#.#",
+    "#..##........#.#", "#...#..........#", " #.............#", "  #............#",
+    "  #...........# ", "   #..........# ", "   #.........#  ", "    #........#  ",
+    "    #........#  ", "    ##########  ",
+};
+
+static const char *const resize_h[] = {
+    "    #           #    ", "   ##           ##   ", "  #.#############.#  ",
+    " #.................# ", "#...................#", " #.................# ",
+    "  #.#############.#  ", "   ##           ##   ", "    #           #    ",
+};
+
+static void set_pixel(gfx_buffer_t *b, int32_t x, int32_t y, char c)
+{
+    if (c == '#')
+        *gfx_pixel_at(b, x, y) = gfx_rgb(0, 0, 0);
+    else if (c == '.')
+        *gfx_pixel_at(b, x, y) = gfx_rgb(255, 255, 255);
+}
+
+static void from_rows(cursor_t *cur, const char *const *rows, int32_t count, int32_t hx,
+                      int32_t hy, bool transpose)
+{
+    int32_t w = (int32_t)strlen(rows[0]);
+    int32_t h = count;
+    cur->image = transpose ? gfx_buffer_new(h, w) : gfx_buffer_new(w, h);
+    if (!cur->image)
+        return;
+    for (int32_t y = 0; y < h; y++)
+        for (int32_t x = 0; x < w; x++)
+            set_pixel(cur->image, transpose ? y : x, transpose ? x : y, rows[y][x]);
+    cur->hot_x = transpose ? hy : hx;
+    cur->hot_y = transpose ? hx : hy;
+}
+
+/**
+ * a diagonal double arrow, 15 x 15, from top left to bottom right (or,
+ * mirrored, from top right to bottom left).
+ */
+static void diagonal(cursor_t *cur, bool mirror)
+{
+    const int32_t n = 15;
+    cur->image = gfx_buffer_new(n, n);
+    if (!cur->image)
+        return;
+    for (int32_t y = 0; y < n; y++)
+    {
+        for (int32_t x = 0; x < n; x++)
+        {
+            int32_t d = x > y ? x - y : y - x;
+            int32_t s = x + y;
+            char c = ' ';
+            if (d <= 1)
+                c = '.'; // the shaft
+            else if (d == 2)
+                c = '#';
+            if (s <= 6 && x <= 5 && y <= 5)
+                c = (s == 6 || x == 0 || y == 0) ? '#' : '.'; // the top left head
+            if (s >= 22 && x >= 9 && y >= 9)
+                c = (s == 22 || x == n - 1 || y == n - 1) ? '#' : '.'; // the other head
+            set_pixel(cur->image, mirror ? n - 1 - x : x, y, c);
+        }
+    }
+    cur->hot_x = n / 2;
+    cur->hot_y = n / 2;
+}
+
+void cursor_init(void)
+{
+    from_rows(&cursors[HEIM_CURSOR_ARROW], arrow, 20, 0, 0, false);
+    from_rows(&cursors[HEIM_CURSOR_TEXT], beam, 17, 3, 8, false);
+    from_rows(&cursors[HEIM_CURSOR_HAND], hand, 18, 5, 0, false);
+    from_rows(&cursors[CURSOR_RESIZE_H], resize_h, 9, 10, 4, false);
+    from_rows(&cursors[CURSOR_RESIZE_V], resize_h, 9, 10, 4, true);
+    diagonal(&cursors[CURSOR_RESIZE_NWSE], false);
+    diagonal(&cursors[CURSOR_RESIZE_NESW], true);
+}
+
+gfx_rect_t cursor_rect(uint32_t shape, int32_t x, int32_t y)
+{
+    const cursor_t *c = &cursors[shape < CURSOR_COUNT ? shape : 0];
+    if (!c->image)
+        return gfx_rect(x, y, 0, 0);
+    return gfx_rect(x - c->hot_x, y - c->hot_y, c->image->width, c->image->height);
+}
+
+void cursor_draw(gfx_buffer_t *buf, uint32_t shape, int32_t x, int32_t y)
+{
+    const cursor_t *c = &cursors[shape < CURSOR_COUNT ? shape : 0];
+    if (c->image)
+        gfx_blend(buf, x - c->hot_x, y - c->hot_y, c->image,
+                  gfx_rect(0, 0, c->image->width, c->image->height), 255);
+}

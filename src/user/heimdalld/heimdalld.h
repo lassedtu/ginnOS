@@ -1,0 +1,237 @@
+#pragma once
+
+/**
+ * @file heimdalld.h
+ * @brief heimdalld, the window server: what its parts share.
+ *
+ * the server owns the screen. clients draw their windows into shared
+ * memory; the server puts the windows together with the wallpaper, the
+ * title bars, the shadows and the pointer into one picture (the
+ * composition) and copies the changed parts to the framebuffer. it reads
+ * /dev/input and sends the keys to the window with the focus and the
+ * pointer events to the window under the pointer.
+ *
+ * the parts: main.c (the loop), screen.c (composition), window.c (windows
+ * and their decorations), client.c (the protocol), input.c (keys and the
+ * pointer), cursor.c (the pointer shapes).
+ */
+
+#include <bragi.h>
+#include <gfx.h>
+#include <heimdall_proto.h>
+#include <icon.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/kbd.h>
+
+#define TITLE_HEIGHT 36
+#define CORNER_RADIUS 10
+#define SHADOW_PAD 14  // the shadow reaches this far out at the sides and the top
+#define SHADOW_DROP 6  // and this much farther at the bottom
+#define RESIZE_BAND 6  // the band outside a window that resizes it
+#define BUTTON_WIDTH 28
+#define BUTTON_HEIGHT 24
+#define WINDOW_MIN_WIDTH 160
+#define WINDOW_MIN_HEIGHT 80
+
+#define CLIENT_IN (64 * 16)
+#define CLIENT_FDS 8
+#define CLIENT_OUT 256
+#define DAMAGE_MAX 32
+
+// the parts of a window under the pointer
+typedef enum
+{
+    PART_NONE,
+    PART_CONTENT,
+    PART_TITLE,
+    PART_MINIMIZE,
+    PART_MAXIMIZE,
+    PART_CLOSE,
+    PART_EDGE,
+} part_t;
+
+// the edges a resize moves
+#define EDGE_LEFT   0x01
+#define EDGE_RIGHT  0x02
+#define EDGE_TOP    0x04
+#define EDGE_BOTTOM 0x08
+
+// the pointer shapes: the protocol's, and the server's own
+#define CURSOR_RESIZE_H    3 // left and right
+#define CURSOR_RESIZE_V    4 // up and down
+#define CURSOR_RESIZE_NWSE 5 // top left and bottom right
+#define CURSOR_RESIZE_NESW 6 // top right and bottom left
+#define CURSOR_COUNT       7
+
+typedef struct client client_t;
+
+typedef struct window
+{
+    struct window *below; // the z order: S.bottom up to S.top
+    struct window *above;
+    client_t *client;
+    uint32_t id; // the client's number for it
+    uint32_t flags;
+    char title[HEIM_TITLE_MAX];
+
+    int32_t x; // the top left of the frame (the title bar)
+    int32_t y;
+    gfx_buffer_t content; // over the client's shared memory (read only)
+    void *map;
+    size_t map_size;
+    gfx_buffer_t pending; // attached, shown at the next commit
+    void *pending_map;
+    size_t pending_size;
+
+    bool shown; // committed at least once
+    bool minimized;
+    bool maximized;
+    gfx_rect_t restore; // the frame before maximizing
+    uint32_t cursor;    // HEIM_CURSOR_ over the content
+
+    gfx_buffer_t *bar; // the title bar, drawn when it changes
+    bool bar_dirty;
+    part_t hover;   // the button under the pointer
+    part_t pressed; // the button held down
+    bool frame_pending;
+} window_t;
+
+struct client
+{
+    client_t *next;
+    int fd;
+    bool hello;
+    bool dead;
+    uint8_t in[CLIENT_IN];
+    int in_used;
+    int fds[CLIENT_FDS];
+    int fd_count;
+    heim_msg_t out[CLIENT_OUT];
+    int out_fd[CLIENT_OUT];
+    int out_head;
+    int out_count;
+    size_t out_done; // bytes of the first message already sent
+};
+
+typedef enum
+{
+    DRAG_NONE,
+    DRAG_MOVE,
+    DRAG_RESIZE,
+    DRAG_BUTTON,
+} drag_t;
+
+typedef struct
+{
+    // the screen
+    void *fb;
+    uint32_t pitch;
+    gfx_format_t format;
+    int32_t width;
+    int32_t height;
+    gfx_buffer_t *screen;    // the composition
+    gfx_buffer_t *wallpaper; // screen size
+    gfx_rect_t damage[DAMAGE_MAX];
+    int damage_count;
+
+    // windows and clients
+    window_t *bottom;
+    window_t *top;
+    window_t *focus;
+    client_t *clients;
+    uint32_t placed; // windows placed so far (for the cascade)
+
+    // the pointer
+    int32_t px;
+    int32_t py;
+    uint32_t buttons; // HEIM_BUTTON_
+    uint32_t mods;    // HEIM_MOD_
+    window_t *pointer_window; // its content has the pointer
+    window_t *grab;           // got the press; gets the pointer until all buttons are up
+    uint32_t cursor;
+    gfx_rect_t cursor_rect; // where the pointer is drawn
+
+    drag_t drag;
+    window_t *drag_window;
+    part_t drag_part; // DRAG_BUTTON: the button pressed
+    int32_t drag_dx; // from the pointer to the frame's top left
+    int32_t drag_dy;
+    uint32_t drag_edges;
+    gfx_rect_t drag_rect; // the outline of a resize
+    uint32_t last_click_ms;
+    window_t *last_click_window;
+
+    // the look
+    bragi_face_t *title_face;
+    icon_t *icon_minimize;
+    icon_t *icon_maximize;
+    icon_t *icon_restore;
+    icon_t *icon_close;
+
+    // the keyboard
+    struct kbd_keymap keymap;
+    bool have_keymap;
+
+    char *clip;
+    uint32_t clip_length;
+
+    int listen_fd;
+    int input_fd;
+    bool quit;
+} server_t;
+
+extern server_t S;
+
+/* ---- screen.c ------------------------------------------------------------- */
+
+bool screen_init(const char *wallpaper);
+void screen_damage(gfx_rect_t r);
+void screen_compose(void);
+
+/* ---- window.c ------------------------------------------------------------- */
+
+void window_init(void);
+window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title);
+void window_destroy(window_t *w);
+window_t *window_find(client_t *client, uint32_t id);
+bool window_decorated(const window_t *w);
+gfx_rect_t window_frame(const window_t *w);  // the title bar and the content
+gfx_rect_t window_bounds(const window_t *w); // with the shadow and the resize band
+gfx_rect_t window_content(const window_t *w);
+bool window_visible(const window_t *w);
+void window_damage(window_t *w);
+void window_draw(window_t *w, gfx_rect_t clip);
+void window_show(window_t *w);
+void window_raise(window_t *w);
+void window_focus(window_t *w);
+void window_focus_top(void);
+void window_set_hover(window_t *w, part_t hover, part_t pressed);
+void window_move(window_t *w, int32_t x, int32_t y);
+void window_toggle_maximize(window_t *w);
+void window_minimize(window_t *w);
+void window_configure(window_t *w, int32_t width, int32_t height);
+window_t *window_at(int32_t x, int32_t y, part_t *part, uint32_t *edges);
+void window_cycle(void);
+
+/* ---- client.c ------------------------------------------------------------- */
+
+void client_accept(int listen_fd);
+void client_read(client_t *c);
+void client_flush(client_t *c);
+void client_send(client_t *c, const heim_msg_t *msg, int fd);
+void client_send_window(window_t *w, heim_msg_t *msg);
+void client_reap(void);
+
+/* ---- input.c -------------------------------------------------------------- */
+
+bool input_init(void);
+void input_read(void);
+void input_pointer_update(void);
+
+/* ---- cursor.c ------------------------------------------------------------- */
+
+void cursor_init(void);
+gfx_rect_t cursor_rect(uint32_t shape, int32_t x, int32_t y);
+void cursor_draw(gfx_buffer_t *buf, uint32_t shape, int32_t x, int32_t y);
