@@ -17,23 +17,29 @@ I've recently started on writing documentation for this project in obsidian and 
 
 ## Features
 
-ginnOS is a 32-bit x86 (i686) Unix-like system written from scratch in C and
-assembly. It boots on BIOS/QEMU via its own two-stage bootloader and drops
-straight into a userspace shell. Everything below is implemented and working
-today.
+ginnOS is a Unix-like system for x86 written from scratch in C and assembly.
+It builds as a 32-bit (i686) or a 64-bit (x86_64) system, boots with Limine
+on BIOS and UEFI machines, and drops straight into a userspace shell.
+Everything below is implemented and working today.
 
 ### Boot and kernel core
 
 - Boots with [Limine](https://codeberg.org/Limine/Limine) on BIOS and UEFI
   machines through Multiboot 2 (framebuffer, memory map, ACPI RSDP, command
   line and a boot module are read from the Multiboot 2 tags)
-- The root filesystem is an ext2 partition on the ATA disk, or, if the disk
-  has no ginnOS root, the root image that Limine loads into RAM (for a boot
-  from a USB stick; changes are lost at reboot)
+- The root filesystem is an ext2 partition with the ginnOS label on an IDE,
+  SATA or NVMe disk (MBR or GPT), or, if there is none, the root image that
+  Limine loads into RAM (for a boot from a USB stick; changes are lost at
+  reboot)
 - The older custom two-stage BIOS bootloader (stage1 MBR + stage2) is still
   available with `make BOOTLOADER=custom`
 - x86 protected-mode kernel with GDT (ring 0/3 segments + TSS)
-- IDT, 8259 PIC, IRQ handling and a 256-vector ISR framework
+- IDT, IRQ handling and a 256-vector ISR framework; the local APIC and
+  I/O APIC (from the ACPI MADT, with the interrupt source overrides) or the
+  8259 PICs when there is no MADT; the local APIC timer is the tick
+- ACPI tables (RSDP, RSDT/XSDT, MADT, FADT, HPET, MCFG) and `reboot`
+  through the FADT reset register (no AML interpreter, so no power-off)
+- PCI enumeration with BAR sizes and MSI/MSI-X capabilities (`/proc/pci`)
 - Shared-IRQ registration layer (`irq_request`/`irq_free`, per-handler enable)
 - Kernel panic + assertion infrastructure, unified `kerr_t` error type
 - Symbolised backtraces on panics and CPU exceptions (frame-pointer walk +
@@ -137,7 +143,9 @@ today.
 - procfs at `/proc`: `meminfo` (memory, heap and cache use), `uptime`,
   `<pid>/status` and `self`
 - `poll` and `select` over pipes, the console and files
-- Block-device abstraction (ATA PIO driver + MBR partition parsing)
+- Block-device abstraction with drivers for IDE (ATA PIO), SATA (AHCI, DMA)
+  and NVMe disks, a RAM disk, and MBR and GPT partition tables
+- USB keyboards through xHCI (HID boot protocol), next to PS/2 keyboards
 - Pipes (16 KiB ring buffers on the kernel heap, no fixed limit) with
   blocking, EOF/EPIPE, reference-counted endpoints, and atomic writes of up
   to `PIPE_BUF` (4 KiB)
