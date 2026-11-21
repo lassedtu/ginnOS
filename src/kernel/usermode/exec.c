@@ -162,9 +162,6 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     proc->brk = elf.brk;
     process_set_name(proc, path);
     signal_exec(proc);
-    // the tty mode is still per process (until termios): a new program
-    // starts in cooked mode, as a spawned one does
-    proc->tty_raw = 0;
     arch_switch_address_space(as);
     arch_irq_restore(flags);
 

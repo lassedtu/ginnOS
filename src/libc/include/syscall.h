@@ -23,7 +23,7 @@
 #define SYS_READDIR 14 // retired: use SYS_GETDENTS
 #define SYS_UNLINK 15  // remove a file or directory
 #define SYS_RMDIR 16   // remove a directory
-#define SYS_TTYCTL 17  // control terminal behavior
+#define SYS_TTYCTL 17  // retired: ttyctl() is a libc wrapper over termios
 #define SYS_PIPE 18    // create a pipe
 #define SYS_DUP2 19
 #define SYS_FTRUNCATE 20

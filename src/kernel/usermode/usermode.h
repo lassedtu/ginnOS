@@ -54,8 +54,7 @@ void usermode_reset_frame(struct registers *regs, uintptr_t entry, uintptr_t use
  * its old program. on success the old address space is gone, the areas
  * and break are the new program's, its stack holds argv and envp, and the
  * syscall frame returns into its entry point. pid, parent, cwd and fds stay
- * (except FD_CLOEXEC ones, which are closed); the tty goes back to cooked
- * mode.
+ * (except FD_CLOEXEC ones, which are closed).
  * @param regs the caller's syscall frame.
  * @param path absolute path of the ELF executable.
  * @param argv NULL-terminated argument strings in kernel memory.

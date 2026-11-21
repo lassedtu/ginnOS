@@ -69,7 +69,6 @@ typedef struct process
     addr_space_t page_directory; // this process's address space (page directory)
     wait_queue_t child_exit; // where this process waits for a child to exit
     char **argv;            // kernel-heap copy of argv (freed at exit)
-    uint8_t tty_raw;        // 0 = cooked (line-buffered), 1 = raw (event-based)
 
     // intrusive doubly-linked list for the scheduler ready queue.
     struct process *ready_next;

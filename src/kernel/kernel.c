@@ -9,6 +9,7 @@
 #include "fs/tmpfs.h"
 #include "fs/procfs.h"
 #include "fs/block_cache.h"
+#include "console/termios.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
@@ -200,6 +201,9 @@ void kernel_main(boot_info_t *boot)
 #endif
 
     KLOG_INFO("kernel: root filesystem mounted, launching /bin/sh");
+
+    // the console is the controlling terminal of init's session
+    console_terminal_init(PID_INIT);
 
     // start the shell as PID 1 through the normal scheduler path. it has no
     // parent; if it ever exits, usermode_exit halts the system.

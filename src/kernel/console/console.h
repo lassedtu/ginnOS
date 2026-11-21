@@ -39,3 +39,10 @@ void console_write_bytes(const char *buf, uint32_t len);
  * nothing else runs, and the panic may have hit while the lock was held.
  */
 void console_panic_mode(void);
+
+/**
+ * the size of the console in character cells.
+ * @param rows receives the number of rows.
+ * @param cols receives the number of columns.
+ */
+void console_size(uint32_t *rows, uint32_t *cols);

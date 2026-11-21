@@ -199,10 +199,13 @@ static int current_prompt_len;
 
 void line_init(void)
 {
-    ttyctl(TTY_RAW);
+    // nothing to set up: line_read switches the terminal mode itself
 }
 
-int line_read(char *buf, int size)
+/**
+ * read and edit one line, with the terminal in raw (key event) mode.
+ */
+static int read_line_raw(char *buf, int size)
 {
     key_event_t event;
 
@@ -420,6 +423,16 @@ int line_read(char *buf, int size)
             }
         }
     }
+}
+
+int line_read(char *buf, int size)
+{
+    // the terminal is raw only while a line is edited: the commands the
+    // shell runs get it in cooked mode (line input, echo, Ctrl+C)
+    ttyctl(TTY_RAW);
+    int len = read_line_raw(buf, size);
+    ttyctl(TTY_COOKED);
+    return len;
 }
 
 void line_set_prompt_len(int len)

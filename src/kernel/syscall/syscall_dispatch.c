@@ -28,7 +28,6 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_CHDIR] = sys_chdir,
     [SYS_UNLINK] = sys_unlink,
     [SYS_RMDIR] = sys_rmdir,
-    [SYS_TTYCTL] = sys_ttyctl,
     [SYS_PIPE] = sys_pipe,
     [SYS_DUP2] = sys_dup2,
     [SYS_FTRUNCATE] = sys_ftruncate,

@@ -122,7 +122,6 @@ syscall_ret_t sys_fsync(struct registers *regs);
 /* sys_misc.c */
 syscall_ret_t sys_getcwd(struct registers *regs);
 syscall_ret_t sys_chdir(struct registers *regs);
-syscall_ret_t sys_ttyctl(struct registers *regs);
 syscall_ret_t sys_ioctl(struct registers *regs);
 
 /* sys_fb.c */

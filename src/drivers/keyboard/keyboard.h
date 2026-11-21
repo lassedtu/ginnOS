@@ -104,6 +104,23 @@ int keyboard_read_event(keyboard_event_t *event_out);
 bool keyboard_wait_event(keyboard_event_t *event_out);
 
 /**
+ * a function that sees every key event before it is buffered (in the
+ * keyboard interrupt). it returns true to take the event out of the input:
+ * the terminal uses it for Ctrl+C and the other signal keys.
+ */
+typedef bool (*keyboard_filter_fn)(const keyboard_event_t *event);
+
+/**
+ * set the filter (NULL: none).
+ */
+void keyboard_set_filter(keyboard_filter_fn filter);
+
+/**
+ * drop every buffered event (input typed but not read yet).
+ */
+void keyboard_flush(void);
+
+/**
  * return the number of events dropped due to a full buffer since boot.
  * @return total number of dropped events.
  */

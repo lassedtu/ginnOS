@@ -92,8 +92,15 @@ static const keyboard_special_key_t extended_map[128] = {
 /**
  * push a keyboard event into the circular buffer.
  */
+static keyboard_filter_fn event_filter;
+
 static void keyboard_buffer_push(keyboard_event_t event)
 {
+    if (event_filter && event_filter(&event))
+    {
+        return; // the terminal took it (a signal key)
+    }
+
     uint32_t flags = spin_lock_irqsave(&buffer_lock);
 
     uint16_t next = (uint16_t)((buffer_write + 1) % KEYBOARD_BUFFER_SIZE);
@@ -372,6 +379,18 @@ int keyboard_read(void)
         if (event.type == KEY_EVENT_CHAR)
             return (unsigned char)event.character;
     }
+}
+
+void keyboard_set_filter(keyboard_filter_fn filter)
+{
+    event_filter = filter;
+}
+
+void keyboard_flush(void)
+{
+    uint32_t flags = spin_lock_irqsave(&buffer_lock);
+    buffer_read = buffer_write;
+    spin_unlock_irqrestore(&buffer_lock, flags);
 }
 
 uint32_t keyboard_dropped_count(void)

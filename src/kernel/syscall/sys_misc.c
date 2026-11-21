@@ -71,27 +71,6 @@ syscall_ret_t sys_chdir(struct registers *regs)
 }
 
 /**
- * SYS_ttyctl: switch terminal mode for the calling process.
- * args: EBX = mode (0 = cooked/line-buffered, 1 = raw/event-based).
- * returns the previous mode on success, negative errno on error.
- */
-syscall_ret_t sys_ttyctl(struct registers *regs)
-{
-    syscall_arg_t mode = syscall_arg(regs, 0);
-    process_t *proc = process_current();
-
-    if (!proc)
-        return -EINVAL;
-
-    if (mode > 1)
-        return -EINVAL;
-
-    int32_t prev = (int32_t)proc->tty_raw;
-    proc->tty_raw = (uint8_t)mode;
-    return prev;
-}
-
-/**
  * SYS_ioctl: issue a device-control request on an open file descriptor.
  * args: EBX = fd, ECX = request code, EDX = argument (usually a user pointer).
  * only file-backed fds carry a filesystem that can service ioctls; devfs

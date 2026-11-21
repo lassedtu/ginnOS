@@ -203,11 +203,19 @@ int mkdir(const char *path);
 #define TTY_RAW    1
 
 /**
- * switch terminal mode for the calling process.
- * @param mode TTY_COOKED (0) for line-buffered or TTY_RAW (1) for event-based.
+ * switch the terminal on fd 0 between two modes (a wrapper over termios):
+ * TTY_COOKED is line input with echo and signal keys; TTY_RAW gives one
+ * key_event_t per read (read_event), with no echo and Ctrl+C as a key.
+ * the mode belongs to the terminal, so it stays after the program exits.
+ * @param mode TTY_COOKED or TTY_RAW.
  * @return the previous mode, or -1 on error.
  */
 int ttyctl(int mode);
+
+/**
+ * true if fd refers to a terminal.
+ */
+int isatty(int fd);
 
 /**
  * issue a device-control request on an open file descriptor.

@@ -161,3 +161,9 @@ void console_panic_mode(void)
 {
     panic_mode = true;
 }
+
+void console_size(uint32_t *rows, uint32_t *cols)
+{
+    *rows = console_tty.backend ? console_tty.backend->rows : CONSOLE_VGA_HEIGHT;
+    *cols = console_tty.backend ? console_tty.backend->cols : CONSOLE_VGA_WIDTH;
+}

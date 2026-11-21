@@ -15,6 +15,8 @@
  *   pipe    SIGPIPE ends a writer; ignored, the write fails with EPIPE
  *   chld    SIGCHLD reaches the parent when a child exits
  *   group   process groups and sessions: setpgid, kill of a group, setsid
+ *   tty     termios settings, isatty, the window size, the foreground
+ *           group, and SIGTTIN for a read from a background group
  *
  * each mode prints "sigtest <mode>: ok" when it passes.
  */
@@ -23,7 +25,9 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 static const char *mode_name;
@@ -339,11 +343,58 @@ static int test_group(void)
     return ok();
 }
 
+static int test_tty(void)
+{
+    struct termios saved;
+    if (!isatty(0) || tcgetattr(0, &saved) != 0 || !(saved.c_lflag & ICANON))
+        return failed("the console as a cooked terminal");
+
+    int fds[2];
+    pipe(fds);
+    if (isatty(fds[0]) || errno != ENOTTY)
+        return failed("isatty of a pipe");
+
+    // a change of the settings reads back, and the old ones come back
+    struct termios raw = saved;
+    cfmakeraw(&raw);
+    tcsetattr(0, TCSANOW, &raw);
+    struct termios check;
+    tcgetattr(0, &check);
+    tcsetattr(0, TCSANOW, &saved);
+    if (check.c_lflag & (ICANON | ECHO | ISIG))
+        return failed("tcsetattr");
+
+    struct winsize size;
+    if (ioctl(0, TIOCGWINSZ, &size) != 0 || size.ws_row == 0 || size.ws_col == 0)
+        return failed("TIOCGWINSZ");
+
+    if (tcgetpgrp(0) != getpgrp())
+        return failed("tcgetpgrp is not this process's group");
+
+    // a child in a group of its own is in the background: its read stops it
+    pid_t reader = fork();
+    if (reader == 0)
+    {
+        setpgid(0, 0);
+        char byte;
+        read(0, &byte, 1);
+        _exit(1);
+    }
+    setpgid(reader, reader);
+    int status;
+    if (waitpid(reader, &status, WUNTRACED) != reader || !WIFSTOPPED(status) ||
+        WSTOPSIG(status) != SIGTTIN)
+        return failed("SIGTTIN for a background read");
+    kill(reader, SIGKILL);
+    waitpid(reader, &status, 0);
+    return ok();
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: sigtest handler|mask|kill|eintr|stop|fault|pipe|chld|group\n");
+        printf("usage: sigtest handler|mask|kill|eintr|stop|fault|pipe|chld|group|tty\n");
         return 1;
     }
 
@@ -366,6 +417,8 @@ int main(int argc, char **argv)
         return test_chld();
     if (strcmp(argv[1], "group") == 0)
         return test_group();
+    if (strcmp(argv[1], "tty") == 0)
+        return test_tty();
 
     printf("sigtest: unknown mode %s\n", argv[1]);
     return 1;

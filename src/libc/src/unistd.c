@@ -201,17 +201,6 @@ int mkdir(const char *path)
     return ret;
 }
 
-int ttyctl(int mode)
-{
-    int ret = _syscall(SYS_TTYCTL, mode, 0, 0, 0, 0);
-    if (ret < 0)
-    {
-        errno = -ret;
-        return -1;
-    }
-    return ret;
-}
-
 int ioctl(int fd, unsigned int request, void *arg)
 {
     int ret = _syscall(SYS_IOCTL, fd, (int)request, (int)arg, 0, 0);

@@ -148,7 +148,6 @@ process_t *process_fork(const struct registers *regs)
     child->parent_pid = parent->pid;
     child->pgid = parent->pgid;
     child->sid = parent->sid;
-    child->tty_raw = parent->tty_raw;
     memcpy(child->name, parent->name, sizeof(child->name));
     signal_fork(child, parent);
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
