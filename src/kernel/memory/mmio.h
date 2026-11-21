@@ -25,3 +25,13 @@ void mmio_init(void);
  * @return kernel pointer to phys, or NULL if the window is exhausted.
  */
 void *ioremap(phys_addr_t phys, size_t size);
+
+/**
+ * map a range of device registers into the kernel, not cached (each access
+ * goes to the device). use this for controller registers; ioremap is for
+ * memory such as a framebuffer.
+ * @param phys physical address of the registers (need not be aligned).
+ * @param size number of bytes.
+ * @return kernel pointer to phys, or NULL if the window is exhausted.
+ */
+void *ioremap_nocache(phys_addr_t phys, size_t size);

@@ -72,7 +72,11 @@ static void puts_to(StdioPutCharFn out, const char *str)
 /**
  * write an unsigned number in a radix (8, 10 or 16).
  */
-static void put_unsigned(StdioPutCharFn out, uint64_t number, uint32_t radix, bool upper)
+/**
+ * write a number with at least width digits (padded with pad).
+ */
+static void put_unsigned_width(StdioPutCharFn out, uint64_t number, uint32_t radix, bool upper,
+                               uint32_t width, char pad)
 {
     const char *digits = upper ? upper_digits : lower_digits;
     char buffer[24]; // 2^64 needs 22 octal digits
@@ -85,10 +89,20 @@ static void put_unsigned(StdioPutCharFn out, uint64_t number, uint32_t radix, bo
         buffer[pos++] = digits[rem];
     } while (number > 0);
 
+    for (uint32_t i = (uint32_t)pos; i < width; i++)
+    {
+        out(pad);
+    }
+
     while (--pos >= 0)
     {
         out(buffer[pos]);
     }
+}
+
+static void put_unsigned(StdioPutCharFn out, uint64_t number, uint32_t radix, bool upper)
+{
+    put_unsigned_width(out, number, radix, upper, 0, ' ');
 }
 
 /**
@@ -142,6 +156,19 @@ void stdio_format_args(StdioPutCharFn out, const char *fmt, va_list args)
         }
         fmt++;
 
+        // a field width for the numbers: "%8u", or "%08x" to pad with zeros
+        char pad = ' ';
+        uint32_t width = 0;
+        if (*fmt == '0')
+        {
+            pad = '0';
+            fmt++;
+        }
+        while (*fmt >= '0' && *fmt <= '9')
+        {
+            width = width * 10 + (uint32_t)(*fmt++ - '0');
+        }
+
         // length modifier
         printf_length_t length = LENGTH_INT;
         if (*fmt == 'h')
@@ -192,15 +219,15 @@ void stdio_format_args(StdioPutCharFn out, const char *fmt, va_list args)
         }
 
         case 'u':
-            put_unsigned(out, arg_unsigned(&ap, length), 10, false);
+            put_unsigned_width(out, arg_unsigned(&ap, length), 10, false, width, pad);
             break;
 
         case 'x':
-            put_unsigned(out, arg_unsigned(&ap, length), 16, false);
+            put_unsigned_width(out, arg_unsigned(&ap, length), 16, false, width, pad);
             break;
 
         case 'X':
-            put_unsigned(out, arg_unsigned(&ap, length), 16, true);
+            put_unsigned_width(out, arg_unsigned(&ap, length), 16, true, width, pad);
             break;
 
         case 'o':

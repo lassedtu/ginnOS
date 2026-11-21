@@ -184,6 +184,11 @@ void arch_map_kernel_page(uintptr_t virt, phys_addr_t phys)
     paging_map(virt, phys, PTE_KERNEL_RW);
 }
 
+void arch_map_device_page(uintptr_t virt, phys_addr_t phys)
+{
+    paging_map(virt, phys, PTE_KERNEL_RW | PTE_CACHE_DISABLE | PTE_WRITE_THROUGH);
+}
+
 void arch_unmap_kernel_page(uintptr_t virt)
 {
     paging_unmap(virt);

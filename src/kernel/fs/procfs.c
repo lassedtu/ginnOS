@@ -5,6 +5,7 @@
 #include "common/string.h"
 #include "kernel/errno.h"
 #include "kernel/fs/block_cache.h"
+#include "drivers/pci/pci.h"
 #include "kernel/memory/heap.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/process/process.h"
@@ -18,6 +19,7 @@
  *
  *   /proc/meminfo       physical memory and kernel heap use
  *   /proc/uptime        seconds since boot
+ *   /proc/pci           the PCI functions (drivers/pci)
  *   /proc/<pid>/status  a process's name, state, parent and resources
  *   /proc/self          the calling process's directory
  *
@@ -26,7 +28,7 @@
  */
 
 // most bytes of one file's text
-#define PROCFS_TEXT_MAX 512
+#define PROCFS_TEXT_MAX 2048
 
 // most processes a directory listing shows
 #define PROCFS_PIDS_MAX PROCESS_MAX
@@ -50,8 +52,8 @@ typedef struct
 } procfs_node_t;
 
 // the files of the root that are not process directories
-static const char *const root_files[] = {"meminfo", "uptime", "self"};
-#define ROOT_FILE_COUNT 3
+static const char *const root_files[] = {"meminfo", "uptime", "pci", "self"};
+#define ROOT_FILE_COUNT 4
 
 /*
  * the kernel's formatter writes one character at a time to a function
@@ -119,6 +121,17 @@ static bool make_text(procfs_node_t *node, const char *name, uint32_t pid)
         {
             FORMAT("CacheHits:\t%u sectors\nCacheMisses:\t%u sectors\n", block_cache_root->hits,
                    block_cache_root->misses);
+        }
+    }
+    else if (strcmp(name, "pci") == 0)
+    {
+        // bus:device.function, class, vendor:device, the first memory BAR
+        for (uint32_t i = 0; i < pci_device_count(); i++)
+        {
+            const pci_device_t *dev = pci_device_at(i);
+            FORMAT("%02x:%02x.%u %02x%02x%02x %04x:%04x irq %u %s\n", dev->bus, dev->device, dev->function,
+                   dev->class_code, dev->subclass, dev->prog_if, dev->vendor_id, dev->device_id,
+                   dev->irq_line, pci_class_name(dev));
         }
     }
     else
@@ -211,7 +224,8 @@ static kerr_t resolve(const char *path, procfs_node_t *node)
         return make_text(node, "status", pid) ? KERR_OK : KERR_NOENT;
     }
 
-    if (*rest != '\0' || (strcmp(path, "meminfo") != 0 && strcmp(path, "uptime") != 0))
+    if (*rest != '\0' || (strcmp(path, "meminfo") != 0 && strcmp(path, "uptime") != 0 &&
+                           strcmp(path, "pci") != 0))
     {
         return KERR_NOENT;
     }

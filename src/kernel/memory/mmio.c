@@ -16,7 +16,10 @@ void mmio_init(void)
     arch_reserve_kernel_range(MMIO_REGION_BASE, MMIO_REGION_END);
 }
 
-void *ioremap(phys_addr_t phys, size_t size)
+/**
+ * map [phys, phys + size) into the MMIO window, cached or not.
+ */
+static void *map_range(phys_addr_t phys, size_t size, bool cached)
 {
     phys_addr_t first = PAGE_ALIGN_DOWN(phys);
     size_t bytes = PAGE_ALIGN_UP(phys + size) - first;
@@ -38,8 +41,25 @@ void *ioremap(phys_addr_t phys, size_t size)
 
     for (size_t offset = 0; offset < bytes; offset += PAGE_SIZE)
     {
-        arch_map_kernel_page(virt + offset, first + offset);
+        if (cached)
+        {
+            arch_map_kernel_page(virt + offset, first + offset);
+        }
+        else
+        {
+            arch_map_device_page(virt + offset, first + offset);
+        }
     }
 
     return (void *)(virt + (phys - first));
+}
+
+void *ioremap(phys_addr_t phys, size_t size)
+{
+    return map_range(phys, size, true);
+}
+
+void *ioremap_nocache(phys_addr_t phys, size_t size)
+{
+    return map_range(phys, size, false);
 }

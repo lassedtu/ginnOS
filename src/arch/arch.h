@@ -145,6 +145,14 @@ void arch_reserve_kernel_range(uintptr_t start, uintptr_t end);
 void arch_map_kernel_page(uintptr_t virt, phys_addr_t phys);
 
 /**
+ * like arch_map_kernel_page(), but the page is not cached: for device
+ * registers, where each read and write must go to the device.
+ * @param virt page-aligned virtual address inside a reserved range.
+ * @param phys page-aligned physical address of the device memory.
+ */
+void arch_map_device_page(uintptr_t virt, phys_addr_t phys);
+
+/**
  * remove a page mapped with arch_map_kernel_page(). the frame is not freed.
  * @param virt page-aligned virtual address.
  */

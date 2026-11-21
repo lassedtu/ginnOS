@@ -20,6 +20,7 @@
 #include "drivers/disk/ata.h"
 #include "drivers/disk/partition.h"
 #include "drivers/disk/ramdisk.h"
+#include "drivers/pci/pci.h"
 #include "drivers/keyboard/keyboard.h"
 
 #include "console/console.h"
@@ -199,6 +200,10 @@ void kernel_main(boot_info_t *boot)
 
     // likewise the MMIO window (the framebuffer is mapped into it next)
     mmio_init();
+
+    // the PCI devices, for the drivers of controllers that are not legacy
+    // ISA devices (AHCI, NVMe)
+    pci_init();
 
     // bring up the linear framebuffer (if the bootloader set a graphics mode).
     // must follow paging_init: the LFB lives above identity-mapped RAM.
