@@ -48,6 +48,18 @@ void free(void *ptr);
 int atoi(const char *s);
 
 /**
+ * the environment: a NULL-terminated array of "KEY=VALUE" strings.
+ */
+extern char **environ;
+
+/**
+ * look up an environment variable.
+ * @param name the variable name (without '=').
+ * @return its value, or NULL if it is not set.
+ */
+char *getenv(const char *name);
+
+/**
  * terminate the process with an exit code.
  * @param status exit code.
  */

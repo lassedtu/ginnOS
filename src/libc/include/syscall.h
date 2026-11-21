@@ -34,6 +34,7 @@
 #define SYS_MUNMAP 25   // unmap a range of memory
 #define SYS_MPROTECT 26 // change the protection of a range of memory
 #define SYS_FORK 27     // create a copy of the calling process
+#define SYS_EXECVE 28   // replace the calling process's program
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

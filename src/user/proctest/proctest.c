@@ -8,6 +8,9 @@
  *          (copy-on-write)
  *   pipe   fork with a pipe between parent and child
  *   many   fork until the process table is full, then reap every child
+ *   exec   execve a missing program (must fail and return), then fork and
+ *          execve this program in the child with its own argv and
+ *          environment (the child checks them in mode "execed")
  *
  * each mode prints "proctest <mode>: ok" when it passes.
  */
@@ -179,11 +182,59 @@ static int test_many(void)
     return 0;
 }
 
+static int test_exec(void)
+{
+    char *missing_argv[] = {"missing", NULL};
+    if (execve("/bin/no-such-program", missing_argv, environ) != -1)
+    {
+        printf("proctest exec: execve of a missing program did not fail\n");
+        return 1;
+    }
+
+    pid_t child = fork();
+    if (child < 0)
+    {
+        printf("proctest exec: fork failed\n");
+        return 1;
+    }
+    if (child == 0)
+    {
+        char *child_argv[] = {"proctest", "execed", "second argument", NULL};
+        char *child_envp[] = {"PROCTEST=42", "OTHER=x", NULL};
+        execve("/bin/proctest", child_argv, child_envp);
+        _exit(99); // execve failed
+    }
+
+    int status = waitpid(child);
+    if (status != 42)
+    {
+        printf("proctest exec: child exited with %d\n", status);
+        return 1;
+    }
+
+    printf("proctest exec: ok\n");
+    return 0;
+}
+
+/**
+ * the program execve'd by test_exec: check argv and the environment.
+ */
+static int test_execed(int argc, char **argv)
+{
+    const char *value = getenv("PROCTEST");
+    if (argc != 3 || strcmp(argv[2], "second argument") != 0 || !value ||
+        strcmp(value, "42") != 0 || getenv("MISSING") != NULL)
+    {
+        return 1;
+    }
+    return atoi(value);
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: proctest fork|pipe|many\n");
+        printf("usage: proctest fork|pipe|many|exec\n");
         return 1;
     }
 
@@ -193,6 +244,10 @@ int main(int argc, char **argv)
         return test_pipe();
     if (strcmp(argv[1], "many") == 0)
         return test_many();
+    if (strcmp(argv[1], "exec") == 0)
+        return test_exec();
+    if (strcmp(argv[1], "execed") == 0)
+        return test_execed(argc, argv);
 
     printf("proctest: unknown mode %s\n", argv[1]);
     return 1;

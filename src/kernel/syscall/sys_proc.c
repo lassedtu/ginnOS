@@ -31,48 +31,57 @@ syscall_ret_t sys_exit(struct registers *regs)
     return 0;
 }
 
-// most arguments, and most argument bytes (NULs included), sys_exec takes
-#define EXEC_ARGC_MAX 32
-#define EXEC_ARG_BYTES 1024
+// most entries a copied argv or envp may have, and most bytes (NULs
+// included) all copied strings of one exec may take together
+#define EXEC_VECTOR_MAX USER_ARGC_MAX
+#define EXEC_STRING_BYTES 4096
 
 /**
- * copy a user argv array and its strings into kernel memory.
- * @param user_argv the user's NULL-terminated array (may itself be NULL).
- * @param kargv receives EXEC_ARGC_MAX + 1 pointers into strings.
- * @param strings receives the strings, packed.
- * @return argc, or a negative errno (EFAULT for bad memory, EINVAL when
- *         over EXEC_ARGC_MAX or EXEC_ARG_BYTES).
+ * where the strings of one exec are copied to.
  */
-static int32_t copy_argv_from_user(const char **user_argv, const char **kargv, char *strings)
+typedef struct
 {
-    uint32_t argc = 0;
-    uint32_t used = 0;
+    char *bytes;   // EXEC_STRING_BYTES of kernel memory
+    uint32_t used; // bytes taken so far
+} exec_strings_t;
 
-    if (user_argv)
+/**
+ * copy a user string vector (argv or envp) and its strings into kernel
+ * memory.
+ * @param user_vector the user's NULL-terminated array (may itself be NULL).
+ * @param kvector receives EXEC_VECTOR_MAX + 1 pointers into strings.
+ * @param strings the string buffer, shared by the vectors of one exec.
+ * @return the entry count, or a negative errno (EFAULT for bad memory,
+ *         EINVAL when over EXEC_VECTOR_MAX or EXEC_STRING_BYTES).
+ */
+static int32_t copy_vector_from_user(const char **user_vector, const char **kvector,
+                                     exec_strings_t *strings)
+{
+    uint32_t count = 0;
+
+    while (user_vector)
     {
-        for (;;)
-        {
-            const char *arg;
-            if (kerr_failed(copy_from_user(&arg, &user_argv[argc], sizeof(arg))))
-                return -18; /* EFAULT */
-            if (!arg)
-                break;
-            if (argc == EXEC_ARGC_MAX)
-                return -3; /* EINVAL: too many arguments */
+        const char *entry;
+        if (kerr_failed(copy_from_user(&entry, &user_vector[count], sizeof(entry))))
+            return -18; /* EFAULT */
+        if (!entry)
+            break;
+        if (count == EXEC_VECTOR_MAX)
+            return -3; /* EINVAL: too many entries */
 
-            int32_t len = strncpy_from_user(strings + used, arg, EXEC_ARG_BYTES - used);
-            if (len == KERR_FAULT)
-                return -18; /* EFAULT */
-            if (len < 0)
-                return -3; /* EINVAL: arguments too long */
+        char *dst = strings->bytes + strings->used;
+        int32_t len = strncpy_from_user(dst, entry, EXEC_STRING_BYTES - strings->used);
+        if (len == KERR_FAULT)
+            return -18; /* EFAULT */
+        if (len < 0)
+            return -3; /* EINVAL: strings too long */
 
-            kargv[argc++] = strings + used;
-            used += (uint32_t)len + 1;
-        }
+        kvector[count++] = dst;
+        strings->used += (uint32_t)len + 1;
     }
 
-    kargv[argc] = NULL;
-    return (int32_t)argc;
+    kvector[count] = NULL;
+    return (int32_t)count;
 }
 
 /**
@@ -92,12 +101,12 @@ syscall_ret_t sys_exec(struct registers *regs)
         return path_err;
 
     /* argv and its strings are user memory too: copy them in first */
-    char *strings = kmalloc(EXEC_ARG_BYTES);
-    if (!strings)
+    exec_strings_t strings = {kmalloc(EXEC_STRING_BYTES), 0};
+    if (!strings.bytes)
         return -4; /* ENOMEM */
 
-    const char *kargv[EXEC_ARGC_MAX + 1];
-    int32_t ret = copy_argv_from_user(argv, kargv, strings);
+    const char *kargv[EXEC_VECTOR_MAX + 1];
+    int32_t ret = copy_vector_from_user(argv, kargv, &strings);
     if (ret >= 0)
     {
         ret = (int32_t)exec_program(resolved, kargv);
@@ -105,8 +114,51 @@ syscall_ret_t sys_exec(struct registers *regs)
             ret = -5; /* ENOENT */
     }
 
-    kfree(strings);
+    kfree(strings.bytes);
     return ret;
+}
+
+/**
+ * SYS_execve: replace the calling process's program.
+ * args: EBX = path, ECX = argv, EDX = envp (both NULL-terminated, may be
+ *       NULL).
+ * on success it does not return: the syscall frame now enters the new
+ * program (exec_replace). returns a negative errno on failure, with the
+ * old program still running.
+ */
+syscall_ret_t sys_execve(struct registers *regs)
+{
+    const char *path = (const char *)syscall_arg(regs, 0);
+    const char **argv = (const char **)syscall_arg(regs, 1);
+    const char **envp = (const char **)syscall_arg(regs, 2);
+
+    char resolved[PATH_MAX];
+    int32_t ret = resolve_user_path(path, resolved, sizeof(resolved));
+    if (ret < 0)
+        return ret;
+
+    // the vectors are big for a kernel stack: keep them on the heap
+    exec_strings_t strings = {kmalloc(EXEC_STRING_BYTES), 0};
+    const char **kargv = kmalloc(2 * (EXEC_VECTOR_MAX + 1) * sizeof(char *));
+    if (!strings.bytes || !kargv)
+    {
+        kfree(strings.bytes);
+        kfree(kargv);
+        return -4; /* ENOMEM */
+    }
+    const char **kenvp = kargv + EXEC_VECTOR_MAX + 1;
+
+    ret = copy_vector_from_user(argv, kargv, &strings);
+    if (ret >= 0)
+        ret = copy_vector_from_user(envp, kenvp, &strings);
+    if (ret >= 0)
+        ret = kerr_to_errno(exec_replace(regs, resolved, kargv, kenvp));
+
+    kfree(strings.bytes);
+    kfree(kargv);
+
+    // on success the frame's EAX was cleared for the new program; keep it
+    return ret == 0 ? (syscall_ret_t)regs->eax : ret;
 }
 
 /**

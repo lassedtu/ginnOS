@@ -15,6 +15,9 @@
 #include "common/memory.h"
 #include "common/string.h"
 
+// exit status of a process whose execve failed after its old image was gone
+#define EXEC_FAILED_EXIT_STATUS 127
+
 /**
  * deep-copy a null-terminated argv array into kernel heap.
  * returns a heap-allocated array of heap-allocated strings,
@@ -120,6 +123,62 @@ int exec_program(const char *path, const char **argv)
 
     // return child PID to parent (for waitpid)
     return (int)child->pid;
+}
+
+kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
+                    const char **envp)
+{
+    process_t *proc = process_current();
+
+    // load the new program into a new address space. the old one stays
+    // untouched until the load has worked, so a failed execve returns.
+    vma_table_t *vmas = kmalloc(sizeof(vma_table_t));
+    if (!vmas)
+    {
+        return KERR_NOMEM;
+    }
+    vma_table_init(vmas);
+
+    addr_space_t as = arch_create_address_space();
+    if (as == ADDR_SPACE_NONE)
+    {
+        kfree(vmas);
+        return KERR_NOMEM;
+    }
+
+    elf_load_result_t elf;
+    if (!elf_load(path, as, vmas, &elf) ||
+        kerr_failed(vma_insert(vmas, USER_STACK_LIMIT, USER_STACK_TOP, PROT_READ | PROT_WRITE,
+                               VMA_STACK)))
+    {
+        arch_destroy_address_space(as);
+        kfree(vmas);
+        return KERR_NOENT;
+    }
+
+    // no way back from here: swap in the new image. masked, so the process
+    // is never scheduled with a half-changed address space.
+    uint32_t flags = arch_irq_save();
+    addr_space_t old = proc->page_directory;
+    proc->page_directory = as;
+    proc->vmas = *vmas;
+    proc->brk = elf.brk;
+    arch_switch_address_space(as);
+    arch_irq_restore(flags);
+
+    arch_destroy_address_space(old);
+    kfree(vmas);
+
+    uintptr_t user_esp = usermode_build_stack(as, argv, envp);
+    if (!user_esp)
+    {
+        // the old program is gone and the new one has no stack
+        arch_enable_interrupts();
+        usermode_exit(EXEC_FAILED_EXIT_STATUS);
+    }
+
+    usermode_reset_frame(regs, elf.entry, user_esp);
+    return KERR_OK;
 }
 
 void usermode_exit(int exit_code)

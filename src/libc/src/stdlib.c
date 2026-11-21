@@ -250,6 +250,23 @@ int atoi(const char *s)
     return result * sign;
 }
 
+// the environment, as "KEY=VALUE" strings. crt0 sets it from the envp the
+// kernel passes to the program.
+char **environ;
+
+char *getenv(const char *name)
+{
+    size_t name_len = strlen(name);
+    for (char **entry = environ; entry && *entry; entry++)
+    {
+        if (strncmp(*entry, name, name_len) == 0 && (*entry)[name_len] == '=')
+        {
+            return *entry + name_len + 1;
+        }
+    }
+    return NULL;
+}
+
 void exit(int status)
 {
     _exit(status);

@@ -72,6 +72,13 @@ pid_t fork(void)
     return (pid_t)ret;
 }
 
+int execve(const char *path, char *const argv[], char *const envp[])
+{
+    int ret = _syscall(SYS_EXECVE, (int)path, (int)argv, (int)envp, 0, 0);
+    errno = -ret; // execve only returns on failure
+    return -1;
+}
+
 int waitpid(pid_t pid)
 {
     int ret = _syscall(SYS_WAITPID, (int)pid, 0, 0, 0, 0);

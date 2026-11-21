@@ -62,6 +62,15 @@ pid_t exec(const char *path, const char **argv);
 pid_t fork(void);
 
 /**
+ * replace the calling process's program. the pid, cwd and open fds stay.
+ * @param path path to the ELF executable.
+ * @param argv NULL-terminated argument strings.
+ * @param envp NULL-terminated "KEY=VALUE" environment strings.
+ * @return only on failure: -1 (errno set).
+ */
+int execve(const char *path, char *const argv[], char *const envp[]);
+
+/**
  * wait for a child process to exit.
  * @param pid child PID to wait for.
  * @return child's exit code, or -1 on error.

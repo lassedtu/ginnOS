@@ -114,6 +114,11 @@ syscall_ret_t sys_mprotect(struct registers *regs);
  */
 syscall_ret_t sys_fork(struct registers *regs);
 
+/**
+ * SYS_execve: replace the calling process's program with a new one.
+ */
+syscall_ret_t sys_execve(struct registers *regs);
+
 /* sys_misc.c */
 syscall_ret_t sys_getcwd(struct registers *regs);
 syscall_ret_t sys_chdir(struct registers *regs);

@@ -26,7 +26,7 @@ static void process_entry_trampoline(void)
     uintptr_t entry = proc->entry;
     const char **argv = (const char **)proc->argv;
 
-    jump_to_usermode(entry, proc->page_directory, argv);
+    jump_to_usermode(entry, proc->page_directory, argv, NULL);
 }
 
 /**
