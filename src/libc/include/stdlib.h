@@ -67,8 +67,62 @@ char *getenv(const char *name);
  */
 int atexit(void (*function)(void));
 
+typedef struct
+{
+    int quot;
+    int rem;
+} div_t;
+
+typedef struct
+{
+    long quot;
+    long rem;
+} ldiv_t;
+
+#define RAND_MAX 0x7fffffff
+#define EXIT_SUCCESS 0
+#define EXIT_FAILURE 1
+
+long atol(const char *s);
+long long atoll(const char *s);
+long strtol(const char *s, char **end, int base);
+unsigned long strtoul(const char *s, char **end, int base);
+long long strtoll(const char *s, char **end, int base);
+unsigned long long strtoull(const char *s, char **end, int base);
+
+int abs(int value);
+long labs(long value);
+long long llabs(long long value);
+div_t div(int numerator, int denominator);
+ldiv_t ldiv(long numerator, long denominator);
+
+int rand(void);
+void srand(unsigned int seed);
+
 /**
- * run the atexit handlers, then terminate the process with an exit code.
+ * sort count elements of size bytes (heap sort: not stable).
+ */
+void qsort(void *base, size_t count, size_t size, int (*compare)(const void *, const void *));
+
+/**
+ * find key in a sorted array.
+ * @return the element, or NULL.
+ */
+void *bsearch(const void *key, const void *base, size_t count, size_t size,
+              int (*compare)(const void *, const void *));
+
+int setenv(const char *name, const char *value, int overwrite);
+int unsetenv(const char *name);
+int putenv(char *entry);
+
+/**
+ * end the process with SIGABRT.
+ */
+void abort(void) __attribute__((noreturn));
+
+/**
+ * run the atexit handlers, write out buffered stdio output, then end the
+ * process with an exit code.
  * @param status exit code.
  */
 void exit(int status) __attribute__((noreturn));

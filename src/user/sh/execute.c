@@ -175,7 +175,7 @@ static void exec_in_child(pipeline_stage_t *stage, const char *path)
     argv[stage->tokens.count] = NULL;
 
     execve(path, argv, build_environment());
-    printf("skl: %s: cannot execute\n", path);
+    fprintf(stderr, "skl: %s: cannot execute\n", path);
     _exit(126);
 }
 

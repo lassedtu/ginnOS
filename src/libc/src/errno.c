@@ -50,10 +50,10 @@ void perror(const char *s)
 {
     if (s && s[0] != '\0')
     {
-        printf("%s: %s\n", s, strerror(errno));
+        fprintf(stderr, "%s: %s\n", s, strerror(errno));
     }
     else
     {
-        printf("%s\n", strerror(errno));
+        fprintf(stderr, "%s\n", strerror(errno));
     }
 }

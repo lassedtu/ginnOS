@@ -1,6 +1,10 @@
 #include "stdlib.h"
 #include "unistd.h"
 #include "string.h"
+#include "stdio.h"
+#include "errno.h"
+#include "signal.h"
+#include "sys/mman.h"
 
 /**
  * @file stdlib.c
@@ -33,8 +37,16 @@ typedef struct block_header
 {
     size_t size;               /* usable size (excluding header) */
     struct block_header *next; /* next free block (only valid when free) */
-    int free;                  /* 1 if block is free, 0 if allocated */
+    int free;                  /* BLOCK_USED, BLOCK_FREE or BLOCK_MAPPED */
 } block_header_t;
+
+#define BLOCK_USED   0
+#define BLOCK_FREE   1
+#define BLOCK_MAPPED 2 /* a large block with its own mmap; not on the list */
+
+/* blocks of this size or more get their own mapping, which free returns */
+#define MMAP_THRESHOLD (128 * 1024)
+#define PAGE_SIZE 4096
 
 #define HEADER_SIZE (ALIGN_UP(sizeof(block_header_t)))
 
@@ -104,12 +116,34 @@ static void split_block(block_header_t *block, size_t size)
     block->next = new_block;
 }
 
+/**
+ * a large block: its own anonymous mapping, given back to the kernel by
+ * free.
+ */
+static void *map_block(size_t size)
+{
+    size_t total = (HEADER_SIZE + size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+    void *memory = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if (memory == MAP_FAILED)
+        return NULL;
+
+    block_header_t *block = memory;
+    block->size = total - HEADER_SIZE;
+    block->next = NULL;
+    block->free = BLOCK_MAPPED;
+    return (char *)block + HEADER_SIZE;
+}
+
 void *malloc(size_t size)
 {
     if (size == 0)
         return NULL;
+    if (size > (size_t)-1 - PAGE_SIZE - HEADER_SIZE)
+        return NULL; /* would wrap */
 
     size = ALIGN_UP(size);
+    if (size >= MMAP_THRESHOLD)
+        return map_block(size);
 
     /* search the free list */
     block_header_t *block = find_free_block(size);
@@ -162,10 +196,16 @@ void free(void *ptr)
         return;
 
     block_header_t *block = (block_header_t *)((char *)ptr - HEADER_SIZE);
-    block->free = 1;
+    if (block->free == BLOCK_MAPPED)
+    {
+        munmap(block, block->size + HEADER_SIZE);
+        return;
+    }
+    block->free = BLOCK_FREE;
 
-    /* coalesce with the next block if it is also free */
-    if (block->next && block->next->free)
+    /* coalesce with the next block if it is free and right after this one */
+    block_header_t *after = (block_header_t *)((char *)block + HEADER_SIZE + block->size);
+    if (block->next && block->next->free == BLOCK_FREE && block->next == after)
     {
         block->size += HEADER_SIZE + block->next->size;
         block->next = block->next->next;
@@ -192,7 +232,7 @@ void *realloc(void *ptr, size_t size)
         return ptr;
 
     /* try to absorb the next block if it is free and adjacent */
-    if (block->next && block->next->free)
+    if (block->free != BLOCK_MAPPED && block->next && block->next->free == BLOCK_FREE)
     {
         /* check adjacency: next block should immediately follow this one */
         block_header_t *expected_next =
@@ -284,10 +324,349 @@ int atexit(void (*function)(void))
 
 void exit(int status)
 {
-    // stdout is not buffered, so the handlers are all there is to run
     while (atexit_count > 0)
     {
         atexit_handlers[--atexit_count]();
     }
+    // buffered output is written now (_exit drops it)
+    fflush(NULL);
     _exit(status);
+}
+
+void abort(void)
+{
+    fflush(NULL);
+    signal(SIGABRT, SIG_DFL);
+    raise(SIGABRT);
+    _exit(128 + SIGABRT); // SIGABRT blocked: end anyway
+}
+
+void __assert_fail(const char *expression, const char *file, int line, const char *function)
+{
+    fprintf(stderr, "%s:%d: %s: assertion failed: %s\n", file, line, function, expression);
+    abort();
+}
+
+int abs(int value)
+{
+    return value < 0 ? -value : value;
+}
+
+long labs(long value)
+{
+    return value < 0 ? -value : value;
+}
+
+long long llabs(long long value)
+{
+    return value < 0 ? -value : value;
+}
+
+div_t div(int numerator, int denominator)
+{
+    div_t result = {numerator / denominator, numerator % denominator};
+    return result;
+}
+
+ldiv_t ldiv(long numerator, long denominator)
+{
+    ldiv_t result = {numerator / denominator, numerator % denominator};
+    return result;
+}
+
+static int digit_of(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'z')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'Z')
+        return c - 'A' + 10;
+    return 99;
+}
+
+/**
+ * the digits of a number in a base (0: from its prefix), as strtoull reads
+ * them. sets *overflow if the value does not fit 64 bits.
+ */
+static unsigned long long parse_unsigned(const char *s, char **end, int base, int *negative,
+                                         int *overflow)
+{
+    const char *p = s;
+    while (*p == ' ' || (*p >= '\t' && *p <= '\r'))
+        p++;
+    *negative = 0;
+    if (*p == '+' || *p == '-')
+        *negative = *p++ == '-';
+
+    if ((base == 0 || base == 16) && p[0] == '0' && (p[1] == 'x' || p[1] == 'X') &&
+        digit_of(p[2]) < 16)
+    {
+        p += 2;
+        base = 16;
+    }
+    else if (base == 0)
+    {
+        base = p[0] == '0' ? 8 : 10;
+    }
+
+    const char *digits = p;
+    unsigned long long value = 0;
+    *overflow = 0;
+    while (digit_of(*p) < base)
+    {
+        // no 64-bit division here: there is no libgcc
+        if (__builtin_mul_overflow(value, (unsigned long long)base, &value) ||
+            __builtin_add_overflow(value, (unsigned long long)digit_of(*p), &value))
+            *overflow = 1;
+        p++;
+    }
+    if (end)
+        *end = (char *)(p == digits ? s : p);
+    return value;
+}
+
+unsigned long long strtoull(const char *s, char **end, int base)
+{
+    int negative;
+    int overflow;
+    unsigned long long value = parse_unsigned(s, end, base, &negative, &overflow);
+    if (overflow)
+    {
+        errno = ERANGE;
+        return ~0ull;
+    }
+    return negative ? (unsigned long long)-(long long)value : value;
+}
+
+long long strtoll(const char *s, char **end, int base)
+{
+    int negative;
+    int overflow;
+    unsigned long long value = parse_unsigned(s, end, base, &negative, &overflow);
+    unsigned long long limit = negative ? (1ull << 63) : (1ull << 63) - 1;
+    if (overflow || value > limit)
+    {
+        errno = ERANGE;
+        return negative ? (long long)(1ull << 63) : (long long)((1ull << 63) - 1);
+    }
+    return negative ? -(long long)value : (long long)value;
+}
+
+unsigned long strtoul(const char *s, char **end, int base)
+{
+    int negative;
+    int overflow;
+    unsigned long long value = parse_unsigned(s, end, base, &negative, &overflow);
+    if (overflow || value > 0xFFFFFFFFull)
+    {
+        errno = ERANGE;
+        return 0xFFFFFFFFul;
+    }
+    return negative ? (unsigned long)-(long)value : (unsigned long)value;
+}
+
+long strtol(const char *s, char **end, int base)
+{
+    long long value = strtoll(s, end, base);
+    if (value > 2147483647LL)
+    {
+        errno = ERANGE;
+        return 2147483647L;
+    }
+    if (value < -2147483647LL - 1)
+    {
+        errno = ERANGE;
+        return -2147483647L - 1;
+    }
+    return (long)value;
+}
+
+long atol(const char *s)
+{
+    return strtol(s, NULL, 10);
+}
+
+long long atoll(const char *s)
+{
+    return strtoll(s, NULL, 10);
+}
+
+static unsigned long long rand_state = 1;
+
+int rand(void)
+{
+    rand_state = rand_state * 6364136223846793005ull + 1442695040888963407ull;
+    return (int)((rand_state >> 33) & RAND_MAX);
+}
+
+void srand(unsigned int seed)
+{
+    rand_state = seed;
+}
+
+/**
+ * swap two elements of size bytes.
+ */
+static void swap_bytes(char *a, char *b, size_t size)
+{
+    for (size_t i = 0; i < size; i++)
+    {
+        char t = a[i];
+        a[i] = b[i];
+        b[i] = t;
+    }
+}
+
+void qsort(void *base, size_t count, size_t size, int (*compare)(const void *, const void *))
+{
+    // a heap sort: O(n log n) at worst, no recursion, no extra memory
+    char *a = base;
+    if (count < 2)
+        return;
+
+    for (size_t start = count / 2; start-- > 0;)
+    {
+        for (size_t root = start; 2 * root + 1 < count;)
+        {
+            size_t child = 2 * root + 1;
+            if (child + 1 < count && compare(a + child * size, a + (child + 1) * size) < 0)
+                child++;
+            if (compare(a + root * size, a + child * size) >= 0)
+                break;
+            swap_bytes(a + root * size, a + child * size, size);
+            root = child;
+        }
+    }
+    for (size_t end = count - 1; end > 0; end--)
+    {
+        swap_bytes(a, a + end * size, size);
+        for (size_t root = 0; 2 * root + 1 < end;)
+        {
+            size_t child = 2 * root + 1;
+            if (child + 1 < end && compare(a + child * size, a + (child + 1) * size) < 0)
+                child++;
+            if (compare(a + root * size, a + child * size) >= 0)
+                break;
+            swap_bytes(a + root * size, a + child * size, size);
+            root = child;
+        }
+    }
+}
+
+void *bsearch(const void *key, const void *base, size_t count, size_t size,
+              int (*compare)(const void *, const void *))
+{
+    const char *a = base;
+    size_t low = 0;
+    size_t high = count;
+    while (low < high)
+    {
+        size_t middle = low + (high - low) / 2;
+        int order = compare(key, a + middle * size);
+        if (order == 0)
+            return (void *)(a + middle * size);
+        if (order < 0)
+            high = middle;
+        else
+            low = middle + 1;
+    }
+    return NULL;
+}
+
+/*
+ * the environment: environ starts as the kernel's array; the first change
+ * copies it to a heap array the libc owns
+ */
+
+static char **owned_environ;
+static int environ_count;
+
+static int take_environ(void)
+{
+    if (owned_environ && environ == owned_environ)
+        return 0;
+    int count = 0;
+    while (environ && environ[count])
+        count++;
+    char **copy = malloc((size_t)(count + 1) * sizeof(char *));
+    if (!copy)
+        return -1;
+    for (int i = 0; i < count; i++)
+        copy[i] = environ[i];
+    copy[count] = NULL;
+    owned_environ = environ = copy;
+    environ_count = count;
+    return 0;
+}
+
+static int find_variable(const char *name, size_t len)
+{
+    for (int i = 0; environ && environ[i]; i++)
+        if (strncmp(environ[i], name, len) == 0 && environ[i][len] == '=')
+            return i;
+    return -1;
+}
+
+int putenv(char *entry)
+{
+    char *equals = strchr(entry, '=');
+    if (!equals || take_environ() < 0)
+    {
+        errno = equals ? ENOMEM : EINVAL;
+        return -1;
+    }
+    int index = find_variable(entry, (size_t)(equals - entry));
+    if (index >= 0)
+    {
+        environ[index] = entry;
+        return 0;
+    }
+    char **grown = realloc(owned_environ, (size_t)(environ_count + 2) * sizeof(char *));
+    if (!grown)
+    {
+        errno = ENOMEM;
+        return -1;
+    }
+    owned_environ = environ = grown;
+    environ[environ_count++] = entry;
+    environ[environ_count] = NULL;
+    return 0;
+}
+
+int setenv(const char *name, const char *value, int overwrite)
+{
+    size_t len = strlen(name);
+    if (len == 0 || strchr(name, '='))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!overwrite && find_variable(name, len) >= 0)
+        return 0;
+
+    char *entry = malloc(len + strlen(value) + 2);
+    if (!entry)
+    {
+        errno = ENOMEM;
+        return -1;
+    }
+    strcpy(entry, name);
+    entry[len] = '=';
+    strcpy(entry + len + 1, value);
+    return putenv(entry);
+}
+
+int unsetenv(const char *name)
+{
+    if (take_environ() < 0)
+        return -1;
+    int index = find_variable(name, strlen(name));
+    if (index >= 0)
+    {
+        environ_count--;
+        environ[index] = environ[environ_count];
+        environ[environ_count] = NULL;
+    }
+    return 0;
 }
