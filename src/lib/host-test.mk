@@ -9,10 +9,12 @@
 #   LIBS         - other libraries the test needs (their sources are built in)
 #   EXTRA_CFLAGS - more compiler flags
 #
+# TEST_DIR is the test directory's absolute path, for test data files.
 # the host compiler builds them with the undefined behaviour sanitizer.
 # SANITIZE=address,undefined adds the address sanitizer where it works (on
-# some macOS versions it stops at start-up). golden images are in test/golden; run with GOLDEN=update to
-# write them again (then look at them before committing).
+# some macOS versions it stops at start-up). golden images are in
+# test/golden; run with GOLDEN=update to write them again (then look at
+# them before committing).
 
 ROOT      := ../../../..
 HOST_CC   ?= cc
@@ -26,7 +28,8 @@ lib_srcs = $(addprefix $(ROOT)/src/lib/$(1)/,$(shell $(MAKE) -s --no-print-direc
 
 CFLAGS := -std=gnu11 -O1 -g -Wall -Wextra -fsanitize=$(SANITIZE) \
           -fno-sanitize-recover=undefined -I../include -I$(HOSTTEST) \
-          $(foreach lib,$(LIBS),-I$(ROOT)/src/lib/$(lib)/include) $(EXTRA_CFLAGS)
+          $(foreach lib,$(LIBS),-I$(ROOT)/src/lib/$(lib)/include) \
+          -DTEST_DIR='"$(abspath .)"' $(EXTRA_CFLAGS)
 
 ALL_SRCS := $(SRCS) $(LIB_SRCS) $(HOSTTEST)/hosttest.c \
             $(foreach lib,$(LIBS),$(call lib_srcs,$(lib)))
