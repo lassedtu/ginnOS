@@ -12,6 +12,9 @@
 // caller can have interrupts off)
 #define SPINS_PER_MS 20000u
 
+// status reads before the first sleep
+#define SPIN_BEFORE_SLEEP 200u
+
 void completion_init(completion_t *completion, const char *name, bool use_irq)
 {
     completion->done = false;
@@ -47,9 +50,14 @@ static bool poll_until(completion_ready_t ready, void *context, uint32_t timeout
 bool completion_wait_until(completion_t *completion, completion_ready_t ready, void *context,
                            uint32_t timeout_ms)
 {
-    if (ready(context))
+    // a fast device is often done within microseconds: check a few times
+    // before going to sleep (a sleep and a wake cost more than that)
+    for (uint32_t spin = 0; spin < SPIN_BEFORE_SLEEP; spin++)
     {
-        return true;
+        if (ready(context))
+        {
+            return true;
+        }
     }
     if (!completion->use_irq || !can_sleep())
     {
