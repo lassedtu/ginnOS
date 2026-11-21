@@ -73,9 +73,19 @@ today.
 - Round-robin scheduler with an O(1) intrusive ready queue and an idle (hlt)
   task
 - Parent/child relationships, `waitpid(pid, &status, options)` with `-1`
-  (any child), `WNOHANG` and POSIX status words (exit code or killing
-  signal), `getppid`, `sched_yield`; a process frees its fds, argv and address
-  space when it exits, and orphans are reaped by the kernel
+  (any child), `WNOHANG`, `WUNTRACED`, `WCONTINUED` and POSIX status words,
+  `getppid`, `sched_yield`; a process frees its fds, argv and address space
+  when it exits, and orphans are reaped by the kernel
+- POSIX signals: `kill` (also to process groups), `sigaction` (`SA_RESTART`,
+  `SA_NODEFER`, `SA_RESETHAND`, `SA_NOCLDSTOP`), `sigprocmask`,
+  `sigpending`, `sigsuspend`, `alarm`; user handlers run on a frame on the
+  user stack and return through `sigreturn`; default actions terminate,
+  ignore, stop or continue; a sleeping syscall is interrupted (`EINTR`) or
+  restarted (`SA_RESTART`)
+- Faults in user code are signals, not kernel panics: `SIGSEGV`, `SIGFPE`
+  (divide by zero), `SIGILL`, `SIGBUS`, `SIGTRAP`; also `SIGPIPE`,
+  `SIGCHLD` and `SIGALRM`
+- Process groups and sessions (`setpgid`, `getpgid`, `setsid`, `getsid`)
 
 ### Concurrency
 
@@ -117,24 +127,32 @@ today.
 
 ### System calls
 
-- 38 syscalls via `int 0x80` with `-errno` returns; the kernel and libc share
+- 48 syscalls via `int 0x80` with `-errno` returns; the kernel and libc share
   one errno table
 - User pointers are checked against the page tables (`copy_from_user`,
   `copy_to_user`, `strncpy_from_user`): a bad pointer returns `-EFAULT`
   instead of crashing the kernel
 - Processes: `exit`, `exec` (spawn), `fork`, `execve`, `getpid`, `getppid`,
-  `waitpid`, `sched_yield`, `sbrk`
+  `waitpid`, `sched_yield`, `sbrk`, `setpgid`, `getpgid`, `setsid`,
+  `getsid`
+- Signals: `kill`, `sigaction`, `sigprocmask`, `sigreturn`, `sigpending`,
+  `sigsuspend`, `alarm`
 - Files: `open`, `close`, `read`, `write`, `pread`, `pwrite`, `lseek`,
   `ftruncate`, `fsync`, `fcntl`, `dup2`, `pipe`, `poll`, `stat`, `fstat`,
   `access`, `rename`, `unlink`, `mkdir`, `rmdir`, `getdents`, `getcwd`,
   `chdir`
-- Device/terminal/graphics: `ttyctl`, `ioctl` (general device control),
-  `mmap`, `munmap`, `mprotect`, `pollkey`
+- Device/terminal/graphics: `ioctl` (device control, termios and job
+  control on the console), `mmap`, `munmap`, `mprotect`, `pollkey`
 
 ### Terminal and graphics (Bifröst framebuffer)
 
 - Layered TTY: a device-independent VT/ANSI terminal state machine
   (`tty_backend_t`) decoupled from the output device
+- The console is a POSIX-style terminal: termios (`ICANON` line editing with
+  erase/kill/EOF, `ECHO`, `ISIG`, non-canonical input, and a ginnOS key-event
+  mode for full-screen programs), a foreground process group, Ctrl+C,
+  Ctrl+\ and Ctrl+Z sending `SIGINT`, `SIGQUIT` and `SIGTSTP`, `SIGTTIN` for
+  background reads, and `TIOCGWINSZ`
 - VGA text-mode backend (fallback console)
 - Linear VBE framebuffer: bootloader mode-set with full pixel-format reporting
   (channel size/shift masks), a driver with pixel primitives, and LFB mapping
@@ -159,6 +177,9 @@ today.
   `S_IS*`), `<dirent.h>` (`opendir`, `readdir`, `closedir`), `<poll.h>`,
   `<sys/select.h>`, `<sys/wait.h>` (`waitpid`, `wait`, `W*` macros),
   `<limits.h>`, `<stdarg.h>`
+- `<signal.h>` (`sigaction`, `signal`, `kill`, `raise`, masks), `<termios.h>`
+  (`tcgetattr`, `tcsetattr`, `cfmakeraw`, `tcsetpgrp`), `<sys/ioctl.h>`,
+  `<sys/types.h>`
 - `<sys/mman.h>` (`mmap`, `munmap`, `mprotect`), `<sys/fb.h>` (framebuffer)
 - `<errno.h>`: `errno`, `perror`, `strerror`
 - `crt0` with `argc`/`argv`/`envp` setup; `int 0x80` syscall stubs
@@ -172,19 +193,23 @@ today.
 - PATH-based command lookup
 - Tokenizer with double/single quoting and backslash escaping
 - Pipelines (`cmd1 | cmd2 | cmd3`) and I/O redirection (`>`, `>>`, `<`)
+- Job control: each pipeline is a process group; `cmd &`, Ctrl+Z, `jobs`,
+  `fg`, `bg`, `kill [-signal] pid|%job`, and a note when a background job
+  ends
 - Builtins: `cd`, `exit`, `history`, `export`, `unset`, `env`, `printenv`,
-  `which`
+  `which`, `jobs`, `fg`, `bg`, `kill`
 
 ### Bundled userspace programs
 
-- `cat`, `clear`, `echo`, `ls`, `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `touch`,
-  `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
+- `cat`, `clear`, `echo`, `ls`, `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `sleep`,
+  `touch`, `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
   tests the kernel's handling of user memory (heap, stack growth, `mmap`,
   `munmap`, `mprotect`, and faults that must kill only the process), and
   `proctest`, which tests the process model (`fork`, copy-on-write, pipes,
   atomic pipe writes, open flags, shared offsets, `waitpid`, `execve`), and
   `fstest`, which tests the file syscalls (`stat`, `fcntl`, `rename`,
-  `pread`, `getdents`, `poll`/`select`, tmpfs, large ext2 files)
+  `pread`, `getdents`, `poll`/`select`, tmpfs, large ext2 files), and
+  `sigtest`, which tests signals, process groups and the terminal
 
 ### Portability and tooling
 
