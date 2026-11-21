@@ -163,6 +163,10 @@ static uint32_t pte_flags_from_mmu(uint32_t mmu_flags)
     {
         pte |= PTE_USER;
     }
+    if (mmu_flags & MMU_FLAG_SHARED)
+    {
+        pte |= PTE_SHARED;
+    }
     return pte;
 }
 

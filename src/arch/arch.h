@@ -93,6 +93,7 @@ typedef uintptr_t addr_space_t;
 #define MMU_FLAG_PRESENT (1u << 0) // the mapping is valid
 #define MMU_FLAG_WRITE   (1u << 1) // writable
 #define MMU_FLAG_USER    (1u << 2) // reachable from ring 3 / user mode
+#define MMU_FLAG_SHARED  (1u << 3) // shared memory (MAP_SHARED): fork keeps it writable, no copy
 
 /* common combination: a writable page owned by a user process. */
 #define MMU_USER_RW (MMU_FLAG_PRESENT | MMU_FLAG_WRITE | MMU_FLAG_USER)

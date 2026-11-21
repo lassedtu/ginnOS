@@ -44,7 +44,7 @@
 static audio_device_t *device;
 static spinlock_t lock;
 
-static uint8_t ring[RING_BYTES];
+static uint8_t *ring; // RING_BYTES, from the heap when a device registers
 static uint32_t ring_head;           // the next byte to play
 static volatile uint32_t ring_count; // bytes queued
 
@@ -524,6 +524,11 @@ bool audio_register(audio_device_t *dev)
     if (device || !dev || !dev->ops || !dev->ops->start || !dev->ops->stop ||
         !dev->ops->set_rate || dev->period_bytes == 0 || dev->period_bytes % FRAME_BYTES != 0 ||
         dev->periods == 0 || dev->periods * dev->period_bytes >= RING_BYTES)
+    {
+        return false;
+    }
+    ring = kmalloc(RING_BYTES);
+    if (!ring)
     {
         return false;
     }

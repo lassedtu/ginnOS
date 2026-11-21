@@ -18,7 +18,7 @@
 // 0x37=KP*  0x38=LAlt  0x39=Space  0x3A=CapsLock
 // 0x56=LSGT (ISO key between LShift and Z)
 
-static keyboard_layout_t layout_dk_mac;
+static keyboard_layout_t dk_mac;
 static int layout_initialized = 0;
 
 static void init_layout(void)
@@ -27,15 +27,15 @@ static void init_layout(void)
         return;
     layout_initialized = 1;
 
-    layout_dk_mac.name = "dk-mac";
+    dk_mac.name = "dk-mac";
 
-    memset((void *)layout_dk_mac.normal, 0, 128);
-    memset((void *)layout_dk_mac.shift, 0, 128);
-    memset((void *)layout_dk_mac.altgr, 0, 128);
-    memset((void *)layout_dk_mac.altgr_shift, 0, 128);
+    memset((void *)dk_mac.normal, 0, 128);
+    memset((void *)dk_mac.shift, 0, 128);
+    memset((void *)dk_mac.altgr, 0, 128);
+    memset((void *)dk_mac.altgr_shift, 0, 128);
 
     // === Normal map ===
-    char *n = (char *)layout_dk_mac.normal;
+    char *n = (char *)dk_mac.normal;
     n[0x01] = 27; // Escape
     n[0x02] = '1';
     n[0x03] = '2';
@@ -94,7 +94,7 @@ static void init_layout(void)
     n[0x56] = '$'; // TLDE key (§/$ on Danish Mac)  QEMU macOS may send this as 0x56
 
     // === Shift map ===
-    char *s = (char *)layout_dk_mac.shift;
+    char *s = (char *)dk_mac.shift;
     s[0x01] = 27;
     s[0x02] = '!';
     s[0x03] = '"';
@@ -149,7 +149,7 @@ static void init_layout(void)
     s[0x56] = '#'; // TLDE shifted
 
     // === AltGr (Option) map ===
-    char *a = (char *)layout_dk_mac.altgr;
+    char *a = (char *)dk_mac.altgr;
     a[0x03] = '@';  // AltGr+2 = @  (standard DK Mac)
     a[0x05] = '$';  // AltGr+4 = $ (or €, but no Unicode)
     a[0x08] = '\\'; // AltGr+7 = backslash
@@ -162,13 +162,13 @@ static void init_layout(void)
     a[0x29] = '\\'; // AltGr+ISO key = backslash (QEMU sends 0x29)
 
     // === AltGr+Shift map ===
-    char *as = (char *)layout_dk_mac.altgr_shift;
+    char *as = (char *)dk_mac.altgr_shift;
     as[0x09] = '{'; // AltGr+Shift+8 = {
     as[0x0A] = '}'; // AltGr+Shift+9 = }
 }
 
-const keyboard_layout_t *keyboard_get_layout(void)
+const keyboard_layout_t *layout_dk_mac(void)
 {
     init_layout();
-    return &layout_dk_mac;
+    return &dk_mac;
 }

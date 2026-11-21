@@ -5,6 +5,7 @@
 #include "kernel/device/device.h"
 #include "kernel/vfs/stat.h"
 #include "common/memory.h"
+#include "kernel/tty/pty.h"
 
 /**
  * @file devfs.c
@@ -24,6 +25,46 @@
  * strip the single leading '/' from a mount-relative devfs path, giving the
  * bare device name. "/fb0" -> "fb0"; "/" -> "" (the directory root).
  */
+// the /dev/pts directory. its entries are the pseudo-terminal pairs that
+// exist (kernel/tty/pty.h); they are not in the device registry. this
+// device has no ops, so the device hooks below do nothing on it
+static device_t pts_dir = {.name = "pts"};
+
+#define PTS_PREFIX "pts/"
+#define PTS_PREFIX_LENGTH 4
+
+/**
+ * the device for a name under /dev: a registered device, the pts
+ * directory, or the slave side of a pseudo-terminal (pts/N).
+ * @return the device, or NULL.
+ */
+static device_t *devfs_lookup(const char *name)
+{
+    if (strcmp(name, "pts") == 0 || strcmp(name, "pts/") == 0)
+    {
+        return &pts_dir;
+    }
+    if (strncmp(name, PTS_PREFIX, PTS_PREFIX_LENGTH) == 0)
+    {
+        const char *digits = name + PTS_PREFIX_LENGTH;
+        uint32_t index = 0;
+        if (*digits == '\0' || (digits[0] == '0' && digits[1] != '\0'))
+        {
+            return NULL;
+        }
+        for (; *digits; digits++)
+        {
+            if (*digits < '0' || *digits > '9' || index >= PTY_MAX)
+            {
+                return NULL;
+            }
+            index = index * 10 + (uint32_t)(*digits - '0');
+        }
+        return pty_slave_device(index);
+    }
+    return device_find(name);
+}
+
 static const char *devfs_leaf(const char *path)
 {
     if (path[0] == '/')
@@ -48,10 +89,17 @@ static kerr_t devfs_open(fs_mount_t *mount, const char *path, fs_file_t *file)
         return KERR_OK;
     }
 
-    device_t *dev = device_find(name);
+    device_t *dev = devfs_lookup(name);
     if (!dev)
     {
         return KERR_NOENT;
+    }
+    if (dev == &pts_dir)
+    {
+        file->fs_data = dev;
+        file->fs_pos = 0;
+        file->file_type = FS_TYPE_DIR;
+        return KERR_OK;
     }
 
     // a device node is a leaf "file"; the concrete device is remembered so a
@@ -70,7 +118,7 @@ static void devfs_fill_stat(const device_t *dev, fs_stat_t *stat_out)
 {
     memset(stat_out, 0, sizeof(*stat_out));
     stat_out->links_count = 1;
-    if (!dev)
+    if (!dev || dev == &pts_dir)
     {
         stat_out->file_type = FS_TYPE_DIR;
         stat_out->mode = S_IFDIR | 0755;
@@ -88,7 +136,7 @@ static kerr_t devfs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_ou
     device_t *dev = NULL;
     if (name[0] != '\0')
     {
-        dev = device_find(name);
+        dev = devfs_lookup(name);
         if (!dev)
         {
             return KERR_NOENT;
@@ -113,16 +161,41 @@ static kerr_t devfs_read_entry(fs_file_t *file, fs_dirent_t *entry_out)
         return KERR_INVAL;
     }
 
-    device_t *dev = device_get(file->fs_pos);
-    if (!dev)
+    device_t *dev;
+    uint8_t type = FS_TYPE_FILE;
+    if (file->fs_data == &pts_dir)
     {
-        return KERR_NOENT; // past the last device: end of directory.
+        // the pairs that exist; fs_pos is the next number to look at
+        uint32_t index = file->fs_pos;
+        if (!pty_next(&index))
+        {
+            return KERR_NOENT;
+        }
+        dev = pty_slave_device(index);
+        if (!dev)
+        {
+            return KERR_NOENT; // it went away just now
+        }
+        file->fs_pos = index + 1;
+    }
+    else
+    {
+        // the registered devices, then the pts directory
+        dev = device_get(file->fs_pos);
+        if (!dev && file->fs_pos == device_count())
+        {
+            dev = &pts_dir;
+            type = FS_TYPE_DIR;
+        }
+        if (!dev)
+        {
+            return KERR_NOENT; // past the last entry: end of directory.
+        }
+        file->fs_pos++;
     }
 
-    file->fs_pos++;
-
     entry_out->inode = file->fs_pos; // synthetic, 1-based; devfs has no inodes.
-    entry_out->file_type = FS_TYPE_FILE;
+    entry_out->file_type = type;
     entry_out->size = 0;
     strncpy(entry_out->name, dev->name, sizeof(entry_out->name) - 1);
     entry_out->name[sizeof(entry_out->name) - 1] = '\0';

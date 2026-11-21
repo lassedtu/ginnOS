@@ -228,7 +228,12 @@ kerr_t ext2_remove_file(ext2_volume_t *volume, const char *path);
 kerr_t ext2_remove_dir(ext2_volume_t *volume, const char *path);
 
 /**
- * rename a file or directory.
+ * rename a file or directory (both paths absolute and normalized).
+ * an existing new_path is replaced first, as POSIX rename does: a file by
+ * a file, an empty directory by a directory. this is not atomic: if the
+ * rename then fails, the replaced entry is gone.
+ * @return KERR_OK, KERR_INVAL (a directory into itself), KERR_ISDIR,
+ *         KERR_NOTDIR, KERR_NOTEMPTY, KERR_NOTFOUND, KERR_NOSPC or KERR_IO.
  */
 kerr_t ext2_rename(ext2_volume_t *volume, const char *old_path, const char *new_path);
 

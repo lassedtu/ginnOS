@@ -471,7 +471,12 @@ bool paging_copy_user(phys_addr_t dst_phys, phys_addr_t src_phys)
             }
 
             phys_addr_t frame = PAGE_FRAME(pte);
-            if (pmm_owns(frame))
+            if (pmm_owns(frame) && (pte & PTE_SHARED))
+            {
+                // shared memory: both processes keep writing the same frame
+                pmm_page_ref(phys_to_virt(frame));
+            }
+            else if (pmm_owns(frame))
             {
                 // RAM: both processes share the frame read-only. the first
                 // write in either one copies it (mm_fault_in).

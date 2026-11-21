@@ -227,7 +227,7 @@ static int read_line_raw(char *buf, int size)
         if (read_event(&event) < 0)
             continue;
 
-        if (event.type == KEY_EVENT_CHAR)
+        if (event.type == CONSOLE_KEY_EVENT_CHAR)
         {
             char c = event.character;
 
@@ -361,11 +361,11 @@ static int read_line_raw(char *buf, int size)
                 refresh_line(prompt_len);
             }
         }
-        else if (event.type == KEY_EVENT_SPECIAL)
+        else if (event.type == CONSOLE_KEY_EVENT_SPECIAL)
         {
             switch (event.special)
             {
-            case KEY_ARROW_LEFT:
+            case CONSOLE_KEY_LEFT:
                 if (line_pos > 0)
                 {
                     line_pos--;
@@ -373,7 +373,7 @@ static int read_line_raw(char *buf, int size)
                 }
                 break;
 
-            case KEY_ARROW_RIGHT:
+            case CONSOLE_KEY_RIGHT:
                 if (line_pos < line_len)
                 {
                     line_pos++;
@@ -381,17 +381,17 @@ static int read_line_raw(char *buf, int size)
                 }
                 break;
 
-            case KEY_HOME:
+            case CONSOLE_KEY_HOME:
                 line_pos = 0;
                 move_cursor_to(prompt_len, line_pos);
                 break;
 
-            case KEY_END:
+            case CONSOLE_KEY_END:
                 line_pos = line_len;
                 move_cursor_to(prompt_len, line_pos);
                 break;
 
-            case KEY_DELETE:
+            case CONSOLE_KEY_DELETE:
                 if (line_pos < line_len)
                 {
                     for (int i = line_pos; i < line_len - 1; i++)
@@ -402,7 +402,7 @@ static int read_line_raw(char *buf, int size)
                 }
                 break;
 
-            case KEY_ARROW_UP:
+            case CONSOLE_KEY_UP:
             {
                 const char *entry = history_prev(line_buf);
                 if (entry)
@@ -410,7 +410,7 @@ static int read_line_raw(char *buf, int size)
                 break;
             }
 
-            case KEY_ARROW_DOWN:
+            case CONSOLE_KEY_DOWN:
             {
                 const char *entry = history_next();
                 if (entry)

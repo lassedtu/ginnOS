@@ -1,3 +1,4 @@
+#include "kernel/memory/shm.h"
 #include "syscall_internal.h"
 #include "syscall.h"
 
@@ -445,7 +446,11 @@ syscall_ret_t sys_mmap(struct registers *regs)
     }
 
     uint32_t area_prot = (uint32_t)prot & (PROT_READ | PROT_WRITE | PROT_EXEC);
-    vma_kind_t kind = (flags & MAP_ANONYMOUS) ? VMA_ANON : VMA_DEVICE;
+    vma_kind_t kind = VMA_ANON;
+    if (!(flags & MAP_ANONYMOUS))
+    {
+        kind = shm_is_file(entry->file) ? VMA_SHARED : VMA_DEVICE;
+    }
     if (kerr_failed(vma_insert(&proc->vmas, virt, virt + len_pages, area_prot, kind)))
     {
         return (syscall_ret_t)MAP_FAILED; /* too many areas */
@@ -459,12 +464,40 @@ syscall_ret_t sys_mmap(struct registers *regs)
         int32_t err = file_mmap(entry->file, proc->page_directory, virt, len_pages, prot, offset);
         if (err != 0)
         {
-            vma_remove(&proc->vmas, virt, virt + len_pages);
+            // the pages mapped before the error go too
+            mm_unmap(proc, virt, virt + len_pages);
             return (syscall_ret_t)MAP_FAILED;
         }
     }
 
     return (syscall_ret_t)virt;
+}
+
+/**
+ * SYS_shm_create: make a shared memory object (kernel/memory/shm.h).
+ * args: EBX = size in bytes (rounded up to pages), ECX = fd flags
+ *       (FD_CLOEXEC).
+ * returns the new fd (open read-write; map it with mmap), or -EINVAL,
+ * -ENOMEM, -EMFILE.
+ */
+syscall_ret_t sys_shm_create(struct registers *regs)
+{
+    size_t size = syscall_arg(regs, 0);
+    uint32_t fd_flags = (uint32_t)syscall_arg(regs, 1) & FD_CLOEXEC;
+    process_t *proc = process_current();
+
+    file_t *file;
+    kerr_t err = shm_create(size, &file);
+    if (kerr_failed(err))
+    {
+        return kerr_to_errno(err);
+    }
+    int fd = fd_install(proc, file, fd_flags, 0);
+    if (fd < 0)
+    {
+        file_unref(file);
+    }
+    return fd;
 }
 
 /**

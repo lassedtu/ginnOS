@@ -525,8 +525,14 @@ static phys_addr_t copy_user_table(pte_t *src, int level)
         }
 
         phys_addr_t frame = PAGE_FRAME(entry);
-        if (pmm_owns(frame))
+        if (pmm_owns(frame) && (entry & PTE_SHARED))
         {
+            // shared memory: both processes keep writing the same frame
+            pmm_page_ref(phys_to_virt(frame));
+        }
+        else if (pmm_owns(frame))
+        {
+            // copy-on-write: read-only in both until the first write
             entry &= ~(pte_t)PTE_READ_WRITE;
             src[i] = entry;
             pmm_page_ref(phys_to_virt(frame));

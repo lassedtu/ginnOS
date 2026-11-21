@@ -30,6 +30,7 @@ typedef enum
     VMA_STACK,  // the user stack
     VMA_ANON,   // anonymous mmap (zero-filled)
     VMA_DEVICE, // device mmap (e.g. /dev/fb0)
+    VMA_SHARED, // shared memory (shm_create), mapped up front, never copied on fork
 } vma_kind_t;
 
 /**

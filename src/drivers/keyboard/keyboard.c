@@ -7,7 +7,12 @@
 
 #include "keyboard.h"
 #include "keyboard_layout.h"
+#include "keyboard_ioctl.h"
+#include "kernel/errno.h"
+#include "kernel/usermode/uaccess.h"
 #include "kernel/vfs/poll.h"
+#include "kernel/input/input.h"
+#include "drivers/mouse/ps2_mouse.h"
 #include "kernel/signal/signal.h"
 
 #include "arch/arch.h"
@@ -20,6 +25,7 @@
 #include "arch/x86/cpu/io.h"
 #include "common/stdint.h"
 #include "common/string.h"
+#include "common/memory.h"
 
 #define KEYBOARD_BUFFER_SIZE 128 // number of events the ring buffer can hold
 
@@ -104,6 +110,10 @@ void keyboard_set_raw_events(bool on)
 
 static void keyboard_buffer_push(keyboard_event_t event)
 {
+    if (input_keyboard_grabbed())
+    {
+        return; // a program (the compositor) has the keyboard through /dev/input
+    }
     if (raw_events != (event.type == KEY_EVENT_RAW))
     {
         return; // only the kind of event that is on goes into the buffer
@@ -156,7 +166,80 @@ static void keyboard_irq_handler(uint32_t irq, trap_frame_t *frame)
 {
     (void)irq;
     (void)frame;
+
+    // the data port is shared with the mouse (the aux port): the status
+    // says which device the byte is from
+    uint8_t status = io_inb(0x64);
+    if ((status & 0x21) == 0x21)
+    {
+        ps2_mouse_byte(io_inb(0x60));
+        return;
+    }
     keyboard_handle_scancode(io_inb(0x60));
+}
+
+// the keys that are down, by Linux key code (a press of a key that is
+// already down is a repeat)
+static uint32_t keys_down[256 / 32];
+
+/**
+ * the Linux key code of a set-1 scan code: the same number for the
+ * normal keys, a table for the ones after an E0 prefix.
+ * @return the code, or 0 for a key without one.
+ */
+static uint16_t linux_key_code(uint8_t key, bool extended)
+{
+    if (!extended)
+    {
+        return key <= 0x58 ? key : 0;
+    }
+    switch (key)
+    {
+    case 0x1C: return 96;  // keypad Enter
+    case 0x1D: return 97;  // right Ctrl
+    case 0x35: return 98;  // keypad /
+    case 0x37: return 99;  // Print Screen
+    case 0x38: return 100; // right Alt (AltGr)
+    case 0x47: return 102; // Home
+    case 0x48: return 103; // Up
+    case 0x49: return 104; // Page Up
+    case 0x4B: return 105; // Left
+    case 0x4D: return 106; // Right
+    case 0x4F: return 107; // End
+    case 0x50: return 108; // Down
+    case 0x51: return 109; // Page Down
+    case 0x52: return 110; // Insert
+    case 0x53: return 111; // Delete
+    case 0x5B: return 125; // left Meta (Windows, Command)
+    case 0x5C: return 126; // right Meta
+    case 0x5D: return 127; // Menu
+    default:   return 0;
+    }
+}
+
+/**
+ * give a key change to /dev/input (value 2 for a key that is held).
+ */
+static void report_key(uint8_t key, bool extended, bool pressed)
+{
+    uint16_t code = linux_key_code(key, extended);
+    if (code == 0)
+    {
+        return;
+    }
+    uint32_t bit = 1u << (code % 32);
+    int32_t value = 0;
+    if (pressed)
+    {
+        value = (keys_down[code / 32] & bit) ? 2 : 1;
+        keys_down[code / 32] |= bit;
+    }
+    else
+    {
+        keys_down[code / 32] &= ~bit;
+    }
+    input_report(EV_KEY, code, value);
+    input_sync();
 }
 
 void keyboard_handle_scancode(uint8_t scancode)
@@ -164,12 +247,14 @@ void keyboard_handle_scancode(uint8_t scancode)
     const keyboard_layout_t *layout = keyboard_get_layout();
 
     // F12 (scancode 0x58 press) toggles debug mode
-    if (scancode == 0x58 && !raw_events)
+    // (not while a program has the keyboard: there F12 is a key like the others)
+    bool own_keys = !raw_events && !input_keyboard_grabbed();
+    if (scancode == 0x58 && own_keys)
     {
         scancode_debug = !scancode_debug;
         return;
     }
-    if (scancode == 0xD8 && !raw_events) // F12 release
+    if (scancode == 0xD8 && own_keys) // F12 release
         return;
 
     // in debug mode, print raw scancode as hex and push nothing
@@ -210,6 +295,8 @@ void keyboard_handle_scancode(uint8_t scancode)
 
     int released = scancode & 0x80;
     uint8_t key = scancode & 0x7F;
+
+    report_key(key, extended_prefix_pending != 0, !released);
 
     if (raw_events)
     {
@@ -425,6 +512,66 @@ uint32_t keyboard_dropped_count(void)
     return dropped_count;
 }
 
+/**
+ * the ioctls of /dev/kbd (keyboard_ioctl.h).
+ */
+static int32_t keyboard_ioctl(device_t *dev, uint32_t request, void *arg)
+{
+    (void)dev;
+    switch (request)
+    {
+    case KBD_IOC_LAYOUT_COUNT:
+    {
+        uint32_t count = 0;
+        while (keyboard_layout_at(count))
+        {
+            count++;
+        }
+        return kerr_to_errno(copy_to_user(arg, &count, sizeof(count)));
+    }
+
+    case KBD_IOC_LAYOUT_NAME:
+    {
+        struct kbd_layout_name info;
+        if (kerr_failed(copy_from_user(&info, arg, sizeof(info))))
+        {
+            return -EFAULT;
+        }
+        const keyboard_layout_t *layout = keyboard_layout_at(info.index);
+        if (!layout)
+        {
+            return -EINVAL;
+        }
+        memset(info.name, 0, sizeof(info.name));
+        strncpy(info.name, layout->name, sizeof(info.name) - 1);
+        return kerr_to_errno(copy_to_user(arg, &info, sizeof(info)));
+    }
+
+    case KBD_IOC_GET_LAYOUT:
+    {
+        uint32_t index = keyboard_layout_index();
+        return kerr_to_errno(copy_to_user(arg, &index, sizeof(index)));
+    }
+
+    case KBD_IOC_SET_LAYOUT:
+    {
+        uint32_t index;
+        if (kerr_failed(copy_from_user(&index, arg, sizeof(index))))
+        {
+            return -EFAULT;
+        }
+        return keyboard_set_layout(index) ? 0 : -EINVAL;
+    }
+
+    default:
+        return -ENOTTY;
+    }
+}
+
+static const device_ops_t keyboard_ops = {
+    .ioctl = keyboard_ioctl,
+};
+
 void keyboard_initialize(void)
 {
     spinlock_init(&buffer_lock);
@@ -438,7 +585,7 @@ void keyboard_initialize(void)
     strncpy(keyboard_device.name, "kbd", DEVICE_NAME_MAX - 1);
     keyboard_device.name[DEVICE_NAME_MAX - 1] = '\0';
     keyboard_device.type = DEVICE_TYPE_INPUT;
-    keyboard_device.ops = 0;
+    keyboard_device.ops = &keyboard_ops;
     keyboard_device.driver_data = 0;
     device_register(&keyboard_device);
 }

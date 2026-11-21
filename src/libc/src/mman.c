@@ -47,3 +47,14 @@ int mprotect(void *addr, size_t length, int prot)
     }
     return 0;
 }
+
+int shm_create(size_t size, int fd_flags)
+{
+    int ret = (int)_syscall(SYS_SHM_CREATE, (long)size, fd_flags, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
+}

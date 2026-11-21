@@ -78,6 +78,15 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_CHOWN] = sys_chown,
     [SYS_UMASK] = sys_umask,
     [SYS_REBOOT] = sys_reboot,
+    [SYS_SHM_CREATE] = sys_shm_create,
+    [SYS_SOCKET] = sys_socket,
+    [SYS_BIND] = sys_bind,
+    [SYS_LISTEN] = sys_listen,
+    [SYS_ACCEPT] = sys_accept,
+    [SYS_CONNECT] = sys_connect,
+    [SYS_SOCKETPAIR] = sys_socketpair,
+    [SYS_SENDMSG] = sys_sendmsg,
+    [SYS_RECVMSG] = sys_recvmsg,
 };
 
 /**

@@ -91,11 +91,18 @@ kerr_t mm_protect(process_t *proc, uintptr_t start, uintptr_t end, uint32_t prot
         uint32_t page_flags = flags;
         phys_addr_t frame = arch_translate_in(proc->page_directory, page);
 
-        // a frame shared copy-on-write stays read-only: the first write
-        // copies it (mm_fault_in)
-        if (frame != 0 && pmm_owns(frame) &&
-            pmm_page_refcount(phys_to_virt(PAGE_ALIGN_DOWN(frame))) > 1)
+        vma_t *area = vma_find(&proc->vmas, page);
+        if (area && area->kind == VMA_SHARED)
         {
+            // shared memory keeps its mark; its frames are meant to have
+            // more than one user
+            page_flags |= MMU_FLAG_SHARED;
+        }
+        else if (frame != 0 && pmm_owns(frame) &&
+                 pmm_page_refcount(phys_to_virt(PAGE_ALIGN_DOWN(frame))) > 1)
+        {
+            // a frame shared copy-on-write stays read-only: the first
+            // write copies it (mm_fault_in)
             page_flags &= ~MMU_FLAG_WRITE;
         }
         arch_protect_page(proc->page_directory, page, page_flags);

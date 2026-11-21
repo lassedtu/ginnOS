@@ -23,6 +23,7 @@
 #include "drivers/disk/ahci.h"
 #include "drivers/disk/nvme.h"
 #include "drivers/pci/pci.h"
+#include "drivers/mouse/ps2_mouse.h"
 #include "drivers/sound/ac97.h"
 #include "drivers/sound/hda.h"
 #include "drivers/usb/xhci.h"
@@ -33,6 +34,8 @@
 
 #include "console/console.h"
 #include "kernel/device/device.h"
+#include "kernel/input/input.h"
+#include "kernel/tty/pty.h"
 #include "kernel/device/null.h"
 #include "drivers/video/fb/fb.h"
 #include "common/memory.h"
@@ -216,6 +219,8 @@ void kernel_main(boot_info_t *boot)
     // set up the device registry before any driver init tries to register.
     device_registry_init();
     null_devices_init();
+    input_init();
+    pty_init();
 
     hal_initialize();
 
@@ -255,6 +260,9 @@ void kernel_main(boot_info_t *boot)
     // interrupts still off; the 8259 setup in hal_initialize stays as the
     // fallback)
     apic_init(TIMER_HZ);
+
+    // a PS/2 mouse, if there is one
+    ps2_mouse_init();
 
     // USB keyboards (many machines have no PS/2 keyboard)
     xhci_init();

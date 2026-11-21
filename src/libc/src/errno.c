@@ -42,6 +42,14 @@ const char *strerror(int errnum)
     case ELOOP:   return "too many levels of symbolic links";
     case EROFS:   return "read-only file system";
     case ETIMEDOUT: return "timed out";
+    case ENOTSOCK: return "not a socket";
+    case EADDRINUSE: return "address in use";
+    case ECONNREFUSED: return "connection refused";
+    case EISCONN: return "already connected";
+    case ENOTCONN: return "not connected";
+    case EAFNOSUPPORT: return "address family not supported";
+    case EPROTONOSUPPORT: return "protocol not supported";
+    case EOPNOTSUPP: return "operation not supported";
     }
     return "unknown error";
 }

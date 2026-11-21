@@ -165,9 +165,20 @@ syscall_ret_t sys_fsync(struct registers *regs);
 
 /* sys_misc.c */
 syscall_ret_t sys_reboot(struct registers *regs);
+syscall_ret_t sys_shm_create(struct registers *regs);
 syscall_ret_t sys_getcwd(struct registers *regs);
 syscall_ret_t sys_chdir(struct registers *regs);
 syscall_ret_t sys_ioctl(struct registers *regs);
+
+/* sys_socket.c */
+syscall_ret_t sys_socket(struct registers *regs);
+syscall_ret_t sys_bind(struct registers *regs);
+syscall_ret_t sys_listen(struct registers *regs);
+syscall_ret_t sys_accept(struct registers *regs);
+syscall_ret_t sys_connect(struct registers *regs);
+syscall_ret_t sys_socketpair(struct registers *regs);
+syscall_ret_t sys_sendmsg(struct registers *regs);
+syscall_ret_t sys_recvmsg(struct registers *regs);
 
 /* sys_fb.c */
 syscall_ret_t sys_pollkey(struct registers *regs);

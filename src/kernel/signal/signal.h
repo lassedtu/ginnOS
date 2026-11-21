@@ -27,6 +27,7 @@
 #define SIGTSTP   20
 #define SIGTTIN   21
 #define SIGTTOU   22
+#define SIGWINCH  28 // the terminal's window size changed (ignored by default)
 
 // signals are numbered 1 to NSIG - 1
 #define NSIG 32

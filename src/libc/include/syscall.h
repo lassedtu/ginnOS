@@ -73,6 +73,15 @@
 #define SYS_CHOWN 64 // change a file's owner
 #define SYS_UMASK 65 // set the file creation mask
 #define SYS_REBOOT 66 // restart the machine (root only)
+#define SYS_SHM_CREATE 67 // make a shared memory object, return its fd
+#define SYS_SOCKET 68     // make a Unix domain socket
+#define SYS_BIND 69       // give a socket a name
+#define SYS_LISTEN 70     // let a bound socket take connections
+#define SYS_ACCEPT 71     // take a connection (accept4 flags)
+#define SYS_CONNECT 72    // connect to a named socket
+#define SYS_SOCKETPAIR 73 // make two connected sockets
+#define SYS_SENDMSG 74    // send data and files
+#define SYS_RECVMSG 75    // receive data and files
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

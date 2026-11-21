@@ -252,22 +252,24 @@ int isatty(int fd);
  */
 int ioctl(int fd, unsigned int request, void *arg);
 
-/* keyboard event types (matches kernel keyboard_event_type_t) */
-#define KEY_EVENT_CHAR    0
-#define KEY_EVENT_SPECIAL 1
-#define KEY_EVENT_RAW     2 // with the XKEYRAW termios flag (termios.h)
+/* console keyboard event types (matches kernel keyboard_event_type_t).
+ * named CONSOLE_KEY_ so they do not clash with the Linux key codes of
+ * <sys/input.h> */
+#define CONSOLE_KEY_EVENT_CHAR    0
+#define CONSOLE_KEY_EVENT_SPECIAL 1
+#define CONSOLE_KEY_EVENT_RAW     2 // with the XKEYRAW termios flag (termios.h)
 
 /* special key codes (matches kernel keyboard_special_key_t) */
-#define KEY_ARROW_UP    1
-#define KEY_ARROW_DOWN  2
-#define KEY_ARROW_LEFT  3
-#define KEY_ARROW_RIGHT 4
-#define KEY_HOME        5
-#define KEY_END         6
-#define KEY_PAGE_UP     7
-#define KEY_PAGE_DOWN   8
-#define KEY_INSERT      9
-#define KEY_DELETE       10
+#define CONSOLE_KEY_UP    1
+#define CONSOLE_KEY_DOWN  2
+#define CONSOLE_KEY_LEFT  3
+#define CONSOLE_KEY_RIGHT 4
+#define CONSOLE_KEY_HOME        5
+#define CONSOLE_KEY_END         6
+#define CONSOLE_KEY_PAGE_UP     7
+#define CONSOLE_KEY_PAGE_DOWN   8
+#define CONSOLE_KEY_INSERT      9
+#define CONSOLE_KEY_DELETE       10
 
 /**
  * keyboard event structure (matches kernel keyboard_event_t).
@@ -275,16 +277,16 @@ int ioctl(int fd, unsigned int request, void *arg);
  */
 typedef struct
 {
-    int type;          // KEY_EVENT_CHAR or KEY_EVENT_SPECIAL
+    int type;          // CONSOLE_KEY_EVENT_CHAR or CONSOLE_KEY_EVENT_SPECIAL
     union
     {
-        char character;  // valid when type == KEY_EVENT_CHAR
-        int  special;    // valid when type == KEY_EVENT_SPECIAL
+        char character;  // valid when type == CONSOLE_KEY_EVENT_CHAR
+        int  special;    // valid when type == CONSOLE_KEY_EVENT_SPECIAL
         struct
         {
             unsigned char code;    // PS/2 set 1 scan code; bit 7: an 0xE0 key
             unsigned char pressed; // 1: down, 0: up
-        } raw;                     // valid when type == KEY_EVENT_RAW
+        } raw;                     // valid when type == CONSOLE_KEY_EVENT_RAW
     };
 } key_event_t;
 
