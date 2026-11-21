@@ -95,3 +95,9 @@ void fb_copy_rect(uint32_t dst_x, uint32_t dst_y, uint32_t src_x, uint32_t src_y
  * when running unbuffered.
  */
 void fb_flush(void);
+
+/**
+ * give the screen back to the console (FBIO_GRAPHICS): the next fb_flush
+ * draws the whole console again. a kernel panic calls it.
+ */
+void fb_release_graphics(void);

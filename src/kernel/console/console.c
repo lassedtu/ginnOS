@@ -160,6 +160,8 @@ void console_write_bytes(const char *buf, uint32_t len)
 void console_panic_mode(void)
 {
     panic_mode = true;
+    // a panic is shown even when a program has the screen
+    fb_release_graphics();
 }
 
 void console_size(uint32_t *rows, uint32_t *cols)
