@@ -137,10 +137,12 @@ BOOTLOADER ?= limine
 # stage) instead of an MBR disk; limine only
 GPT ?=
 
-# FREEDOOM=1 (the default) puts the Freedoom game data (freedoom1.wad, about
-# 28 MiB) into /usr/share/doom for /bin/doom. it is fetched once into
-# build/freedoom (a pinned, checksum-checked release); FREEDOOM=0 leaves it out.
-FREEDOOM ?= 1
+# DOOM=1 builds /bin/doom (src/user/doom) and puts the Freedoom game data
+# (freedoom1.wad, about 28 MiB) into /usr/share/doom. the data is fetched once
+# into build/freedoom (a pinned, checksum-checked release). the default (DOOM=0)
+# leaves both out. DOOM=1 FREEDOOM=0 builds the program without the data.
+DOOM     ?= 0
+FREEDOOM ?= $(DOOM)
 FREEDOOM_FETCH := tools/freedoom/fetch.sh
 FREEDOOM_CACHE := build/freedoom
 
@@ -255,7 +257,9 @@ LIBC_A       := $(BUILD_DIR)/libc/libc.a
 # user programs: automatic discovery via per-program Makefiles.
 # each program lives in src/user/<name>/ with its own Makefile.
 # src/user/lib/ is excluded (it contains crt0, not a program).
-USER_PROG_DIRS := $(sort $(filter-out src/user/lib,$(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
+# src/user/doom is built only with DOOM=1.
+USER_PROG_DIRS := $(sort $(filter-out src/user/lib $(if $(filter 1,$(DOOM)),,src/user/doom),\
+                  $(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
 USER_PROG_NAMES := $(notdir $(USER_PROG_DIRS))
 USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
 

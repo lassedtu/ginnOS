@@ -252,8 +252,9 @@ Everything below is implemented and working today.
   [Freedoom](https://freedoom.github.io/) game data in `/usr/share/doom`.
   It draws on the framebuffer and reads raw key events. Keys: arrows to
   move, Ctrl to fire, Space to open doors, Shift to run, Alt to strafe,
-  Escape for the menu. No sound yet. `make FREEDOOM=0` leaves the 28 MiB
-  game data out of the image.
+  Escape for the menu. No sound yet. Doom is not built by default; build
+  it with `make DOOM=1` (add `FREEDOOM=0` to leave out the 28 MiB game
+  data).
 - `reboot` (root only)
 
 ### Portability and tooling
@@ -399,8 +400,8 @@ make BOOTLOADER=custom
 make run BOOTLOADER=custom
 ```
 
-The first build also fetches Freedoom 0.13.0 (checked by SHA-256) into
-`build/freedoom`.
+The first build with `DOOM=1` also fetches Freedoom 0.13.0 (checked by
+SHA-256) into `build/freedoom`.
 
 If an i686 build fails with `unknown pseudo-op: .base64`, the cross gcc is
 newer than its binutils (gcc 16 needs binutils 2.43 or later). The build
