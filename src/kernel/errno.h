@@ -71,6 +71,7 @@ static inline int32_t kerr_to_errno(kerr_t err)
     case KERR_PIPE:     return -EPIPE;
     case KERR_NOENT:    return -ENOENT;
     case KERR_FAULT:    return -EFAULT;
+    case KERR_NOTEMPTY: return -ENOTEMPTY;
     }
     return -EINVAL;
 }

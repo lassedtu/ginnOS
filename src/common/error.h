@@ -27,6 +27,7 @@ typedef enum
     KERR_PIPE     = -12, // broken pipe
     KERR_NOENT    = -13, // no such entry
     KERR_FAULT    = -14, // bad address (pointer validation failed)
+    KERR_NOTEMPTY = -15, // directory not empty
 } kerr_t;
 
 /**

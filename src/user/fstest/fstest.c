@@ -11,6 +11,8 @@
  *   pread  pread and pwrite leave the file offset alone
  *   poll   poll and select on pipes: timeout, data from a child, hang-up,
  *          a broken pipe, and a closed descriptor
+ *   tmpfs  files and directories in /tmp: write, read back, append, rename,
+ *          unlink while open, rmdir of a full directory, a 100 KiB file
  *   dirent readdir over a directory of 20 files, and getdents with a buffer
  *          that holds one record at a time
  *
@@ -237,6 +239,73 @@ static int test_poll(void)
     return ok();
 }
 
+static int count_entries(const char *path);
+
+#define BIG_SIZE (100 * 1024)
+
+static int test_tmpfs(void)
+{
+    char buf[32] = {0};
+    struct stat st;
+
+    if (mkdir("/tmp/dir") != 0)
+        return failed("mkdir /tmp/dir");
+    int fd = open("/tmp/dir/file", O_RDWR | O_CREAT | O_EXCL, 0644);
+    if (fd < 0 || write(fd, "hello", 5) != 5)
+        return failed("create and write /tmp/dir/file");
+    lseek(fd, 0, SEEK_SET);
+    if (read(fd, buf, sizeof(buf)) != 5 || strcmp(buf, "hello") != 0)
+        return failed("read back");
+    close(fd);
+
+    fd = open("/tmp/dir/file", O_WRONLY | O_APPEND);
+    write(fd, " world", 6);
+    close(fd);
+    if (stat("/tmp/dir/file", &st) != 0 || st.st_size != 11 || !S_ISREG(st.st_mode))
+        return failed("stat after append");
+
+    if (rmdir("/tmp/dir") != -1 || errno != ENOTEMPTY)
+        return failed("rmdir of a directory with a file");
+    if (rename("/tmp/dir/file", "/tmp/moved") != 0 || access("/tmp/dir/file", F_OK) == 0)
+        return failed("rename out of the directory");
+    if (rmdir("/tmp/dir") != 0)
+        return failed("rmdir of the empty directory");
+    if (rename("/tmp/moved", "/moved") != -1 || errno != EXDEV)
+        return failed("rename from tmpfs to ext2");
+
+    // an unlinked file stays readable while it is open
+    fd = open("/tmp/moved", O_RDONLY);
+    unlink("/tmp/moved");
+    memset(buf, 0, sizeof(buf));
+    if (access("/tmp/moved", F_OK) == 0 || read(fd, buf, sizeof(buf)) != 11 ||
+        strcmp(buf, "hello world") != 0)
+        return failed("read of an unlinked open file");
+    close(fd);
+
+    // a file larger than any one buffer, written in pieces
+    static char big[BIG_SIZE];
+    for (int i = 0; i < BIG_SIZE; i++)
+        big[i] = (char)(i * 7);
+    fd = open("/tmp/big", O_RDWR | O_CREAT | O_TRUNC, 0644);
+    for (int done = 0; done < BIG_SIZE; done += 1000)
+        write(fd, big + done, BIG_SIZE - done < 1000 ? BIG_SIZE - done : 1000);
+    lseek(fd, 0, SEEK_SET);
+    static char check[BIG_SIZE];
+    int total = 0;
+    int n;
+    while ((n = read(fd, check + total, BIG_SIZE - total)) > 0)
+        total += n;
+    close(fd);
+    unlink("/tmp/big");
+    if (total != BIG_SIZE || memcmp(big, check, BIG_SIZE) != 0)
+        return failed("100 KiB file");
+
+    if (count_entries("/tmp") != 2)
+        return failed("/tmp not empty at the end");
+
+    return ok();
+}
+
 #define DIRENT_FILES 20
 
 /**
@@ -318,7 +387,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll\n");
+        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll|tmpfs\n");
         return 1;
     }
 
@@ -335,6 +404,8 @@ int main(int argc, char **argv)
         return test_dirent();
     if (strcmp(argv[1], "poll") == 0)
         return test_poll();
+    if (strcmp(argv[1], "tmpfs") == 0)
+        return test_tmpfs();
 
     printf("fstest: unknown mode %s\n", argv[1]);
     return 1;

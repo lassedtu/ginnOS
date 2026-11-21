@@ -6,6 +6,7 @@
 #include "common/error.h"
 #include "fs/fs.h"
 #include "fs/devfs.h"
+#include "fs/tmpfs.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
@@ -160,6 +161,13 @@ void kernel_main(boot_info_t *boot)
     if (kerr_failed(devfs_mount(&devfs)) || kerr_failed(vfs_mount("/dev", &devfs)))
     {
         KLOG_WARN("kernel: devfs mount failed; /dev unavailable");
+    }
+
+    // a filesystem in memory at /tmp
+    static fs_mount_t tmpfs;
+    if (kerr_failed(tmpfs_mount(&tmpfs)) || kerr_failed(vfs_mount("/tmp", &tmpfs)))
+    {
+        KLOG_WARN("kernel: tmpfs mount failed; /tmp unavailable");
     }
 
 #ifdef KERNEL_TEST

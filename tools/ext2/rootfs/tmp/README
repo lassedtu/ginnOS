@@ -1,0 +1,1 @@
+tmpfs is mounted here at boot (src/kernel/fs/tmpfs.c)
