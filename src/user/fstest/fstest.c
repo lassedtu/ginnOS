@@ -73,7 +73,10 @@ static int test_stat(void)
         return failed("stat of a directory");
     if (stat("/dev/fb0", &st) != 0 || !S_ISCHR(st.st_mode))
         return failed("stat of a character device");
-    if (stat("/dev/hda", &st) != 0 || !S_ISBLK(st.st_mode))
+    // the first disk: IDE, SATA or NVMe, whichever the machine has
+    if ((stat("/dev/hda", &st) != 0 && stat("/dev/sda", &st) != 0 &&
+         stat("/dev/nvme0", &st) != 0) ||
+        !S_ISBLK(st.st_mode))
         return failed("stat of a block device");
     if (stat("/no/such/file", &st) != -1 || errno != ENOENT)
         return failed("stat of a missing file");
