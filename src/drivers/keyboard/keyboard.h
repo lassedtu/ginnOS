@@ -39,6 +39,7 @@ typedef enum
 {
     KEY_EVENT_CHAR    = 0,
     KEY_EVENT_SPECIAL = 1,
+    KEY_EVENT_RAW     = 2, // a key went down or up (keyboard_set_raw_events)
 } keyboard_event_type_t;
 
 /**
@@ -52,6 +53,11 @@ typedef struct
     {
         char                   character; // valid when type == KEY_EVENT_CHAR
         keyboard_special_key_t special;   // valid when type == KEY_EVENT_SPECIAL
+        struct
+        {
+            uint8_t code;    // set 1 scan code; bit 7 set for an 0xE0 key
+            uint8_t pressed; // 1: the key went down, 0: it went up
+        } raw;                                   // valid when type == KEY_EVENT_RAW
     };
 } keyboard_event_t;
 
@@ -60,6 +66,24 @@ typedef struct
  * should be called after the IRQ subsystem is initialized.
  */
 void keyboard_initialize(void);
+
+/**
+ * decode one byte of PS/2 scan code set 1 (0xE0 starts a two-byte code,
+ * bit 7 marks a release). the PS/2 interrupt calls it, and the USB
+ * keyboard driver calls it with codes made from its reports. call with
+ * interrupts off.
+ * @param scancode the byte.
+ */
+void keyboard_handle_scancode(uint8_t scancode);
+
+/**
+ * report every key press and release as a KEY_EVENT_RAW event (also the
+ * modifier keys), and no character or special events, or go back to the
+ * normal events. for games, which need key releases and the positions of
+ * the keys rather than characters. the terminal turns this on with the
+ * XKEYRAW termios flag.
+ */
+void keyboard_set_raw_events(bool on);
 
 /**
  * check if at least one event is available in the event buffer. only a

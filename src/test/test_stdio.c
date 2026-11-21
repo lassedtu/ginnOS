@@ -39,6 +39,16 @@ KTEST(printf_integers)
     KEXPECT_STREQ(out_buf, "-2147483648");
 }
 
+KTEST(printf_widths)
+{
+    FORMAT("%02x:%04x %3u|%08lx", 0x1fu, 0x29c0u, 7u, 0xbeeful);
+    KEXPECT_STREQ(out_buf, "1f:29c0   7|0000beef");
+
+    // a number longer than the width is not cut
+    FORMAT("%02x", 0x12345u);
+    KEXPECT_STREQ(out_buf, "12345");
+}
+
 KTEST(printf_length_modifiers)
 {
     // arguments after a wide one must still line up

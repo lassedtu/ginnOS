@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file sys/mman.h
  * @brief memory-mapping interface (userspace).
@@ -8,9 +10,6 @@
  * src/kernel/memory/mman.h exactly.
  */
 
-typedef unsigned int size_t;
-
-// protection bits (prot argument). combine with bitwise OR.
 #define PROT_NONE  0x0
 #define PROT_READ  0x1
 #define PROT_WRITE 0x2

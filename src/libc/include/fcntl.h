@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file fcntl.h
  * @brief file open flags and open().
@@ -8,9 +10,6 @@
  * src/kernel/vfs/file.h exactly.
  */
 
-typedef unsigned int mode_t;
-
-// access modes (exactly one)
 #define O_RDONLY  0x0000
 #define O_WRONLY  0x0001
 #define O_RDWR    0x0002

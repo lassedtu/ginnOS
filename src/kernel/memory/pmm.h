@@ -31,8 +31,8 @@ void *pmm_alloc_page(void);
  * allocate a run of physically contiguous 4 KiB page frames.
  * pages are freed individually with pmm_free_page().
  * @param count number of pages (must be > 0).
- * @return physical address of the first page, or NULL if no free run of
- *         that length exists.
+ * @return a kernel pointer (direct map) to the first page, or NULL if no
+ *         free run of that length exists.
  */
 void *pmm_alloc_contiguous(uint32_t count);
 

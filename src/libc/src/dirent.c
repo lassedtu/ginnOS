@@ -23,7 +23,7 @@ struct dir_stream
 
 int getdents(int fd, void *buf, unsigned int size)
 {
-    int ret = _syscall(SYS_GETDENTS, fd, (int)buf, (int)size, 0, 0);
+    int ret = _syscall(SYS_GETDENTS, fd, (long)buf, (long)size, 0, 0);
     if (ret < 0)
     {
         errno = -ret;

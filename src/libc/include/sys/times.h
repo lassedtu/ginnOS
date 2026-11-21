@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file sys/times.h
  * @brief process CPU times.
@@ -7,8 +9,6 @@
  * the four times are in clock ticks: sysconf-free ginnOS has 100 per
  * second (CLK_TCK). struct tms is ABI (kernel/time/clock.c).
  */
-
-typedef long clock_t;
 
 #define CLK_TCK 100
 

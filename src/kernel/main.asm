@@ -1,8 +1,13 @@
 ; src/kernel/main.asm
-; 32-bit kernel entry called by stage2.
-;
-; stage2 copies kernel.bin to physical 0x10000 and calls it like a C
-; function, kernel_entry(boot_info_t *boot), with paging off. the kernel is
+; 32-bit kernel entry. two bootloaders can start the kernel:
+;   - stage2 copies kernel.bin to physical 0x10000 and calls it like a C
+;     function, kernel_entry(boot_info_t *boot).
+;   - a multiboot 2 bootloader (limine) loads kernel.elf at the same address
+;     and jumps here with EAX = MB2_BOOT_MAGIC and EBX = the physical address
+;     of the multiboot 2 information. ESP is not set.
+; both start the kernel with paging off. cstart gets the physical address
+; and the magic value, and makes one boot_info_t from either source. the
+; kernel is
 ; linked in the higher half (linker/kernel.ld), so this stub, linked at its
 ; physical address, turns paging on with a boot page directory before any
 ; higher-half code runs:
@@ -21,12 +26,25 @@ PDE_4M_KERNEL_RW    equ 0x83         ; present | writable | 4 MiB page
 CR4_PSE             equ 0x10
 CR0_PG              equ 0x80000000
 CR0_WP              equ 0x00010000   ; read-only pages are read-only to ring 0 too
+MB2_BOOT_MAGIC      equ 0x36D76289   ; EAX from a multiboot 2 bootloader
 
 section .boot.text progbits alloc exec
 global _start
 
 _start:
+    ; edx = the physical address of the boot information, esi = the magic
+    ; value (0 for stage2). do not use the stack before higher_half: a
+    ; multiboot 2 bootloader does not give one.
+    cmp eax, MB2_BOOT_MAGIC
+    jne .from_stage2
+    mov edx, ebx
+    mov esi, eax
+    jmp .paging
+.from_stage2:
     mov edx, [esp + 4]          ; boot_info_t physical address from stage2
+    xor esi, esi
+
+.paging:
 
     mov eax, cr4
     or eax, CR4_PSE
@@ -69,7 +87,8 @@ higher_half:
 
     ; .bss is not part of kernel.bin, so whatever stage2 or the firmware
     ; left in that memory is still there: zero it before any C runs.
-    ; (edx holds the boot_info address; rep stosb uses eax, ecx and edi.)
+    ; (edx and esi hold the boot arguments; rep stosb uses eax, ecx and
+    ; edi.)
     mov edi, __bss_start
     mov ecx, __bss_end
     sub ecx, edi
@@ -77,6 +96,7 @@ higher_half:
     cld
     rep stosb
 
+    push esi                    ; cstart(boot_phys, magic)
     push edx
     ; a zero frame pointer marks the outermost frame for backtraces.
     xor ebp, ebp

@@ -20,17 +20,17 @@ static int check(int ret)
 
 int clock_gettime(clockid_t id, struct timespec *out)
 {
-    return check(_syscall(SYS_CLOCK_GETTIME, id, (int)out, 0, 0, 0));
+    return check(_syscall(SYS_CLOCK_GETTIME, id, (long)out, 0, 0, 0));
 }
 
 int nanosleep(const struct timespec *span, struct timespec *left)
 {
-    return check(_syscall(SYS_NANOSLEEP, (int)span, (int)left, 0, 0, 0));
+    return check(_syscall(SYS_NANOSLEEP, (long)span, (long)left, 0, 0, 0));
 }
 
 clock_t times(struct tms *buf)
 {
-    return (clock_t)check(_syscall(SYS_TIMES, (int)buf, 0, 0, 0, 0));
+    return (clock_t)check(_syscall(SYS_TIMES, (long)buf, 0, 0, 0, 0));
 }
 
 time_t time(time_t *out)

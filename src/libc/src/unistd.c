@@ -11,7 +11,7 @@
 
 ssize_t write(int fd, const void *buf, size_t count)
 {
-    int ret = _syscall(SYS_WRITE, fd, (int)buf, (int)count, 0, 0);
+    int ret = _syscall(SYS_WRITE, fd, (long)buf, (long)count, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -22,7 +22,7 @@ ssize_t write(int fd, const void *buf, size_t count)
 
 ssize_t read(int fd, void *buf, size_t count)
 {
-    int ret = _syscall(SYS_READ, fd, (int)buf, (int)count, 0, 0);
+    int ret = _syscall(SYS_READ, fd, (long)buf, (long)count, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -39,7 +39,7 @@ int open(const char *path, int flags, ...)
     mode_t mode = (flags & O_CREAT) ? va_arg(args, mode_t) : 0;
     va_end(args);
 
-    int ret = _syscall(SYS_OPEN, (int)path, flags, (int)mode, 0, 0);
+    int ret = _syscall(SYS_OPEN, (long)path, flags, (long)mode, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -61,7 +61,7 @@ int close(int fd)
 
 pid_t exec(const char *path, const char **argv)
 {
-    int ret = _syscall(SYS_EXEC, (int)path, (int)argv, 0, 0, 0);
+    int ret = _syscall(SYS_EXEC, (long)path, (long)argv, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -83,14 +83,14 @@ pid_t fork(void)
 
 int execve(const char *path, char *const argv[], char *const envp[])
 {
-    int ret = _syscall(SYS_EXECVE, (int)path, (int)argv, (int)envp, 0, 0);
+    int ret = _syscall(SYS_EXECVE, (long)path, (long)argv, (long)envp, 0, 0);
     errno = -ret; // execve only returns on failure
     return -1;
 }
 
 pid_t waitpid(pid_t pid, int *status, int options)
 {
-    int ret = _syscall(SYS_WAITPID, (int)pid, (int)status, options, 0, 0);
+    int ret = _syscall(SYS_WAITPID, (long)pid, (long)status, options, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -132,7 +132,7 @@ void *sbrk(int increment)
 
 int getcwd(char *buf, size_t size)
 {
-    int ret = _syscall(SYS_GETCWD, (int)buf, (int)size, 0, 0, 0);
+    int ret = _syscall(SYS_GETCWD, (long)buf, (long)size, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -143,7 +143,7 @@ int getcwd(char *buf, size_t size)
 
 int chdir(const char *path)
 {
-    int ret = _syscall(SYS_CHDIR, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_CHDIR, (long)path, 0, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -154,7 +154,7 @@ int chdir(const char *path)
 
 int unlink(const char *path)
 {
-    int ret = _syscall(SYS_UNLINK, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_UNLINK, (long)path, 0, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -165,7 +165,7 @@ int unlink(const char *path)
 
 int rmdir(const char *path)
 {
-    int ret = _syscall(SYS_RMDIR, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_RMDIR, (long)path, 0, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -192,7 +192,7 @@ int create(const char *path)
 
 int mkdir(const char *path, mode_t mode)
 {
-    int ret = _syscall(SYS_MKDIR, (int)path, (int)mode, 0, 0, 0);
+    int ret = _syscall(SYS_MKDIR, (long)path, (long)mode, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -203,7 +203,7 @@ int mkdir(const char *path, mode_t mode)
 
 int ioctl(int fd, unsigned int request, void *arg)
 {
-    int ret = _syscall(SYS_IOCTL, fd, (int)request, (int)arg, 0, 0);
+    int ret = _syscall(SYS_IOCTL, fd, (long)request, (long)arg, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -222,7 +222,7 @@ int read_event(key_event_t *event)
 
 int pipe(int fds[2])
 {
-    int ret = _syscall(SYS_PIPE, (int)fds, 0, 0, 0, 0);
+    int ret = _syscall(SYS_PIPE, (long)fds, 0, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -293,32 +293,32 @@ int dup(int fd)
 
 int stat(const char *path, struct stat *st)
 {
-    return check(_syscall(SYS_STAT, (int)path, (int)st, 0, 0, 0));
+    return check(_syscall(SYS_STAT, (long)path, (long)st, 0, 0, 0));
 }
 
 int fstat(int fd, struct stat *st)
 {
-    return check(_syscall(SYS_FSTAT, fd, (int)st, 0, 0, 0));
+    return check(_syscall(SYS_FSTAT, fd, (long)st, 0, 0, 0));
 }
 
 int access(const char *path, int mode)
 {
-    return check(_syscall(SYS_ACCESS, (int)path, mode, 0, 0, 0));
+    return check(_syscall(SYS_ACCESS, (long)path, mode, 0, 0, 0));
 }
 
 int rename(const char *old_path, const char *new_path)
 {
-    return check(_syscall(SYS_RENAME, (int)old_path, (int)new_path, 0, 0, 0));
+    return check(_syscall(SYS_RENAME, (long)old_path, (long)new_path, 0, 0, 0));
 }
 
 ssize_t pread(int fd, void *buf, size_t count, int offset)
 {
-    return check(_syscall(SYS_PREAD, fd, (int)buf, (int)count, offset, 0));
+    return check(_syscall(SYS_PREAD, fd, (long)buf, (long)count, offset, 0));
 }
 
 ssize_t pwrite(int fd, const void *buf, size_t count, int offset)
 {
-    return check(_syscall(SYS_PWRITE, fd, (int)buf, (int)count, offset, 0));
+    return check(_syscall(SYS_PWRITE, fd, (long)buf, (long)count, offset, 0));
 }
 
 int fsync(int fd)
@@ -373,40 +373,45 @@ gid_t getegid(void)
 
 int setuid(uid_t uid)
 {
-    return check(_syscall(SYS_SETUID, (int)uid, 0, 0, 0, 0));
+    return check(_syscall(SYS_SETUID, (long)uid, 0, 0, 0, 0));
 }
 
 int setgid(gid_t gid)
 {
-    return check(_syscall(SYS_SETGID, (int)gid, 0, 0, 0, 0));
+    return check(_syscall(SYS_SETGID, (long)gid, 0, 0, 0, 0));
 }
 
 int seteuid(uid_t uid)
 {
-    return check(_syscall(SYS_SETEUID, (int)uid, 0, 0, 0, 0));
+    return check(_syscall(SYS_SETEUID, (long)uid, 0, 0, 0, 0));
 }
 
 int setegid(gid_t gid)
 {
-    return check(_syscall(SYS_SETEGID, (int)gid, 0, 0, 0, 0));
+    return check(_syscall(SYS_SETEGID, (long)gid, 0, 0, 0, 0));
 }
 
 int chmod(const char *path, mode_t mode)
 {
-    return check(_syscall(SYS_CHMOD, (int)path, (int)mode, 0, 0, 0));
+    return check(_syscall(SYS_CHMOD, (long)path, (long)mode, 0, 0, 0));
 }
 
 int fchmod(int fd, mode_t mode)
 {
-    return check(_syscall(SYS_FCHMOD, fd, (int)mode, 0, 0, 0));
+    return check(_syscall(SYS_FCHMOD, fd, (long)mode, 0, 0, 0));
 }
 
 int chown(const char *path, uid_t uid, gid_t gid)
 {
-    return check(_syscall(SYS_CHOWN, (int)path, (int)uid, (int)gid, 0, 0));
+    return check(_syscall(SYS_CHOWN, (long)path, (long)uid, (long)gid, 0, 0));
 }
 
 mode_t umask(mode_t mask)
 {
-    return (mode_t)_syscall(SYS_UMASK, (int)mask, 0, 0, 0, 0);
+    return (mode_t)_syscall(SYS_UMASK, (long)mask, 0, 0, 0, 0);
+}
+
+int reboot(void)
+{
+    return check(_syscall(SYS_REBOOT, 0, 0, 0, 0, 0));
 }

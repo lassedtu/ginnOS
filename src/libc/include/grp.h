@@ -1,11 +1,11 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file grp.h
  * @brief the group database (/etc/group: name:password:gid:members).
  */
-
-typedef unsigned int gid_t;
 
 struct group
 {

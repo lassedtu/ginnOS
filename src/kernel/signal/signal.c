@@ -54,9 +54,8 @@ static wait_queue_t sigsuspend_queue;
  */
 typedef struct
 {
-    uint32_t edi, esi, ebp, ebx, edx, ecx, eax;
-    uint32_t eip, eflags, esp;
-    uint32_t blocked; // the mask to restore
+    struct registers regs; // the user registers (sigreturn keeps cs and ss)
+    uint32_t blocked;      // the mask to restore
 } sigcontext_t;
 
 /**
@@ -65,8 +64,8 @@ typedef struct
  */
 typedef struct
 {
-    uint32_t return_address;
-    int32_t signal;
+    uintptr_t return_address;
+    intptr_t signal;
     sigcontext_t context;
     // the FPU/SSE registers of the interrupted code (FXSAVE needs 16-byte
     // alignment; the frame itself is aligned to 16)
@@ -271,8 +270,8 @@ static void report_fatal(const process_t *proc, int sig)
  */
 static void restart_syscall(process_t *proc, struct registers *regs)
 {
-    regs->eax = proc->syscall_nr;
-    regs->eip -= 2; // the length of "int 0x80"
+    REG_RESULT(regs) = proc->syscall_nr;
+    REG_IP(regs) -= 2; // the length of "int 0x80" and of "syscall"
 }
 
 /**
@@ -288,18 +287,9 @@ static bool enter_handler(process_t *proc, struct registers *regs, int sig)
     sigframe_t frame;
     arch_fpu_save(proc->fpu_state);
     memcpy(frame.fpu, proc->fpu_state, sizeof(frame.fpu));
-    frame.return_address = (uint32_t)action->restorer;
+    frame.return_address = action->restorer;
     frame.signal = sig;
-    frame.context.edi = regs->edi;
-    frame.context.esi = regs->esi;
-    frame.context.ebp = regs->ebp;
-    frame.context.ebx = regs->ebx;
-    frame.context.edx = regs->edx;
-    frame.context.ecx = regs->ecx;
-    frame.context.eax = regs->eax;
-    frame.context.eip = regs->eip;
-    frame.context.eflags = regs->eflags;
-    frame.context.esp = regs->esp;
+    frame.context.regs = *regs;
 
     // after sigsuspend, the handler's return restores the mask from before
     // the call, not the temporary one
@@ -309,15 +299,25 @@ static bool enter_handler(process_t *proc, struct registers *regs, int sig)
     proc->signals.restore_blocked = false;
     arch_irq_restore(flags);
 
-    uintptr_t frame_addr = ((uintptr_t)regs->esp - sizeof(sigframe_t)) & ~(uintptr_t)15;
+#ifdef __x86_64__
+    // do not write over the red zone (128 bytes below RSP that leaf
+    // functions use). the handler starts as after a call: RSP + 8 is a
+    // multiple of 16. its argument is in RDI.
+    uintptr_t frame_addr = ((REG_SP(regs) - 128 - sizeof(sigframe_t)) & ~(uintptr_t)15) - 8;
+#else
+    uintptr_t frame_addr = (REG_SP(regs) - sizeof(sigframe_t)) & ~(uintptr_t)15;
+#endif
     if (kerr_failed(copy_to_user((void *)frame_addr, &frame, sizeof(frame))))
     {
         return false;
     }
 
-    regs->esp = (uint32_t)frame_addr;
-    regs->eip = (uint32_t)action->handler;
-    regs->eflags &= ~(EFLAGS_TF | EFLAGS_DF);
+    REG_SP(regs) = frame_addr;
+    REG_IP(regs) = action->handler;
+    REG_FLAGS(regs) &= ~(uintptr_t)(EFLAGS_TF | EFLAGS_DF);
+#ifdef __x86_64__
+    regs->rdi = (uint64_t)sig;
+#endif
 
     flags = arch_irq_save();
     uint32_t block = action->mask;
@@ -342,7 +342,7 @@ void signal_deliver(struct registers *regs)
         return;
     }
 
-    bool interrupted = regs->interrupt == SYSCALL_VECTOR && regs->eax == (uint32_t)-ERESTARTSYS;
+    bool interrupted = regs->interrupt == SYSCALL_VECTOR && REG_RESULT(regs) == (uintptr_t)-ERESTARTSYS;
 
     int sig;
     while ((sig = take_signal(proc)) != 0)
@@ -383,7 +383,7 @@ void signal_deliver(struct registers *regs)
             }
             else
             {
-                regs->eax = (uint32_t)-EINTR;
+                REG_RESULT(regs) = (uintptr_t)-EINTR;
             }
             interrupted = false;
         }
@@ -391,7 +391,7 @@ void signal_deliver(struct registers *regs)
         if (!enter_handler(proc, regs, sig))
         {
             // nowhere to put the frame: the process cannot go on
-            proc->fault_addr = regs->esp;
+            proc->fault_addr = REG_SP(regs);
             proc->fault_write = true;
             report_fatal(proc, SIGSEGV);
             arch_enable_interrupts();
@@ -662,8 +662,8 @@ syscall_ret_t sys_sigreturn(struct registers *regs)
 {
     process_t *proc = process_current();
 
-    // the handler's ret popped the return address: ESP is at the signal
-    // number, so the frame starts one word below it
+    // the handler's ret popped the return address, so the frame starts one
+    // word below the stack pointer
     //
     // the FPU registers go through the process's own aligned save area.
     // interrupts stay masked from the copy to the load: a process switch in
@@ -671,7 +671,7 @@ syscall_ret_t sys_sigreturn(struct registers *regs)
     // not sleep)
     uint8_t *fpu = proc->fpu_state;
     sigcontext_t context;
-    uintptr_t frame = (uintptr_t)regs->esp - sizeof(uint32_t);
+    uintptr_t frame = REG_SP(regs) - sizeof(uintptr_t);
     const void *user_context = (const void *)(frame + offsetof(sigframe_t, context));
     const void *user_fpu = (const void *)(frame + offsetof(sigframe_t, fpu));
 
@@ -693,21 +693,29 @@ syscall_ret_t sys_sigreturn(struct registers *regs)
         return 0;
     }
 
-    regs->edi = context.edi;
-    regs->esi = context.esi;
-    regs->ebp = context.ebp;
-    regs->ebx = context.ebx;
-    regs->edx = context.edx;
-    regs->ecx = context.ecx;
-    regs->eip = context.eip;
-    regs->esp = context.esp;
-    regs->eflags = (regs->eflags & ~USER_EFLAGS_MASK) | (context.eflags & USER_EFLAGS_MASK);
+    // the general registers, the instruction pointer and the stack pointer
+    // come from the frame. the segment selectors and the interrupt fields
+    // stay as they are, and only the user flags change, so the handler
+    // cannot get kernel privileges
+    struct registers saved = context.regs;
+    saved.interrupt = regs->interrupt;
+    saved.error = regs->error;
+    saved.cs = regs->cs;
+    saved.ss = regs->ss;
+#ifndef __x86_64__
+    saved.ds = regs->ds;
+    saved.kern_esp = regs->kern_esp;
+#endif
+    REG_FLAGS(&saved) =
+        (REG_FLAGS(regs) & ~(uintptr_t)USER_EFLAGS_MASK) | (REG_FLAGS(&saved) & USER_EFLAGS_MASK);
+    *regs = saved;
 
     uint32_t flags = arch_irq_save();
     proc->signals.blocked = context.blocked & ~SIG_UNBLOCKABLE;
     arch_irq_restore(flags);
 
-    return (syscall_ret_t)context.eax;
+    // the dispatcher stores the result in REG_RESULT: give back the saved one
+    return (syscall_ret_t)REG_RESULT(&saved);
 }
 
 /**

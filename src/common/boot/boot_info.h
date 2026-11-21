@@ -9,9 +9,13 @@
  * the layout up to and including memory_map is shared byte-for-byte with the
  * stage2 assembly that fills it in (see src/bootloader/stage2/main.asm), so
  * those fields must not be reordered. anything a boot protocol cannot supply
- * is left zero: framebuffer_addr == 0 means "no framebuffer", cmdline == NULL
- * means "no command line". the custom BIOS bootloader zeroes these; a future
- * GRUB/UEFI path fills them in.
+ * is left zero: framebuffer_addr == 0 means "no framebuffer", cmdline_addr
+ * == 0 means "no command line".
+ *
+ * stage2 fills in the fields up to and including the framebuffer pixel
+ * format. the kernel copies only that part into its own boot_info_t
+ * (kernel.c), so the fields after it are zero on a stage2 boot. a multiboot 2
+ * boot fills in all fields (arch/x86/boot/multiboot2.c).
  */
 typedef struct
 {
@@ -43,4 +47,26 @@ typedef struct
     uint8_t framebuffer_blue_shift;  // blue channel low bit position.
     uint8_t _fb_pad[2];              // pad to a 4-byte boundary, zeroed.
 
+    // the fields below are not shared with stage2
+
+    uint32_t boot_protocol; // BOOT_PROTOCOL_STAGE2, _MULTIBOOT2 or _LIMINE.
+
+    // a root filesystem image that the bootloader loaded into RAM (a boot
+    // module), or 0 and 0. the physical range [initrd_start, initrd_end)
+    // stays reserved.
+    uint32_t initrd_start;
+    uint32_t initrd_end;
+
+    // a copy of the ACPI RSDP from the bootloader (rsdp_size 0: none). a
+    // multiboot 2 bootloader gives a copy, not an address.
+    uint32_t rsdp_size;
+    uint8_t rsdp[36];
+
 } boot_info_t;
+
+#define BOOT_PROTOCOL_STAGE2     0 // the custom BIOS bootloader (src/bootloader)
+#define BOOT_PROTOCOL_MULTIBOOT2 1 // a multiboot 2 bootloader, for example limine
+#define BOOT_PROTOCOL_LIMINE     2 // the limine boot protocol (x86_64)
+
+/* the part of boot_info_t that stage2 fills in */
+#define BOOT_INFO_STAGE2_SIZE __builtin_offsetof(boot_info_t, _fb_pad)

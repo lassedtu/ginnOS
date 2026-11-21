@@ -159,7 +159,7 @@ syscall_ret_t sys_execve(struct registers *regs)
     kfree(kargv);
 
     // on success the frame's EAX was cleared for the new program; keep it
-    return ret == 0 ? (syscall_ret_t)regs->eax : ret;
+    return ret == 0 ? (syscall_ret_t)REG_RESULT(regs) : ret;
 }
 
 /**

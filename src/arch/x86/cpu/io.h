@@ -37,6 +37,28 @@ static inline uint16_t io_inw(uint16_t port)
 }
 
 /**
+ * write a 32-bit value to an I/O port.
+ * @param port the I/O port number.
+ * @param value the value to write.
+ */
+static inline void io_outl(uint16_t port, uint32_t value)
+{
+    __asm__ __volatile__("outl %0, %1" : : "a"(value), "Nd"(port));
+}
+
+/**
+ * read a 32-bit value from an I/O port.
+ * @param port the I/O port number.
+ * @return the value read from the port.
+ */
+static inline uint32_t io_inl(uint16_t port)
+{
+    uint32_t value;
+    __asm__ __volatile__("inl %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
+/**
  * read count 16-bit words from an I/O port into a buffer (string I/O).
  * @param port       the I/O port to read from.
  * @param buffer     destination buffer (must be at least word_count * 2 bytes).

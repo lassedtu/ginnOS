@@ -5,6 +5,10 @@ ifeq ($(ARCH),i686)
   CROSS       ?= i686-elf-
   ARCH_DIRS   := src/arch/x86
   LINKER_DIR  := linker
+  BUILD_DIR   := build
+  ARCH_CFLAGS := -m32
+  # the kernel and the C code linked into it
+  KERNEL_ARCH_CFLAGS :=
   QEMU        := qemu-system-i386
   # more RAM, a full CPU model, and a large TCG translation-block cache. on an
   # Apple Silicon / arm64 host, i386 runs under TCG software emulation (no HVF
@@ -13,8 +17,27 @@ ifeq ($(ARCH),i686)
   QEMU_FLAGS  ?= -m 256 -cpu max -accel tcg,tb-size=256 -vga std
   ASM_FORMAT  := elf32
   ASM_BIN_FMT := bin
+else ifeq ($(ARCH),x86_64)
+  CROSS       ?= x86_64-elf-
+  ARCH_DIRS   := src/arch/x86
+  LINKER_DIR  := linker/x86_64
+  BUILD_DIR   := build/x86_64
+  ARCH_CFLAGS := -m64
+  # the kernel is linked in the top 2 GiB, must keep the red zone free
+  # (interrupts push onto the kernel stack) and must not use SSE (its
+  # registers are the user program's)
+  KERNEL_ARCH_CFLAGS := -mcmodel=kernel -mno-red-zone -mgeneral-regs-only
+  QEMU        := qemu-system-x86_64
+  QEMU_FLAGS  ?= -m 256 -cpu max -accel tcg,tb-size=256 -vga std
+  ASM_FORMAT  := elf64
+  ASM_BIN_FMT := bin
+  ifneq ($(BOOTLOADER),)
+    ifneq ($(BOOTLOADER),limine)
+      $(error ARCH=x86_64 boots only with BOOTLOADER=limine)
+    endif
+  endif
 else
-  $(error unsupported ARCH=$(ARCH). currently only i686 is implemented)
+  $(error unsupported ARCH=$(ARCH): use i686 or x86_64)
 endif
 
 # toolchain
@@ -27,11 +50,15 @@ PYTHON  ?= python3
 GDB     ?= gdb
 GDB_PORT ?= 1234
 
-BUILD_DIR := build
+# extra flags the cross toolchain needs (tools/toolchain_flags.sh): for a
+# gcc 16 with binutils older than 2.43, "-B <dir>" for newer binutils from
+# homebrew. set TOOLCHAIN_FLAGS= to turn the probe off.
+TOOLCHAIN_FLAGS ?= $(shell tools/toolchain_flags.sh $(CC) $(patsubst %-,%,$(CROSS)))
+TOOLCHAIN_FLAGS := $(TOOLCHAIN_FLAGS)
 
 # shared base flags
 BASE_WARNINGS := -Wall -Wextra
-BASE_CFLAGS   := -std=gnu11 -ffreestanding -m32 -I src -MMD -MP
+BASE_CFLAGS   := -std=gnu11 -ffreestanding $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) -I src -MMD -MP
 
 # the kernel keeps a full frame-pointer chain (in release too) so panics can
 # walk the stack and print a backtrace: no omitted frames, not even in leaf
@@ -42,14 +69,15 @@ KERNEL_FRAME_FLAGS := -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer \
 # per-subsystem compiler flags. -g only adds debug info to the ELF files (for
 # make gdb); the flat binaries made with objcopy are unchanged by it.
 KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 -g -DNDEBUG \
-                 -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS)
+                 -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS) $(KERNEL_ARCH_CFLAGS)
 
 DRIVER_CFLAGS := $(KERNEL_CFLAGS)
 
 COMMON_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Os -g \
                  -fno-pic -fno-stack-protector \
                  -fno-unwind-tables -fno-asynchronous-unwind-tables \
-                 -ffunction-sections -fdata-sections -fomit-frame-pointer
+                 -ffunction-sections -fdata-sections -fomit-frame-pointer \
+                 $(KERNEL_ARCH_CFLAGS)
 
 STAGE2_CFLAGS := $(COMMON_CFLAGS) -DEXT2_STATIC_BUFFERS
 
@@ -57,12 +85,12 @@ STAGE2_CFLAGS := $(COMMON_CFLAGS) -DEXT2_STATIC_BUFFERS
 # objects, because they depend on $(KERNEL_FLAGS_FILE) (see below).
 ifeq ($(BUILD_MODE),debug)
   KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Og -g -DDEBUG \
-                   -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS)
+                   -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS) $(KERNEL_ARCH_CFLAGS)
   DRIVER_CFLAGS := $(KERNEL_CFLAGS)
 endif
 
 # linker flags
-LDFLAGS        := -T $(LINKER_DIR)/kernel.ld -nostdlib
+LDFLAGS        := -T $(LINKER_DIR)/kernel.ld -nostdlib -z max-page-size=0x1000
 STAGE2_LDFLAGS := -T $(LINKER_DIR)/stage2.ld -nostdlib --gc-sections
 
 # source directory sets
@@ -72,7 +100,6 @@ STAGE2_C_DIRS    := src/bootloader/stage2 src/drivers/disk src/fs/ext2
 STAGE2_ENTRY_ASM := src/bootloader/stage2/main.asm
 
 KERNEL_C_DIRS   := src/kernel $(ARCH_DIRS) src/drivers src/fs
-KERNEL_ASM_DIRS := src/kernel $(ARCH_DIRS)
 COMMON_C_DIR    := src/common
 
 # isr code generation
@@ -83,6 +110,9 @@ ISR_GEN_INC    := src/arch/x86/asm/isr_gen.inc
 # root filesystem / disk image
 EXT2_IMAGE_TOOL  := tools/ext2/make_image.py
 EXT2_SOURCE_DIR  ?= tools/ext2/rootfs
+# the files of the root filesystem: a copy of EXT2_SOURCE_DIR with the
+# programs (and, for stage2, kernel.bin), one per architecture
+ROOTFS_STAGING   := $(BUILD_DIR)/rootfs
 EXT2_SIZE_MB     ?=
 EXT2_MIN_SIZE_MB ?= 8
 
@@ -94,6 +124,41 @@ KERNEL_ELF   := $(BUILD_DIR)/kernel.elf
 KERNEL_BIN   := $(BUILD_DIR)/kernel.bin
 DISK_IMAGE   := $(BUILD_DIR)/ginnos.img
 ROOTFS_IMAGE := $(BUILD_DIR)/images/rootfs.ext2
+
+# the bootloader of the disk image:
+#   limine (default): limine on BIOS and UEFI. a FAT boot partition has
+#     limine, the kernel ELF (multiboot 2) and the root image as a module; the
+#     ext2 root is partition 2. needs git (once, to fetch limine) and mtools.
+#   custom: the old BIOS-only stage1 and stage2 (src/bootloader), which load
+#     kernel.bin from the ext2 root.
+BOOTLOADER ?= limine
+
+# GPT=1 makes a GPT disk (with a BIOS boot partition for limine's BIOS
+# stage) instead of an MBR disk; limine only
+GPT ?=
+
+# DOOM=1 builds /bin/doom (src/user/doom) and puts the Freedoom game data
+# (freedoom1.wad, about 28 MiB) into /usr/share/doom. the data is fetched once
+# into build/freedoom (a pinned, checksum-checked release). the default (DOOM=0)
+# leaves both out. DOOM=1 FREEDOOM=0 builds the program without the data.
+DOOM     ?= 0
+FREEDOOM ?= $(DOOM)
+FREEDOOM_FETCH := tools/freedoom/fetch.sh
+FREEDOOM_CACHE := build/freedoom
+
+LIMINE_DIR       := build/limine
+LIMINE_FETCH     := tools/limine/fetch.sh
+LIMINE_DISK_TOOL := tools/limine/make_disk.py
+LIMINE_CONF      := tools/limine/limine-$(ARCH).conf
+
+# UEFI firmware for make run-uefi (OVMF; homebrew and nix qemu include it)
+QEMU_UEFI ?= qemu-system-x86_64
+OVMF_CODE ?= $(firstword $(wildcard \
+	/opt/homebrew/share/qemu/edk2-x86_64-code.fd \
+	/usr/local/share/qemu/edk2-x86_64-code.fd \
+	/usr/share/qemu/edk2-x86_64-code.fd \
+	/usr/share/OVMF/OVMF_CODE.fd \
+	/usr/share/edk2/x64/OVMF_CODE.fd))
 
 STAGE2_SECTORS   := 62
 SECTOR_SIZE      := 512
@@ -110,6 +175,29 @@ define assemble_disk
 	dd if=$(STAGE2_PAD) of=$(1) bs=512 seek=1 conv=notrunc status=none
 	dd if=$(2) of=$(1) bs=512 seek=63 conv=notrunc status=none
 endef
+
+# lay out a limine disk image (tools/limine/make_disk.py). the FAT gets a
+# copy of the kernel ELF without debug information.
+# $(1) = output image, $(2) = kernel ELF, $(3) = ext2 filesystem image,
+# $(4) = scratch directory.
+define limine_disk
+	./$(LIMINE_FETCH) $(LIMINE_DIR)
+	@mkdir -p $(4)
+	$(OBJCOPY) --strip-debug $(2) $(4)/kernel.elf
+	$(PYTHON) $(LIMINE_DISK_TOOL) --output $(1) --ext2 $(3) --limine-dir $(LIMINE_DIR) $(if $(filter 1,$(GPT)),--gpt) \
+		--file $(LIMINE_CONF):/boot/limine/limine.conf \
+		--file $(LIMINE_DIR)/limine-bios.sys:/boot/limine/limine-bios.sys \
+		--file $(LIMINE_DIR)/BOOTX64.EFI:/EFI/BOOT/BOOTX64.EFI \
+		--file $(LIMINE_DIR)/BOOTIA32.EFI:/EFI/BOOT/BOOTIA32.EFI \
+		--file $(4)/kernel.elf:/boot/kernel.elf \
+		--file $(3):/boot/rootfs.ext2
+endef
+
+ifneq ($(BOOTLOADER),limine)
+  ifneq ($(BOOTLOADER),custom)
+    $(error unsupported BOOTLOADER=$(BOOTLOADER): use limine or custom)
+  endif
+endif
 
 # path mapping helpers
 src_c_to_obj      = $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(1))
@@ -130,11 +218,20 @@ STAGE2_ENTRY_OBJ := $(BUILD_DIR)/stage2/bootloader/stage2/entry.o
 # generated isr table
 KERNEL_C_SRCS := $(sort $(foreach d,$(KERNEL_C_DIRS),$(call find_c_sources,$(d))) \
                          $(ISR_GEN_C))
-KERNEL_ASM_SRCS := $(foreach d,$(KERNEL_ASM_DIRS),$(call find_asm_sources,$(d)))
+# the 64-bit assembly is in src/arch/x86/asm64; the rest is 32-bit
+ifeq ($(ARCH),x86_64)
+KERNEL_ASM_SRCS := $(call find_asm_sources,src/arch/x86/asm64)
+else
+KERNEL_ASM_SRCS := $(filter-out src/arch/x86/asm64/%,$(call find_asm_sources,src/kernel src/arch/x86))
+endif
 
 KERNEL_C_OBJS   := $(call src_c_to_obj,$(KERNEL_C_SRCS))
 KERNEL_ASM_OBJS := $(call src_asm_to_obj,$(KERNEL_ASM_SRCS))
+ifeq ($(ARCH),x86_64)
+KERNEL_ENTRY_OBJ := $(BUILD_DIR)/arch/x86/asm64/entry.o
+else
 KERNEL_ENTRY_OBJ := $(BUILD_DIR)/kernel/main.o
+endif
 
 # link order
 KERNEL_LINK_OBJS := $(KERNEL_ENTRY_OBJ) \
@@ -144,28 +241,32 @@ KERNEL_LINK_OBJS := $(KERNEL_ENTRY_OBJ) \
 STAGE2_LINK_OBJS := $(STAGE2_ENTRY_OBJ) $(sort $(STAGE2_C_OBJS)) $(COMMON_OBJS)
 
 # user programs
-USER_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
-                -fno-pie -fno-stack-protector -nostdlib \
-                -Isrc/libc/include -MMD -MP
-USER_LDFLAGS := -T $(LINKER_DIR)/user.ld -nostdlib
 USER_CRT0    := $(BUILD_DIR)/user/lib/crt0.o
+USER_CRT0_SRC := src/user/lib/$(ARCH)/crt0.asm
 
 # libc
-LIBC_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m32 \
+LIBC_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
                 -fno-pie -fno-stack-protector -Isrc/libc/include -MMD -MP
 LIBC_C_SRCS  := $(shell find src/libc/src -name '*.c' 2>/dev/null | sort)
-LIBC_ASM_SRCS := $(shell find src/libc/src -name '*.asm' 2>/dev/null | sort)
+LIBC_ASM_SRCS := $(shell find src/libc/arch/$(ARCH) -name '*.asm' 2>/dev/null | sort)
 LIBC_C_OBJS  := $(patsubst src/libc/src/%.c,$(BUILD_DIR)/libc/%.o,$(LIBC_C_SRCS))
-LIBC_ASM_OBJS := $(patsubst src/libc/src/%.asm,$(BUILD_DIR)/libc/%.o,$(LIBC_ASM_SRCS))
+LIBC_ASM_OBJS := $(patsubst src/libc/arch/$(ARCH)/%.asm,$(BUILD_DIR)/libc/arch/%.o,$(LIBC_ASM_SRCS))
 LIBC_OBJS    := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
 LIBC_A       := $(BUILD_DIR)/libc/libc.a
 
 # user programs: automatic discovery via per-program Makefiles.
 # each program lives in src/user/<name>/ with its own Makefile.
 # src/user/lib/ is excluded (it contains crt0, not a program).
-USER_PROG_DIRS := $(sort $(filter-out src/user/lib,$(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
+# src/user/doom is built only with DOOM=1.
+USER_PROG_DIRS := $(sort $(filter-out src/user/lib $(if $(filter 1,$(DOOM)),,src/user/doom),\
+                  $(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
 USER_PROG_NAMES := $(notdir $(USER_PROG_DIRS))
 USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
+
+# what the per-program Makefiles (src/user/program.mk) need to know
+USER_MAKE_VARS := CROSS=$(CROSS) BUILD_ROOT=$(abspath $(BUILD_DIR)) \
+                  ARCH_CFLAGS=$(ARCH_CFLAGS) USER_LD_SCRIPT=$(abspath $(LINKER_DIR)/user.ld) \
+                  TOOLCHAIN_FLAGS="$(TOOLCHAIN_FLAGS)"
 
 # dependency files (C compilations only)
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d) \
@@ -234,7 +335,7 @@ ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run rootfs-image clean check-tools debug gdb lint check64 format compile_commands iso test test-image FORCE
+.PHONY: all run run-uefi rootfs-image clean distclean check-tools debug gdb lint check64 format compile_commands test test-image FORCE
 
 all: check-tools $(DISK_IMAGE)
 
@@ -259,6 +360,10 @@ check-tools:
 	@command -v $(AS) >/dev/null 2>&1 || { echo "missing tool: $(AS)"; exit 1; }
 	@command -v $(QEMU) >/dev/null 2>&1 || { echo "missing tool: $(QEMU)"; exit 1; }
 	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "missing tool: $(PYTHON)"; exit 1; }
+ifeq ($(BOOTLOADER),limine)
+	@command -v mformat >/dev/null 2>&1 || { echo "missing tool: mformat (install mtools)"; exit 1; }
+	@command -v git >/dev/null 2>&1 || { echo "missing tool: git (to fetch limine)"; exit 1; }
+endif
 
 # static analysis via clang-tidy (uses .clang-tidy config)
 lint:
@@ -309,15 +414,6 @@ json.dump(entries, open('compile_commands.json','w'), indent=2)"; \
 		echo "generated compile_commands.json"; \
 	}
 
-# grub-bootable iso image (requires grub-mkrescue and xorriso)
-iso: check-tools $(KERNEL_ELF)
-	@command -v grub-mkrescue >/dev/null 2>&1 || { echo "install grub-mkrescue to use make iso"; exit 1; }
-	@mkdir -p $(BUILD_DIR)/isodir/boot/grub
-	cp $(KERNEL_ELF) $(BUILD_DIR)/isodir/boot/kernel.elf
-	echo 'menuentry "ginnOS" { multiboot /boot/kernel.elf }' > $(BUILD_DIR)/isodir/boot/grub/grub.cfg
-	grub-mkrescue -o $(BUILD_DIR)/ginnos.iso $(BUILD_DIR)/isodir
-	@echo "iso created: $(BUILD_DIR)/ginnos.iso"
-
 # isr generation
 $(ISR_GEN_C) $(ISR_GEN_INC): $(ISR_GEN_SCRIPT)
 	@mkdir -p $(dir $(ISR_GEN_C)) $(dir $(ISR_GEN_INC))
@@ -341,10 +437,10 @@ $(BUILD_DIR)/%.o: src/%.c
 
 $(BUILD_DIR)/%.o: src/%.asm
 	@mkdir -p $(dir $@)
-	$(AS) -f $(ASM_FORMAT) -g -F dwarf -I $(dir $<) $< -o $@
+	$(AS) -f $(ASM_FORMAT) -g -F dwarf -I $(dir $<) -I src/arch/x86/asm/ $< -o $@
 
-# isr.asm %includes the generated stub table
-$(BUILD_DIR)/arch/x86/asm/isr.o: $(ISR_GEN_INC)
+# isr.asm (both versions) %includes the generated stub table
+$(BUILD_DIR)/arch/x86/asm/isr.o $(BUILD_DIR)/arch/x86/asm64/isr.o: $(ISR_GEN_INC)
 
 # pattern rules: stage2 (separate object tree, different C flags)
 $(BUILD_DIR)/stage2/%.o: src/%.c
@@ -390,7 +486,7 @@ $(BUILD_DIR)/libc/%.o: src/libc/src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/libc/%.o: src/libc/src/%.asm
+$(BUILD_DIR)/libc/arch/%.o: src/libc/arch/$(ARCH)/%.asm
 	@mkdir -p $(dir $@)
 	$(AS) -f $(ASM_FORMAT) $< -o $@
 
@@ -399,34 +495,57 @@ $(LIBC_A): $(LIBC_OBJS)
 	$(CROSS)ar rcs $@ $(LIBC_OBJS)
 
 # user program build rules
-$(USER_CRT0): src/user/lib/crt0.asm
+$(USER_CRT0): $(USER_CRT0_SRC)
 	@mkdir -p $(dir $@)
 	$(AS) -f $(ASM_FORMAT) $< -o $@
 
 # delegate to per-program Makefiles
 user-programs: $(USER_CRT0) $(LIBC_A)
 	@for d in $(USER_PROG_DIRS); do \
-		$(MAKE) --no-print-directory -C $$d || exit 1; \
+		$(MAKE) --no-print-directory -C $$d $(USER_MAKE_VARS) || exit 1; \
 	done
 
 # root filesystem and disk image
-rootfs-image: $(KERNEL_BIN) user-programs
-	@mkdir -p $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin $(dir $(ROOTFS_IMAGE))
-	cp $(KERNEL_BIN) $(EXT2_SOURCE_DIR)/boot/kernel.bin
+# stage2 loads /boot/kernel.bin from the root filesystem (i686 only)
+ifeq ($(ARCH),i686)
+ROOTFS_KERNEL := $(KERNEL_BIN)
+endif
+
+rootfs-image: $(ROOTFS_KERNEL) user-programs
+	rm -rf $(ROOTFS_STAGING)
+	@mkdir -p $(ROOTFS_STAGING) $(dir $(ROOTFS_IMAGE))
+	cp -R $(EXT2_SOURCE_DIR)/. $(ROOTFS_STAGING)/
+	@mkdir -p $(ROOTFS_STAGING)/boot $(ROOTFS_STAGING)/bin
+	$(if $(ROOTFS_KERNEL),cp $(ROOTFS_KERNEL) $(ROOTFS_STAGING)/boot/kernel.bin)
 	@for prog in $(USER_PROGRAMS); do \
-		cp $$prog $(EXT2_SOURCE_DIR)/bin/$$(basename $$prog); \
+		cp $$prog $(ROOTFS_STAGING)/bin/$$(basename $$prog); \
 	done
+	$(if $(filter 1,$(FREEDOOM)),./$(FREEDOOM_FETCH) $(FREEDOOM_CACHE) $(ROOTFS_STAGING)/usr/share/doom)
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
-		--source "$(EXT2_SOURCE_DIR)" \
+		--source "$(ROOTFS_STAGING)" \
 		--output "$(ROOTFS_IMAGE)" \
 		--min-size-mb $(EXT2_MIN_SIZE_MB) \
 		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
 
+ifeq ($(BOOTLOADER),limine)
+$(DISK_IMAGE): $(KERNEL_ELF) rootfs-image
+	$(call limine_disk,$@,$(KERNEL_ELF),$(ROOTFS_IMAGE),$(BUILD_DIR)/boot/limine)
+else
 $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) rootfs-image
 	$(call assemble_disk,$@,$(ROOTFS_IMAGE))
+endif
 
 run: check-tools $(DISK_IMAGE)
 	$(QEMU) $(QEMU_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+
+# boot the disk image with UEFI firmware (limine only: stage1 is BIOS-only).
+# the i686 kernel also runs on an x86_64 CPU, so this uses the x86_64
+# firmware for both.
+run-uefi: check-tools $(DISK_IMAGE)
+	@test "$(BOOTLOADER)" = limine || { echo "make run-uefi needs BOOTLOADER=limine"; exit 1; }
+	@test -n "$(OVMF_CODE)" || { echo "no OVMF firmware found: set OVMF_CODE=<path to OVMF_CODE.fd>"; exit 1; }
+	$(QEMU_UEFI) $(QEMU_FLAGS) -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+		-drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 # in-kernel tests: build the test kernel into its own disk image (a copy of the
 # normal rootfs, so tests that write to the filesystem never touch
@@ -449,24 +568,35 @@ $(TEST_KERNEL_ELF): $(TEST_KERNEL_LINK_OBJS) $(TEST_KERNEL_OBJS_LIST) $(LINKER_D
 $(TEST_KERNEL_BIN): $(TEST_KERNEL_ELF)
 	$(OBJCOPY) -O binary $(TEST_KERNEL_ELF) $@
 
-test-image: $(STAGE1_BIN) $(STAGE2_PAD) $(TEST_KERNEL_BIN) rootfs-image
+test-image: $(if $(filter limine,$(BOOTLOADER)),$(TEST_KERNEL_ELF),$(STAGE1_BIN) $(STAGE2_PAD)) \
+            $(if $(ROOTFS_KERNEL),$(TEST_KERNEL_BIN)) rootfs-image
 	rm -rf $(TEST_ROOTFS_DIR)
 	@mkdir -p $(TEST_ROOTFS_DIR)
-	cp -R $(EXT2_SOURCE_DIR)/. $(TEST_ROOTFS_DIR)/
-	cp $(TEST_KERNEL_BIN) $(TEST_ROOTFS_DIR)/boot/kernel.bin
+	cp -R $(ROOTFS_STAGING)/. $(TEST_ROOTFS_DIR)/
+	$(if $(ROOTFS_KERNEL),cp $(TEST_KERNEL_BIN) $(TEST_ROOTFS_DIR)/boot/kernel.bin)
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(TEST_ROOTFS_DIR)" \
 		--output "$(TEST_ROOTFS_IMAGE)" \
 		--min-size-mb $(EXT2_MIN_SIZE_MB) \
 		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
+ifeq ($(BOOTLOADER),limine)
+	$(call limine_disk,$(TEST_DISK_IMAGE),$(TEST_KERNEL_ELF),$(TEST_ROOTFS_IMAGE),$(TEST_BUILD_DIR)/limine)
+else
 	$(call assemble_disk,$(TEST_DISK_IMAGE),$(TEST_ROOTFS_IMAGE))
+endif
 
+# clean keeps the fetched limine and freedoom releases (build/limine,
+# build/freedoom); distclean removes them
 clean:
-	rm -rf $(BUILD_DIR)
-	rm -f $(EXT2_SOURCE_DIR)/boot/kernel.bin
-	rm -rf $(EXT2_SOURCE_DIR)/bin
+	@if [ -d $(BUILD_DIR) ]; then \
+		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine ! -name freedoom -exec rm -rf {} +; \
+	fi
+	rm -rf $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 	rm -f compile_commands.json
+
+distclean: clean
+	rm -rf $(BUILD_DIR)
 
 # always-run prerequisite for the kernel object-list files.
 FORCE:

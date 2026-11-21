@@ -160,10 +160,14 @@ static uint32_t devfs_write(fs_file_t *file, uint32_t byte_count, const void *da
     return n;
 }
 
+/**
+ * a device has no length to cut: like POSIX O_TRUNC on a device, this does
+ * nothing, so "> /dev/null" works.
+ */
 static kerr_t devfs_truncate(fs_file_t *file)
 {
     (void)file;
-    return KERR_PERM;
+    return KERR_OK;
 }
 
 static kerr_t devfs_create(fs_mount_t *mount, const char *path)

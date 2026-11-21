@@ -2,6 +2,7 @@
 #include "arch/x86/cpu/io.h"
 #include "arch/x86/cpu/gdt.h"
 #include "arch/x86/cpu/paging.h"
+#include "arch/x86/cpu/pat.h"
 
 void arch_disable_interrupts(void)
 {
@@ -15,33 +16,35 @@ void arch_enable_interrupts(void)
 
 uint32_t arch_irq_save(void)
 {
-    uint32_t flags;
+    uintptr_t flags;
 
     // push EFLAGS, pop it into flags, then mask interrupts. the saved
     // copy still reflects the interrupt-enable bit as it was on entry.
+    // (the bits above 31 of RFLAGS are zero.)
     __asm__ volatile("pushf\n"
                      "pop %0\n"
                      "cli\n"
                      : "=r"(flags)
                      :
                      : "memory");
-    return flags;
+    return (uint32_t)flags;
 }
 
 void arch_irq_restore(uint32_t flags)
 {
     // restore the whole EFLAGS word; this puts the interrupt-enable bit
     // back to its saved value rather than unconditionally enabling it.
+    uintptr_t value = flags;
     __asm__ volatile("push %0\n"
                      "popf\n"
                      :
-                     : "r"(flags)
+                     : "r"(value)
                      : "memory", "cc");
 }
 
 bool arch_irqs_enabled(void)
 {
-    uint32_t flags;
+    uintptr_t flags;
     __asm__ volatile("pushf\n"
                      "pop %0\n"
                      : "=r"(flags));
@@ -63,9 +66,13 @@ void arch_halt_forever(void)
 
 uintptr_t arch_get_stack_pointer(void)
 {
-    uintptr_t esp;
-    __asm__ volatile("mov %%esp, %0" : "=r"(esp));
-    return esp;
+    uintptr_t sp;
+#ifdef __x86_64__
+    __asm__ volatile("mov %%rsp, %0" : "=r"(sp));
+#else
+    __asm__ volatile("mov %%esp, %0" : "=r"(sp));
+#endif
+    return sp;
 }
 
 // a frame word can be read without faulting. before paging is on every
@@ -87,8 +94,8 @@ int arch_stack_walk(uintptr_t frame, uintptr_t *pcs, int max)
     // entry code and new kernel threads start with ebp = 0, ending the chain.
     while (depth < max && frame != 0)
     {
-        if ((frame & 3u) != 0 || !frame_word_readable(frame) ||
-            !frame_word_readable(frame + 4))
+        if ((frame & (sizeof(uintptr_t) - 1)) != 0 || !frame_word_readable(frame) ||
+            !frame_word_readable(frame + sizeof(uintptr_t)))
         {
             break;
         }
@@ -178,6 +185,19 @@ void arch_map_kernel_page(uintptr_t virt, phys_addr_t phys)
     paging_map(virt, phys, PTE_KERNEL_RW);
 }
 
+void arch_map_device_page(uintptr_t virt, phys_addr_t phys)
+{
+    paging_map(virt, phys, PTE_KERNEL_RW | PTE_CACHE_DISABLE | PTE_WRITE_THROUGH);
+}
+
+void arch_map_wc_page(uintptr_t virt, phys_addr_t phys)
+{
+    // PWT alone selects PAT entry 1, write-combining after pat_init
+    uint32_t flags = pat_has_write_combining() ? PTE_WRITE_THROUGH
+                                               : (PTE_CACHE_DISABLE | PTE_WRITE_THROUGH);
+    paging_map(virt, phys, PTE_KERNEL_RW | flags);
+}
+
 void arch_unmap_kernel_page(uintptr_t virt)
 {
     paging_unmap(virt);
@@ -205,6 +225,26 @@ phys_addr_t arch_translate_in(addr_space_t as, uintptr_t virt)
 
 void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp)
 {
+#ifdef __x86_64__
+    // an iretq frame: ss, rsp, rflags (IF set), cs, rip. the general
+    // registers are not cleared: the first process is started this way
+    // only once, by the kernel.
+    __asm__ volatile(
+        "cli\n"
+        "pushq %0\n" /* SS */
+        "pushq %1\n" /* RSP */
+        "pushfq\n"
+        "orq $0x200, (%%rsp)\n" /* IF */
+        "pushq %2\n"            /* CS */
+        "pushq %3\n"            /* RIP */
+        "iretq\n"
+        :
+        : "i"(GDT_USER_DATA),
+          "r"(user_esp),
+          "i"(GDT_USER_CODE),
+          "r"(entry)
+        : "memory");
+#else
     __asm__ volatile(
         "cli\n"
         "mov %0, %%ax\n"
@@ -228,6 +268,7 @@ void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp)
           "i"(GDT_USER_CODE),
           "r"(entry)
         : "eax", "memory");
+#endif
 
     __builtin_unreachable();
 }

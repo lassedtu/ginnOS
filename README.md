@@ -17,16 +17,29 @@ I've recently started on writing documentation for this project in obsidian and 
 
 ## Features
 
-ginnOS is a 32-bit x86 (i686) Unix-like system written from scratch in C and
-assembly. It boots on BIOS/QEMU via its own two-stage bootloader and drops
-straight into a userspace shell. Everything below is implemented and working
-today.
+ginnOS is a Unix-like system for x86 written from scratch in C and assembly.
+It builds as a 32-bit (i686) or a 64-bit (x86_64) system, boots with Limine
+on BIOS and UEFI machines, and drops straight into a userspace shell.
+Everything below is implemented and working today.
 
 ### Boot and kernel core
 
-- Custom two-stage bootloader (stage1 MBR + stage2), real mode → protected mode
+- Boots with [Limine](https://codeberg.org/Limine/Limine) on BIOS and UEFI
+  machines through Multiboot 2 (framebuffer, memory map, ACPI RSDP, command
+  line and a boot module are read from the Multiboot 2 tags)
+- The root filesystem is an ext2 partition with the ginnOS label on an IDE,
+  SATA or NVMe disk (MBR or GPT), or, if there is none, the root image that
+  Limine loads into RAM (for a boot from a USB stick; changes are lost at
+  reboot)
+- The older custom two-stage BIOS bootloader (stage1 MBR + stage2) is still
+  available with `make BOOTLOADER=custom`
 - x86 protected-mode kernel with GDT (ring 0/3 segments + TSS)
-- IDT, 8259 PIC, IRQ handling and a 256-vector ISR framework
+- IDT, IRQ handling and a 256-vector ISR framework; the local APIC and
+  I/O APIC (from the ACPI MADT, with the interrupt source overrides) or the
+  8259 PICs when there is no MADT; the local APIC timer is the tick
+- ACPI tables (RSDP, RSDT/XSDT, MADT, FADT, HPET, MCFG) and `reboot`
+  through the FADT reset register (no AML interpreter, so no power-off)
+- PCI enumeration with BAR sizes and MSI/MSI-X capabilities (`/proc/pci`)
 - Shared-IRQ registration layer (`irq_request`/`irq_free`, per-handler enable)
 - Kernel panic + assertion infrastructure, unified `kerr_t` error type
 - Symbolised backtraces on panics and CPU exceptions (frame-pointer walk +
@@ -43,7 +56,7 @@ today.
 ### Memory management
 
 - Physical memory manager (bitmap allocator)
-- Kernel heap: first-fit allocator with splitting, coalescing, expansion —
+- Kernel heap: first-fit allocator with splitting, coalescing, expansion,
   `kmalloc`/`kfree`/`krealloc` (in-place when possible)/`kcalloc`, allocation
   statistics, and an optional `HEAP_DEBUG` mode (redzone canaries, freed-memory
   poisoning)
@@ -111,7 +124,7 @@ today.
 ### Filesystem and I/O
 
 - VFS layer with a mount table (longest-prefix resolution) and a filesystem
-  operations vtable (`fs_ops_t`) — the VFS never calls a filesystem directly
+  operations vtable (`fs_ops_t`), the VFS never calls a filesystem directly
 - Open files are refcounted open-file descriptions: `dup`, `dup2`, `fork`
   and spawn share one description, so they share the file offset and status
   flags; `FD_CLOEXEC` descriptors close on `execve`
@@ -130,7 +143,9 @@ today.
 - procfs at `/proc`: `meminfo` (memory, heap and cache use), `uptime`,
   `<pid>/status` and `self`
 - `poll` and `select` over pipes, the console and files
-- Block-device abstraction (ATA PIO driver + MBR partition parsing)
+- Block-device abstraction with drivers for IDE (ATA PIO), SATA (AHCI, DMA)
+  and NVMe disks, a RAM disk, and MBR and GPT partition tables
+- USB keyboards through xHCI (HID boot protocol), next to PS/2 keyboards
 - Pipes (16 KiB ring buffers on the kernel heap, no fixed limit) with
   blocking, EOF/EPIPE, reference-counted endpoints, and atomic writes of up
   to `PIPE_BUF` (4 KiB)
@@ -171,11 +186,11 @@ today.
   (channel size/shift masks), a driver with pixel primitives, and LFB mapping
 - Framebuffer console: JetBrains Mono bitmap-font glyph renderer (font baked
   offline from a TTF), SGR colours, VT100 growth, and double buffering with
-  dirty-row flushing — with automatic fallback to VGA text when no framebuffer
+  dirty-row flushing, with automatic fallback to VGA text when no framebuffer
   is present
 - Linux-style **`/dev/fb0`** framebuffer device: a char device with
   `read`/`write`/`lseek`/`ioctl`/`mmap`, exposing `fb_fix_screeninfo` /
-  `fb_var_screeninfo` (per-channel bitfields) — the stable userspace graphics
+  `fb_var_screeninfo` (per-channel bitfields), the stable userspace graphics
   interface. A `metaballs` demo draws to it via `open` + `ioctl` + `mmap`.
 
 ### C standard library (libc.a)
@@ -232,18 +247,31 @@ today.
   `pread`, `getdents`, `poll`/`select`, tmpfs, large ext2 files), and
   `sigtest`, which tests signals, process groups and the terminal, and
   `libctest`, which tests the C library
+- `doom`: Doom through [doomgeneric](https://github.com/ozkl/doomgeneric)
+  (a submodule, not changed), with the free
+  [Freedoom](https://freedoom.github.io/) game data in `/usr/share/doom`.
+  It draws on the framebuffer and reads raw key events. Keys: arrows to
+  move, Ctrl to fire, Space to open doors, Shift to run, Alt to strafe,
+  Escape for the menu. No sound yet. Doom is not built by default; build
+  it with `make DOOM=1` (add `FREEDOOM=0` to leave out the 28 MiB game
+  data).
+- `reboot` (root only)
 
 ### Portability and tooling
 
+- Two architectures from one source tree: i686 (32-bit, Multiboot 2 or the
+  custom bootloader) and x86_64 (64-bit, the Limine boot protocol, 4-level
+  paging, the `syscall` instruction, ELF64 programs). `make ARCH=x86_64`
+  builds the 64-bit kernel, libc and all programs into `build/x86_64/`
 - Architecture-neutral abstraction layers (`arch_*` for interrupts, MMU,
-  context switch, boot protocol) with x86 as the only current backend —
-  groundwork for a future x86_64 port
+  context switch, boot protocol); `src/arch/x86` holds both x86 ports
 - Pointer-width types throughout (`uintptr_t`/`size_t`/`phys_addr_t`, one
   `PAGE_SIZE`, `phys_to_virt`/`virt_to_phys`, a `syscall_arg()` accessor) and
   compiler-checked printf formats
-- Multi-arch-ready build system (`ARCH` switch), `make lint` (clang-tidy),
+- Multi-arch build system (`ARCH=i686` or `ARCH=x86_64`), `make lint` (clang-tidy),
   `make check64` (x86_64 portability check), `make format` (clang-format),
-  `make gdb`/`make debug` (QEMU + gdb attached), `make iso` (GRUB-bootable), and `compile_commands.json`
+  `make gdb`/`make debug` (QEMU + gdb attached), `make run-uefi` (QEMU with
+  UEFI firmware), and `compile_commands.json`
   generation for LSP
 - Consistent `snake_case` conventions documented in `STYLE.md`; ext2 image and
   bitmap-font helper tools under `tools/`
@@ -262,7 +290,8 @@ cd ginnOS
 Only install what this two-stage build needs:
 
 ```bash
-brew install gmp mpfr libmpc texinfo nasm qemu
+brew install gmp mpfr libmpc texinfo nasm qemu mtools e2fsprogs
+brew install x86_64-elf-gcc   # only for the 64-bit build (make ARCH=x86_64)
 brew install gdb   # optional, for make gdb / make debug
 ```
 
@@ -335,7 +364,7 @@ qemu-system-i386 --version
 
 ## NixOS / Nix Toolchain Setup
 
-A `shell.nix` is included at the project root. It pulls in the `i686-elf` cross-compiler, binutils, NASM, QEMU, and Python 3, no manual toolchain build required.
+A `shell.nix` is included at the project root. It pulls in the `i686-elf` and `x86_64-elf` cross-compilers, binutils, NASM, QEMU, Python 3, mtools, e2fsprogs and OVMF, no manual toolchain build required.
 
 ### Enter the dev shell
 
@@ -351,6 +380,50 @@ All required tools (`i686-elf-gcc`, `i686-elf-ld`, `i686-elf-objcopy`, `nasm`, `
 make
 make run
 ```
+
+The first build fetches a pinned Limine release with git into `build/limine`
+(`make clean` keeps it, `make distclean` removes it). The disk image
+`build/ginnos.img` has a FAT boot partition (Limine, `limine.conf`, the
+kernel and a copy of the root image) and the ext2 root filesystem.
+
+Boot the same image with UEFI firmware (QEMU's OVMF build; set `OVMF_CODE=`
+if it is not found):
+
+```bash
+make run-uefi
+```
+
+Use the older custom BIOS bootloader instead of Limine:
+
+```bash
+make BOOTLOADER=custom
+make run BOOTLOADER=custom
+```
+
+The first build with `DOOM=1` also fetches Freedoom 0.13.0 (checked by
+SHA-256) into `build/freedoom`.
+
+If an i686 build fails with `unknown pseudo-op: .base64`, the cross gcc is
+newer than its binutils (gcc 16 needs binutils 2.43 or later). The build
+then looks for newer binutils from Homebrew (`brew install
+i686-elf-binutils`) and uses them; or update binutils in your toolchain.
+
+`make GPT=1` makes a GPT disk instead of an MBR disk (it boots with BIOS
+and UEFI too).
+
+To boot a real machine, write the image to a USB stick (this erases the
+stick; check the device name first):
+
+```bash
+sudo dd if=build/ginnos.img of=/dev/<usb-stick> bs=4M conv=fsync
+```
+
+The kernel cannot read USB storage, so on a real machine booted from a USB
+stick the root filesystem is the copy in RAM. The kernel looks for its root
+on the IDE (ATA) disk and on SATA disks (AHCI, MBR or GPT), but it uses a
+partition only if its ext2 volume label is `GINNOS_EXT2`. It only reads the
+partition tables and superblocks of other disks, so it does not write to
+the disk of another operating system.
 
 Run the in-kernel test suite (boots a separate test kernel headless and exits
 with the result):
@@ -376,7 +449,7 @@ Only install what this two-stage build needs:
 sudo apt update
 sudo apt install build-essential curl nasm qemu-system-x86 \
   libgmp-dev libmpfr-dev libmpc-dev texinfo bison flex \
-  python3 e2fsprogs
+  python3 e2fsprogs mtools git ovmf
 sudo apt install gdb   # optional, for make gdb / make debug
 ```
 
@@ -510,11 +583,21 @@ with the result):
 make test
 ```
 
+Build and run the 64-bit system (needs `x86_64-elf-gcc`; the output goes to
+`build/x86_64/`, so both builds can live side by side). Every make target
+takes `ARCH`:
+
+```bash
+make ARCH=x86_64
+make run ARCH=x86_64
+make run-uefi ARCH=x86_64
+make test ARCH=x86_64
+```
+
 Check the kernel for 64-bit portability (needs a host `clang`; nothing is
 built or run). It compiles every kernel, driver, filesystem and test source
-for x86_64 without linking, and fails on any pointer/integer cast, 64-to-32-bit
-narrowing or printf format mismatch, so code that only works with 32-bit
-pointers is caught before the x86_64 port:
+for x86_64 with clang's stricter warnings, and fails on any pointer/integer
+cast, 64-to-32-bit narrowing or printf format mismatch:
 
 ```bash
 make check64

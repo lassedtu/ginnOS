@@ -60,16 +60,22 @@ def render(symbols):
     out.append("KSYMS const ksym_t ksym_table[] = {")
     offset = 0
     for addr, name in symbols:
-        out.append("    {0x%08xu, %du}," % (addr, offset))
+        out.append("    {0x%08xul, %du}," % (addr, offset))
         offset += len(name) + 1
     if not symbols:
         out.append("    {0u, 0u},")
     out.append("};")
     out.append("")
-    out.append("KSYMS const char ksym_names[] =")
+    # the names in assembly (.ascii), not as a C string: gcc 16 can write
+    # long string data with the .base64 directive, which older binutils
+    # (the i686-elf toolchain) do not know
+    out.append("__asm__(\".pushsection .ksyms, \\\"a\\\"\\n\"")
+    out.append("        \".globl ksym_names\\n\"")
+    out.append("        \"ksym_names:\\n\"")
     for _, name in symbols:
-        out.append('    "%s\\0"' % c_escape(name))
-    out.append('    "";')
+        out.append("        \".asciz \\\"%s\\\"\\n\"" % c_escape(name))
+    out.append("        \".byte 0\\n\"")
+    out.append("        \".popsection\");")
     out.append("")
     return "\n".join(out)
 

@@ -1,3 +1,10 @@
+/**
+ * 32-bit (non-PAE) paging for the i686 kernel: a page directory and page
+ * tables of 1024 entries. the x86_64 kernel uses paging64.c.
+ */
+
+#ifndef __x86_64__
+
 #include "paging.h"
 #include "exception.h"
 #include "isr.h"
@@ -538,3 +545,5 @@ void paging_switch_directory(phys_addr_t pd_phys)
     // paging is already enabled here, so only CR3 changes; CR0 is left alone.
     paging_load_cr3((uint32_t)pd_phys);
 }
+
+#endif // !__x86_64__

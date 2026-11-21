@@ -10,9 +10,9 @@
 #include "kernel/memory/mman.h"
 
 /**
- * validate an ELF32 header for a static i686 executable.
+ * validate the ELF header of a static executable for this architecture.
  */
-static bool elf_validate(const Elf32_Ehdr *ehdr)
+static bool elf_validate(const elf_ehdr_t *ehdr)
 {
     if (ehdr->e_ident[EI_MAG0] != ELF_MAGIC_0 ||
         ehdr->e_ident[EI_MAG1] != ELF_MAGIC_1 ||
@@ -22,7 +22,7 @@ static bool elf_validate(const Elf32_Ehdr *ehdr)
         return false;
     }
 
-    if (ehdr->e_ident[EI_CLASS] != ELFCLASS32)
+    if (ehdr->e_ident[EI_CLASS] != ELF_NATIVE_CLASS)
     {
         return false;
     }
@@ -37,12 +37,12 @@ static bool elf_validate(const Elf32_Ehdr *ehdr)
         return false;
     }
 
-    if (ehdr->e_machine != EM_386)
+    if (ehdr->e_machine != ELF_NATIVE_MACHINE)
     {
         return false;
     }
 
-    if (ehdr->e_phnum == 0 || ehdr->e_phentsize < sizeof(Elf32_Phdr))
+    if (ehdr->e_phnum == 0 || ehdr->e_phentsize < sizeof(elf_phdr_t))
     {
         return false;
     }
@@ -140,8 +140,8 @@ bool elf_load(const char *path, addr_space_t as, vma_table_t *vmas, elf_load_res
     vfs_stat_t stat;
     uint8_t *file_data;
     uint32_t file_size;
-    Elf32_Ehdr *ehdr;
-    Elf32_Phdr *phdr;
+    elf_ehdr_t *ehdr;
+    elf_phdr_t *phdr;
     uintptr_t highest_addr;
     uint32_t i;
 
@@ -157,7 +157,7 @@ bool elf_load(const char *path, addr_space_t as, vma_table_t *vmas, elf_load_res
     }
 
     file_size = stat.size;
-    if (file_size < sizeof(Elf32_Ehdr))
+    if (file_size < sizeof(elf_ehdr_t))
     {
         return false;
     }
@@ -186,8 +186,16 @@ bool elf_load(const char *path, addr_space_t as, vma_table_t *vmas, elf_load_res
     }
 
     /* validate ELF header */
-    ehdr = (Elf32_Ehdr *)file_data;
+    ehdr = (elf_ehdr_t *)file_data;
     if (!elf_validate(ehdr))
+    {
+        kfree(file_data);
+        return false;
+    }
+
+    /* the program header table must be inside the file */
+    uint64_t table_end = (uint64_t)ehdr->e_phoff + (uint64_t)ehdr->e_phnum * ehdr->e_phentsize;
+    if (ehdr->e_phoff >= file_size || table_end > file_size)
     {
         kfree(file_data);
         return false;
@@ -198,7 +206,7 @@ bool elf_load(const char *path, addr_space_t as, vma_table_t *vmas, elf_load_res
 
     for (i = 0; i < ehdr->e_phnum; i++)
     {
-        phdr = (Elf32_Phdr *)(file_data + ehdr->e_phoff + i * ehdr->e_phentsize);
+        phdr = (elf_phdr_t *)(file_data + ehdr->e_phoff + i * ehdr->e_phentsize);
 
         if (phdr->p_type != PT_LOAD)
         {
@@ -208,6 +216,15 @@ bool elf_load(const char *path, addr_space_t as, vma_table_t *vmas, elf_load_res
         if (phdr->p_memsz == 0)
         {
             continue;
+        }
+
+        /* the segment must be in user space and its file part in the file */
+        if (phdr->p_vaddr < USER_SPACE_START || phdr->p_memsz > USER_SPACE_END ||
+            phdr->p_vaddr > USER_SPACE_END - phdr->p_memsz || phdr->p_filesz > phdr->p_memsz ||
+            phdr->p_offset > file_size || phdr->p_filesz > file_size - phdr->p_offset)
+        {
+            kfree(file_data);
+            return false;
         }
 
         uintptr_t seg_start = phdr->p_vaddr;

@@ -297,7 +297,7 @@ bool fb_init(const boot_info_t *boot)
 
     // the LFB lies outside RAM, so it is not in the direct map: map it into
     // the kernel's MMIO window
-    fb.addr = (uint8_t *)ioremap(fb.phys, fb.height * fb.pitch);
+    fb.addr = (uint8_t *)ioremap_wc(fb.phys, fb.height * fb.pitch);
     if (!fb.addr)
     {
         fb_ready = false;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 #include <fcntl.h>
 #include <sys/wait.h>
 
@@ -9,10 +11,6 @@
  */
 
 #include "syscall.h"
-
-typedef unsigned int size_t;
-typedef int ssize_t;
-typedef int pid_t;
 
 /**
  * write bytes to a file descriptor.
@@ -138,9 +136,6 @@ pid_t getpgrp(void);
 pid_t setsid(void);
 pid_t getsid(pid_t pid);
 
-typedef unsigned int uid_t;
-typedef unsigned int gid_t;
-
 /**
  * user and group ids: real (who started the process) and effective (what
  * it may do). setuid/setgid as root set all ids; otherwise only to the
@@ -237,6 +232,12 @@ int create(const char *path);
 int ttyctl(int mode);
 
 /**
+ * restart the machine (ginnOS; root only).
+ * @return does not return on success; -1 with errno EPERM for other users.
+ */
+int reboot(void);
+
+/**
  * true if fd refers to a terminal.
  */
 int isatty(int fd);
@@ -254,6 +255,7 @@ int ioctl(int fd, unsigned int request, void *arg);
 /* keyboard event types (matches kernel keyboard_event_type_t) */
 #define KEY_EVENT_CHAR    0
 #define KEY_EVENT_SPECIAL 1
+#define KEY_EVENT_RAW     2 // with the XKEYRAW termios flag (termios.h)
 
 /* special key codes (matches kernel keyboard_special_key_t) */
 #define KEY_ARROW_UP    1
@@ -278,6 +280,11 @@ typedef struct
     {
         char character;  // valid when type == KEY_EVENT_CHAR
         int  special;    // valid when type == KEY_EVENT_SPECIAL
+        struct
+        {
+            unsigned char code;    // PS/2 set 1 scan code; bit 7: an 0xE0 key
+            unsigned char pressed; // 1: down, 0: up
+        } raw;                     // valid when type == KEY_EVENT_RAW
     };
 } key_event_t;
 

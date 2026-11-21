@@ -6,7 +6,7 @@
 
 int poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
-    int ret = _syscall(SYS_POLL, (int)fds, (int)nfds, timeout, 0, 0);
+    int ret = _syscall(SYS_POLL, (long)fds, (long)nfds, timeout, 0, 0);
     if (ret < 0)
     {
         errno = -ret;

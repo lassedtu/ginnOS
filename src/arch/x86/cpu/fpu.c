@@ -47,14 +47,14 @@ void arch_fpu_init(void)
     cpuid(1, &features);
     use_fxsave = (features & CPUID_EDX_FXSR) != 0;
 
-    uint32_t cr0;
+    uintptr_t cr0; // control registers are 64 bits wide on x86_64
     __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
     cr0 = (cr0 & ~(CR0_EM | CR0_TS)) | CR0_MP | CR0_NE;
     __asm__ volatile("mov %0, %%cr0" : : "r"(cr0));
 
     if (use_fxsave)
     {
-        uint32_t cr4;
+        uintptr_t cr4;
         __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
         cr4 |= CR4_OSFXSR;
         if (features & CPUID_EDX_SSE)

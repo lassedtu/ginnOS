@@ -72,6 +72,11 @@
 #define SYS_FCHMOD 63 // change an open file's mode
 #define SYS_CHOWN 64 // change a file's owner
 #define SYS_UMASK 65 // set the file creation mask
+#define SYS_REBOOT 66 // restart the machine (root only)
 
-/* raw syscall interface  implemented in syscall.asm */
-int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);
+/**
+ * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and
+ * the result are pointer-wide, so a pointer passes through unchanged. a
+ * result from -4095 to -1 is a negative errno.
+ */
+long _syscall(long num, long arg1, long arg2, long arg3, long arg4, long arg5);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file stdio.h
  * @brief buffered streams and formatted input/output.
@@ -13,10 +15,6 @@
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
-
-typedef unsigned int size_t;
-typedef int ssize_t;
-typedef int off_t;
 
 #include <stdarg.h>
 

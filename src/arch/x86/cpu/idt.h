@@ -47,3 +47,12 @@ void idt_enable_gate(int vector);
  * @param vector interrupt vector number (0–255).
  */
 void idt_disable_gate(int vector);
+
+#ifdef __x86_64__
+/**
+ * make a gate switch to an interrupt stack table stack (gdt.h, tss_set_ist).
+ * @param vector interrupt vector, 0 to 255.
+ * @param ist the IST index, 1 to 7 (0: no stack switch).
+ */
+void idt_set_ist(int vector, uint8_t ist);
+#endif

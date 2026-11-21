@@ -23,11 +23,23 @@ void arch_setup_initial_stack(process_t *proc, void (*entry_fn)(void))
     // return address followed by four zeroed register slots.
     uintptr_t *sp = (uintptr_t *)(proc->kernel_stack + KERNEL_STACK_SIZE);
 
+#ifdef __x86_64__
+    // the six callee-saved registers of the SysV ABI. a zero word above the
+    // return address keeps RSP + 8 a multiple of 16 at entry_fn, as after
+    // a call.
+    *(--sp) = 0;                   // (no caller)
+    *(--sp) = (uintptr_t)entry_fn; // rip: where 'ret' lands
+    for (int i = 0; i < 6; i++)
+    {
+        *(--sp) = 0; // rbp, rbx, r12, r13, r14, r15
+    }
+#else
     *(--sp) = (uintptr_t)entry_fn; // eip: where 'ret' lands
     *(--sp) = 0;                  // ebp
     *(--sp) = 0;                  // ebx
     *(--sp) = 0;                  // esi
     *(--sp) = 0;                  // edi  <- kernel_esp points here
+#endif
 
     proc->kernel_esp = (uintptr_t)sp;
 }
@@ -40,15 +52,22 @@ void arch_setup_fork_stack(process_t *child, const struct registers *regs)
     uintptr_t top = child->kernel_stack + KERNEL_STACK_SIZE;
     struct registers *frame = (struct registers *)(top - sizeof(struct registers));
     *frame = *regs;
-    frame->eax = 0; // fork returns 0 in the child
+    REG_RESULT(frame) = 0; // fork returns 0 in the child
 
     // below it, the frame arch_context_switch pops: four registers, then a
     // return address into isr_exit, with ESP left at the saved registers
     uintptr_t *sp = (uintptr_t *)frame;
     *(--sp) = (uintptr_t)isr_exit; // eip
+#ifdef __x86_64__
+    for (int i = 0; i < 6; i++)
+    {
+        *(--sp) = 0; // rbp, rbx, r12, r13, r14, r15
+    }
+#else
     *(--sp) = 0;                   // ebp
     *(--sp) = 0;                   // ebx
     *(--sp) = 0;                   // esi
     *(--sp) = 0;                   // edi  <- kernel_esp points here
+#endif
     child->kernel_esp = (uintptr_t)sp;
 }

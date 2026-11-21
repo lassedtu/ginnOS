@@ -18,8 +18,9 @@
 #define EI_VERSION 6
 #define EI_NIDENT 16
 
-// ELF32 file header class (32-bit).
+// ELF file header classes (32-bit and 64-bit).
 #define ELFCLASS32 1
+#define ELFCLASS64 2
 
 // ELF32 file header data encoding (little-endian).
 #define ELFDATA2LSB 1
@@ -30,8 +31,9 @@
 // ELF32 file header type (executable).
 #define ET_EXEC 2
 
-// ELF32 file header machine (Intel 80386).
-#define EM_386 3
+// ELF file header machines (Intel 80386, AMD x86-64).
+#define EM_386    3
+#define EM_X86_64 62
 
 // ELF32 program header type (loadable segment).
 #define PT_NULL 0
@@ -77,3 +79,49 @@ typedef struct
     uint32_t p_flags;  // PF_X, PF_W, PF_R
     uint32_t p_align;  // alignment
 } __attribute__((packed)) Elf32_Phdr;
+
+typedef struct
+{
+    uint8_t e_ident[EI_NIDENT];
+    uint16_t e_type;      // object file type
+    uint16_t e_machine;   // target architecture
+    uint32_t e_version;   // original version of ELF
+    uint64_t e_entry;     // entry point virtual address
+    uint64_t e_phoff;     // program header table offset
+    uint64_t e_shoff;     // section header table offset
+    uint32_t e_flags;     // processor-specific flags
+    uint16_t e_ehsize;    // ELF header size
+    uint16_t e_phentsize; // program header entry size
+    uint16_t e_phnum;     // number of program headers
+    uint16_t e_shentsize; // section header entry size
+    uint16_t e_shnum;     // number of section headers
+    uint16_t e_shstrndx;  // section name string table index
+} __attribute__((packed)) Elf64_Ehdr;
+
+typedef struct
+{
+    uint32_t p_type;   // PT_NULL, PT_LOAD, etc.
+    uint32_t p_flags;  // PF_X, PF_W, PF_R (second in ELF64)
+    uint64_t p_offset; // offset in file
+    uint64_t p_vaddr;  // virtual address in memory
+    uint64_t p_paddr;  // physical address (unused)
+    uint64_t p_filesz; // size in file
+    uint64_t p_memsz;  // size in memory (>= p_filesz, extra is zeroed)
+    uint64_t p_align;  // alignment
+} __attribute__((packed)) Elf64_Phdr;
+
+/*
+ * the format of the programs this kernel runs: ELF64 for x86-64 on the
+ * x86_64 kernel, ELF32 for i386 on the i686 kernel.
+ */
+#ifdef __x86_64__
+typedef Elf64_Ehdr elf_ehdr_t;
+typedef Elf64_Phdr elf_phdr_t;
+#define ELF_NATIVE_CLASS   ELFCLASS64
+#define ELF_NATIVE_MACHINE EM_X86_64
+#else
+typedef Elf32_Ehdr elf_ehdr_t;
+typedef Elf32_Phdr elf_phdr_t;
+#define ELF_NATIVE_CLASS   ELFCLASS32
+#define ELF_NATIVE_MACHINE EM_386
+#endif

@@ -1,5 +1,6 @@
 #include "irq.h"
 #include "pic.h"
+#include "apic.h"
 #include "io.h"
 #include "isr.h"
 #include "common/stdio.h"
@@ -22,14 +23,26 @@ static uint16_t irq_warned_mask;
  */
 static void irq_handler(struct registers *regs)
 {
-    int irq = regs->interrupt - PIC_REMAP_OFFSET;
+    int irq = (int)regs->interrupt - PIC_REMAP_OFFSET;
+
+    // with the APICs, the 8259 checks below do not apply: one EOI to the
+    // local APIC, before the handler (see the note further down)
+    if (apic_active())
+    {
+        apic_eoi();
+        if (irq >= 0 && irq < 16 && irq_handlers[irq] != 0)
+        {
+            irq_handlers[irq](regs);
+        }
+        return;
+    }
 
     // if the IRQ number is out of range, send EOI anyway so the PIC line is
     // released, then bail, skipping EOI here would permanently freeze all
     // lower-priority interrupts since the PIC would never see the line cleared.
     if (irq < 0 || irq >= 16)
     {
-        pic_send_eoi(regs->interrupt - PIC_REMAP_OFFSET);
+        pic_send_eoi((int)regs->interrupt - PIC_REMAP_OFFSET);
         return;
     }
 

@@ -29,3 +29,9 @@ void irq_initialize(void);
  * @param handler pointer to the handler function to call when this IRQ fires.
  */
 void irq_register_handler(int irq, irq_handler_t handler);
+
+/**
+ * true if the IRQ layer has enabled the line (arch_irq_enable). apic_init
+ * uses it to enable the same lines on the I/O APIC.
+ */
+bool irq_line_wanted(uint32_t irq);

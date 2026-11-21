@@ -6,6 +6,8 @@
 #include "common/string.h"
 #include "fd_table.h"
 #include "kernel/vfs/permission.h"
+#include "kernel/acpi/acpi.h"
+#include "kernel/klog/klog.h"
 
 /**
  * SYS_getcwd: copy the current working directory into a user buffer.
@@ -101,4 +103,20 @@ syscall_ret_t sys_ioctl(struct registers *regs)
     }
 
     return file_ioctl(entry->file, request, arg);
+}
+
+/**
+ * SYS_reboot: restart the machine. only root (effective user 0) may.
+ * the disk writes are already done: the block cache writes through.
+ * returns -EPERM for other users; it does not return for root.
+ */
+syscall_ret_t sys_reboot(struct registers *regs)
+{
+    (void)regs;
+    if (process_current()->euid != 0)
+    {
+        return -EPERM;
+    }
+    KLOG_INFO("kernel: reboot");
+    acpi_reboot();
 }

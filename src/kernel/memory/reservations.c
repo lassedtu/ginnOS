@@ -24,3 +24,11 @@ void memory_reserve_heap(phys_addr_t start, phys_addr_t end)
 {
     region_reserve(start, end, "kernel_heap");
 }
+
+void memory_reserve_initrd(phys_addr_t start, phys_addr_t end)
+{
+    if (end > start)
+    {
+        region_reserve(start, end, "initrd");
+    }
+}

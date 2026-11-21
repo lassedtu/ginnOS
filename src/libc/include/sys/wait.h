@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file sys/wait.h
  * @brief waiting for child processes.
@@ -8,9 +10,6 @@
  * side in src/kernel/process/wait_status.h.
  */
 
-typedef int pid_t;
-
-// options
 #define WNOHANG    1 // return 0 at once if no child has anything to report
 #define WUNTRACED  2 // also report children that stopped
 #define WCONTINUED 8 // also report children that continued

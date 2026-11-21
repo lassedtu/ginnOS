@@ -8,7 +8,13 @@
 PROG := ze
 
 ROOT     := ../../..
-BUILD    := $(ROOT)/build/user
+# the top Makefile passes these for the architecture it builds
+BUILD_ROOT     ?= $(ROOT)/build
+ARCH_CFLAGS    ?= -m32
+USER_LD_SCRIPT ?= $(ROOT)/linker/user.ld
+TOOLCHAIN_FLAGS ?=
+
+BUILD    := $(BUILD_ROOT)/user
 LIBC_INC := $(ROOT)/src/libc/include
 
 ZE_SRC   := zen-editor
@@ -17,14 +23,16 @@ CROSS   ?= i686-elf-
 CC      := $(CROSS)gcc
 LD      := $(CROSS)ld
 
-CFLAGS  := -std=c99 -ffreestanding -O2 -Wall -Wextra -m32 \
+CFLAGS  := -std=c99 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
            -fno-pie -fno-stack-protector -nostdlib \
            -I$(ZE_SRC)/include -I$(LIBC_INC) -MMD -MP
 
-LDFLAGS := -T $(ROOT)/linker/user.ld -nostdlib
+LDFLAGS := -T $(USER_LD_SCRIPT) -nostdlib
 
 CRT0    := $(BUILD)/lib/crt0.o
-LIBC    := $(ROOT)/build/libc/libc.a
+LIBC    := $(BUILD_ROOT)/libc/libc.a
+# gcc's helper functions (64-bit division on i686, for example)
+LIBGCC  := $(shell $(CC) $(ARCH_CFLAGS) -print-libgcc-file-name)
 
 OBJDIR  := $(BUILD)/$(PROG)
 TARGET  := $(BUILD)/bin/$(PROG)
@@ -55,14 +63,13 @@ $(OBJDIR)/core/%.o: $(ZE_SRC)/src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Platform: compile from zen-editor/platforms/ginnos/. compat/ze_compat.h
-# adapts its open() calls to access-mode checks (see that file).
-$(OBJDIR)/plat/%.o: $(ZE_SRC)/platforms/ginnos/%.c compat/ze_compat.h
+# Platform: compile from zen-editor/platforms/ginnos/
+$(OBJDIR)/plat/%.o: $(ZE_SRC)/platforms/ginnos/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -include compat/ze_compat.h -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(TARGET): $(OBJS) $(CRT0) $(LIBC)
 	@mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIBC)
+	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIBC) $(LIBGCC)
 
 -include $(DEP_FILES)

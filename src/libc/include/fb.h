@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file fb.h
  * @brief userspace access to the linear framebuffer.
@@ -12,7 +14,6 @@
  * whole screen until it exits.
  */
 
-typedef unsigned int size_t;
 typedef unsigned int uint32_t;
 typedef unsigned char uint8_t;
 
