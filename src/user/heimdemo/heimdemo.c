@@ -34,6 +34,7 @@ typedef struct
     bool focused;
     int32_t dots[DOTS_MAX][3]; // x, y, button
     int dot_count;
+    bool dirty; // changed since the last draw
 } demo_t;
 
 static bragi_face_t *face;
@@ -82,6 +83,7 @@ static void draw(demo_t *d)
         gfx_fill_round_rect(b, gfx_rect(d->dots[i][0] - 6, d->dots[i][1] - 6, 12, 12), 6, c);
     }
     heim_window_commit(d->win, gfx_rect(0, 0, w, h));
+    d->dirty = false;
 }
 
 static void add_text(demo_t *d, const char *s, size_t n)
@@ -159,8 +161,6 @@ int main(int argc, char **argv)
                 d->dots[d->dot_count][2] = p->button;
                 d->dot_count++;
             }
-            else if (p->kind == HEIM_POINTER_MOTION && heim_window_busy(d->win))
-                continue; // the last frame is not on the screen yet
             break;
         }
         case HEIM_EV_KEY:
@@ -191,6 +191,11 @@ int main(int argc, char **argv)
                 add_text(d, k->text, strlen(k->text));
             break;
         }
+        case HEIM_EV_FRAME:
+            // the last frame is on the screen: draw what changed since
+            if (d && d->win && d->dirty)
+                draw(d);
+            continue;
         case HEIM_EV_CLIPBOARD:
             if (paste_to && paste_to->win && ev.clipboard)
             {
@@ -201,8 +206,14 @@ int main(int argc, char **argv)
         default:
             continue;
         }
+        // draw only when the last frame is on the screen: the server may
+        // still be reading the buffer (HEIM_EV_FRAME draws it then)
         if (d && d->win)
-            draw(d);
+        {
+            d->dirty = true;
+            if (!heim_window_busy(d->win))
+                draw(d);
+        }
     }
     heim_disconnect(conn);
     return 0;
