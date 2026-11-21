@@ -14,6 +14,9 @@
  *           the master sets the size, and SIGINT for Ctrl+C
  *   hangup  closing the master sends SIGHUP to the session, and the slave
  *           reads the end of file; closing the slave gives the master EIO
+ *   shell   /bin/sh on the slave: a command runs, the line editor takes
+ *           the escape sequences for the arrow keys and Delete, history
+ *           works, Ctrl+C drops a line, and Ctrl+D ends the shell
  *   free    the checks run in a child 4 times, and free memory is the same
  *           after runs 2, 3 and 4
  *
@@ -332,9 +335,130 @@ static int check_hangup(void)
     return 0;
 }
 
+/**
+ * read the master until text appears in what was read, or a while
+ * passes. what was read is kept in out (up to size bytes).
+ * @return true if the text appeared.
+ */
+static bool wait_for(int m, const char *text, char *out, int size)
+{
+    int got = 0;
+    out[0] = '\0';
+    for (int tries = 0; tries < 40 && !strstr(out, text); tries++)
+    {
+        struct pollfd pfd = {m, POLLIN, 0};
+        if (poll(&pfd, 1, 100) != 1)
+            continue;
+        int n = (int)read(m, out + got, size - 1 - got);
+        if (n <= 0)
+            break;
+        got += n;
+        out[got] = '\0';
+        if (got >= size - 1)
+            got = 0; // keep the tail only
+    }
+    return strstr(out, text) != NULL;
+}
+
+/**
+ * write a string to fd.
+ */
+static void put(int fd, const char *text)
+{
+    write(fd, text, strlen(text));
+}
+
+/**
+ * type a line into the shell and wait until its output has text and the
+ * next prompt has come after it. the shell edits a line only while its
+ * prompt is up: typed earlier, the bytes would meet the line discipline
+ * of the command that is running.
+ */
+static bool step(int m, const char *input, const char *text)
+{
+    char out[1024];
+    put(m, input);
+    if (!wait_for(m, text, out, sizeof(out)))
+        return false;
+    if (strstr(strstr(out, text), "$ "))
+        return true;
+    return wait_for(m, "$ ", out, sizeof(out));
+}
+
+/**
+ * wait for a child, at most a few seconds; kill it after that.
+ * @return its exit status, or -1.
+ */
+static int wait_exit(pid_t pid)
+{
+    int status;
+    for (int i = 0; i < 300; i++)
+    {
+        if (waitpid(pid, &status, WNOHANG) == pid)
+            return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        usleep(10000);
+    }
+    kill(pid, SIGKILL);
+    waitpid(pid, &status, 0);
+    return -1;
+}
+
+static int check_shell(void)
+{
+    int m, s;
+    char out[1024];
+    if (openpty(&m, &s, NULL, NULL, NULL) != 0)
+        return failed("shell: openpty");
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        close(m);
+        if (login_tty(s) != 0)
+            _exit(1);
+        char *argv[] = {"/bin/sh", NULL};
+        char *envp[] = {NULL};
+        execve("/bin/sh", argv, envp);
+        _exit(2);
+    }
+    close(s);
+
+    if (!wait_for(m, "$ ", out, sizeof(out)))
+        return failed("shell: the prompt");
+
+    // a command; Enter is CR on a terminal
+    if (!step(m, "echo one\r", "one\r\n"))
+        return failed("shell: a command");
+
+    // Left twice, then a letter: it goes in before the last two
+    if (!step(m, "echo abcd\x1b[D\x1b[Dx\r", "abxcd\r\n"))
+        return failed("shell: the arrow keys");
+
+    // Home, Delete (removes the 'z'), and the SS3 form of End
+    if (!step(m, "zecho del\x1b[H\x1b[3~\x1bOFok\r", "delok\r\n"))
+        return failed("shell: Home, Delete and End");
+
+    // Up gives the last line again
+    if (!step(m, "\x1b[A\r", "delok\r\n"))
+        return failed("shell: history");
+
+    // Ctrl+C drops the line; Backspace (DEL) deletes
+    if (!step(m, "echo gone\x03", "^C"))
+        return failed("shell: Ctrl+C");
+    if (!step(m, "echo kepz\x7ft\r", "kept\r\n"))
+        return failed("shell: Backspace");
+
+    // Ctrl+D on an empty line ends the shell
+    put(m, "\x04");
+    if (wait_exit(pid) != 0)
+        return failed("shell: Ctrl+D");
+    close(m);
+    return 0;
+}
+
 static int run_checks(void)
 {
-    if (check_open() || check_canon() || check_raw() || check_signals() || check_hangup())
+    if (check_open() || check_canon() || check_raw() || check_signals() || check_hangup() ||
+        check_shell())
         return 1;
     return 0;
 }
