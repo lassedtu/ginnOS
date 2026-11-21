@@ -154,6 +154,13 @@ typedef struct
 } ext2_directory_entry_t;
 
 /**
+ * where the driver gets the time for inode times, in seconds since 1970.
+ * the kernel sets it at boot; while it is NULL (the bootloader) the driver
+ * uses a fixed time.
+ */
+extern uint32_t (*ext2_clock)(void);
+
+/**
  * initialize an ext2 volume from a disk.
  * @param volume volume object to initialize.
  * @param disk initialized block device backend.

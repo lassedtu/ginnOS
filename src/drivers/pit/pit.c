@@ -6,6 +6,7 @@
 #include "kernel/device/device.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/time/timer.h"
+#include "kernel/process/process.h"
 #include "common/string.h"
 
 enum
@@ -32,9 +33,9 @@ static volatile uint64_t ticks = 0; // number of PIT interrupts since initializa
 static void pit_irq_handler(uint32_t irq, trap_frame_t *frame)
 {
     (void)irq;
-    (void)frame;
 
     ticks++;
+    process_account_tick(arch_frame_is_user(frame));
     timer_tick(ticks);
     scheduler_tick();
 }

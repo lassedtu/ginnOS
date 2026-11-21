@@ -361,8 +361,8 @@ kerr_t ext2_create_file(ext2_volume_t *volume, const char *path)
         return KERR_NOSPC;
     }
 
-    parent_inode.i_mtime = 0;
-    parent_inode.i_ctime = 0;
+    parent_inode.i_mtime = ext2_now();
+    parent_inode.i_ctime = parent_inode.i_mtime;
     write_inode(volume, parent_inode_number, &parent_inode);
     return KERR_OK;
 }
@@ -443,8 +443,8 @@ kerr_t ext2_create_dir(ext2_volume_t *volume, const char *path)
     }
 
     parent_inode.i_links_count++;
-    parent_inode.i_mtime = 0;
-    parent_inode.i_ctime = 0;
+    parent_inode.i_mtime = ext2_now();
+    parent_inode.i_ctime = parent_inode.i_mtime;
     if (!write_inode(volume, parent_inode_number, &parent_inode))
     {
         return KERR_IO;
@@ -543,8 +543,8 @@ kerr_t ext2_remove_dir(ext2_volume_t *volume, const char *path)
     if (parent_inode.i_links_count > 0)
     {
         parent_inode.i_links_count--;
-        parent_inode.i_mtime = 0;
-        parent_inode.i_ctime = 0;
+        parent_inode.i_mtime = ext2_now();
+        parent_inode.i_ctime = parent_inode.i_mtime;
         write_inode(volume, parent_inode_number, &parent_inode);
     }
 
@@ -849,6 +849,8 @@ kerr_t ext2_write_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t of
     {
         inode.i_size = new_end;
     }
+    inode.i_mtime = ext2_now();
+    inode.i_ctime = inode.i_mtime;
 
     /* write back the updated inode */
     if (!write_inode(volume, inode_number, &inode))
@@ -874,6 +876,8 @@ kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number)
         return KERR_IO;
     inode.i_size = 0;
     inode.i_blocks = 0;
+    inode.i_mtime = ext2_now();
+    inode.i_ctime = inode.i_mtime;
 
     if (!write_inode(volume, inode_number, &inode))
         return KERR_IO;

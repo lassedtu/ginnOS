@@ -251,6 +251,9 @@ syscall_ret_t sys_waitpid(struct registers *regs)
     if (child->state == PROC_STATE_ZOMBIE)
     {
         status = child->exit_status;
+        // the child's CPU time, and its children's, counts as the parent's
+        parent->cutime += child->utime + child->cutime;
+        parent->cstime += child->stime + child->cstime;
         arch_irq_restore(flags);
         process_destroy(child);
     }

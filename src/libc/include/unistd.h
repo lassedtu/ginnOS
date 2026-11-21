@@ -118,6 +118,14 @@ unsigned int alarm(unsigned int seconds);
 int pause(void);
 
 /**
+ * sleep for a number of seconds (or microseconds).
+ * @return sleep: the seconds left if a signal ended it early, else 0.
+ *         usleep: 0, or -1 (errno set).
+ */
+unsigned int sleep(unsigned int seconds);
+int usleep(unsigned int microseconds);
+
+/**
  * process groups and sessions (job control).
  * setpgid(pid, pgid): pid 0 is the caller, pgid 0 makes a new group led
  * by pid. getpgrp() is getpgid(0). setsid() starts a session and returns

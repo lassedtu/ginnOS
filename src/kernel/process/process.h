@@ -87,6 +87,10 @@ typedef struct process
     uint64_t alarm_deadline;  // tick of the SIGALRM alarm, 0 for none
     uint8_t stop_signal;      // the signal that stopped it (STOPPED)
     wait_report_t wait_report; // a stop or continue for waitpid
+    uint32_t utime;           // timer ticks spent in user code
+    uint32_t stime;           // timer ticks spent in the kernel for it
+    uint32_t cutime;          // utime of reaped children (and theirs)
+    uint32_t cstime;          // stime of reaped children (and theirs)
     uintptr_t fault_addr;     // the last bad user access (for the report)
     bool fault_write;
 
@@ -244,6 +248,12 @@ bool process_info(uint32_t pid, process_info_t *info);
  * @param path the program's path.
  */
 void process_set_name(process_t *proc, const char *path);
+
+/**
+ * charge one timer tick to the current process (timer interrupt).
+ * @param user true if user code was running.
+ */
+void process_account_tick(bool user);
 
 /**
  * look up a process by PID. the pointer stays valid only while the process

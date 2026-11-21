@@ -440,6 +440,23 @@ void process_set_name(process_t *proc, const char *path)
     proc->name[i] = '\0';
 }
 
+void process_account_tick(bool user)
+{
+    process_t *proc = current_process;
+    if (!proc || proc->pid == PID_NONE)
+    {
+        return; // the idle loop
+    }
+    if (user)
+    {
+        proc->utime++;
+    }
+    else
+    {
+        proc->stime++;
+    }
+}
+
 process_t *process_get(uint32_t pid)
 {
     if (pid == PID_NONE)

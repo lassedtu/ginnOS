@@ -75,6 +75,11 @@ syscall_ret_t sys_rmdir(struct registers *regs);
 syscall_ret_t sys_getdents(struct registers *regs);
 syscall_ret_t sys_poll(struct registers *regs);
 
+/* kernel/time/clock.c */
+syscall_ret_t sys_clock_gettime(struct registers *regs);
+syscall_ret_t sys_nanosleep(struct registers *regs);
+syscall_ret_t sys_times(struct registers *regs);
+
 /* kernel/signal/signal.c */
 syscall_ret_t sys_kill(struct registers *regs);
 syscall_ret_t sys_sigaction(struct registers *regs);

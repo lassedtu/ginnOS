@@ -23,11 +23,7 @@ typedef struct
 #define FD_CLR(fd, set)   ((set)->bits[(fd) / 32] &= ~(1u << ((fd) % 32)))
 #define FD_ISSET(fd, set) (((set)->bits[(fd) / 32] >> ((fd) % 32)) & 1u)
 
-struct timeval
-{
-    long tv_sec;
-    long tv_usec;
-};
+#include <sys/time.h>
 
 /**
  * wait until a descriptor in one of the sets is ready. on return each set

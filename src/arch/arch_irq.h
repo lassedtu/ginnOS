@@ -30,6 +30,12 @@ typedef struct trap_frame trap_frame_t;
 typedef void (*irq_handler_fn)(uint32_t irq, trap_frame_t *frame);
 
 /**
+ * true if the interrupt came while user code ran (CPU time accounting).
+ * @param frame the frame a handler was given.
+ */
+bool arch_frame_is_user(const trap_frame_t *frame);
+
+/**
  * register a handler for a hardware IRQ line.
  * @param irq the IRQ line to handle.
  * @param handler the function to call when the line fires.

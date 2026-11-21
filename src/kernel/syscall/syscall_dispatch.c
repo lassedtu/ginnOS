@@ -4,6 +4,7 @@
 #include "kernel/vfs/poll.h"
 #include "kernel/process/process.h"
 #include "kernel/signal/signal.h"
+#include "kernel/time/clock.h"
 
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/idt.h"
@@ -61,6 +62,9 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_GETPGID] = sys_getpgid,
     [SYS_SETSID] = sys_setsid,
     [SYS_GETSID] = sys_getsid,
+    [SYS_CLOCK_GETTIME] = sys_clock_gettime,
+    [SYS_NANOSLEEP] = sys_nanosleep,
+    [SYS_TIMES] = sys_times,
 };
 
 /**
@@ -93,6 +97,7 @@ void syscall_initialize(void)
 {
     poll_init();
     signal_init();
+    clock_init_sleep();
 
 
     /* register the handler in the ISR dispatch table */

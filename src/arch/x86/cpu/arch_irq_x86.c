@@ -63,3 +63,9 @@ void arch_irq_ack(uint32_t irq)
 {
     pic_send_eoi((int)irq);
 }
+
+bool arch_frame_is_user(const trap_frame_t *frame)
+{
+    const struct registers *regs = (const struct registers *)frame;
+    return regs && (regs->cs & 3u) == 3u;
+}

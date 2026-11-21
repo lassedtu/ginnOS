@@ -10,6 +10,7 @@
 #include "fs/procfs.h"
 #include "fs/block_cache.h"
 #include "console/termios.h"
+#include "time/clock.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
@@ -112,6 +113,10 @@ void kernel_main(boot_info_t *boot)
 
     scheduler_init();
     KLOG_INFO("kernel: subsystems up (pmm, heap, paging, syscalls, scheduler)");
+
+    // the wall-clock time from the CMOS clock; ext2 stamps inodes with it
+    clock_init();
+    ext2_clock = clock_realtime_seconds;
 
     // enable hardware interrupts (STI).
     // hal_initialize() has fully installed all exception handlers (vectors 0–31),

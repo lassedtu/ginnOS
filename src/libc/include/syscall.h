@@ -57,6 +57,9 @@
 #define SYS_GETPGID 48  // the process group of a process
 #define SYS_SETSID 49   // start a new session
 #define SYS_GETSID 50   // the session of a process
+#define SYS_CLOCK_GETTIME 51 // read a clock
+#define SYS_NANOSLEEP 52 // sleep for a time span
+#define SYS_TIMES 53    // process CPU times
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);
