@@ -92,28 +92,42 @@ today.
 
 - VFS layer with a mount table (longest-prefix resolution) and a filesystem
   operations vtable (`fs_ops_t`) — the VFS never calls a filesystem directly
-- ext2 driver: reads through direct and single/double/triple-indirect blocks;
-  writes are limited to the 12 direct blocks for now (12 KiB with 1 KiB
-  blocks); inode and block allocation, directory operations (create, remove,
-  read, write, truncate, stat, rename), re-entrant per-volume scratch buffers
-- devfs mounted at `/dev`, enumerating the device registry (`fb0`, `tty0`,
-  `hda`, `hda1`, `pit`, `kbd`)
+- Open files are refcounted open-file descriptions: `dup`, `dup2`, `fork`
+  and spawn share one description, so they share the file offset and status
+  flags; `FD_CLOEXEC` descriptors close on `execve`
+- `open` flags: `O_RDONLY`/`O_WRONLY`/`O_RDWR` (checked on every read and
+  write), `O_CREAT`, `O_EXCL`, `O_TRUNC`, `O_APPEND`, `O_DIRECTORY`,
+  `O_CLOEXEC`, `O_NONBLOCK`
+- ext2 driver: reads and writes through direct and single/double-indirect
+  blocks (files up to 64 MiB with 1 KiB blocks; reads also triple-indirect);
+  inode and block allocation, directory operations (create, remove, read,
+  write, truncate, stat, rename); freed inodes and truncated blocks go back
+  to the volume (`e2fsck` finds no errors after the test programs run)
+- A write-through, LRU sector cache (512 KiB) under the root filesystem
+- devfs at `/dev`, enumerating the device registry (`fb0`, `tty0`, `hda`,
+  `hda1`, `pit`, `kbd`)
+- tmpfs at `/tmp`: files and directories in kernel memory
+- procfs at `/proc`: `meminfo` (memory, heap and cache use), `uptime`,
+  `<pid>/status` and `self`
+- `poll` and `select` over pipes, the console and files
 - Block-device abstraction (ATA PIO driver + MBR partition parsing)
 - Pipes (16 KiB ring buffers on the kernel heap, no fixed limit) with
   blocking, EOF/EPIPE, reference-counted endpoints, and atomic writes of up
   to `PIPE_BUF` (4 KiB)
-- `dup2` fd redirection
 
 ### System calls
 
-- 31 syscalls via `int 0x80` with proper `-errno` returns
+- 38 syscalls via `int 0x80` with `-errno` returns; the kernel and libc share
+  one errno table
 - User pointers are checked against the page tables (`copy_from_user`,
   `copy_to_user`, `strncpy_from_user`): a bad pointer returns `-EFAULT`
   instead of crashing the kernel
-- Process/IO: `exit`, `write`, `read`, `open`, `close`, `stat`, `create`,
-  `mkdir`, `exec` (spawn), `fork`, `execve`, `getpid`, `getppid`, `waitpid`,
-  `sched_yield`, `sbrk`, `getcwd`, `chdir`, `readdir`, `unlink`, `rmdir`,
-  `pipe`, `dup2`, `ftruncate`, `lseek`
+- Processes: `exit`, `exec` (spawn), `fork`, `execve`, `getpid`, `getppid`,
+  `waitpid`, `sched_yield`, `sbrk`
+- Files: `open`, `close`, `read`, `write`, `pread`, `pwrite`, `lseek`,
+  `ftruncate`, `fsync`, `fcntl`, `dup2`, `pipe`, `poll`, `stat`, `fstat`,
+  `access`, `rename`, `unlink`, `mkdir`, `rmdir`, `getdents`, `getcwd`,
+  `chdir`
 - Device/terminal/graphics: `ttyctl`, `ioctl` (general device control),
   `mmap`, `munmap`, `mprotect`, `pollkey`
 
@@ -139,9 +153,12 @@ today.
   `strchr`/`strrchr`, `strstr`, `strtok`, `memcpy`/`memmove`/`memset`/`memcmp`
 - `<stdio.h>`: `printf`/`fprintf` (`%s %d %u %x %c %%`), `puts`, `putchar`
 - `<stdlib.h>`: `atoi`, `malloc`/`free`, `exit`/`atexit`, `getenv`/`environ`
-- `<unistd.h>`: the full syscall surface (`read`/`write`/`open`/`close`/`exec`/
-  `fork`/`execve`/`pipe`/`dup2`/`lseek`/`ioctl`/`readdir`/… and `read_event`)
-- `<sys/wait.h>` (`waitpid`, `wait`, `W*` macros), `<limits.h>`
+- `<unistd.h>`: the syscall surface (`read`/`write`/`close`/`fork`/`execve`/
+  `pipe`/`dup`/`dup2`/`lseek`/`pread`/`access`/`fsync`/… and `read_event`)
+- `<fcntl.h>` (`open`, `creat`, `fcntl`), `<sys/stat.h>` (`stat`, `fstat`,
+  `S_IS*`), `<dirent.h>` (`opendir`, `readdir`, `closedir`), `<poll.h>`,
+  `<sys/select.h>`, `<sys/wait.h>` (`waitpid`, `wait`, `W*` macros),
+  `<limits.h>`, `<stdarg.h>`
 - `<sys/mman.h>` (`mmap`, `munmap`, `mprotect`), `<sys/fb.h>` (framebuffer)
 - `<errno.h>`: `errno`, `perror`, `strerror`
 - `crt0` with `argc`/`argv`/`envp` setup; `int 0x80` syscall stubs
@@ -165,7 +182,9 @@ today.
   tests the kernel's handling of user memory (heap, stack growth, `mmap`,
   `munmap`, `mprotect`, and faults that must kill only the process), and
   `proctest`, which tests the process model (`fork`, copy-on-write, pipes,
-  atomic pipe writes, `waitpid`, `execve`)
+  atomic pipe writes, open flags, shared offsets, `waitpid`, `execve`), and
+  `fstest`, which tests the file syscalls (`stat`, `fcntl`, `rename`,
+  `pread`, `getdents`, `poll`/`select`, tmpfs, large ext2 files)
 
 ### Portability and tooling
 
