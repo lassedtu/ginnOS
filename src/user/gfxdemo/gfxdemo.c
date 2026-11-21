@@ -6,7 +6,9 @@
  *
  * with an image (PNG, JPEG or BMP), it is the wallpaper, scaled to the
  * screen. the text is in Inter and JetBrains Mono from /usr/share/fonts;
- * without them, grey bars take the place of the text.
+ * without them, grey bars take the place of the text. the icons come from
+ * the packs in /usr/share/icons, and the file icons from the file types
+ * in /usr/share/ginnos/mime.conf.
  *
  * draws into a buffer in memory, then copies it to the screen in one
  * step (gfx_present), and waits for Enter. a test of the libraries on the
@@ -15,7 +17,9 @@
 
 #include <bragi.h>
 #include <gfx.h>
+#include <icon.h>
 #include <image.h>
+#include <mime.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/fb.h>
@@ -29,6 +33,36 @@
 static bragi_face_t *title_face;
 static bragi_face_t *body_face;
 static bragi_face_t *mono_face;
+static bragi_face_t *label_face;
+static icon_set_t *lucide;
+static icon_set_t *tela;
+static mime_table_t *mime;
+
+// files on the disk, shown with the icon of their type
+static const char *const files[] = {
+    "/bin", "/bin/sh", "/ginn.txt", "/usr/share/ginnos/mime.conf", "/usr/share/icons/tela.pack",
+};
+
+// the apps in the panel
+static const char *const panel_apps[] = {
+    "utilities-terminal", "system-file-manager", "text-editor", "preferences-system", "doom",
+};
+
+/**
+ * draw an icon by name, if the set and the icon are there.
+ */
+static void draw_icon(gfx_buffer_t *buf, icon_set_t *set, const char *name, int32_t size,
+                      int32_t x, int32_t y, gfx_color_t color)
+{
+    icon_t *icon = set ? icon_load(set, name, size, 1) : NULL;
+    if (!icon)
+        return;
+    if (icon->is_mask)
+        icon_draw_mask(buf, icon, x, y, color);
+    else
+        icon_draw(buf, icon, x, y, 255);
+    icon_free(icon);
+}
 
 static const char *const paragraph =
     "ginnOS draws this window with libgfx: premultiplied pixels, round corners "
@@ -102,13 +136,17 @@ static gfx_rect_t draw_window(gfx_buffer_t *buf, gfx_rect_t r, const char *title
                    gfx_rgb(40, 42, 50));
     }
 
-    // minimize, maximize, close
+    // minimize, maximize, close (Lucide icons; circles without the pack)
+    static const char *const controls[3] = {"minus", "square", "x"};
     static const uint8_t colors[3][3] = {{250, 190, 60}, {80, 200, 110}, {240, 90, 80}};
     for (int32_t i = 0; i < 3; i++)
     {
-        int32_t x = r.x + r.w - 26 - (2 - i) * 24;
-        gfx_fill_round_rect(buf, gfx_rect(x, r.y + 11, 14, 14), 7,
-                            gfx_rgb(colors[i][0], colors[i][1], colors[i][2]));
+        int32_t x = r.x + r.w - 30 - (2 - i) * 28;
+        if (lucide)
+            draw_icon(buf, lucide, controls[i], 16, x, r.y + 10, gfx_rgb(60, 64, 76));
+        else
+            gfx_fill_round_rect(buf, gfx_rect(x + 1, r.y + 11, 14, 14), 7,
+                                gfx_rgb(colors[i][0], colors[i][1], colors[i][2]));
     }
     return gfx_rect(r.x + 20, r.y + 52, r.w - 40, r.h - 68);
 }
@@ -128,6 +166,25 @@ static void draw_text_window(gfx_buffer_t *buf, gfx_rect_t r)
     int32_t lh = bragi_line_height(body_face);
     gfx_rect_t box = gfx_rect(area.x, area.y, area.w, area.h < 4 * lh ? area.h : 4 * lh);
     bragi_draw_box(buf, body_face, box, paragraph, BRAGI_ALIGN_LEFT, gfx_rgb(30, 32, 38));
+
+    // a row of files: the icon of the type, the name, and the type
+    if (!tela || !mime || !label_face)
+        return;
+    int32_t y = area.y + box.h + 20;
+    int32_t count = (int32_t)(sizeof(files) / sizeof(files[0]));
+    int32_t cell = area.w / count;
+    for (int32_t i = 0; i < count; i++)
+    {
+        const mime_type_t *type = mime_lookup_file(mime, files[i]);
+        int32_t x = area.x + i * cell;
+        draw_icon(buf, tela, type->icon, 48, x + (cell - 48) / 2, y, 0);
+        const char *name = strrchr(files[i], '/') + 1;
+        int32_t llh = bragi_line_height(label_face);
+        bragi_draw_box(buf, label_face, gfx_rect(x + 2, y + 54, cell - 4, llh), name,
+                       BRAGI_ALIGN_CENTER, gfx_rgb(30, 32, 38));
+        bragi_draw_box(buf, label_face, gfx_rect(x + 2, y + 54 + llh, cell - 4, llh), type->type,
+                       BRAGI_ALIGN_CENTER, gfx_rgb(120, 124, 136));
+    }
 }
 
 static void draw_terminal_window(gfx_buffer_t *buf, gfx_rect_t r)
@@ -190,6 +247,10 @@ int main(int argc, char **argv)
     title_face = load_face(FONTS "inter/Inter-SemiBold.ttf", 13.0f);
     body_face = load_face(FONTS "inter/Inter-Regular.ttf", 15.0f);
     mono_face = load_face(FONTS "jetbrains-mono/JetBrainsMono-Regular.ttf", 14.0f);
+    label_face = load_face(FONTS "inter/Inter-Regular.ttf", 12.0f);
+    lucide = icon_set_named("lucide");
+    tela = icon_set_named("tela");
+    mime = mime_open(MIME_CONF);
 
     // the wallpaper, and a panel at the bottom
     gfx_fill_gradient(screen, gfx_rect(0, 0, w, h), gfx_rgb(40, 60, 110), gfx_rgb(120, 70, 130));
@@ -208,8 +269,13 @@ int main(int argc, char **argv)
     }
     gfx_fill_rect(screen, gfx_rect(0, h - 40, w, 40), gfx_rgba(10, 10, 20, 170));
     for (int32_t i = 0; i < 5; i++)
-        gfx_fill_round_rect(screen, gfx_rect(12 + i * 40, h - 32, 28, 24), 6,
-                            gfx_rgba(255, 255, 255, 60 + i * 30));
+    {
+        if (tela)
+            draw_icon(screen, tela, panel_apps[i], 32, 8 + i * 40, h - 36, 0);
+        else
+            gfx_fill_round_rect(screen, gfx_rect(12 + i * 40, h - 32, 28, 24), 6,
+                                gfx_rgba(255, 255, 255, 60 + i * 30));
+    }
     if (title_face)
         bragi_draw(screen, title_face, w - 60, h - 15, "12:00", -1, gfx_rgb(240, 240, 245));
 
