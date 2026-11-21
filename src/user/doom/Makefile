@@ -1,7 +1,8 @@
 # Makefile for doom (doomgeneric) in ginnOS userspace
 #
 # Builds the doomgeneric engine (a git submodule at src/user/doom/doomgeneric,
-# not changed) with the ginnOS platform file doomgeneric_ginnos.c.
+# not changed) with the ginnOS platform files doomgeneric_ginnos.c (screen,
+# keys, time) and doomgeneric_ginnos_sound.c (sound effects on /dev/dsp).
 # After cloning ginnOS, run: git submodule update --init
 
 PROG := doom
@@ -27,7 +28,7 @@ LD      := $(CROSS)ld
 ENGINE_WARNINGS := -w
 CFLAGS  := -std=gnu99 -ffreestanding -O2 $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
            -fno-pie -fno-stack-protector -nostdlib -fno-builtin-malloc \
-           -I$(DG_SRC) -I$(LIBC_INC) -MMD -MP -DNORMALUNIX -D_DEFAULT_SOURCE
+           -I$(DG_SRC) -Iinclude -I$(LIBC_INC) -MMD -MP -DNORMALUNIX -D_DEFAULT_SOURCE -DFEATURE_SOUND
 
 LDFLAGS := -T $(USER_LD_SCRIPT) -nostdlib
 
@@ -52,7 +53,7 @@ ENGINE_SRCS := dummy.c am_map.c doomdef.c doomstat.c dstrings.c d_event.c d_item
     w_wad.c z_zone.c w_file_stdc.c i_input.c i_video.c doomgeneric.c
 
 ENGINE_OBJS := $(patsubst %.c,$(OBJDIR)/engine/%.o,$(ENGINE_SRCS))
-PLAT_OBJS   := $(OBJDIR)/doomgeneric_ginnos.o
+PLAT_OBJS   := $(OBJDIR)/doomgeneric_ginnos.o $(OBJDIR)/doomgeneric_ginnos_sound.o
 OBJS        := $(ENGINE_OBJS) $(PLAT_OBJS)
 
 DEP_FILES := $(OBJS:.o=.d)
@@ -68,7 +69,8 @@ $(OBJDIR)/engine/%.o: $(DG_SRC)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(ENGINE_WARNINGS) -c $< -o $@
 
-$(OBJDIR)/doomgeneric_ginnos.o: doomgeneric_ginnos.c
+# the ginnOS platform files (our code: full warnings)
+$(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wall -Wextra -c $< -o $@
 
