@@ -869,8 +869,11 @@ kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number)
     if (kerr_failed(ext2_read_inode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
         return KERR_IO;
 
-    /* just set size to 0  blocks remain allocated (simple approach) */
+    // give every data block and pointer table back to the volume
+    if (!free_inode_block_chain(volume, &inode))
+        return KERR_IO;
     inode.i_size = 0;
+    inode.i_blocks = 0;
 
     if (!write_inode(volume, inode_number, &inode))
         return KERR_IO;
