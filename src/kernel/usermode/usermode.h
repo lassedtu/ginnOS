@@ -53,8 +53,9 @@ void usermode_reset_frame(struct registers *regs, uintptr_t entry, uintptr_t use
  * into a new address space first, so on failure the caller keeps running
  * its old program. on success the old address space is gone, the areas
  * and break are the new program's, its stack holds argv and envp, and the
- * syscall frame returns into its entry point. pid, parent, cwd and fds stay;
- * the tty goes back to cooked mode.
+ * syscall frame returns into its entry point. pid, parent, cwd and fds stay
+ * (except FD_CLOEXEC ones, which are closed); the tty goes back to cooked
+ * mode.
  * @param regs the caller's syscall frame.
  * @param path absolute path of the ELF executable.
  * @param argv NULL-terminated argument strings in kernel memory.
@@ -68,8 +69,9 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
 /**
  * start a program as a new process. creates the process, loads the ELF at
  * path into its address space, copies argv, inherits the caller's cwd and
- * stdio (when called from a process) and queues it on the scheduler. with
- * no current process (boot), the new process has no parent: PID 1.
+ * its fds without FD_CLOEXEC (when called from a process) and queues it on
+ * the scheduler. with no current process (boot), the new process has no
+ * parent: PID 1.
  *
  * @param path absolute path to the ELF executable.
  * @param argv null-terminated array of argument strings (may be NULL).

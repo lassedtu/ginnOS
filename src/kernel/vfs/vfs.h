@@ -6,6 +6,11 @@
 // maximum length of an absolute path (including the null terminator).
 #define VFS_PATH_MAX 256
 
+// whence values for vfs_lseek (ABI: SEEK_SET, SEEK_CUR, SEEK_END)
+#define VFS_SEEK_SET 0
+#define VFS_SEEK_CUR 1
+#define VFS_SEEK_END 2
+
 typedef fs_stat_t vfs_stat_t;
 
 /**
@@ -227,8 +232,18 @@ int32_t vfs_mmap(vfs_file_t *file, addr_space_t as, uintptr_t virt,
                  size_t length, int prot, uint32_t offset);
 
 /**
- * reposition an open file's cursor through the backing filesystem's seek op.
- * @return the new absolute position, or -ENOSYS if the filesystem has no seek
- *         op (the caller handles seeking itself), or another negative errno.
+ * move an open file's offset, as lseek does: through the filesystem's own
+ * seek op if it has one (devfs), else the ext2 file cursor.
+ * @param file the open file.
+ * @param offset bytes relative to whence.
+ * @param whence VFS_SEEK_SET, VFS_SEEK_CUR or VFS_SEEK_END.
+ * @return the new offset, or a negative errno (EINVAL for a bad whence or a
+ *         negative result).
  */
-int32_t vfs_seek(vfs_file_t *file, int32_t offset, int whence);
+int32_t vfs_lseek(vfs_file_t *file, int32_t offset, int whence);
+
+/**
+ * move an open file's offset to its end (O_APPEND writes).
+ * @param file the open file.
+ */
+void vfs_seek_end(vfs_file_t *file);

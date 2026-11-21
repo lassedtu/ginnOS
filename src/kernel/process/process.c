@@ -108,9 +108,10 @@ process_t *process_create(void)
     proc->page_directory = pd;
 
     // initialize fd table: stdin/stdout/stderr as console
-    proc->fds[0].type = FD_TYPE_CONSOLE;
-    proc->fds[1].type = FD_TYPE_CONSOLE;
-    proc->fds[2].type = FD_TYPE_CONSOLE;
+    for (int fd = 0; fd < FD_STDIO_COUNT; fd++)
+    {
+        proc->fds[fd].file = file_console();
+    }
 
     // default working directory
     proc->cwd[0] = '/';
@@ -147,9 +148,11 @@ process_t *process_fork(const struct registers *regs)
     child->tty_raw = parent->tty_raw;
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
 
-    // every fd is inherited; pipe ends get one more reference
+    // every fd is inherited: the child's descriptors share the parent's
+    // open files (and so their offsets)
     for (int i = 0; i < FD_MAX; i++)
     {
+        fd_close_entry(&child->fds[i]);
         fd_copy_entry(&child->fds[i], &parent->fds[i]);
     }
 
@@ -191,7 +194,7 @@ void process_release_resources(process_t *proc)
     // close all open file descriptors (including pipes and fds 0-2). this
     // may run for a process that isn't the current one (a parent reaping a
     // child that never ran), so it works on the entries directly rather
-    // than through fd_free(), which operates on process_current().
+    // than through fd_close(), which operates on process_current().
     for (int i = 0; i < FD_MAX; i++)
     {
         fd_close_entry(&proc->fds[i]);

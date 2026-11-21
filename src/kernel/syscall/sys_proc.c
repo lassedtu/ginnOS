@@ -386,7 +386,7 @@ syscall_ret_t sys_mmap(struct registers *regs)
     if (!(flags & MAP_ANONYMOUS))
     {
         entry = (fd >= 0) ? fd_get(fd) : NULL;
-        if (!entry || entry->type != FD_TYPE_FILE)
+        if (!entry)
         {
             return (syscall_ret_t)MAP_FAILED;
         }
@@ -434,7 +434,7 @@ syscall_ret_t sys_mmap(struct registers *regs)
     // own memory up front.
     if (!(flags & MAP_ANONYMOUS))
     {
-        int32_t err = vfs_mmap(&entry->file, proc->page_directory, virt, len_pages, prot, offset);
+        int32_t err = file_mmap(entry->file, proc->page_directory, virt, len_pages, prot, offset);
         if (err != 0)
         {
             vma_remove(&proc->vmas, virt, virt + len_pages);

@@ -9,7 +9,8 @@
  * - IRQ handlers run with interrupts masked and must never sleep.
  * - short critical sections, and anything an IRQ handler touches: a
  *   spinlock with spin_lock_irqsave / spin_unlock_irqrestore. examples:
- *   heap, pmm, process table, pipes, keyboard ring, console.
+ *   heap, pmm, process table, pipes, keyboard ring, console, the reference
+ *   counts of open-file descriptions (kernel/vfs/file.c).
  * - long sections in process context (disk and filesystem I/O, a whole
  *   console write): a mutex_t (kernel/sync/mutex.h), which sleeps instead
  *   of masking interrupts.

@@ -170,16 +170,16 @@ syscall_ret_t sys_readdir(struct registers *regs)
         return -EFAULT;
 
     fd_entry_t *entry = fd_get(fd_num);
-    if (!entry || entry->type != FD_TYPE_FILE)
+    if (!entry)
     {
         return -EBADF;
     }
 
     fs_dirent_t dirent;
-    kerr_t err = vfs_read_entry(&entry->file, &dirent);
-    if (kerr_failed(err))
+    int32_t err = file_read_entry(entry->file, &dirent);
+    if (err < 0)
     {
-        return kerr_to_errno(err);
+        return err;
     }
 
     /* copy to userspace */

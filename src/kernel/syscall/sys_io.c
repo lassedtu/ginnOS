@@ -2,202 +2,85 @@
 #include "syscall.h"
 #include "fd_table.h"
 
-#include "kernel/sync/wait_queue.h"
-#include "kernel/vfs/vfs.h"
-#include "kernel/console/console.h"
+#include "kernel/vfs/file.h"
 #include "kernel/process/process.h"
-#include "drivers/keyboard/keyboard.h"
-#include "common/memory.h"
-#include "common/string.h"
 
 /**
  * SYS_write: write bytes to a file descriptor.
  * args: EBX = fd, ECX = buffer pointer, EDX = count.
- * supports console fds (1, 2), pipe fds, and file fds.
  * returns number of bytes written, or negative errno on error.
  */
 syscall_ret_t sys_write(struct registers *regs)
 {
-    int32_t fd_num = (int32_t)syscall_arg(regs, 0);
+    int32_t fd = (int32_t)syscall_arg(regs, 0);
     const char *buf = (const char *)syscall_arg(regs, 1);
     uint32_t count = (uint32_t)syscall_arg(regs, 2);
 
-    /* the whole buffer must be readable user memory */
+    // the whole buffer must be readable user memory
     if (!user_access_ok(buf, count, false))
         return -EFAULT;
+
+    fd_entry_t *entry = fd_get(fd);
+    if (!entry)
+        return -EBADF;
 
     if (count == 0)
         return 0;
 
-    fd_entry_t *entry = fd_get(fd_num);
-    if (!entry)
-    {
-        return -EBADF;
-    }
-
-    if (entry->type == FD_TYPE_CONSOLE)
-    {
-        /* one batched console update per write: the caret is placed and the
-         * display flushed once at the end, not after every byte */
-        console_write_bytes(buf, count);
-        return (int32_t)count;
-    }
-
-    if (entry->type == FD_TYPE_PIPE)
-    {
-        /* only the write end can write */
-        if (entry->pipe.dir != PIPE_WRITE)
-            return -EINVAL;
-
-        /* a short count means every read end closed partway through */
-        uint32_t written = pipe_write(entry->pipe.buf, buf, count);
-        return written > 0 ? (int32_t)written : -EPIPE;
-    }
-
-    if (entry->type == FD_TYPE_FILE)
-    {
-        uint32_t bytes_written = vfs_write(&entry->file, count, buf);
-        return (int32_t)bytes_written;
-    }
-
-    return -EBADF;
+    return file_write(entry->file, buf, count);
 }
 
 /**
  * SYS_read: read bytes from a file descriptor.
  * args: EBX = fd, ECX = buffer pointer, EDX = count.
- * for stdin (fd 0): line-buffered read from keyboard with echo.
- * for files: reads via VFS.
- * returns number of bytes read, or negative errno on error.
+ * returns number of bytes read (0 at end of file), or negative errno.
  */
 syscall_ret_t sys_read(struct registers *regs)
 {
-    int fd_num = (int)syscall_arg(regs, 0);
+    int32_t fd = (int32_t)syscall_arg(regs, 0);
     char *buf = (char *)syscall_arg(regs, 1);
     uint32_t count = (uint32_t)syscall_arg(regs, 2);
 
-    /* the whole buffer must be writable user memory */
+    // the whole buffer must be writable user memory
     if (!user_access_ok(buf, count, true))
         return -EFAULT;
+
+    fd_entry_t *entry = fd_get(fd);
+    if (!entry)
+        return -EBADF;
 
     if (count == 0)
         return 0;
 
-    fd_entry_t *entry = fd_get(fd_num);
-    if (!entry)
-    {
-        return -EBADF;
-    }
-
-    if (entry->type == FD_TYPE_CONSOLE)
-    {
-        /* only stdin (fd 0) is readable */
-        if (fd_num != 0)
-        {
-            return -EBADF;
-        }
-
-        process_t *proc = process_current();
-
-        if (proc && proc->tty_raw)
-        {
-            /* raw mode: deliver one keyboard_event_t per read call.
-             * the buffer must be large enough to hold the struct (8 bytes). */
-            if (count < sizeof(keyboard_event_t))
-            {
-                return -EINVAL;
-            }
-
-            keyboard_event_t event;
-            keyboard_wait_event(&event);
-
-            memcpy(buf, &event, sizeof(keyboard_event_t));
-            return (int32_t)sizeof(keyboard_event_t);
-        }
-
-        /* cooked mode: line-buffered read with echo */
-        uint32_t i = 0;
-        while (i < count)
-        {
-            char c = keyboard_read(); /* blocks until a key is available */
-
-            if (c == '\n')
-            {
-                console_putchar('\r');
-                console_putchar('\n');
-                buf[i] = '\n';
-                i++;
-                break;
-            }
-
-            if (c == '\b')
-            {
-                if (i > 0)
-                {
-                    i--;
-                    console_putchar('\b');
-                }
-                continue;
-            }
-
-            buf[i] = c;
-            i++;
-            console_putchar(c);
-        }
-
-        return (int32_t)i;
-    }
-
-    if (entry->type == FD_TYPE_FILE)
-    {
-        uint32_t bytes_read = vfs_read(&entry->file, count, buf);
-        return (int32_t)bytes_read;
-    }
-
-    if (entry->type == FD_TYPE_PIPE)
-    {
-        /* only the read end can read */
-        if (entry->pipe.dir != PIPE_READ)
-            return -EBADF;
-
-        /* blocks until data is available; 0 means EOF */
-        return (int32_t)pipe_read(entry->pipe.buf, buf, count);
-    }
-
-    return -EBADF;
+    return file_read(entry->file, buf, count);
 }
 
 /**
  * SYS_open: open a file by path.
- * args: EBX = path string pointer, ECX = flags (unused for now).
- * returns fd number on success, negative errno on failure.
+ * args: EBX = path string pointer, ECX = flags (not used yet: every file is
+ *       opened for reading and writing).
+ * returns the lowest free fd, or negative errno on failure.
  */
 syscall_ret_t sys_open(struct registers *regs)
 {
     const char *path = (const char *)syscall_arg(regs, 0);
-    /* flags (argument 1) reserved for future use */
+    process_t *proc = process_current();
 
-    /* copy the path in from user memory, resolved against the cwd */
+    // copy the path in from user memory, resolved against the cwd
     char resolved[PATH_MAX];
     int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
     if (path_err < 0)
         return path_err;
 
-    vfs_file_t file;
-    kerr_t err = vfs_open(resolved, &file);
+    file_t *file;
+    kerr_t err = file_open(resolved, O_RDWR, &file);
     if (kerr_failed(err))
-    {
         return kerr_to_errno(err);
-    }
 
-    int fd = fd_alloc(&file);
+    int fd = fd_install(proc, file, 0, 0);
     if (fd < 0)
-    {
-        vfs_close(&file);
-        return -EMFILE;
-    }
-
-    return (int32_t)fd;
+        file_unref(file);
+    return fd;
 }
 
 /**
@@ -207,72 +90,22 @@ syscall_ret_t sys_open(struct registers *regs)
  */
 syscall_ret_t sys_close(struct registers *regs)
 {
-    int fd = (int)syscall_arg(regs, 0);
-
-    /* don't allow closing stdin/stdout/stderr */
-    if (fd < FD_STDIO_COUNT)
-    {
-        return -EINVAL;
-    }
-
-    if (fd_free(fd) != 0)
-    {
-        return -EBADF;
-    }
-
-    return 0;
+    return fd_close((int)syscall_arg(regs, 0));
 }
 
 /**
- * SYS_lseek: set the file cursor position.
+ * SYS_lseek: set the file offset.
  * args: EBX = fd, ECX = offset, EDX = whence (0=SET, 1=CUR, 2=END).
- * returns the new cursor position, or negative errno on error.
+ * returns the new offset, or negative errno on error (ESPIPE for a pipe
+ * or the console).
  */
 syscall_ret_t sys_lseek(struct registers *regs)
 {
-    int fd_num = (int)syscall_arg(regs, 0);
-    int32_t offset = (int32_t)syscall_arg(regs, 1);
-    int whence = (int)syscall_arg(regs, 2);
-
-    fd_entry_t *entry = fd_get(fd_num);
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
     if (!entry)
         return -EBADF;
 
-    if (entry->type != FD_TYPE_FILE)
-        return -ESPIPE;
-
-    // try the filesystem's own seek first (devfs and other non-ext2 backends).
-    // -ENOSYS means "no seek op" — fall back to the ext2 file cursor below.
-    int32_t seeked = vfs_seek(&entry->file, offset, whence);
-    if (seeked != -ENOSYS)
-    {
-        return seeked;
-    }
-
-    uint32_t size = entry->file.file.ext2_file.size;
-    uint32_t cursor = entry->file.file.ext2_file.cursor;
-    int32_t new_pos;
-
-    switch (whence)
-    {
-    case 0: /* SEEK_SET */
-        new_pos = offset;
-        break;
-    case 1: /* SEEK_CUR */
-        new_pos = (int32_t)cursor + offset;
-        break;
-    case 2: /* SEEK_END */
-        new_pos = (int32_t)size + offset;
-        break;
-    default:
-        return -EINVAL;
-    }
-
-    if (new_pos < 0)
-        new_pos = 0;
-
-    entry->file.file.ext2_file.cursor = (uint32_t)new_pos;
-    return new_pos;
+    return file_seek(entry->file, (int32_t)syscall_arg(regs, 1), (int)syscall_arg(regs, 2));
 }
 
 /**
@@ -282,26 +115,18 @@ syscall_ret_t sys_lseek(struct registers *regs)
  */
 syscall_ret_t sys_ftruncate(struct registers *regs)
 {
-    int fd_num = (int)syscall_arg(regs, 0);
-    fd_entry_t *entry = fd_get(fd_num);
-
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
     if (!entry)
         return -EBADF;
 
-    if (entry->type != FD_TYPE_FILE)
-        return -EINVAL;
-
-    kerr_t err = vfs_truncate(&entry->file);
-    if (kerr_failed(err))
-        return kerr_to_errno(err);
-
-    return 0;
+    return file_truncate(entry->file);
 }
 
 /**
- * SYS_dup2: duplicate a file descriptor to a specific number.
+ * SYS_dup2: make new_fd another descriptor for old_fd's open file.
  * args: EBX = old_fd, ECX = new_fd.
- * if new_fd is already open, it is closed first.
+ * if new_fd is already open, it is closed first. the new descriptor does
+ * not have FD_CLOEXEC.
  * returns new_fd on success, negative errno on failure.
  */
 syscall_ret_t sys_dup2(struct registers *regs)
@@ -310,27 +135,20 @@ syscall_ret_t sys_dup2(struct registers *regs)
     int new_fd = (int)syscall_arg(regs, 1);
     process_t *proc = process_current();
 
-    if (!proc)
-        return -EINVAL;
-
-    if (old_fd < 0 || old_fd >= FD_MAX || new_fd < 0 || new_fd >= FD_MAX)
+    fd_entry_t *old_entry = fd_get(old_fd);
+    if (!old_entry || new_fd < 0 || new_fd >= FD_MAX)
         return -EBADF;
 
-    if (proc->fds[old_fd].type == FD_TYPE_NONE)
-        return -EBADF;
-
-    /* if same fd, just return it */
     if (old_fd == new_fd)
         return new_fd;
 
-    /* close new_fd if it's already open */
-    if (proc->fds[new_fd].type != FD_TYPE_NONE)
-    {
-        fd_free(new_fd);
-    }
-
-    /* the copy is another reference to the same pipe end or file */
-    fd_copy_entry(&proc->fds[new_fd], &proc->fds[old_fd]);
+    // take the reference first: closing new_fd may drop the last other one
+    file_t *file = old_entry->file;
+    file_ref(file);
+    if (proc->fds[new_fd].file)
+        fd_close_entry(&proc->fds[new_fd]);
+    proc->fds[new_fd].file = file;
+    proc->fds[new_fd].flags = 0;
 
     return new_fd;
 }
@@ -345,47 +163,26 @@ syscall_ret_t sys_pipe(struct registers *regs)
     int *user_fds = (int *)syscall_arg(regs, 0);
     process_t *proc = process_current();
 
-    /* checked up front: the fds are allocated before they are copied out */
+    // checked up front: the fds are installed before they are copied out
     if (!user_access_ok(user_fds, 2 * sizeof(int), true))
         return -EFAULT;
 
-    if (!proc)
-        return -EINVAL;
-
-    /* find two free fd slots */
-    int read_fd = -1;
-    int write_fd = -1;
-
-    for (int i = 3; i < FD_MAX && (read_fd < 0 || write_fd < 0); i++)
-    {
-        if (proc->fds[i].type == FD_TYPE_NONE)
-        {
-            if (read_fd < 0)
-                read_fd = i;
-            else
-                write_fd = i;
-        }
-    }
-
-    if (read_fd < 0 || write_fd < 0)
-        return -EMFILE;
-
-    /* allocate the pipe with one read end and one write end */
-    pipe_buf_t *buf = pipe_alloc();
-    if (!buf)
+    file_t *read_end;
+    file_t *write_end;
+    if (kerr_failed(file_open_pipe(&read_end, &write_end)))
         return -ENOBUFS;
 
-    /* set up read end */
-    proc->fds[read_fd].type = FD_TYPE_PIPE;
-    proc->fds[read_fd].pipe.buf = buf;
-    proc->fds[read_fd].pipe.dir = PIPE_READ;
+    int fds[2];
+    fds[0] = fd_install(proc, read_end, 0, 0);
+    fds[1] = fds[0] < 0 ? -EMFILE : fd_install(proc, write_end, 0, 0);
+    if (fds[1] < 0)
+    {
+        if (fds[0] >= 0)
+            proc->fds[fds[0]].file = NULL;
+        file_unref(read_end);
+        file_unref(write_end);
+        return -EMFILE;
+    }
 
-    /* set up write end */
-    proc->fds[write_fd].type = FD_TYPE_PIPE;
-    proc->fds[write_fd].pipe.buf = buf;
-    proc->fds[write_fd].pipe.dir = PIPE_WRITE;
-
-    /* return fd numbers to userspace */
-    int fds[2] = {read_fd, write_fd};
     return kerr_to_errno(copy_to_user(user_fds, fds, sizeof(fds)));
 }

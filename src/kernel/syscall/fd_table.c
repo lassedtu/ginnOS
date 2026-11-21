@@ -1,92 +1,59 @@
 #include "fd_table.h"
+
+#include "kernel/errno.h"
 #include "kernel/process/process.h"
-#include "common/memory.h"
 
-
-int fd_alloc(vfs_file_t *file)
+int fd_install(process_t *proc, file_t *file, uint32_t fd_flags, int min_fd)
 {
-    process_t *proc = process_current();
-    if (!proc)
+    for (int fd = min_fd < 0 ? 0 : min_fd; fd < FD_MAX; fd++)
     {
-        return -1;
-    }
-
-    /* start searching at fd 3 (0/1/2 are reserved) */
-    for (int i = 3; i < FD_MAX; i++)
-    {
-        if (proc->fds[i].type == FD_TYPE_NONE)
+        if (!proc->fds[fd].file)
         {
-            proc->fds[i].type = FD_TYPE_FILE;
-            proc->fds[i].file = *file;
-            return i;
+            proc->fds[fd].file = file;
+            proc->fds[fd].flags = fd_flags;
+            return fd;
         }
     }
-
-    return -1;
+    return -EMFILE;
 }
 
 fd_entry_t *fd_get(int fd)
 {
     process_t *proc = process_current();
-    if (!proc)
+    if (!proc || fd < 0 || fd >= FD_MAX || !proc->fds[fd].file)
     {
         return NULL;
     }
-
-    if (fd < 0 || fd >= FD_MAX)
-    {
-        return NULL;
-    }
-
-    if (proc->fds[fd].type == FD_TYPE_NONE)
-    {
-        return NULL;
-    }
-
     return &proc->fds[fd];
 }
 
-int fd_free(int fd)
+int fd_close(int fd)
 {
-    process_t *proc = process_current();
-    if (!proc)
+    fd_entry_t *entry = fd_get(fd);
+    if (!entry)
     {
-        return -1;
+        return -EBADF;
     }
-
-    if (fd < 0 || fd >= FD_MAX)
-    {
-        return -1;
-    }
-
-    if (proc->fds[fd].type == FD_TYPE_NONE)
-    {
-        return -1;
-    }
-
-    fd_close_entry(&proc->fds[fd]);
+    fd_close_entry(entry);
     return 0;
 }
 
 void fd_close_entry(fd_entry_t *entry)
 {
-    if (entry->type == FD_TYPE_FILE)
-    {
-        vfs_close(&entry->file);
-    }
-    else if (entry->type == FD_TYPE_PIPE)
-    {
-        pipe_unref(entry->pipe.buf, entry->pipe.dir);
-    }
-
-    entry->type = FD_TYPE_NONE;
+    // free the slot first: the release may sleep, and the slot must not
+    // look open meanwhile
+    file_t *file = entry->file;
+    entry->file = NULL;
+    entry->flags = 0;
+    file_unref(file);
 }
 
 void fd_copy_entry(fd_entry_t *dst, const fd_entry_t *src)
 {
-    *dst = *src;
-    if (dst->type == FD_TYPE_PIPE)
+    dst->file = src->file;
+    dst->flags = src->flags;
+    if (dst->file)
     {
-        pipe_ref(dst->pipe.buf, dst->pipe.dir);
+        file_ref(dst->file);
     }
 }

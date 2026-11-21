@@ -238,12 +238,48 @@ int32_t vfs_mmap(vfs_file_t *file, addr_space_t as, uintptr_t virt,
     return fs_mmap(&file->file, as, virt, length, prot, offset);
 }
 
-int32_t vfs_seek(vfs_file_t *file, int32_t offset, int whence)
+int32_t vfs_lseek(vfs_file_t *file, int32_t offset, int whence)
 {
     if (!file || !file->mount)
     {
         return -EBADF;
     }
 
-    return fs_seek(&file->file, offset, whence);
+    // a filesystem with its own seek (devfs) moves its own cursor
+    int32_t moved = fs_seek(&file->file, offset, whence);
+    if (moved != -ENOSYS)
+    {
+        return moved;
+    }
+
+    // ext2: move the ext2 file cursor
+    ext2_file_t *ext2 = &file->file.ext2_file;
+    int32_t base;
+    switch (whence)
+    {
+    case VFS_SEEK_SET:
+        base = 0;
+        break;
+    case VFS_SEEK_CUR:
+        base = (int32_t)ext2->cursor;
+        break;
+    case VFS_SEEK_END:
+        base = (int32_t)ext2->size;
+        break;
+    default:
+        return -EINVAL;
+    }
+
+    int32_t position = base + offset;
+    if (position < 0)
+    {
+        return -EINVAL;
+    }
+    ext2->cursor = (uint32_t)position;
+    return position;
+}
+
+void vfs_seek_end(vfs_file_t *file)
+{
+    vfs_lseek(file, 0, VFS_SEEK_END);
 }

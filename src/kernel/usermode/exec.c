@@ -95,24 +95,14 @@ int exec_program(const char *path, const char **argv)
     {
         strcpy(child->cwd, parent->cwd);
 
-        // copy parent's fd table to child (fd inheritance)
+        // the child shares the parent's open files, except the ones marked
+        // close-on-exec (as posix_spawn does)
         for (int i = 0; i < FD_MAX; i++)
         {
-            if (i < FD_STDIO_COUNT)
+            fd_close_entry(&child->fds[i]);
+            if (!(parent->fds[i].flags & FD_CLOEXEC))
             {
-                // always inherit stdin/stdout/stderr
                 fd_copy_entry(&child->fds[i], &parent->fds[i]);
-            }
-            else if (parent->fds[i].type == FD_TYPE_PIPE)
-            {
-                // close-on-exec: pipe fds beyond stdio are NOT inherited
-                // (prevents children from holding extra pipe refs)
-                child->fds[i].type = FD_TYPE_NONE;
-            }
-            else
-            {
-                // inherit regular file fds
-                child->fds[i] = parent->fds[i];
             }
         }
     }
@@ -172,6 +162,15 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
 
     arch_destroy_address_space(old);
     kfree(vmas);
+
+    // descriptors marked close-on-exec do not survive into the new program
+    for (int i = 0; i < FD_MAX; i++)
+    {
+        if (proc->fds[i].flags & FD_CLOEXEC)
+        {
+            fd_close_entry(&proc->fds[i]);
+        }
+    }
 
     uintptr_t user_esp = usermode_build_stack(as, argv, envp);
     if (!user_esp)

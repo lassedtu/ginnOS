@@ -45,29 +45,6 @@ static inline syscall_arg_t syscall_arg(const struct registers *regs, int n)
 typedef intptr_t syscall_ret_t;
 typedef syscall_ret_t (*syscall_fn_t)(struct registers *regs);
 
-/* map a kerr_t error to a negative errno value for userspace */
-static inline int32_t kerr_to_errno(kerr_t err)
-{
-    switch (err)
-    {
-    case KERR_OK:       return 0;
-    case KERR_NOMEM:    return -ENOMEM;
-    case KERR_IO:       return -EIO;
-    case KERR_NOTFOUND: return -ENOENT;
-    case KERR_PERM:     return -EACCES;
-    case KERR_INVAL:    return -EINVAL;
-    case KERR_BUSY:     return -EBUSY;
-    case KERR_NOSPC:    return -ENOSPC;
-    case KERR_RANGE:    return -ERANGE;
-    case KERR_EXIST:    return -EEXIST;
-    case KERR_ISDIR:    return -EISDIR;
-    case KERR_NOTDIR:   return -ENOTDIR;
-    case KERR_PIPE:     return -EPIPE;
-    case KERR_NOENT:    return -ENOENT;
-    case KERR_FAULT:    return -EFAULT;
-    }
-    return -EINVAL; // as fallback
-}
 
 /**
  * copy a path string in from user memory and resolve it against the current

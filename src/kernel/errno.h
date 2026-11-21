@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/error.h"
+
 /**
  * errno values the kernel returns to user space, negated (-EBADF). they
  * are ABI: src/libc/include/errno.h has the same numbers. kernel code
@@ -44,3 +46,31 @@
 #define ETIMEDOUT    34 // timed out
 
 #define EWOULDBLOCK EAGAIN
+
+/**
+ * the errno for a kernel error, negated, for returning to user space.
+ * @param err the kernel error.
+ * @return 0 for KERR_OK, else a negative errno.
+ */
+static inline int32_t kerr_to_errno(kerr_t err)
+{
+    switch (err)
+    {
+    case KERR_OK:       return 0;
+    case KERR_NOMEM:    return -ENOMEM;
+    case KERR_IO:       return -EIO;
+    case KERR_NOTFOUND: return -ENOENT;
+    case KERR_PERM:     return -EACCES;
+    case KERR_INVAL:    return -EINVAL;
+    case KERR_BUSY:     return -EBUSY;
+    case KERR_NOSPC:    return -ENOSPC;
+    case KERR_RANGE:    return -ERANGE;
+    case KERR_EXIST:    return -EEXIST;
+    case KERR_ISDIR:    return -EISDIR;
+    case KERR_NOTDIR:   return -ENOTDIR;
+    case KERR_PIPE:     return -EPIPE;
+    case KERR_NOENT:    return -ENOENT;
+    case KERR_FAULT:    return -EFAULT;
+    }
+    return -EINVAL;
+}

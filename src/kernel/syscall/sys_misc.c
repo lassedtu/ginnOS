@@ -113,13 +113,5 @@ syscall_ret_t sys_ioctl(struct registers *regs)
         return -EBADF;
     }
 
-    // ioctls are only defined for file-backed descriptors (the transport to a
-    // filesystem, hence to a devfs device node). console and pipe fds have no
-    // ioctl surface.
-    if (entry->type != FD_TYPE_FILE)
-    {
-        return -ENOTTY;
-    }
-
-    return vfs_ioctl(&entry->file, request, arg);
+    return file_ioctl(entry->file, request, arg);
 }

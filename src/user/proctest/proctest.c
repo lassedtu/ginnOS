@@ -10,6 +10,7 @@
  *   atomic two children write 4 KiB blocks into one pipe at the same time;
  *          every block must arrive in one piece (PIPE_BUF)
  *   many   fork until the process table is full, then reap every child
+ *   offset dup2 and fork share the file offset of an open file
  *   wait   waitpid with WNOHANG and pid -1, ECHILD, the status of a child
  *          killed by SIGSEGV, and getppid
  *   exec   execve a missing program (must fail and return), then fork and
@@ -263,6 +264,48 @@ static int test_many(void)
     return 0;
 }
 
+static int test_offset(void)
+{
+    const char *path = "/proctest.tmp";
+    create(path);
+    int fd = open(path, 0);
+    if (fd < 0 || write(fd, "abcdef", 6) != 6 || lseek(fd, 0, SEEK_SET) != 0)
+    {
+        printf("proctest offset: cannot set up %s\n", path);
+        return 1;
+    }
+
+    // a dup'ed descriptor moves the same offset
+    char got[7] = {0};
+    int copy = dup2(fd, 10);
+    read(fd, got, 2);
+    read(copy, got + 2, 2);
+
+    // so does the same descriptor in a child
+    pid_t child = fork();
+    if (child == 0)
+    {
+        _exit(read(fd, got + 4, 1) == 1 && got[4] == 'e' ? 0 : 1);
+    }
+    int status;
+    waitpid(child, &status, 0);
+    read(fd, got + 5, 1);
+
+    close(copy);
+    close(fd);
+    unlink(path);
+
+    if (strcmp(got, "abcd") != 0 || got[5] != 'f' || status != 0)
+    {
+        printf("proctest offset: read \"%s\" + '%c', child status 0x%x\n", got, got[5],
+               status);
+        return 1;
+    }
+
+    printf("proctest offset: ok\n");
+    return 0;
+}
+
 static int test_wait(void)
 {
     pid_t self = getpid();
@@ -375,7 +418,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: proctest fork|pipe|atomic|many|wait|exec\n");
+        printf("usage: proctest fork|pipe|atomic|many|offset|wait|exec\n");
         return 1;
     }
 
@@ -387,6 +430,8 @@ int main(int argc, char **argv)
         return test_atomic();
     if (strcmp(argv[1], "many") == 0)
         return test_many();
+    if (strcmp(argv[1], "offset") == 0)
+        return test_offset();
     if (strcmp(argv[1], "wait") == 0)
         return test_wait();
     if (strcmp(argv[1], "exec") == 0)

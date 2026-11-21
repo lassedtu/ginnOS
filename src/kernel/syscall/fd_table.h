@@ -1,8 +1,16 @@
 #pragma once
 
+/**
+ * per-process file descriptor tables. a descriptor is a pointer to an
+ * open-file description (kernel/vfs/file.h) plus its own flags; several
+ * descriptors (in one process after dup, or in several after fork) can
+ * point to the same description.
+ */
+
 #include "common/stdint.h"
-#include "kernel/vfs/vfs.h"
-#include "kernel/syscall/pipe.h"
+#include "kernel/vfs/file.h"
+
+struct process;
 
 // maximum number of file descriptors per process.
 #define FD_MAX 16
@@ -10,69 +18,55 @@
 // number of standard I/O descriptors (stdin, stdout, stderr).
 #define FD_STDIO_COUNT 3
 
-/**
- * enumeration of file descriptor types.
- */
-typedef enum
-{
-    FD_TYPE_NONE = 0, // slot is unused
-    FD_TYPE_CONSOLE,  // stdin/stdout/stderr backed by keyboard + VGA
-    FD_TYPE_FILE,     // regular file or directory backed by VFS
-    FD_TYPE_PIPE,     // pipe endpoint (read or write)
-} fd_type_t;
+// descriptor flags (fcntl F_GETFD / F_SETFD)
+#define FD_CLOEXEC 1 // closed by execve
 
 /**
  * a single file descriptor entry.
  */
 typedef struct
 {
-    fd_type_t type;
-    union
-    {
-        vfs_file_t file; /* valid when type == FD_TYPE_FILE */
-        struct
-        {
-            pipe_buf_t *buf; /* shared pipe buffer */
-            pipe_dir_t dir;  /* read or write end */
-        } pipe;              /* valid when type == FD_TYPE_PIPE */
-    };
+    file_t *file;   // the open-file description, or NULL if the slot is free
+    uint32_t flags; // FD_CLOEXEC
 } fd_entry_t;
 
-
 /**
- * allocate a file descriptor for an open VFS file.
- * @param file pointer to a vfs_file_t to copy into the table.
- * @return fd number (>= 0) on success, -1 if the table is full.
+ * put a description in the lowest free descriptor of a process, at or
+ * above min_fd. the descriptor takes over the caller's reference.
+ * @param proc the process.
+ * @param file the description.
+ * @param fd_flags FD_CLOEXEC or 0.
+ * @param min_fd the lowest descriptor to use.
+ * @return the descriptor, or -EMFILE if none is free (the caller keeps its
+ *         reference then).
  */
-int fd_alloc(vfs_file_t *file);
+int fd_install(struct process *proc, file_t *file, uint32_t fd_flags, int min_fd);
 
 /**
- * get the fd entry for a given descriptor number.
+ * get the entry for a descriptor of the current process.
  * @param fd the file descriptor number.
- * @return pointer to the entry, or NULL if fd is invalid or unused.
+ * @return the entry, or NULL if fd is out of range or not open.
  */
 fd_entry_t *fd_get(int fd);
 
 /**
- * close and free a file descriptor.
- * if the fd is a VFS file, it is closed via vfs_close().
- * if the fd is a pipe end, that end is closed (see pipe_unref()).
+ * close a descriptor of the current process.
  * @param fd the file descriptor number.
- * @return 0 on success, -1 if fd is invalid.
+ * @return 0, or -EBADF if fd is not open.
  */
-int fd_free(int fd);
+int fd_close(int fd);
 
 /**
- * close the object behind an fd entry and mark the entry unused. works on
+ * close the description behind an entry and mark the entry free. works on
  * any process's table, so it can tear down a process that isn't current.
- * @param entry the entry to close; an unused entry is left as is.
+ * may sleep (the last close of a file takes the fs mutex).
+ * @param entry the entry; a free entry is left as is.
  */
 void fd_close_entry(fd_entry_t *entry);
 
 /**
- * make dst another descriptor for the object behind src. a pipe end gains
- * a reference; a file entry is copied by value (no shared offset yet).
- * dst must be unused.
+ * make dst another descriptor for src's description (fork, spawn). the
+ * flags are copied too. dst must be free.
  * @param dst the entry to fill.
  * @param src the entry to duplicate.
  */
