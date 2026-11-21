@@ -18,6 +18,28 @@ KTEST(pmm_alloc_free_single)
     KEXPECT_EQ(pmm_free_count(), free_before);
 }
 
+KTEST(pmm_refcount_frees_at_zero)
+{
+    uint32_t free_before = pmm_free_count();
+
+    void *page = pmm_alloc_page();
+    KEXPECT_EQ(pmm_page_refcount(page), 1);
+
+    pmm_page_ref(page);
+    pmm_page_ref(page);
+    KEXPECT_EQ(pmm_page_refcount(page), 3);
+
+    // the frame stays allocated until the last reference goes
+    pmm_free_page(page);
+    pmm_free_page(page);
+    KEXPECT_EQ(pmm_page_refcount(page), 1);
+    KEXPECT_EQ(pmm_free_count(), free_before - 1);
+
+    pmm_free_page(page);
+    KEXPECT_EQ(pmm_page_refcount(page), 0);
+    KEXPECT_EQ(pmm_free_count(), free_before);
+}
+
 KTEST(pmm_pages_are_distinct)
 {
     void *a = pmm_alloc_page();

@@ -29,6 +29,11 @@
 /* kernel physical load address */
 #define KERNEL_PHYS_BASE 0x00010000u
 
+/* first physical byte above the legacy area. the range from 0xA0000 to here
+ * holds VGA memory and the BIOS ROMs, so boot-time allocations (the PMM
+ * metadata and the first heap pages) start at this address or higher. */
+#define LOW_MEMORY_END   0x00100000u
+
 /* user program load address (matches linker/user.ld) */
 #define USER_LOAD_ADDR   0x00400000u
 

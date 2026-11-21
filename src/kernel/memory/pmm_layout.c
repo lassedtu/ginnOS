@@ -7,6 +7,7 @@
 static phys_addr_t bitmap_start;
 static phys_addr_t bitmap_end;
 static size_t bitmap_bytes;
+static phys_addr_t refcount_start;
 static uint32_t total_pages;
 
 /**
@@ -71,9 +72,19 @@ void pmm_layout_init(boot_info_t *boot)
     /* bitmap size: 1 bit per page, rounded up to whole bytes */
     bitmap_bytes = (total_pages + 7) / 8;
 
-    /* place bitmap right after kernel_end, page-aligned */
+    /* place the bitmap after the kernel and above the legacy area. the heap
+     * comes next (heap_init), so neither can reach VGA memory. the usable
+     * pages between the kernel and LOW_MEMORY_END go to the PMM. */
     bitmap_start = page_align_up(virt_to_phys((void *)kernel_end_address()));
-    bitmap_end = bitmap_start + bitmap_bytes;
+    if (bitmap_start < LOW_MEMORY_END)
+    {
+        bitmap_start = LOW_MEMORY_END;
+    }
+
+    /* the reference counts (one uint16_t per page) follow the bitmap. the
+     * reserved range covers both. */
+    refcount_start = (bitmap_start + bitmap_bytes + 3u) & ~(phys_addr_t)3u;
+    bitmap_end = refcount_start + (phys_addr_t)total_pages * sizeof(uint16_t);
 }
 
 phys_addr_t pmm_bitmap_start(void)
@@ -84,6 +95,11 @@ phys_addr_t pmm_bitmap_start(void)
 phys_addr_t pmm_bitmap_end(void)
 {
     return bitmap_end;
+}
+
+phys_addr_t pmm_refcount_start(void)
+{
+    return refcount_start;
 }
 
 size_t pmm_bitmap_size(void)

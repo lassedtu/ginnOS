@@ -13,6 +13,15 @@
  * bit = 1: page is free and available for allocation.
  */
 static uint8_t *bitmap;
+
+/**
+ * reference count of each page frame. a frame from an allocation starts at
+ * 1; a frame that is shared (copy-on-write after fork) has one reference
+ * for each mapping. frames that were never allocated (reserved, or free)
+ * have 0.
+ */
+static uint16_t *refcounts;
+
 static uint32_t total_pages;
 static uint32_t free_pages;
 
@@ -54,6 +63,7 @@ void pmm_init(boot_info_t *boot)
     uint32_t i;
 
     bitmap = (uint8_t *)phys_to_virt(pmm_bitmap_start());
+    refcounts = (uint16_t *)phys_to_virt(pmm_refcount_start());
     total_pages = pmm_total_pages();
     free_pages = 0;
     search_start = 0;
@@ -61,6 +71,7 @@ void pmm_init(boot_info_t *boot)
 
     /* start with all pages marked as used (zeroed bitmap = all used) */
     memset(bitmap, 0, pmm_bitmap_size());
+    memset(refcounts, 0, total_pages * sizeof(uint16_t));
 
     /* walk E820: for each usable region, mark its pages as free */
     for (i = 0; i < boot->memory_map.count && i < 32u; i++)
@@ -134,6 +145,7 @@ void *pmm_alloc_page(void)
         if (bitmap_test(index))
         {
             bitmap_clear(index);
+            refcounts[index] = 1;
             free_pages--;
             search_start = (index + 1) % total_pages;
             page = phys_to_virt((phys_addr_t)index * PAGE_SIZE);
@@ -180,6 +192,7 @@ void *pmm_alloc_contiguous(uint32_t count)
             for (uint32_t page = run_start; page < run_start + count; page++)
             {
                 bitmap_clear(page);
+                refcounts[page] = 1;
             }
             free_pages -= count;
             run = phys_to_virt((phys_addr_t)run_start * PAGE_SIZE);
@@ -191,33 +204,68 @@ void *pmm_alloc_contiguous(uint32_t count)
     return run;
 }
 
-void pmm_free_page(void *address)
+/**
+ * convert a direct-map address to its page index. panics on an address that
+ * is not page-aligned or not managed by the PMM.
+ */
+static uint32_t page_index_of(void *address, const char *caller)
 {
     phys_addr_t addr = virt_to_phys(address);
 
     if (addr % PAGE_SIZE != 0)
     {
-        kernel_panic("pmm_free_page: address not page-aligned");
+        kernel_panic(caller);
     }
 
     uint32_t index = (uint32_t)(addr / PAGE_SIZE);
-
     if (index >= total_pages)
     {
-        kernel_panic("pmm_free_page: address out of range");
+        kernel_panic(caller);
     }
+    return index;
+}
 
+void pmm_free_page(void *address)
+{
+    uint32_t index = page_index_of(address, "pmm_free_page: bad address");
     uint32_t flags = spin_lock_irqsave(&pmm_lock);
 
-    if (bitmap_test(index))
+    if (bitmap_test(index) || refcounts[index] == 0)
     {
         kernel_panic("pmm_free_page: double free detected");
     }
 
-    bitmap_set(index);
-    free_pages++;
+    refcounts[index]--;
+    if (refcounts[index] == 0)
+    {
+        bitmap_set(index);
+        free_pages++;
+    }
 
     spin_unlock_irqrestore(&pmm_lock, flags);
+}
+
+void pmm_page_ref(void *address)
+{
+    uint32_t index = page_index_of(address, "pmm_page_ref: bad address");
+    uint32_t flags = spin_lock_irqsave(&pmm_lock);
+
+    if (refcounts[index] == 0 || refcounts[index] == UINT16_MAX)
+    {
+        kernel_panic("pmm_page_ref: frame not allocated or count overflow");
+    }
+    refcounts[index]++;
+
+    spin_unlock_irqrestore(&pmm_lock, flags);
+}
+
+uint32_t pmm_page_refcount(void *address)
+{
+    uint32_t index = page_index_of(address, "pmm_page_refcount: bad address");
+    uint32_t flags = spin_lock_irqsave(&pmm_lock);
+    uint32_t count = refcounts[index];
+    spin_unlock_irqrestore(&pmm_lock, flags);
+    return count;
 }
 
 uint32_t pmm_free_count(void)
@@ -284,6 +332,7 @@ bool pmm_claim_pages(uint32_t first_page, uint32_t count)
     for (uint32_t i = 0; i < count; i++)
     {
         bitmap_clear(first_page + i);
+        refcounts[first_page + i] = 1;
     }
     free_pages -= count;
 

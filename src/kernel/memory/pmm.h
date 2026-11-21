@@ -22,7 +22,8 @@ void pmm_init(boot_info_t *boot);
 
 /**
  * allocate a single 4 KiB physical page frame.
- * @return physical address of the allocated page, or 0 on failure.
+ * @return direct-map address of the page (one reference), or NULL on
+ *         failure.
  */
 void *pmm_alloc_page(void);
 
@@ -36,10 +37,26 @@ void *pmm_alloc_page(void);
 void *pmm_alloc_contiguous(uint32_t count);
 
 /**
- * free a previously allocated physical page frame.
- * @param address physical address of the page to free (must be page-aligned).
+ * drop one reference to a page frame. the frame becomes free when its last
+ * reference goes. a frame from an allocation has one reference.
+ * @param address direct-map address of the page (must be page-aligned).
  */
 void pmm_free_page(void *address);
+
+/**
+ * add a reference to an allocated page frame, so that it stays allocated
+ * until pmm_free_page has been called once more. used to share a frame
+ * between address spaces (copy-on-write).
+ * @param address direct-map address of the page (must be page-aligned).
+ */
+void pmm_page_ref(void *address);
+
+/**
+ * read the reference count of a page frame.
+ * @param address direct-map address of the page (must be page-aligned).
+ * @return the number of references, 0 for a free or reserved frame.
+ */
+uint32_t pmm_page_refcount(void *address);
 
 /**
  * return the number of free page frames available for allocation.
