@@ -35,3 +35,14 @@ void apic_eoi(void);
  * mask or unmask the I/O APIC entry of an ISA IRQ (0 to 15).
  */
 void apic_set_irq_masked(uint32_t irq, bool masked);
+
+/**
+ * the id of the local APIC, for the destination of MSI messages.
+ */
+uint8_t apic_id(void);
+
+/**
+ * make the I/O APIC entry of an ISA IRQ level-triggered (a PCI interrupt
+ * line routed to it). the polarity stays as the MADT gives it.
+ */
+void apic_set_irq_level(uint32_t irq);
