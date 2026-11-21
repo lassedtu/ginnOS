@@ -24,3 +24,9 @@ gfx_buffer_t *image_load(const char *path, const char **error);
  * decode an image from memory.
  */
 gfx_buffer_t *image_decode(const uint8_t *data, size_t size, const char **error);
+
+/**
+ * decompress zlib data (RFC 1950) into a buffer of known size.
+ * @return the bytes written, or -1 (bad data, or out does not hold it).
+ */
+int32_t image_inflate(const uint8_t *in, size_t in_size, uint8_t *out, size_t out_size);

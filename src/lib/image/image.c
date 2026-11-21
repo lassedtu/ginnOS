@@ -118,3 +118,10 @@ gfx_buffer_t *image_load(const char *path, const char **error)
     free(data);
     return buf;
 }
+
+int32_t image_inflate(const uint8_t *in, size_t in_size, uint8_t *out, size_t out_size)
+{
+    if (in_size > INT32_MAX || out_size > INT32_MAX)
+        return -1;
+    return stbi_zlib_decode_buffer((char *)out, (int)out_size, (const char *)in, (int)in_size);
+}
