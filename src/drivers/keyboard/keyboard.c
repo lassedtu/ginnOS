@@ -7,6 +7,9 @@
 
 #include "keyboard.h"
 #include "keyboard_layout.h"
+#include "keyboard_ioctl.h"
+#include "kernel/errno.h"
+#include "kernel/usermode/uaccess.h"
 #include "kernel/vfs/poll.h"
 #include "kernel/input/input.h"
 #include "drivers/mouse/ps2_mouse.h"
@@ -22,6 +25,7 @@
 #include "arch/x86/cpu/io.h"
 #include "common/stdint.h"
 #include "common/string.h"
+#include "common/memory.h"
 
 #define KEYBOARD_BUFFER_SIZE 128 // number of events the ring buffer can hold
 
@@ -508,6 +512,66 @@ uint32_t keyboard_dropped_count(void)
     return dropped_count;
 }
 
+/**
+ * the ioctls of /dev/kbd (keyboard_ioctl.h).
+ */
+static int32_t keyboard_ioctl(device_t *dev, uint32_t request, void *arg)
+{
+    (void)dev;
+    switch (request)
+    {
+    case KBD_IOC_LAYOUT_COUNT:
+    {
+        uint32_t count = 0;
+        while (keyboard_layout_at(count))
+        {
+            count++;
+        }
+        return kerr_to_errno(copy_to_user(arg, &count, sizeof(count)));
+    }
+
+    case KBD_IOC_LAYOUT_NAME:
+    {
+        struct kbd_layout_name info;
+        if (kerr_failed(copy_from_user(&info, arg, sizeof(info))))
+        {
+            return -EFAULT;
+        }
+        const keyboard_layout_t *layout = keyboard_layout_at(info.index);
+        if (!layout)
+        {
+            return -EINVAL;
+        }
+        memset(info.name, 0, sizeof(info.name));
+        strncpy(info.name, layout->name, sizeof(info.name) - 1);
+        return kerr_to_errno(copy_to_user(arg, &info, sizeof(info)));
+    }
+
+    case KBD_IOC_GET_LAYOUT:
+    {
+        uint32_t index = keyboard_layout_index();
+        return kerr_to_errno(copy_to_user(arg, &index, sizeof(index)));
+    }
+
+    case KBD_IOC_SET_LAYOUT:
+    {
+        uint32_t index;
+        if (kerr_failed(copy_from_user(&index, arg, sizeof(index))))
+        {
+            return -EFAULT;
+        }
+        return keyboard_set_layout(index) ? 0 : -EINVAL;
+    }
+
+    default:
+        return -ENOTTY;
+    }
+}
+
+static const device_ops_t keyboard_ops = {
+    .ioctl = keyboard_ioctl,
+};
+
 void keyboard_initialize(void)
 {
     spinlock_init(&buffer_lock);
@@ -521,7 +585,7 @@ void keyboard_initialize(void)
     strncpy(keyboard_device.name, "kbd", DEVICE_NAME_MAX - 1);
     keyboard_device.name[DEVICE_NAME_MAX - 1] = '\0';
     keyboard_device.type = DEVICE_TYPE_INPUT;
-    keyboard_device.ops = 0;
+    keyboard_device.ops = &keyboard_ops;
     keyboard_device.driver_data = 0;
     device_register(&keyboard_device);
 }
