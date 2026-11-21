@@ -9,6 +9,11 @@
  * and SIGTSTP to that group; a process of a background group that reads
  * gets SIGTTIN.
  *
+ * without ICANON, the special keys (arrows, Home, End, Insert, Delete,
+ * Page Up and Page Down) come as the escape sequences a VT terminal
+ * sends, so a program reads the console as it reads a pseudo-terminal.
+ * with ICANON they are ignored.
+ *
  * locking: the settings change only through ioctls in process context
  * and are read by the keyboard interrupt (the signal keys); a torn read
  * there could only miss one key press.
@@ -18,6 +23,7 @@
 #include "termios.h"
 
 #include "common/memory.h"
+#include "common/stddef.h"
 #include "drivers/keyboard/keyboard.h"
 #include "kernel/errno.h"
 #include "kernel/process/process.h"
@@ -130,15 +136,101 @@ static void echo(char c)
     }
 }
 
+// the rest of an escape sequence for a special key, not read yet
+static char pending[8];
+static uint32_t pending_head;
+static uint32_t pending_count;
+
+/**
+ * the escape sequence a VT terminal sends for a special key, or NULL.
+ */
+static const char *sequence_for(keyboard_special_key_t key)
+{
+    switch (key)
+    {
+    case KEY_ARROW_UP:
+        return "\x1b[A";
+    case KEY_ARROW_DOWN:
+        return "\x1b[B";
+    case KEY_ARROW_RIGHT:
+        return "\x1b[C";
+    case KEY_ARROW_LEFT:
+        return "\x1b[D";
+    case KEY_HOME:
+        return "\x1b[H";
+    case KEY_END:
+        return "\x1b[F";
+    case KEY_INSERT:
+        return "\x1b[2~";
+    case KEY_DELETE:
+        return "\x1b[3~";
+    case KEY_PAGE_UP:
+        return "\x1b[5~";
+    case KEY_PAGE_DOWN:
+        return "\x1b[6~";
+    default:
+        return NULL;
+    }
+}
+
+/**
+ * true if a read would get a byte without waiting.
+ */
+static bool input_available(void)
+{
+    return pending_count > 0 || keyboard_available();
+}
+
+/**
+ * the next typed byte. with sequences, a special key gives the first byte
+ * of its escape sequence and the next calls give the rest; without, the
+ * special keys are skipped.
+ * @return the byte, or -1 if a signal ended the wait.
+ */
+static int next_byte(bool sequences)
+{
+    if (pending_count > 0)
+    {
+        pending_count--;
+        return (unsigned char)pending[pending_head++];
+    }
+    for (;;)
+    {
+        keyboard_event_t event;
+        if (!keyboard_wait_event(&event))
+        {
+            return -1;
+        }
+        if (event.type == KEY_EVENT_CHAR)
+        {
+            return (unsigned char)event.character;
+        }
+        const char *seq = event.type == KEY_EVENT_SPECIAL && sequences
+                              ? sequence_for(event.special)
+                              : NULL;
+        if (seq)
+        {
+            pending_head = 0;
+            pending_count = 0;
+            for (uint32_t i = 1; seq[i] != '\0'; i++)
+            {
+                pending[pending_count++] = seq[i];
+            }
+            return (unsigned char)seq[0];
+        }
+    }
+}
+
 /**
  * the next typed character (with ICRNL and INLCR), or -1 if a signal
  * ended the wait.
+ * @param sequences true to get special keys as escape sequences.
  */
-static int next_char(void)
+static int next_char(bool sequences)
 {
     for (;;)
     {
-        int key = keyboard_read();
+        int key = next_byte(sequences);
         if (key < 0)
         {
             return -1;
@@ -168,7 +260,7 @@ static int32_t read_line(char *buf, uint32_t count)
     uint32_t i = 0;
     while (i < count)
     {
-        int key = next_char();
+        int key = next_char(false);
         if (key < 0)
         {
             // a signal: the bytes so far are the result, if there are any
@@ -230,12 +322,12 @@ static int32_t read_raw(char *buf, uint32_t count)
     {
         if (i > 0 || settings.c_cc[VMIN] == 0)
         {
-            if (!keyboard_available())
+            if (!input_available())
             {
                 break;
             }
         }
-        int key = next_char();
+        int key = next_char(true);
         if (key < 0)
         {
             return i > 0 ? (int32_t)i : -ERESTARTSYS;
@@ -353,6 +445,7 @@ static int32_t console_file_ioctl(file_t *file, uint32_t request, void *arg)
         if (request == TCSETSF)
         {
             keyboard_flush();
+            pending_count = 0;
         }
         settings = next; // output is written at once, so there is nothing to drain
         keyboard_set_raw_events((settings.c_lflag & (XKEYEVENTS | XKEYRAW)) ==
@@ -412,7 +505,7 @@ static int32_t console_file_stat(file_t *file, struct kstat *st)
 static uint32_t console_file_poll(file_t *file)
 {
     (void)file;
-    return POLLOUT | (keyboard_available() ? POLLIN : 0);
+    return POLLOUT | (input_available() ? POLLIN : 0);
 }
 
 static const file_ops_t console_file_ops = {
