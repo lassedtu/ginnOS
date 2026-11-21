@@ -8,8 +8,10 @@
  * which side owns it; it changes each time a ring wraps (through a link TRB
  * on the command and transfer rings).
  *
- * all waiting is by polling, during boot (interrupts off) and then from the
- * timer interrupt. each controller has one page for each ring, the device
+ * during boot (interrupts off) the driver polls the event ring. after boot
+ * the controller interrupts (MSI-X, MSI or INTx) for each event; a
+ * controller without an interrupt is polled from the timer interrupt. the
+ * timer also repeats a held key. each controller has one page for each ring, the device
  * context array, and one page per device for its contexts and its data.
  */
 
@@ -19,6 +21,7 @@
 #include "common/memory.h"
 #include "drivers/keyboard/keyboard.h"
 #include "drivers/pci/pci.h"
+#include "drivers/pci/pci_irq.h"
 #include "kernel/klog/klog.h"
 #include "kernel/memory/mmio.h"
 #include "kernel/memory/page.h"
@@ -48,7 +51,9 @@
 
 #define USBCMD_RUN   0x1u
 #define USBCMD_RESET 0x2u
+#define USBCMD_INTE  0x4u // interrupts on
 #define USBSTS_HALTED 0x1u
+#define USBSTS_EINT  0x8u // an interrupter has an event (write 1 to clear)
 #define USBSTS_NOT_READY (1u << 11)
 
 // PORTSC bits
@@ -66,10 +71,14 @@
 #define SPEED_SUPER 4
 
 // interrupter 0 (runtime registers)
+#define IR0_IMAN   0x20
+#define IR0_IMOD   0x24
 #define IR0_ERSTSZ 0x28
 #define IR0_ERSTBA 0x30
 #define IR0_ERDP   0x38
 #define ERDP_BUSY  0x8u
+#define IMAN_IP    0x1u // interrupt pending (write 1 to clear)
+#define IMAN_IE    0x2u // interrupt enable
 
 // TRB types
 #define TRB_NORMAL        1
@@ -150,6 +159,8 @@ struct xhci
     phys_addr_t events_phys;
     uint32_t event_index;
     uint32_t event_cycle;
+    pci_device_t *dev;
+    bool has_irq; // a message interrupt brings the events (else the timer polls them)
 };
 
 static xhci_t controllers[MAX_CONTROLLERS];
@@ -520,20 +531,75 @@ static void handle_transfer_event(xhci_t *hc, const trb_t *event)
 }
 
 /**
- * the timer hook: read the events of all controllers and repeat a held
- * key.
+ * handle the waiting events of a controller (keyboard reports).
+ */
+static void drain_events(xhci_t *hc)
+{
+    trb_t *event;
+    while ((event = next_event(hc)) != NULL)
+    {
+        if (event_type(event) == TRB_TRANSFER_EVT)
+        {
+            handle_transfer_event(hc, event);
+        }
+    }
+}
+
+/**
+ * the controller interrupt. the pending bits are cleared before the ring
+ * is read, so an event that comes after the read raises a new interrupt.
+ */
+static void xhci_interrupt(void *context)
+{
+    xhci_t *hc = context;
+    uint32_t iman = rd32(hc->runtime, IR0_IMAN);
+    uint32_t status = rd32(hc->op, OP_USBSTS);
+    if (!(iman & IMAN_IP) && !(status & USBSTS_EINT))
+    {
+        return; // the shared line was raised by another device
+    }
+
+    wr32(hc->op, OP_USBSTS, USBSTS_EINT);
+    wr32(hc->runtime, IR0_IMAN, iman | IMAN_IP);
+    drain_events(hc);
+}
+
+/**
+ * attach the controller interrupt and turn on the interrupts of
+ * interrupter 0. the events from boot (polled) are handled first.
+ */
+static void enable_interrupts(xhci_t *hc)
+{
+    pci_irq_mode_t mode = pci_irq_attach(hc->dev, xhci_interrupt, hc, "xhci");
+    if (mode == PCI_IRQ_NONE)
+    {
+        return;
+    }
+
+    uint32_t flags = arch_irq_save();
+    drain_events(hc);
+    wr32(hc->runtime, IR0_IMOD, 0); // no moderation: a key event is small
+    wr32(hc->runtime, IR0_IMAN, IMAN_IP | IMAN_IE);
+    wr32(hc->op, OP_USBSTS, USBSTS_EINT);
+    wr32(hc->op, OP_USBCMD, rd32(hc->op, OP_USBCMD) | USBCMD_INTE);
+    // an INTx line may not be routed on a real machine with the I/O APIC
+    // (see pci_irq.h), so the timer also reads the events then. both run
+    // with interrupts off, so they do not overlap.
+    hc->has_irq = mode != PCI_IRQ_INTX;
+    arch_irq_restore(flags);
+}
+
+/**
+ * the timer hook: read the events of the controllers without an
+ * interrupt, and repeat a held key.
  */
 static void xhci_poll(uint64_t now)
 {
     for (uint32_t c = 0; c < controller_count; c++)
     {
-        trb_t *event;
-        while ((event = next_event(&controllers[c])) != NULL)
+        if (!controllers[c].has_irq)
         {
-            if (event_type(event) == TRB_TRANSFER_EVT)
-            {
-                handle_transfer_event(&controllers[c], event);
-            }
+            drain_events(&controllers[c]);
         }
     }
 
@@ -807,7 +873,10 @@ static bool wait_status(xhci_t *hc, uint32_t mask, uint32_t want)
 
 static bool controller_init(xhci_t *hc, const pci_device_t *dev)
 {
-    if (dev->bars[0].is_io || dev->bars[0].base == 0 || (dev->bars[0].base >> 32) != 0)
+    // a BAR above 4 GiB (UEFI firmware puts 64-bit BARs there) is usable
+    // only when physical addresses are 64 bits wide
+    if (dev->bars[0].is_io || dev->bars[0].base == 0 ||
+        (sizeof(phys_addr_t) < 8 && (dev->bars[0].base >> 32) != 0))
     {
         return false;
     }
@@ -921,6 +990,7 @@ uint32_t xhci_init(void)
 
         xhci_t *hc = &controllers[controller_count];
         memset(hc, 0, sizeof(*hc));
+        hc->dev = dev;
         if (!controller_init(hc, dev))
         {
             KLOG_WARN("xhci: controller %u could not be started", n);
@@ -941,6 +1011,7 @@ uint32_t xhci_init(void)
                 setup_device(hc, port, speed);
             }
         }
+        enable_interrupts(hc);
     }
 
     if (controller_count > 0)
