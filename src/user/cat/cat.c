@@ -13,8 +13,6 @@ static int cat_fd(int fd)
     while ((n = read(fd, buf, BUF_SIZE)) > 0)
         write(1, buf, n);
 
-    write(1, "\n", 1);
-
     return 0;
 }
 
