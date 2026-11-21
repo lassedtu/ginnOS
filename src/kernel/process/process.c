@@ -5,6 +5,7 @@
 #include "arch/arch.h"
 #include "arch/arch_context.h"
 #include "kernel/scheduler/scheduler.h"
+#include "kernel/process/wait_status.h"
 #include "kernel/sync/spinlock.h"
 #include "kernel/memory/heap.h"
 #include "kernel/assert.h"
@@ -147,6 +148,7 @@ process_t *process_fork(const struct registers *regs)
     child->parent_pid = parent->pid;
     child->tty_raw = parent->tty_raw;
     memcpy(child->name, parent->name, sizeof(child->name));
+    signal_fork(child, parent);
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
 
     // every fd is inherited: the child's descriptors share the parent's
@@ -300,7 +302,8 @@ void process_reap_orphans(void)
     }
 }
 
-process_t *process_find_zombie_child(process_t *parent, int32_t pid, bool *has_child)
+process_t *process_find_waitable_child(process_t *parent, int32_t pid, uint32_t options,
+                                       bool *has_child)
 {
     process_t *found = NULL;
     *has_child = false;
@@ -315,7 +318,9 @@ process_t *process_find_zombie_child(process_t *parent, int32_t pid, bool *has_c
             continue;
         }
         *has_child = true;
-        if (child->state == PROC_STATE_ZOMBIE)
+        if (child->state == PROC_STATE_ZOMBIE ||
+            ((options & WUNTRACED) && child->wait_report == WAIT_REPORT_STOPPED) ||
+            ((options & WCONTINUED) && child->wait_report == WAIT_REPORT_CONTINUED))
         {
             found = child;
             break;
@@ -323,6 +328,19 @@ process_t *process_find_zombie_child(process_t *parent, int32_t pid, bool *has_c
     }
     spin_unlock_irqrestore(&table_lock, flags);
     return found;
+}
+
+void process_for_each(void (*fn)(process_t *proc, void *ctx), void *ctx)
+{
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX; i++)
+    {
+        if (proc_table[i].state != PROC_STATE_UNUSED)
+        {
+            fn(&proc_table[i], ctx);
+        }
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
 }
 
 uint32_t process_list_pids(uint32_t *pids, uint32_t max)

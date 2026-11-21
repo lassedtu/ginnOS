@@ -46,6 +46,13 @@
 #define SYS_FSYNC 37    // write a file's data to disk
 #define SYS_GETDENTS 38 // read directory records
 #define SYS_POLL 39     // wait for file descriptors to become ready
+#define SYS_KILL 40     // send a signal
+#define SYS_SIGACTION 41 // read and change a signal's action
+#define SYS_SIGPROCMASK 42 // read and change the blocked signals
+#define SYS_SIGRETURN 43 // return from a signal handler
+#define SYS_SIGPENDING 44 // blocked signals that are pending
+#define SYS_SIGSUSPEND 45 // wait for a signal
+#define SYS_ALARM 46    // SIGALRM after a number of seconds
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

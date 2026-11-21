@@ -106,6 +106,18 @@ ssize_t pwrite(int fd, const void *buf, size_t count, int offset);
 int fsync(int fd);
 
 /**
+ * send SIGALRM to the calling process after a number of seconds.
+ * @param seconds 0 cancels the alarm.
+ * @return the seconds left of the previous alarm, or 0.
+ */
+unsigned int alarm(unsigned int seconds);
+
+/**
+ * sleep until a signal is caught. always returns -1 with EINTR.
+ */
+int pause(void);
+
+/**
  * get the parent's process ID.
  * @return the parent's PID, or 0 if the parent has exited.
  */

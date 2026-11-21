@@ -6,6 +6,7 @@
 #include "arch/arch.h"
 #include "kernel/syscall/fd_table.h"
 #include "kernel/sync/wait_queue.h"
+#include "kernel/signal/signal.h"
 
 // maximum number of concurrent processes.
 #define PROCESS_MAX 64
@@ -30,7 +31,18 @@ typedef enum
     PROC_STATE_READY,      // runnable, waiting for CPU
     PROC_STATE_BLOCKED,    // waiting for I/O or event
     PROC_STATE_ZOMBIE,     // exited, waiting to be reaped
+    PROC_STATE_STOPPED,    // stopped by a signal until SIGCONT
 } process_state_t;
+
+/**
+ * a change of a child that waitpid has not reported yet.
+ */
+typedef enum
+{
+    WAIT_REPORT_NONE = 0,
+    WAIT_REPORT_STOPPED,   // stopped (WUNTRACED)
+    WAIT_REPORT_CONTINUED, // continued (WCONTINUED)
+} wait_report_t;
 
 #define PATH_MAX 256
 
@@ -66,6 +78,16 @@ typedef struct process
     // on some wait_queue_t. separate from the ready links so a process is
     // never on both lists at once.
     struct process *wait_next;
+    wait_queue_t *waiting_on; // the queue it sleeps on (BLOCKED), or NULL
+    bool interruptible;       // a signal may end the sleep
+
+    signal_state_t signals;   // pending, blocked, and the handlers
+    uint32_t syscall_nr;      // the syscall in progress (for a restart)
+    uint64_t alarm_deadline;  // tick of the SIGALRM alarm, 0 for none
+    uint8_t stop_signal;      // the signal that stopped it (STOPPED)
+    wait_report_t wait_report; // a stop or continue for waitpid
+    uintptr_t fault_addr;     // the last bad user access (for the report)
+    bool fault_write;
 
     char name[PROCESS_NAME_MAX]; // the program's file name (procfs)
     char cwd[PATH_MAX];     // current working directory
@@ -151,14 +173,25 @@ void process_note_orphan_zombie(void);
 void process_reap_orphans(void);
 
 /**
- * find a zombie child of a process.
+ * find a child of a process that has something for waitpid: it exited
+ * (a zombie), or, with WUNTRACED / WCONTINUED in options, it stopped or
+ * continued and that was not reported yet.
  * @param parent the parent.
  * @param pid a child's pid, or -1 for any child.
- * @param has_child set to true if parent has at least one matching child,
- *        exited or not.
- * @return a matching zombie child, or NULL if none has exited yet.
+ * @param options waitpid options (wait_status.h).
+ * @param has_child set to true if parent has at least one matching child.
+ * @return the child, or NULL if none has anything to report yet.
  */
-process_t *process_find_zombie_child(process_t *parent, int32_t pid, bool *has_child);
+process_t *process_find_waitable_child(process_t *parent, int32_t pid, uint32_t options,
+                                       bool *has_child);
+
+/**
+ * call fn for every process in the table, with the table locked and
+ * interrupts masked: fn must not sleep.
+ * @param fn the function.
+ * @param ctx passed to fn.
+ */
+void process_for_each(void (*fn)(process_t *proc, void *ctx), void *ctx);
 
 /**
  * a copy of what procfs shows about a process.

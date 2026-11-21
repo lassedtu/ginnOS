@@ -16,5 +16,5 @@ void poll_notify(void)
 
 void poll_wait(uint64_t deadline)
 {
-    timed_queue_block(&poll_queue, deadline);
+    timed_queue_block_interruptible(&poll_queue, deadline);
 }

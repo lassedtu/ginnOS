@@ -14,6 +14,11 @@
  * all operations must run with the caller in kernel context. blocking and
  * waking are done with interrupts masked, since a wake can come from an
  * interrupt handler.
+ *
+ * a sleep is either uninterruptible (wait_queue_block, used by mutexes:
+ * the process wakes only when the event happens) or interruptible (the
+ * _interruptible variants): a signal for the process also wakes it, and
+ * the caller must then check signal_pending() and give up its wait.
  */
 
 #include "kernel/sync/spinlock.h"
@@ -72,3 +77,28 @@ void wait_queue_wake_one(wait_queue_t *wq);
  * @param wq the queue to drain.
  */
 void wait_queue_wake_all(wait_queue_t *wq);
+
+/**
+ * like wait_queue_block, but a signal for the process also wakes it. the
+ * caller re-tests its condition and signal_pending() after the return.
+ * @param wq the queue to block on.
+ */
+void wait_queue_block_interruptible(wait_queue_t *wq);
+
+/**
+ * like wait_queue_block_locked, but a signal for the process also wakes
+ * it. the caller re-tests its condition and signal_pending() after the
+ * return.
+ * @param wq the queue to block on.
+ * @param lock a lock taken with spin_lock_irqsave() by the caller.
+ */
+void wait_queue_block_locked_interruptible(wait_queue_t *wq, spinlock_t *lock);
+
+/**
+ * take a process out of the queue it sleeps on, if it sleeps
+ * interruptibly, and make it runnable (a signal arrived). call with
+ * interrupts masked.
+ * @param proc the process.
+ * @return true if it was asleep and is now woken.
+ */
+bool wait_queue_interrupt(struct process *proc);

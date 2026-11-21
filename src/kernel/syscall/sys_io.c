@@ -29,7 +29,13 @@ syscall_ret_t sys_write(struct registers *regs)
     if (count == 0)
         return 0;
 
-    return file_write(entry->file, buf, count);
+    int32_t written = file_write(entry->file, buf, count);
+    if (written == -EPIPE)
+    {
+        // nobody will read it: by default this ends the writer
+        signal_send(process_current(), SIGPIPE);
+    }
+    return written;
 }
 
 /**
@@ -443,6 +449,12 @@ syscall_ret_t sys_poll(struct registers *regs)
         ready = poll_scan(fds, count);
         if (ready > 0 || timeout == 0 || timer_now() >= deadline)
             break;
+        if (signal_pending(process_current()))
+        {
+            // poll is never restarted: its timeout would start over
+            arch_irq_restore(flags);
+            return -EINTR;
+        }
         poll_wait(deadline);
     }
     arch_irq_restore(flags);

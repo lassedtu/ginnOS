@@ -123,11 +123,13 @@ void mm_handle_user_fault(uintptr_t addr, bool write, bool present, uintptr_t pc
     uint32_t pid = proc ? proc->pid : 0;
     KLOG_WARN("pid %u: segmentation fault: %s 0x%lx at pc 0x%lx", pid,
               write ? "write to" : "read of", addr, pc);
-    printf("pid %u: segmentation fault (%s 0x%lx)\r\n", pid, write ? "write to" : "read of",
-           addr);
 
-    // exiting may sleep (closing files): leave the fault's interrupt gate
-    // state behind. this process never returns to the faulting instruction.
-    arch_enable_interrupts();
-    usermode_kill(SIGSEGV);
+    // the signal is acted on when the fault handler returns to user mode:
+    // a handler can run, else the process dies with a report
+    if (proc)
+    {
+        proc->fault_addr = addr;
+        proc->fault_write = write;
+        signal_force(proc, SIGSEGV);
+    }
 }

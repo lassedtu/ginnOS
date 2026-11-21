@@ -47,6 +47,11 @@ void timed_queue_init(timed_queue_t *queue);
 void timed_queue_block(timed_queue_t *queue, uint64_t deadline);
 
 /**
+ * like timed_queue_block, but a signal for the process also wakes it.
+ */
+void timed_queue_block_interruptible(timed_queue_t *queue, uint64_t deadline);
+
+/**
  * wake every waiter of a queue (they re-check their condition).
  * @param queue the queue.
  */

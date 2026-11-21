@@ -3,6 +3,9 @@
 #include "common/stdio.h"
 #include "kernel/debug/ksyms.h"
 #include "kernel/panic.h"
+#include "kernel/klog/klog.h"
+#include "kernel/process/process.h"
+#include "kernel/signal/signal.h"
 
 /**
  * exception names for the first 32 CPU exceptions.
@@ -148,8 +151,52 @@ void exception_panic(const char *message, const struct registers *regs)
 /**
  * default exception handler
  */
+/**
+ * the signal for a CPU exception in user code (0: not one a program can
+ * cause; the kernel panics as before).
+ */
+static int signal_for_vector(uint32_t vector)
+{
+    switch (vector)
+    {
+    case 0:  // divide error
+    case 16: // x87 floating point
+    case 19: // SIMD floating point
+        return SIGFPE;
+    case 1: // debug
+    case 3: // breakpoint (int3)
+        return SIGTRAP;
+    case 6: // invalid opcode
+        return SIGILL;
+    case 4:  // overflow (into)
+    case 5:  // bound range
+    case 11: // segment not present
+    case 12: // stack segment
+    case 13: // general protection
+        return SIGSEGV;
+    case 17: // alignment check
+        return SIGBUS;
+    default:
+        return 0;
+    }
+}
+
 void exception_handler(struct registers *regs)
 {
+    // a fault in user code is the program's: it gets a signal (by default
+    // it dies) and the kernel goes on
+    int sig = signal_for_vector(regs->interrupt);
+    process_t *proc = process_current();
+    if ((regs->cs & 3u) == 3u && sig != 0 && proc)
+    {
+        KLOG_WARN("pid %u: %s at pc 0x%x, signal %d", proc->pid,
+                  exception_names[regs->interrupt], regs->eip, sig);
+        proc->fault_addr = regs->eip;
+        proc->fault_write = false;
+        signal_force(proc, sig);
+        return;
+    }
+
     printf(
         "\r\nEXCEPTION: %s (vector %u)\r\n",
         exception_names[regs->interrupt],

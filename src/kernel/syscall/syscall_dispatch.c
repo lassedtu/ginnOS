@@ -2,6 +2,8 @@
 #include "syscall_internal.h"
 #include "fd_table.h"
 #include "kernel/vfs/poll.h"
+#include "kernel/process/process.h"
+#include "kernel/signal/signal.h"
 
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/idt.h"
@@ -49,6 +51,13 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_FSYNC] = sys_fsync,
     [SYS_GETDENTS] = sys_getdents,
     [SYS_POLL] = sys_poll,
+    [SYS_KILL] = sys_kill,
+    [SYS_SIGACTION] = sys_sigaction,
+    [SYS_SIGPROCMASK] = sys_sigprocmask,
+    [SYS_SIGRETURN] = sys_sigreturn,
+    [SYS_SIGPENDING] = sys_sigpending,
+    [SYS_SIGSUSPEND] = sys_sigsuspend,
+    [SYS_ALARM] = sys_alarm,
 };
 
 /**
@@ -62,8 +71,15 @@ static void syscall_handler(struct registers *regs)
 
     if (num >= SYSCALL_COUNT || !syscall_table[num])
     {
-        regs->eax = (uint32_t)(-1); /* -ENOSYS */
+        regs->eax = (uint32_t)-ENOSYS;
         return;
+    }
+
+    // kept for a restart after a signal (signal_deliver)
+    process_t *proc = process_current();
+    if (proc)
+    {
+        proc->syscall_nr = num;
     }
 
     // the return value goes back in EAX
@@ -73,6 +89,7 @@ static void syscall_handler(struct registers *regs)
 void syscall_initialize(void)
 {
     poll_init();
+    signal_init();
 
 
     /* register the handler in the ISR dispatch table */

@@ -81,9 +81,10 @@ char keyboard_getchar(void);
 /**
  * read the next character from the event buffer, blocking until one arrives.
  * special key events are discarded the same way as keyboard_getchar().
- * @return the next character.
+ * @return the next character (0-255), or -1 if a signal for the calling
+ *         process ended the wait.
  */
-char keyboard_read(void);
+int keyboard_read(void);
 
 /**
  * read the next keyboard event from the event buffer without blocking.
@@ -97,8 +98,10 @@ int keyboard_read_event(keyboard_event_t *event_out);
  * the calling process sleeps until the keyboard IRQ wakes it; it does not
  * spin. safe with several readers: each event goes to exactly one of them.
  * @param event_out output structure filled with the event type and value.
+ * @return true with an event, false if a signal for the calling process
+ *         ended the wait.
  */
-void keyboard_wait_event(keyboard_event_t *event_out);
+bool keyboard_wait_event(keyboard_event_t *event_out);
 
 /**
  * return the number of events dropped due to a full buffer since boot.

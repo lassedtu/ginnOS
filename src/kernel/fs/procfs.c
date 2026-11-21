@@ -81,6 +81,7 @@ static const char *state_name(process_state_t state)
     case PROC_STATE_READY:   return "ready";
     case PROC_STATE_BLOCKED: return "sleeping";
     case PROC_STATE_ZOMBIE:  return "zombie";
+    case PROC_STATE_STOPPED: return "stopped";
     default:                 return "unknown";
     }
 }

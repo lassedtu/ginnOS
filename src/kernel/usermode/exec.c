@@ -156,6 +156,7 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     proc->vmas = *vmas;
     proc->brk = elf.brk;
     process_set_name(proc, path);
+    signal_exec(proc);
     // the tty mode is still per process (until termios): a new program
     // starts in cooked mode, as a spawned one does
     proc->tty_raw = 0;
@@ -229,6 +230,7 @@ static void process_exit(int32_t status)
     if (parent)
     {
         // a parent in waitpid sleeps on its child_exit queue
+        signal_send(parent, SIGCHLD);
         wait_queue_wake_all(&parent->child_exit);
     }
     else

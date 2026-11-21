@@ -46,9 +46,16 @@
 #define SYS_FSYNC 37
 #define SYS_GETDENTS 38
 #define SYS_POLL 39
+#define SYS_KILL 40
+#define SYS_SIGACTION 41
+#define SYS_SIGPROCMASK 42
+#define SYS_SIGRETURN 43
+#define SYS_SIGPENDING 44
+#define SYS_SIGSUSPEND 45
+#define SYS_ALARM 46
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 40
+#define SYSCALL_COUNT 47
 
 /**
  * initialize the system call interface.

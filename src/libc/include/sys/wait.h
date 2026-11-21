@@ -11,13 +11,18 @@
 typedef int pid_t;
 
 // options
-#define WNOHANG 1 // return 0 at once if no child has exited
+#define WNOHANG    1 // return 0 at once if no child has anything to report
+#define WUNTRACED  2 // also report children that stopped
+#define WCONTINUED 8 // also report children that continued
 
 // decoding a status word from wait/waitpid
-#define WIFEXITED(status)   (((status) & 0x7f) == 0)
-#define WEXITSTATUS(status) (((status) >> 8) & 0xff)
-#define WIFSIGNALED(status) (((status) & 0x7f) != 0)
-#define WTERMSIG(status)    ((status) & 0x7f)
+#define WIFEXITED(status)    (((status) & 0x7f) == 0)
+#define WEXITSTATUS(status)  (((status) >> 8) & 0xff)
+#define WIFSIGNALED(status)  (((status) & 0x7f) != 0 && ((status) & 0x7f) != 0x7f)
+#define WTERMSIG(status)     ((status) & 0x7f)
+#define WIFSTOPPED(status)   (((status) & 0xff) == 0x7f)
+#define WSTOPSIG(status)     (((status) >> 8) & 0xff)
+#define WIFCONTINUED(status) ((status) == 0xffff)
 
 /**
  * wait for a child process to exit and reap it.

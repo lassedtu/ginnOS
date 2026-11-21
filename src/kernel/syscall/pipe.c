@@ -3,6 +3,8 @@
 #include "common/memory.h"
 #include "kernel/errno.h"
 #include "kernel/vfs/poll.h"
+#include "kernel/process/process.h"
+#include "kernel/signal/signal.h"
 #include "kernel/memory/heap.h"
 #include "kernel/assert.h"
 
@@ -149,7 +151,12 @@ int32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count, bool nonblock)
             spin_unlock_irqrestore(&pipe->lock, flags);
             return -EAGAIN;
         }
-        wait_queue_block_locked(&pipe->readers, &pipe->lock);
+        if (signal_pending(process_current()))
+        {
+            spin_unlock_irqrestore(&pipe->lock, flags);
+            return -ERESTARTSYS;
+        }
+        wait_queue_block_locked_interruptible(&pipe->readers, &pipe->lock);
     }
 
     uint32_t to_read = pipe->count < count ? pipe->count : count;
@@ -190,7 +197,12 @@ int32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count, bool nonbl
                 result = -EAGAIN;
                 break;
             }
-            wait_queue_block_locked(&pipe->writers, &pipe->lock);
+            if (signal_pending(process_current()))
+            {
+                result = -ERESTARTSYS;
+                break;
+            }
+            wait_queue_block_locked_interruptible(&pipe->writers, &pipe->lock);
             continue;
         }
 

@@ -2,6 +2,7 @@
 
 #include "arch/arch.h"
 #include "kernel/assert.h"
+#include "kernel/signal/signal.h"
 
 // every timed queue; changed with interrupts masked
 static timed_queue_t *queues;
@@ -28,6 +29,17 @@ void timed_queue_block(timed_queue_t *queue, uint64_t deadline)
     wait_queue_block(&queue->waiters);
 }
 
+void timed_queue_block_interruptible(timed_queue_t *queue, uint64_t deadline)
+{
+    KASSERT(!arch_irqs_enabled(), "timed_queue_block_interruptible: interrupts enabled");
+
+    if (deadline < queue->deadline)
+    {
+        queue->deadline = deadline;
+    }
+    wait_queue_block_interruptible(&queue->waiters);
+}
+
 void timed_queue_wake_all(timed_queue_t *queue)
 {
     wait_queue_wake_all(&queue->waiters);
@@ -35,6 +47,8 @@ void timed_queue_wake_all(timed_queue_t *queue)
 
 void timer_tick(uint64_t now)
 {
+    signal_alarm_tick(now);
+
     for (timed_queue_t *queue = queues; queue; queue = queue->next)
     {
         if (queue->deadline <= now)

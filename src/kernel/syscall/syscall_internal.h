@@ -75,6 +75,15 @@ syscall_ret_t sys_rmdir(struct registers *regs);
 syscall_ret_t sys_getdents(struct registers *regs);
 syscall_ret_t sys_poll(struct registers *regs);
 
+/* kernel/signal/signal.c */
+syscall_ret_t sys_kill(struct registers *regs);
+syscall_ret_t sys_sigaction(struct registers *regs);
+syscall_ret_t sys_sigprocmask(struct registers *regs);
+syscall_ret_t sys_sigreturn(struct registers *regs);
+syscall_ret_t sys_sigpending(struct registers *regs);
+syscall_ret_t sys_sigsuspend(struct registers *regs);
+syscall_ret_t sys_alarm(struct registers *regs);
+
 /* sys_proc.c */
 syscall_ret_t sys_exit(struct registers *regs);
 syscall_ret_t sys_exec(struct registers *regs);

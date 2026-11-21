@@ -24,7 +24,10 @@ static int32_t read_event(char *buf, uint32_t count)
     }
 
     keyboard_event_t event;
-    keyboard_wait_event(&event);
+    if (!keyboard_wait_event(&event))
+    {
+        return -ERESTARTSYS;
+    }
     memcpy(buf, &event, sizeof(event));
     return (int32_t)sizeof(event);
 }
@@ -38,7 +41,13 @@ static int32_t read_line(char *buf, uint32_t count)
     uint32_t i = 0;
     while (i < count)
     {
-        char c = keyboard_read(); // blocks until a key is available
+        int key = keyboard_read(); // blocks until a key is available
+        if (key < 0)
+        {
+            // a signal: the bytes so far are the result, if there are any
+            return i > 0 ? (int32_t)i : -ERESTARTSYS;
+        }
+        char c = (char)key;
 
         if (c == '\n')
         {

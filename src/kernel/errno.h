@@ -47,6 +47,11 @@
 
 #define EWOULDBLOCK EAGAIN
 
+// kernel internal, never seen by user space: a sleeping syscall was
+// interrupted by a signal. signal_deliver turns it into EINTR, or runs the
+// syscall again (SA_RESTART, or when no handler runs).
+#define ERESTARTSYS 512
+
 /**
  * the errno for a kernel error, negated, for returning to user space.
  * @param err the kernel error.

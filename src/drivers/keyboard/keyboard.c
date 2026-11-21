@@ -8,6 +8,7 @@
 #include "keyboard.h"
 #include "keyboard_layout.h"
 #include "kernel/vfs/poll.h"
+#include "kernel/signal/signal.h"
 
 #include "arch/arch.h"
 #include "kernel/irq/irq.h"
@@ -315,7 +316,7 @@ int keyboard_read_event(keyboard_event_t *event_out)
     return got ? 1 : 0;
 }
 
-void keyboard_wait_event(keyboard_event_t *event_out)
+bool keyboard_wait_event(keyboard_event_t *event_out)
 {
     uint32_t flags = spin_lock_irqsave(&buffer_lock);
 
@@ -323,8 +324,13 @@ void keyboard_wait_event(keyboard_event_t *event_out)
     {
         if (process_current() && scheduler_is_active())
         {
+            if (signal_pending(process_current()))
+            {
+                spin_unlock_irqrestore(&buffer_lock, flags);
+                return false;
+            }
             // sleep until the IRQ handler pushes an event and wakes us
-            wait_queue_block_locked(&readers, &buffer_lock);
+            wait_queue_block_locked_interruptible(&readers, &buffer_lock);
         }
         else
         {
@@ -339,6 +345,7 @@ void keyboard_wait_event(keyboard_event_t *event_out)
     }
 
     spin_unlock_irqrestore(&buffer_lock, flags);
+    return true;
 }
 
 char keyboard_getchar(void)
@@ -354,15 +361,16 @@ char keyboard_getchar(void)
     return 0;
 }
 
-char keyboard_read(void)
+int keyboard_read(void)
 {
     keyboard_event_t event;
 
     for (;;)
     {
-        keyboard_wait_event(&event);
+        if (!keyboard_wait_event(&event))
+            return -1;
         if (event.type == KEY_EVENT_CHAR)
-            return event.character;
+            return (unsigned char)event.character;
     }
 }
 

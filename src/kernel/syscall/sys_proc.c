@@ -196,8 +196,10 @@ syscall_ret_t sys_getpid(struct registers *regs)
  * args: EBX = pid (a child's pid, or -1 for any child),
  *       ECX = int *status (may be NULL; receives the wait status,
  *             wait_status.h), EDX = options (WNOHANG).
- * returns the reaped child's pid; 0 with WNOHANG when no matching child
- * has exited yet; -ECHILD if there is no matching child; -EINVAL for a
+ * with WUNTRACED a stopped child and with WCONTINUED a continued one is
+ * reported (once) too, without reaping it.
+ * returns the child's pid; 0 with WNOHANG when no matching child has
+ * anything to report yet; -ECHILD if there is no matching child; -EINVAL for a
  * pid of 0 or below -1 (process groups come later); -EFAULT for a bad
  * status pointer (the child is reaped anyway).
  */
@@ -208,7 +210,7 @@ syscall_ret_t sys_waitpid(struct registers *regs)
     uint32_t options = (uint32_t)syscall_arg(regs, 2);
     process_t *parent = process_current();
 
-    if (!parent || pid == 0 || pid < -1 || (options & ~(uint32_t)WNOHANG))
+    if (!parent || pid == 0 || pid < -1 || (options & ~(uint32_t)(WNOHANG | WUNTRACED | WCONTINUED)))
     {
         return -EINVAL;
     }
@@ -220,7 +222,7 @@ syscall_ret_t sys_waitpid(struct registers *regs)
     for (;;)
     {
         bool has_child;
-        child = process_find_zombie_child(parent, pid, &has_child);
+        child = process_find_waitable_child(parent, pid, options, &has_child);
         if (child)
         {
             break;
@@ -235,13 +237,30 @@ syscall_ret_t sys_waitpid(struct registers *regs)
             arch_irq_restore(flags);
             return 0;
         }
-        wait_queue_block(&parent->child_exit);
+        if (signal_pending(parent))
+        {
+            arch_irq_restore(flags);
+            return -ERESTARTSYS;
+        }
+        wait_queue_block_interruptible(&parent->child_exit);
     }
-    arch_irq_restore(flags);
 
-    int32_t status = child->exit_status;
+    // a stop or a continue is reported once; an exit reaps the child
+    int32_t status;
     uint32_t child_pid = child->pid;
-    process_destroy(child);
+    if (child->state == PROC_STATE_ZOMBIE)
+    {
+        status = child->exit_status;
+        arch_irq_restore(flags);
+        process_destroy(child);
+    }
+    else
+    {
+        status = child->wait_report == WAIT_REPORT_STOPPED ? WAIT_STATUS_STOPPED(child->stop_signal)
+                                                           : WAIT_STATUS_CONTINUED;
+        child->wait_report = WAIT_REPORT_NONE;
+        arch_irq_restore(flags);
+    }
 
     if (user_status && kerr_failed(copy_to_user(user_status, &status, sizeof(status))))
     {
