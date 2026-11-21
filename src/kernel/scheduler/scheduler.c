@@ -153,6 +153,7 @@ void scheduler_init(void)
     idle_proc.state = PROC_STATE_READY;
     idle_proc.kernel_stack = (uintptr_t)idle_stack;
     idle_proc.kernel_esp = (uintptr_t)idle_stack + KERNEL_STACK_SIZE;
+    arch_fpu_clean(idle_proc.fpu_state);
 
     // prime the idle stack so the first switch into it runs idle_entry.
     arch_setup_initial_stack(&idle_proc, idle_entry);
@@ -246,6 +247,14 @@ static void schedule(void)
 
     // reset time slice
     ticks_remaining = SCHED_TIME_SLICE;
+
+    // the FPU/SSE registers follow the process: the kernel does not use
+    // them, so the outgoing program's are still in the CPU here
+    if (current)
+    {
+        arch_fpu_save(current->fpu_state);
+    }
+    arch_fpu_restore(next->fpu_state);
 
     // perform the context switch
     if (current)

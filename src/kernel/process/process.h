@@ -94,6 +94,8 @@ typedef struct process
     uintptr_t fault_addr;     // the last bad user access (for the report)
     bool fault_write;
 
+    // the FPU/SSE registers while another process runs (arch_fpu_save)
+    uint8_t fpu_state[ARCH_FPU_STATE_SIZE] __attribute__((aligned(16)));
     char name[PROCESS_NAME_MAX]; // the program's file name (procfs)
     char cwd[PATH_MAX];     // current working directory
     fd_entry_t fds[FD_MAX]; // per-process file descriptor table

@@ -213,6 +213,37 @@ void arch_switch_address_space(addr_space_t as);
  */
 void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp) __attribute__((noreturn));
 
+// bytes of saved FPU/SSE state per process (16-byte aligned)
+#define ARCH_FPU_STATE_SIZE 512
+
+/**
+ * turn on the FPU (and SSE) for user programs and make the clean state a
+ * new program starts with. call once at boot.
+ */
+void arch_fpu_init(void);
+
+/**
+ * save the CPU's FPU/SSE registers.
+ * @param area ARCH_FPU_STATE_SIZE bytes, 16-byte aligned.
+ */
+void arch_fpu_save(void *area);
+
+/**
+ * load the FPU/SSE registers.
+ * @param area state saved by arch_fpu_save (or arch_fpu_clean).
+ */
+void arch_fpu_restore(const void *area);
+
+/**
+ * fill an area with the state of a fresh program.
+ */
+void arch_fpu_clean(void *area);
+
+/**
+ * make a state that came from user memory safe to load (a signal frame).
+ */
+void arch_fpu_sanitize(void *area);
+
 /**
  * reload kernel data segment selectors.
  * used after returning from usermode to restore kernel segment state.

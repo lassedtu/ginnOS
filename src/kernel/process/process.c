@@ -86,6 +86,7 @@ process_t *process_create(void)
     vma_table_init(&proc->vmas);
     proc->exit_status = 0;
     wait_queue_init(&proc->child_exit);
+    arch_fpu_clean(proc->fpu_state);
 
     // allocate a guarded kernel stack (zeroed)
     uintptr_t stack = kstack_alloc();
@@ -159,6 +160,9 @@ process_t *process_fork(const struct registers *regs)
         fd_close_entry(&child->fds[i]);
         fd_copy_entry(&child->fds[i], &parent->fds[i]);
     }
+
+    // the child's FPU registers are the parent's, as they are now in the CPU
+    arch_fpu_save(child->fpu_state);
 
     // the child resumes from the same syscall, which returns 0 there
     arch_setup_fork_stack(child, regs);

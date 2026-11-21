@@ -162,6 +162,10 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     proc->brk = elf.brk;
     process_set_name(proc, path);
     signal_exec(proc);
+
+    // the new program starts with clean FPU/SSE registers
+    arch_fpu_clean(proc->fpu_state);
+    arch_fpu_restore(proc->fpu_state);
     arch_switch_address_space(as);
     arch_irq_restore(flags);
 

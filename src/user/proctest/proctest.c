@@ -15,6 +15,9 @@
  *   offset dup2 and fork share the file offset of an open file
  *   wait   waitpid with WNOHANG and pid -1, ECHILD, the status of a child
  *          killed by SIGSEGV, and getppid
+ *   fpu    three children run long floating-point loops at the same time;
+ *          the timer switches between them, and each result must match one
+ *          computed alone (the FPU registers are saved on each switch)
  *   exec   execve a missing program (must fail and return), then fork and
  *          execve this program in the child with its own argv and
  *          environment (the child checks them in mode "execed")
@@ -457,6 +460,77 @@ static int test_wait(void)
     return 0;
 }
 
+#define FPU_STEPS 3000000
+
+/**
+ * a floating-point loop with no calls: its values stay in FPU registers
+ * while the timer switches processes.
+ */
+__attribute__((noinline)) static unsigned int fpu_work(double seed)
+{
+    double a = seed;
+    double b = 1.0 / (seed + 3.0);
+    for (int i = 0; i < FPU_STEPS; i++)
+    {
+        a = a * 0.999999 + b;
+        b = b * 1.000001 - 0.0000001 * a;
+    }
+    // the bits of the result, folded into one word
+    union
+    {
+        double value;
+        unsigned int words[2];
+    } bits = {a + b};
+    return bits.words[0] ^ bits.words[1];
+}
+
+static int test_fpu(void)
+{
+    const double seeds[3] = {1.5, 2.25, 7.125};
+    unsigned int expected[3];
+    for (int i = 0; i < 3; i++)
+        expected[i] = fpu_work(seeds[i]);
+
+    int fds[2];
+    pipe(fds);
+    pid_t children[3];
+    for (int i = 0; i < 3; i++)
+    {
+        children[i] = fork();
+        if (children[i] == 0)
+        {
+            unsigned int result = fpu_work(seeds[i]);
+            write(fds[1], &result, sizeof(result));
+            _exit(0);
+        }
+    }
+    close(fds[1]);
+
+    int mismatches = 0;
+    for (int i = 0; i < 3; i++)
+    {
+        waitpid(children[i], NULL, 0);
+    }
+    // results arrive in any order: each must be one of the expected ones
+    unsigned int result;
+    int count = 0;
+    while (read(fds[0], &result, sizeof(result)) == sizeof(result))
+    {
+        count++;
+        if (result != expected[0] && result != expected[1] && result != expected[2])
+            mismatches++;
+    }
+    close(fds[0]);
+
+    if (count != 3 || mismatches != 0)
+    {
+        printf("proctest fpu: %d results, %d wrong\n", count, mismatches);
+        return 1;
+    }
+    printf("proctest fpu: ok\n");
+    return 0;
+}
+
 static int test_exec(void)
 {
     char *missing_argv[] = {"missing", NULL};
@@ -510,7 +584,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: proctest fork|pipe|atomic|many|flags|offset|wait|exec\n");
+        printf("usage: proctest fork|pipe|atomic|many|flags|offset|wait|exec|fpu\n");
         return 1;
     }
 
@@ -532,6 +606,8 @@ int main(int argc, char **argv)
         return test_wait();
     if (strcmp(argv[1], "exec") == 0)
         return test_exec();
+    if (strcmp(argv[1], "fpu") == 0)
+        return test_fpu();
     if (strcmp(argv[1], "execed") == 0)
         return test_execed(argc, argv);
 

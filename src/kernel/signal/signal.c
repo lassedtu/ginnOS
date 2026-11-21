@@ -3,6 +3,7 @@
 #include "arch/arch.h"
 #include "arch/x86/cpu/isr.h"
 #include "common/memory.h"
+#include "common/stddef.h"
 #include "common/stdio.h"
 #include "kernel/errno.h"
 #include "kernel/klog/klog.h"
@@ -67,6 +68,9 @@ typedef struct
     uint32_t return_address;
     int32_t signal;
     sigcontext_t context;
+    // the FPU/SSE registers of the interrupted code (FXSAVE needs 16-byte
+    // alignment; the frame itself is aligned to 16)
+    uint8_t fpu[ARCH_FPU_STATE_SIZE] __attribute__((aligned(16)));
 } sigframe_t;
 
 static bool valid_signal(int sig)
@@ -279,7 +283,11 @@ static bool enter_handler(process_t *proc, struct registers *regs, int sig)
 {
     ksigaction_t *action = &proc->signals.actions[sig];
 
+    // the FPU registers go through the process's own aligned save area:
+    // FXSAVE needs 16-byte alignment, which the kernel stack does not have
     sigframe_t frame;
+    arch_fpu_save(proc->fpu_state);
+    memcpy(frame.fpu, proc->fpu_state, sizeof(frame.fpu));
     frame.return_address = (uint32_t)action->restorer;
     frame.signal = sig;
     frame.context.edi = regs->edi;
@@ -655,10 +663,29 @@ syscall_ret_t sys_sigreturn(struct registers *regs)
     process_t *proc = process_current();
 
     // the handler's ret popped the return address: ESP is at the signal
-    // number, and the saved context follows it
+    // number, so the frame starts one word below it
+    //
+    // the FPU registers go through the process's own aligned save area.
+    // interrupts stay masked from the copy to the load: a process switch in
+    // between would save the CPU's registers over the copy (the copy does
+    // not sleep)
+    uint8_t *fpu = proc->fpu_state;
     sigcontext_t context;
-    const void *user_context = (const void *)(uintptr_t)(regs->esp + sizeof(int32_t));
-    if (kerr_failed(copy_from_user(&context, user_context, sizeof(context))))
+    uintptr_t frame = (uintptr_t)regs->esp - sizeof(uint32_t);
+    const void *user_context = (const void *)(frame + offsetof(sigframe_t, context));
+    const void *user_fpu = (const void *)(frame + offsetof(sigframe_t, fpu));
+
+    uint32_t mask_flags = arch_irq_save();
+    bool copied = kerr_ok(copy_from_user(&context, user_context, sizeof(context))) &&
+                  kerr_ok(copy_from_user(fpu, user_fpu, ARCH_FPU_STATE_SIZE));
+    if (copied)
+    {
+        arch_fpu_sanitize(fpu);
+        arch_fpu_restore(fpu);
+    }
+    arch_irq_restore(mask_flags);
+
+    if (!copied)
     {
         proc->fault_addr = (uintptr_t)user_context;
         proc->fault_write = false;

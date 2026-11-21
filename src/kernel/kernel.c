@@ -109,6 +109,10 @@ void kernel_main(boot_info_t *boot)
 
     syscall_initialize();
 
+    // the FPU and SSE for user programs (their registers are saved on
+    // every process switch); before the first process gets its clean state
+    arch_fpu_init();
+
     process_init();
 
     scheduler_init();
