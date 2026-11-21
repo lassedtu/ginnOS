@@ -13,6 +13,7 @@
 #include "line.h"
 #include "history.h"
 #include "env.h"
+#include "jobs.h"
 
 #define INPUT_MAX 256
 #define CWD_MAX 256
@@ -59,6 +60,7 @@ int main(void)
     env_init();
     line_init();
     history_init();
+    jobs_init();
 
     // set default environment
     env_set("PATH", "/bin");
@@ -66,6 +68,9 @@ int main(void)
 
     while (1)
     {
+        // say which background jobs ended or stopped since the last prompt
+        jobs_report();
+
         print_prompt();
         line_set_prompt_len(prompt_len());
 

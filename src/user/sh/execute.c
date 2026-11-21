@@ -8,6 +8,7 @@
 #include "execute.h"
 #include "redir.h"
 #include "env.h"
+#include "jobs.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -198,16 +199,35 @@ static int resolve_stage(pipeline_stage_t *stage, char *path)
 }
 
 /**
- * execute a pipeline (one or more stages connected by pipes). every stage
- * runs in a forked child, which sets up its own stdin/stdout and execs the
- * program; the shell's own fds never change.
+ * the command line of a pipeline, for the job table.
  */
-void execute_pipeline(pipeline_t *pipeline)
+static void describe(token_list_t *tokens, int background, char *out, int size)
+{
+    int used = 0;
+    out[0] = '\0';
+    for (int i = 0; i < tokens->count && used < size - 1; i++)
+    {
+        used += snprintf(out + used, size - used, i ? " %s" : "%s", tokens->tokens[i]);
+    }
+    if (background && used < size - 3)
+        strcpy(out + used, " &");
+}
+
+/**
+ * execute a pipeline (one or more stages connected by pipes) as a job:
+ * every stage runs in a forked child, in one process group per pipeline.
+ * the child sets up its own stdin/stdout and execs the program; the
+ * shell's own fds never change. a foreground job gets the terminal until
+ * it ends or stops; a background job runs on.
+ */
+static void execute_pipeline(pipeline_t *pipeline, int background, const char *command)
 {
     if (pipeline->count == 0)
         return;
 
     pid_t children[PIPELINE_MAX];
+    int child_count = 0;
+    pid_t pgid = 0;
     int pipe_fds[PIPELINE_MAX - 1][2]; // pipe_fds[i] connects stage i to stage i+1
     int pipe_count = pipeline->count - 1;
 
@@ -231,7 +251,6 @@ void execute_pipeline(pipeline_t *pipeline)
         pipeline_stage_t *stage = &pipeline->stages[i];
         char path[PATH_BUF_SIZE];
 
-        children[i] = -1;
         if (!resolve_stage(stage, path))
             continue;
 
@@ -244,6 +263,8 @@ void execute_pipeline(pipeline_t *pipeline)
 
         if (child == 0)
         {
+            jobs_child_setup(pgid, !background);
+
             // stdin from the previous stage, stdout to the next one; an
             // explicit redirection in the stage overrides these
             if (i > 0)
@@ -262,7 +283,10 @@ void execute_pipeline(pipeline_t *pipeline)
             exec_in_child(stage, path);
         }
 
-        children[i] = child;
+        if (pgid == 0)
+            pgid = child;
+        setpgid(child, pgid);
+        children[child_count++] = child;
     }
 
     for (int i = 0; i < pipe_count; i++)
@@ -271,27 +295,38 @@ void execute_pipeline(pipeline_t *pipeline)
         close(pipe_fds[i][1]);
     }
 
-    // the status of a pipeline is that of its last stage: its exit code,
-    // or 128 + the signal that killed it
-    int last_exit = 127;
-    for (int i = 0; i < pipeline->count; i++)
+    if (child_count == 0)
     {
-        int status;
-        if (children[i] < 0 || waitpid(children[i], &status, 0) < 0)
-            last_exit = 127;
-        else if (WIFEXITED(status))
-            last_exit = WEXITSTATUS(status);
-        else
-            last_exit = 128 + WTERMSIG(status);
+        shell_last_exit_code = 127;
+        return;
     }
 
-    shell_last_exit_code = last_exit;
+    job_t *job = jobs_add(pgid, children, child_count, command, !background);
+    if (!job)
+    {
+        printf("skl: too many jobs\n");
+        return;
+    }
+    if (!background)
+        jobs_wait_foreground(job);
 }
 
-// keep the old execute() as a convenience wrapper for main.c
 void execute(token_list_t *tokens)
 {
+    // a trailing & runs the pipeline in the background
+    int background = 0;
+    if (tokens->count > 0 && strcmp(tokens->tokens[tokens->count - 1], "&") == 0)
+    {
+        background = 1;
+        tokens->count--;
+    }
+    if (tokens->count == 0)
+        return;
+
+    char command[JOB_COMMAND_MAX];
+    describe(tokens, background, command, sizeof(command));
+
     pipeline_t pipeline;
     pipeline_parse(tokens, &pipeline);
-    execute_pipeline(&pipeline);
+    execute_pipeline(&pipeline, background, command);
 }
