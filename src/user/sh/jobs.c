@@ -22,8 +22,20 @@ static struct termios shell_modes;
 static const int job_signals[] = {SIGINT, SIGQUIT, SIGTSTP, SIGTTIN, SIGTTOU};
 #define JOB_SIGNAL_COUNT 5
 
+// true for an interactive shell; "sh -c" runs without job control, so its
+// commands stay in the caller's process group and it never takes the
+// terminal
+static bool job_control;
+
+bool jobs_enabled(void)
+{
+    return job_control;
+}
+
 void jobs_init(void)
 {
+    job_control = true;
+
     for (int i = 0; i < JOB_SIGNAL_COUNT; i++)
         signal(job_signals[i], SIG_IGN);
 
@@ -39,6 +51,9 @@ void jobs_child_setup(pid_t pgid, int foreground)
     pid_t self = getpid();
     if (pgid == 0)
         pgid = self;
+
+    if (!job_control)
+        return;
 
     // both the shell and the child set the group, so neither depends on
     // which of them runs first
@@ -155,7 +170,8 @@ static void free_job(job_t *job)
 
 void jobs_wait_foreground(job_t *job)
 {
-    tcsetpgrp(0, job->pgid);
+    if (job_control)
+        tcsetpgrp(0, job->pgid);
 
     while (job->state == JOB_RUNNING)
     {
@@ -168,7 +184,8 @@ void jobs_wait_foreground(job_t *job)
 
     // the shell takes the terminal back, with its own settings; a stopped
     // job's settings are kept for fg
-    tcsetpgrp(0, shell_pgid);
+    if (job_control)
+        tcsetpgrp(0, shell_pgid);
     if (job->state == JOB_STOPPED)
     {
         job->has_modes = tcgetattr(0, &job->modes) == 0;

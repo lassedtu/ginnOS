@@ -285,7 +285,8 @@ static void execute_pipeline(pipeline_t *pipeline, int background, const char *c
 
         if (pgid == 0)
             pgid = child;
-        setpgid(child, pgid);
+        if (jobs_enabled())
+            setpgid(child, pgid);
         children[child_count++] = child;
     }
 

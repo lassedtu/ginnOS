@@ -52,9 +52,36 @@ static int prompt_len(void)
     return len;
 }
 
-int main(void)
+/**
+ * run one command line: variables, then a builtin or a program.
+ */
+static void run_line(char *line)
 {
     token_list_t tokens;
+    tokenize(line, &tokens);
+    if (tokens.count == 0)
+        return;
+
+    // expand variables ($VAR, ${VAR}, $?, $$)
+    expand_variables(&tokens);
+
+    // try builtins first, then an external command
+    if (!builtin_run(&tokens))
+        execute(&tokens);
+}
+
+int main(int argc, char **argv)
+{
+    // "sh -c command": run one line without job control, for system()
+    if (argc >= 3 && strcmp(argv[1], "-c") == 0)
+    {
+        env_init();
+        env_set("PATH", "/bin");
+        strncpy(input_buf, argv[2], sizeof(input_buf) - 1);
+        input_buf[sizeof(input_buf) - 1] = '\0';
+        run_line(input_buf);
+        return shell_last_exit_code;
+    }
 
     // initialize subsystems
     env_init();
@@ -86,20 +113,7 @@ int main(void)
 
         // add to history before executing
         history_add(input_buf);
-
-        tokenize(input_buf, &tokens);
-        if (tokens.count == 0)
-            continue;
-
-        // expand variables ($VAR, ${VAR}, $?, $$)
-        expand_variables(&tokens);
-
-        // try builtins first
-        if (builtin_run(&tokens))
-            continue;
-
-        // external command
-        execute(&tokens);
+        run_line(input_buf);
     }
 
     return 0;
