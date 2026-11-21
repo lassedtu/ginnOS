@@ -48,6 +48,18 @@ static const char *const exception_names[] =
 
 void exception_dump_regs(const struct registers *regs)
 {
+#ifdef __x86_64__
+    // the CPU pushes ss:rsp on every interrupt in long mode
+    printf("rax=0x%lx rbx=0x%lx rcx=0x%lx rdx=0x%lx\r\n", regs->rax, regs->rbx, regs->rcx,
+           regs->rdx);
+    printf("rsi=0x%lx rdi=0x%lx rbp=0x%lx rsp=0x%lx\r\n", regs->rsi, regs->rdi, regs->rbp,
+           regs->rsp);
+    printf("r8=0x%lx r9=0x%lx r10=0x%lx r11=0x%lx\r\n", regs->r8, regs->r9, regs->r10, regs->r11);
+    printf("r12=0x%lx r13=0x%lx r14=0x%lx r15=0x%lx\r\n", regs->r12, regs->r13, regs->r14,
+           regs->r15);
+    printf("rip=0x%lx cs=0x%lx rflags=0x%lx ss=0x%lx\r\n", regs->rip, regs->cs, regs->rflags,
+           regs->ss);
+#else
     // esp/ss are only pushed on a privilege change. for a kernel-mode trap
     // the interrupted stack pointer is where the esp field would be.
     bool from_kernel = (regs->cs & 3u) == 0;
@@ -84,6 +96,7 @@ void exception_dump_regs(const struct registers *regs)
             regs->eflags,
             regs->ss);
     }
+#endif
 }
 
 // true if the instruction ending just before ret is a near call: e8 rel32,
@@ -126,9 +139,14 @@ static bool follows_call(uintptr_t ret)
 // guess: a function with a frame may have a stale code address there.
 static uintptr_t probable_caller(const struct registers *regs)
 {
+#ifdef __x86_64__
+    // the CPU pushes the interrupted rsp: read the word on top of the stack
+    uintptr_t top = *(const uintptr_t *)regs->rsp;
+#else
     // a same-privilege trap does not push esp/ss, so the trap frame's esp
     // field overlays the interrupted stack: it holds the word on top of it.
     uintptr_t top = regs->esp;
+#endif
     if (!ksym_is_kernel_text(top - 6) || !ksym_is_kernel_text(top - 1))
     {
         return 0;
@@ -143,9 +161,9 @@ void exception_panic(const char *message, const struct registers *regs)
     bool from_kernel = (regs->cs & 3u) == 0;
     if (!from_kernel)
     {
-        kernel_panic_at(message, regs->eip, 0, 0);
+        kernel_panic_at(message, REG_IP(regs), 0, 0);
     }
-    kernel_panic_at(message, regs->eip, probable_caller(regs), regs->ebp);
+    kernel_panic_at(message, REG_IP(regs), probable_caller(regs), REG_FP(regs));
 }
 
 /**
@@ -185,13 +203,14 @@ void exception_handler(struct registers *regs)
 {
     // a fault in user code is the program's: it gets a signal (by default
     // it dies) and the kernel goes on
-    int sig = signal_for_vector(regs->interrupt);
+    uint32_t vector = (uint32_t)regs->interrupt;
+    int sig = signal_for_vector(vector);
     process_t *proc = process_current();
     if ((regs->cs & 3u) == 3u && sig != 0 && proc)
     {
-        KLOG_WARN("pid %u: %s at pc 0x%x, signal %d", proc->pid,
-                  exception_names[regs->interrupt], regs->eip, sig);
-        proc->fault_addr = regs->eip;
+        KLOG_WARN("pid %u: %s at pc 0x%lx, signal %d", proc->pid, exception_names[vector],
+                  (unsigned long)REG_IP(regs), sig);
+        proc->fault_addr = REG_IP(regs);
         proc->fault_write = false;
         signal_force(proc, sig);
         return;
@@ -199,12 +218,12 @@ void exception_handler(struct registers *regs)
 
     printf(
         "\r\nEXCEPTION: %s (vector %u)\r\n",
-        exception_names[regs->interrupt],
-        regs->interrupt);
+        exception_names[vector],
+        vector);
 
     printf(
         "error code: 0x%x\r\n",
-        regs->error);
+        (uint32_t)regs->error);
 
     exception_dump_regs(regs);
     exception_panic("CPU exception", regs);

@@ -22,14 +22,14 @@ static uint16_t irq_warned_mask;
  */
 static void irq_handler(struct registers *regs)
 {
-    int irq = regs->interrupt - PIC_REMAP_OFFSET;
+    int irq = (int)regs->interrupt - PIC_REMAP_OFFSET;
 
     // if the IRQ number is out of range, send EOI anyway so the PIC line is
     // released, then bail, skipping EOI here would permanently freeze all
     // lower-priority interrupts since the PIC would never see the line cleared.
     if (irq < 0 || irq >= 16)
     {
-        pic_send_eoi(regs->interrupt - PIC_REMAP_OFFSET);
+        pic_send_eoi((int)regs->interrupt - PIC_REMAP_OFFSET);
         return;
     }
 

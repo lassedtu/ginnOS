@@ -30,7 +30,7 @@ static irq_handler_fn neutral_handlers[IRQ_LINE_COUNT];
  */
 static void irq_adapter(struct registers *regs)
 {
-    uint32_t irq = regs->interrupt - PIC_REMAP_OFFSET;
+    uint32_t irq = (uint32_t)regs->interrupt - PIC_REMAP_OFFSET;
     if (irq < IRQ_LINE_COUNT && neutral_handlers[irq] != 0)
     {
         neutral_handlers[irq](irq, (trap_frame_t *)regs);

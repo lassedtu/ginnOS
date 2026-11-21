@@ -15,15 +15,30 @@ typedef uintptr_t syscall_arg_t;
 
 /**
  * read syscall argument n (0-based). the only place that knows the register
- * convention: int 0x80 on i686 passes EBX, ECX, EDX, ESI, EDI.
+ * convention: int 0x80 on i686 passes EBX, ECX, EDX, ESI, EDI; syscall on
+ * x86_64 passes RDI, RSI, RDX, R10, R8, R9 (RCX holds the return address).
  * @param regs the trap frame of the syscall.
- * @param n argument index, 0 to 4.
+ * @param n argument index, 0 to 4 (0 to 5 on x86_64).
  * @return the argument.
  */
 static inline syscall_arg_t syscall_arg(const struct registers *regs, int n)
 {
     switch (n)
     {
+#ifdef __x86_64__
+    case 0:
+        return regs->rdi;
+    case 1:
+        return regs->rsi;
+    case 2:
+        return regs->rdx;
+    case 3:
+        return regs->r10;
+    case 4:
+        return regs->r8;
+    default:
+        return regs->r9;
+#else
     case 0:
         return regs->ebx;
     case 1:
@@ -34,13 +49,14 @@ static inline syscall_arg_t syscall_arg(const struct registers *regs, int n)
         return regs->esi;
     default:
         return regs->edi;
+#endif
     }
 }
 
 /**
- * syscall function pointer type. takes a pointer to the CPU registers struct and returns an int32_t.
- * the registers struct contains the syscall number in EAX and arguments in EBX, ECX, EDX, ESI, EDI.
- * the return value is placed in EAX.
+ * syscall function pointer type. a handler reads its arguments with
+ * syscall_arg and returns its result; the dispatcher puts the result in
+ * REG_RESULT (EAX or RAX).
  */
 typedef intptr_t syscall_ret_t;
 typedef syscall_ret_t (*syscall_fn_t)(struct registers *regs);

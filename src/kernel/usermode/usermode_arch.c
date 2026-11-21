@@ -134,17 +134,19 @@ void jump_to_usermode(uintptr_t entry, addr_space_t as, const char **argv, const
 
 void usermode_reset_frame(struct registers *regs, uintptr_t entry, uintptr_t user_esp)
 {
-    regs->edi = 0;
-    regs->esi = 0;
-    regs->ebp = 0;
-    regs->ebx = 0;
-    regs->edx = 0;
-    regs->ecx = 0;
-    regs->eax = 0;
-    regs->eip = (uint32_t)entry;
-    regs->esp = (uint32_t)user_esp;
-    regs->eflags = USER_EFLAGS;
+    // all general registers start at zero
+    struct registers clean;
+    memset(&clean, 0, sizeof(clean));
+    clean.interrupt = regs->interrupt;
+    clean.error = regs->error;
+    *regs = clean;
+
+    REG_IP(regs) = entry;
+    REG_SP(regs) = user_esp;
+    REG_FLAGS(regs) = USER_EFLAGS;
     regs->cs = GDT_USER_CODE;
     regs->ss = GDT_USER_DATA;
+#ifndef __x86_64__
     regs->ds = GDT_USER_DATA;
+#endif
 }

@@ -40,7 +40,7 @@ void arch_setup_fork_stack(process_t *child, const struct registers *regs)
     uintptr_t top = child->kernel_stack + KERNEL_STACK_SIZE;
     struct registers *frame = (struct registers *)(top - sizeof(struct registers));
     *frame = *regs;
-    frame->eax = 0; // fork returns 0 in the child
+    REG_RESULT(frame) = 0; // fork returns 0 in the child
 
     // below it, the frame arch_context_switch pops: four registers, then a
     // return address into isr_exit, with ESP left at the saved registers

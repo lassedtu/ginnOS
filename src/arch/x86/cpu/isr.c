@@ -57,14 +57,14 @@ void __attribute__((cdecl)) isr_handler(struct registers *regs)
         handlers[regs->interrupt](regs);
 
         // back to user mode: pending signals are acted on first
-        if ((regs->cs & 3u) == 3u)
+        if (regs_from_user(regs))
         {
             signal_deliver(regs);
         }
     }
     else
     {
-        uint32_t vec = regs->interrupt;
+        uint32_t vec = (uint32_t)regs->interrupt;
         uint32_t word = vec / 32;
         uint32_t bit = 1u << (vec % 32);
 

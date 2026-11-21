@@ -80,17 +80,17 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
 };
 
 /**
- * int 0x80 handler. dispatches to the appropriate syscall based on EAX.
- * arguments are passed in EBX, ECX, EDX, ESI, EDI.
- * return value is placed in EAX.
+ * the syscall handler (int 0x80 on i686, the syscall instruction on
+ * x86_64). the number is in REG_RESULT, the arguments are read with
+ * syscall_arg, and the result goes back in REG_RESULT.
  */
 static void syscall_handler(struct registers *regs)
 {
-    uint32_t num = regs->eax;
+    uintptr_t num = REG_RESULT(regs);
 
     if (num >= SYSCALL_COUNT || !syscall_table[num])
     {
-        regs->eax = (uint32_t)-ENOSYS;
+        REG_RESULT(regs) = (uintptr_t)-ENOSYS;
         return;
     }
 
@@ -98,11 +98,10 @@ static void syscall_handler(struct registers *regs)
     process_t *proc = process_current();
     if (proc)
     {
-        proc->syscall_nr = num;
+        proc->syscall_nr = (uint32_t)num;
     }
 
-    // the return value goes back in EAX
-    regs->eax = (uint32_t)syscall_table[num](regs);
+    REG_RESULT(regs) = (uintptr_t)syscall_table[num](regs);
 }
 
 void syscall_initialize(void)
