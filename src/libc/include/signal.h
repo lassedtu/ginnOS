@@ -34,6 +34,7 @@ typedef int sig_atomic_t;
 #define SIGTSTP   20
 #define SIGTTIN   21
 #define SIGTTOU   22
+#define SIGWINCH  28 // the terminal's window size changed (ignored by default)
 #define NSIG      32
 
 typedef void (*sighandler_t)(int);

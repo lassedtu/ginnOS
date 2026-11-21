@@ -137,6 +137,18 @@ int unsetenv(const char *name);
 int putenv(char *entry);
 
 /**
+ * pseudo-terminals (the master side, /dev/ptmx). posix_openpt opens a new
+ * master; unlockpt lets the slave be opened; ptsname gives the slave's
+ * path (in a static buffer). grantpt does nothing: the slaves are open to
+ * all. see also <pty.h>.
+ */
+int posix_openpt(int flags);
+int grantpt(int fd);
+int unlockpt(int fd);
+char *ptsname(int fd);
+int ptsname_r(int fd, char *buf, size_t size);
+
+/**
  * end the process with SIGABRT.
  */
 void abort(void) __attribute__((noreturn));
