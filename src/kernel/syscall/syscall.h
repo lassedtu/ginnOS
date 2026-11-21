@@ -73,9 +73,10 @@
 #define SYS_CHOWN 64
 #define SYS_UMASK 65
 #define SYS_REBOOT 66 // restart the machine (root only)
+#define SYS_SHM_CREATE 67 // make a shared memory object, return its fd
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 67
+#define SYSCALL_COUNT 68
 
 /**
  * initialize the system call interface.

@@ -76,7 +76,8 @@ bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
     {
         return false;
     }
-    if (!(area->prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) || area->kind == VMA_DEVICE)
+    if (!(area->prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) || area->kind == VMA_DEVICE ||
+        area->kind == VMA_SHARED)
     {
         return false;
     }

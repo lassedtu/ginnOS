@@ -62,3 +62,14 @@ int munmap(void *addr, size_t length);
  *         is not mapped).
  */
 int mprotect(void *addr, size_t length, int prot);
+
+/**
+ * make a shared memory object (a ginnOS call, like Linux's memfd_create):
+ * size bytes of zeroed memory, rounded up to whole pages. every mmap of
+ * the returned fd (MAP_SHARED), in this process or another one that has
+ * the fd (through fork, or sent over a socket), maps the same memory.
+ * @param size the size in bytes.
+ * @param fd_flags FD_CLOEXEC or 0.
+ * @return the fd (open read-write), or -1 with errno set.
+ */
+int shm_create(size_t size, int fd_flags);

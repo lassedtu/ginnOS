@@ -73,6 +73,7 @@
 #define SYS_CHOWN 64 // change a file's owner
 #define SYS_UMASK 65 // set the file creation mask
 #define SYS_REBOOT 66 // restart the machine (root only)
+#define SYS_SHM_CREATE 67 // make a shared memory object, return its fd
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

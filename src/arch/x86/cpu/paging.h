@@ -22,6 +22,7 @@
 #define PTE_ACCESSED 0x020u      // set by CPU when the page is accessed
 #define PTE_DIRTY 0x040u         // set by CPU when the page is written to
 #define PTE_GLOBAL 0x100u        // page is not flushed from TLB on CR3 reload
+#define PTE_SHARED 0x200u        // (a bit for the OS) shared memory: fork does not copy-on-write it
 
 // kernel read/write page: present, writable, supervisor-only.
 #define PTE_KERNEL_RW (PTE_PRESENT | PTE_READ_WRITE)

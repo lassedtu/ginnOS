@@ -78,6 +78,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_CHOWN] = sys_chown,
     [SYS_UMASK] = sys_umask,
     [SYS_REBOOT] = sys_reboot,
+    [SYS_SHM_CREATE] = sys_shm_create,
 };
 
 /**
