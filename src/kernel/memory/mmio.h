@@ -64,3 +64,31 @@ static inline void mmio_write32(volatile void *reg, uint32_t value)
 {
     __asm__ volatile("movl %0, (%1)" : : "r"(value), "r"(reg) : "memory");
 }
+
+/**
+ * 16-bit and 8-bit device registers (Intel HDA has both), each with one
+ * access of that width.
+ */
+static inline uint16_t mmio_read16(const volatile void *reg)
+{
+    uint16_t value;
+    __asm__ volatile("movw (%1), %0" : "=r"(value) : "r"(reg) : "memory");
+    return value;
+}
+
+static inline void mmio_write16(volatile void *reg, uint16_t value)
+{
+    __asm__ volatile("movw %0, (%1)" : : "r"(value), "r"(reg) : "memory");
+}
+
+static inline uint8_t mmio_read8(const volatile void *reg)
+{
+    uint8_t value;
+    __asm__ volatile("movb (%1), %0" : "=q"(value) : "r"(reg) : "memory");
+    return value;
+}
+
+static inline void mmio_write8(volatile void *reg, uint8_t value)
+{
+    __asm__ volatile("movb %0, (%1)" : : "q"(value), "r"(reg) : "memory");
+}

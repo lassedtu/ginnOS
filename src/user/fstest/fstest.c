@@ -19,6 +19,8 @@
  *          sticky /tmp, setuid back, and a set-uid program (fstest itself)
  *   dirent readdir over a directory of 20 files, and getdents with a buffer
  *          that holds one record at a time
+ *   speed  read a file in 64 KiB blocks and print the time and the rate
+ *          ("fstest speed <file>"; not a pass or fail test)
  *
  * each mode prints "fstest <mode>: ok" when it passes.
  */
@@ -33,6 +35,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 static const char *mode_name;
@@ -73,7 +76,10 @@ static int test_stat(void)
         return failed("stat of a directory");
     if (stat("/dev/fb0", &st) != 0 || !S_ISCHR(st.st_mode))
         return failed("stat of a character device");
-    if (stat("/dev/hda", &st) != 0 || !S_ISBLK(st.st_mode))
+    // the first disk: IDE, SATA or NVMe, whichever the machine has
+    if ((stat("/dev/hda", &st) != 0 && stat("/dev/sda", &st) != 0 &&
+         stat("/dev/nvme0", &st) != 0) ||
+        !S_ISBLK(st.st_mode))
         return failed("stat of a block device");
     if (stat("/no/such/file", &st) != -1 || errno != ENOENT)
         return failed("stat of a missing file");
@@ -502,11 +508,39 @@ static int test_dirent(void)
     return ok();
 }
 
+/**
+ * read a whole file and print how long it took.
+ */
+static int test_speed(const char *path)
+{
+    static char block[64 * 1024];
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return failed("open the file");
+
+    struct timespec start;
+    struct timespec end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    long total = 0;
+    ssize_t n;
+    while ((n = read(fd, block, sizeof(block))) > 0)
+        total += n;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    close(fd);
+    if (n < 0)
+        return failed("read");
+
+    long ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
+    long kib_per_s = ms > 0 ? total / ms * 1000 / 1024 : 0;
+    printf("fstest speed: %ld KiB in %ld ms, %ld KiB/s\n", total / 1024, ms, kib_per_s);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll|tmpfs|bigfile|perm\n");
+        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll|tmpfs|bigfile|perm|speed\n");
         return 1;
     }
 
@@ -529,6 +563,8 @@ int main(int argc, char **argv)
         return test_perm();
     if (strcmp(argv[1], "euid") == 0)
         return geteuid() == 0 && getuid() == 1000 ? 0 : 13;
+    if (strcmp(argv[1], "speed") == 0 && argc > 2)
+        return test_speed(argv[2]);
     if (strcmp(argv[1], "bigfile") == 0)
         return test_bigfile(argc > 2 && strcmp(argv[2], "keep") == 0);
 

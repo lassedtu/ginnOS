@@ -50,8 +50,33 @@ int close(int fd);
 int dup(int fd);
 int dup2(int old_fd, int new_fd);
 
-// where the default game data is (tools/freedoom/fetch.sh puts it there)
-#define DEFAULT_IWAD "/usr/share/doom/freedoom1.wad"
+// where the game data is: Freedoom (tools/freedoom/fetch.sh) and the
+// user's own WADs (the Makefile's DOOM_WAD_DIR). without -iwad, the first
+// of these that exists is used: the commercial games, then the shareware
+// Doom, then Freedoom (the order of doomgeneric's own search).
+static const char *const iwad_choices[] = {
+    "/usr/share/doom/doom2.wad",     "/usr/share/doom/plutonia.wad",
+    "/usr/share/doom/tnt.wad",       "/usr/share/doom/doom.wad",
+    "/usr/share/doom/doom1.wad",     "/usr/share/doom/freedoom2.wad",
+    "/usr/share/doom/freedoom1.wad",
+};
+
+/**
+ * the first game data file that exists, or NULL.
+ */
+static const char *find_iwad(void)
+{
+    for (size_t i = 0; i < sizeof(iwad_choices) / sizeof(iwad_choices[0]); i++)
+    {
+        int fd = open(iwad_choices[i], O_RDONLY);
+        if (fd >= 0)
+        {
+            close(fd);
+            return iwad_choices[i];
+        }
+    }
+    return NULL;
+}
 
 static uint8_t *screen;      // the mapped framebuffer
 static uint32_t screen_pitch; // bytes per framebuffer row
@@ -225,7 +250,8 @@ void DG_DrawFrame(void)
 
         for (uint32_t i = 0; i < scale; i++)
         {
-            uint8_t *dst = screen + (origin_y + y * scale + i) * screen_pitch + origin_x * screen_bpp;
+            uint8_t *dst = screen + (origin_y + y * scale + i) * screen_pitch +
+                           origin_x * screen_bpp;
             if (screen_bpp == 4)
             {
                 memcpy(dst, row_buffer, width * 4);
@@ -329,7 +355,7 @@ void DG_SetWindowTitle(const char *title)
 
 int main(int argc, char **argv)
 {
-    // without -iwad, use the Freedoom data in /usr/share/doom
+    // without -iwad, use the best game data in /usr/share/doom
     int has_iwad = 0;
     for (int i = 1; i < argc; i++)
     {
@@ -345,10 +371,11 @@ int main(int argc, char **argv)
     {
         args[count++] = argv[i];
     }
-    if (!has_iwad)
+    const char *iwad = has_iwad ? NULL : find_iwad();
+    if (iwad)
     {
         args[count++] = "-iwad";
-        args[count++] = DEFAULT_IWAD;
+        args[count++] = (char *)iwad;
     }
     args[count] = NULL;
 

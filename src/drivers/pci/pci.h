@@ -20,6 +20,9 @@
 #define PCI_CLASS_STORAGE   0x01
 #define PCI_SUBCLASS_SATA   0x06 // with prog_if 0x01: AHCI
 #define PCI_SUBCLASS_NVME   0x08
+#define PCI_CLASS_MULTIMEDIA 0x04
+#define PCI_SUBCLASS_AC97   0x01 // multimedia audio controller
+#define PCI_SUBCLASS_HDA    0x03 // high definition audio
 #define PCI_CLASS_BRIDGE    0x06
 #define PCI_CLASS_SERIAL    0x0C
 #define PCI_SUBCLASS_USB    0x03 // with prog_if 0x30: xHCI

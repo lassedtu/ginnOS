@@ -62,6 +62,7 @@
 #define CALIBRATE_MS   10u
 
 static volatile uint32_t *lapic;
+static uint8_t lapic_id_value;
 static bool active;
 static bool timer_on_lapic; // IRQ 0 comes from the local APIC timer
 
@@ -327,6 +328,7 @@ bool apic_init(uint32_t timer_hz)
 
     uint8_t lapic_id = (uint8_t)(lapic_read(LAPIC_ID) >> 24);
     route_isa_irqs(lapic_id);
+    lapic_id_value = lapic_id;
     active = true;
 
     timer_on_lapic = start_timer(timer_hz);
@@ -372,4 +374,21 @@ void apic_set_irq_masked(uint32_t irq, bool masked)
     uint32_t low = ioapic_read(ioapic, reg);
     low = masked ? (low | REDIR_MASKED) : (low & ~REDIR_MASKED);
     ioapic_write(ioapic, reg, low);
+}
+
+uint8_t apic_id(void)
+{
+    return lapic_id_value;
+}
+
+void apic_set_irq_level(uint32_t irq)
+{
+    if (irq >= 16 || !isa_routes[irq].ioapic)
+    {
+        return;
+    }
+
+    ioapic_t *ioapic = isa_routes[irq].ioapic;
+    uint32_t reg = IOAPIC_REDTBL + isa_routes[irq].index * 2;
+    ioapic_write(ioapic, reg, ioapic_read(ioapic, reg) | REDIR_LEVEL);
 }

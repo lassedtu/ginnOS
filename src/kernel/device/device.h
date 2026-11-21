@@ -15,6 +15,7 @@
 
 #include "common/stdint.h"
 #include "arch/arch.h"
+#include "common/error.h"
 
 // broad device classes, enough to group the registry today.
 typedef enum
@@ -31,6 +32,7 @@ typedef enum
 
 struct device;
 typedef struct device device_t;
+struct file;
 
 /**
  * optional per-device operations. all fields may be NULL; the model does not
@@ -91,6 +93,18 @@ typedef struct
      * unknown/zero). used for read clamping and lseek(SEEK_END).
      */
     uint32_t (*size)(device_t *dev);
+    /**
+     * open the device as a stream of its own (optional). when set, open(2)
+     * of the /dev node gives the file this hook makes, with the device's
+     * own file operations (blocking, O_NONBLOCK, poll, a release when the
+     * last descriptor closes), and read, write and ioctl above are not
+     * used for it.
+     * @param dev the device.
+     * @param flags the O_ access mode and status flags of the open.
+     * @param out receives the new open-file description.
+     * @return KERR_OK, or an error (KERR_BUSY if the device is in use).
+     */
+    kerr_t (*open)(device_t *dev, uint32_t flags, struct file **out);
 } device_ops_t;
 
 /**

@@ -16,15 +16,16 @@
  * caller's buffer can be on a kernel stack, which is not physically
  * contiguous.
  *
- * locking: one transfer at a time per disk, with interrupts off while the
- * command runs (the kernel is uniprocessor and the wait is short).
+ * locking: one transfer at a time per disk (a mutex). the waiting process
+ * sleeps until the port interrupt (MSI, or the shared INTx line); without
+ * an interrupt it polls (see kernel/sync/completion.h).
  */
 
 #include "ahci.h"
 
-#include "arch/arch.h"
 #include "common/memory.h"
 #include "drivers/pci/pci.h"
+#include "drivers/pci/pci_irq.h"
 #include "kernel/klog/klog.h"
 #include "kernel/memory/mmio.h"
 #include "kernel/memory/page.h"
@@ -33,10 +34,12 @@
 // generic host control registers (byte offsets in ABAR)
 #define HBA_CAP 0x00
 #define HBA_GHC 0x04
+#define HBA_IS  0x08
 #define HBA_PI  0x0C
 
 #define CAP_S64A   (1u << 31) // 64-bit DMA addresses
 #define GHC_AE     (1u << 31) // AHCI mode
+#define GHC_IE     (1u << 1)  // interrupts on
 #define PORT_BASE  0x100
 #define PORT_SIZE  0x80
 
@@ -64,6 +67,15 @@
 #define TFD_BSY (1u << 7)
 #define IS_TFES (1u << 30) // task file error
 
+// the port interrupts: a register FIS (non-data commands), a PIO setup FIS
+// (IDENTIFY), a DMA setup FIS, a set device bits FIS, and the errors
+#define IE_DHRS  (1u << 0)
+#define IE_PSS   (1u << 1)
+#define IE_DSS   (1u << 2)
+#define IE_SDBS  (1u << 3)
+#define IE_ERRORS 0xFDC00050u // CPD, TFE, HBF, HBD, IF, INF, OF, IPM, PRC, PC, UF
+#define PORT_IE  (IE_DHRS | IE_PSS | IE_DSS | IE_SDBS | IE_ERRORS)
+
 #define SIG_SATA_DISK 0x00000101u
 #define SSTS_DET_PRESENT 3u
 #define SSTS_IPM_ACTIVE  1u
@@ -85,6 +97,7 @@
 #define SECTOR_SIZE     512u
 #define BOUNCE_SECTORS  (PAGE_SIZE / SECTOR_SIZE)
 #define SPIN_LIMIT      100000000u
+#define COMMAND_TIMEOUT_MS 5000u
 
 static volatile uint8_t *abar;
 static bool dma_64;
@@ -159,6 +172,24 @@ static void write_le32(uint8_t *p, uint32_t value)
 }
 
 /**
+ * the port's interrupt status, with the bits the interrupt handler has
+ * already cleared.
+ */
+static uint32_t port_status(const ahci_disk_t *disk)
+{
+    return port_read(disk, PX_IS) | disk->irq_status;
+}
+
+/**
+ * slot 0 is done, or the port reports a task file error.
+ */
+static bool command_done(void *context)
+{
+    const ahci_disk_t *disk = context;
+    return !(port_read(disk, PX_CI) & 1u) || (port_status(disk) & IS_TFES);
+}
+
+/**
  * run one command in slot 0 and wait for it.
  * @param command the ATA command.
  * @param lba the first sector.
@@ -214,16 +245,14 @@ static bool run_command(ahci_disk_t *disk, uint8_t command, uint64_t lba, uint32
     }
 
     port_write(disk, PX_IS, 0xFFFFFFFFu); // clear old status
+    disk->irq_status = 0;
     port_write(disk, PX_CI, 1u);           // issue slot 0
 
-    for (uint32_t spin = 0; port_read(disk, PX_CI) & 1u; spin++)
+    if (!completion_wait_until(&disk->done, command_done, disk, COMMAND_TIMEOUT_MS))
     {
-        if ((port_read(disk, PX_IS) & IS_TFES) || spin > SPIN_LIMIT)
-        {
-            return false;
-        }
+        return false;
     }
-    return !(port_read(disk, PX_TFD) & TFD_ERR) && !(port_read(disk, PX_IS) & IS_TFES);
+    return !(port_read(disk, PX_TFD) & TFD_ERR) && !(port_status(disk) & IS_TFES);
 }
 
 static bool ahci_transfer(ahci_disk_t *disk, uint32_t start, uint8_t count, void *buffer,
@@ -236,7 +265,7 @@ static bool ahci_transfer(ahci_disk_t *disk, uint32_t start, uint8_t count, void
 
     uint8_t *data = buffer;
     bool ok = true;
-    uint32_t flags = arch_irq_save();
+    mutex_lock(&disk->lock);
     while (count > 0 && ok)
     {
         uint32_t chunk = count < BOUNCE_SECTORS ? count : BOUNCE_SECTORS;
@@ -255,7 +284,7 @@ static bool ahci_transfer(ahci_disk_t *disk, uint32_t start, uint8_t count, void
         start += chunk;
         count = (uint8_t)(count - chunk);
     }
-    arch_irq_restore(flags);
+    mutex_unlock(&disk->lock);
     return ok;
 }
 
@@ -272,9 +301,9 @@ static bool ahci_write(block_device_t *device, uint32_t start, uint8_t count, co
 static bool ahci_flush(block_device_t *device)
 {
     ahci_disk_t *disk = device->context;
-    uint32_t flags = arch_irq_save();
+    mutex_lock(&disk->lock);
     bool ok = run_command(disk, ATA_FLUSH_CACHE_EXT, 0, 0, false, 0, 0);
-    arch_irq_restore(flags);
+    mutex_unlock(&disk->lock);
     return ok;
 }
 
@@ -310,6 +339,7 @@ static bool setup_port(uint32_t number)
     memset(disk, 0, sizeof(*disk));
     disk->port = (volatile uint32_t *)(abar + PORT_BASE + number * PORT_SIZE);
     disk->port_number = (uint8_t)number;
+    mutex_init(&disk->lock);
 
     uint32_t ssts = port_read(disk, PX_SSTS);
     if ((ssts & 0xF) != SSTS_DET_PRESENT || ((ssts >> 8) & 0xF) != SSTS_IPM_ACTIVE ||
@@ -331,8 +361,9 @@ static bool setup_port(uint32_t number)
     port_write(disk, PX_FBU, (uint32_t)((uint64_t)fis >> 32));
     port_write(disk, PX_SERR, 0xFFFFFFFFu);
     port_write(disk, PX_IS, 0xFFFFFFFFu);
-    port_write(disk, PX_IE, 0); // polled
+    port_write(disk, PX_IE, 0); // polled until ahci_init attaches the interrupt
     port_start(disk);
+    completion_init(&disk->done, "ahci", false);
 
     uint8_t *identify = disk->dma_page + OFF_IDENTIFY;
     if (!run_command(disk, ATA_IDENTIFY, 0, 0, false, disk->dma_phys + OFF_IDENTIFY, 512))
@@ -359,6 +390,55 @@ static bool setup_port(uint32_t number)
     KLOG_INFO("ahci: port %u: %u MiB", number, (uint32_t)(sectors / 2048));
     disk_count++;
     return true;
+}
+
+/**
+ * the HBA interrupt: for each port that interrupted, keep and clear its
+ * status and wake the waiter. the port status must be cleared before the
+ * HBA status (AHCI 1.3.1, section 10.7.2).
+ */
+static void ahci_interrupt(void *context)
+{
+    (void)context;
+    uint32_t pending = hba_read(HBA_IS);
+    if (pending == 0)
+    {
+        return; // the shared line was raised by another device
+    }
+
+    for (uint32_t i = 0; i < disk_count; i++)
+    {
+        ahci_disk_t *disk = &disks[i];
+        if (!(pending & (1u << disk->port_number)))
+        {
+            continue;
+        }
+        uint32_t status = port_read(disk, PX_IS);
+        port_write(disk, PX_IS, status);
+        disk->irq_status |= status;
+        completion_signal(&disk->done);
+    }
+    hba_write(HBA_IS, pending);
+}
+
+/**
+ * attach the HBA interrupt and turn on the port interrupts.
+ */
+static void enable_interrupts(pci_device_t *dev)
+{
+    if (pci_irq_attach(dev, ahci_interrupt, NULL, "ahci") == PCI_IRQ_NONE)
+    {
+        return;
+    }
+
+    for (uint32_t i = 0; i < disk_count; i++)
+    {
+        port_write(&disks[i], PX_IS, 0xFFFFFFFFu);
+        port_write(&disks[i], PX_IE, PORT_IE);
+        disks[i].done.use_irq = true;
+    }
+    hba_write(HBA_IS, 0xFFFFFFFFu);
+    hba_write(HBA_GHC, hba_read(HBA_GHC) | GHC_IE);
 }
 
 uint32_t ahci_init(void)
@@ -391,6 +471,11 @@ uint32_t ahci_init(void)
         {
             setup_port(port);
         }
+    }
+
+    if (disk_count > 0)
+    {
+        enable_interrupts(dev);
     }
 
     KLOG_INFO("ahci: %u disk(s)", disk_count);

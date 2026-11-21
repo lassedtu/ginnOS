@@ -143,6 +143,12 @@ GPT ?=
 # leaves both out. DOOM=1 FREEDOOM=0 builds the program without the data.
 DOOM     ?= 0
 FREEDOOM ?= $(DOOM)
+# with DOOM=1, every .wad file in DOOM_WAD_DIR (your own game data, for
+# example the Doom shareware doom1.wad; git ignores .hidden) goes into
+# /usr/share/doom too, with a lowercase name. doom picks the first one of
+# doom2.wad, plutonia.wad, tnt.wad, doom.wad, doom1.wad, freedoom2.wad and
+# freedoom1.wad it finds; doom -iwad <file> picks another.
+DOOM_WAD_DIR ?= .hidden
 FREEDOOM_FETCH := tools/freedoom/fetch.sh
 FREEDOOM_CACHE := build/freedoom
 
@@ -520,7 +526,17 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs
 	@for prog in $(USER_PROGRAMS); do \
 		cp $$prog $(ROOTFS_STAGING)/bin/$$(basename $$prog); \
 	done
+	$(PYTHON) tools/sounds/make_sounds.py $(ROOTFS_STAGING)/usr/share/sounds
 	$(if $(filter 1,$(FREEDOOM)),./$(FREEDOOM_FETCH) $(FREEDOOM_CACHE) $(ROOTFS_STAGING)/usr/share/doom)
+	@if [ "$(DOOM)" = 1 ] && [ -d "$(DOOM_WAD_DIR)" ]; then \
+		for wad in "$(DOOM_WAD_DIR)"/*.[wW][aA][dD]; do \
+			[ -f "$$wad" ] || continue; \
+			mkdir -p $(ROOTFS_STAGING)/usr/share/doom; \
+			name=$$(basename "$$wad" | tr 'A-Z' 'a-z'); \
+			echo "doom: $$wad -> /usr/share/doom/$$name"; \
+			cp "$$wad" "$(ROOTFS_STAGING)/usr/share/doom/$$name"; \
+		done; \
+	fi
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(ROOTFS_STAGING)" \
 		--output "$(ROOTFS_IMAGE)" \
@@ -535,8 +551,26 @@ $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) rootfs-image
 	$(call assemble_disk,$@,$(ROOTFS_IMAGE))
 endif
 
+# the sound card for make run and run-uefi: an Intel HDA controller with a
+# line out, played through the host's sound system (coreaudio on macOS,
+# pa on Linux). AUDIO=ac97 uses an AC'97 card instead, AUDIO=0 none, and
+# QEMU_AUDIODEV=<backend> picks another backend (alsa, sdl, wav,path=x.wav).
+AUDIO ?= hda
+ifeq ($(shell uname -s),Darwin)
+QEMU_AUDIODEV ?= coreaudio
+else
+QEMU_AUDIODEV ?= pa
+endif
+ifeq ($(AUDIO),hda)
+QEMU_AUDIO_FLAGS := -audiodev $(QEMU_AUDIODEV),id=snd0 -device intel-hda -device hda-output,audiodev=snd0
+else ifeq ($(AUDIO),ac97)
+QEMU_AUDIO_FLAGS := -audiodev $(QEMU_AUDIODEV),id=snd0 -device AC97,audiodev=snd0
+else
+QEMU_AUDIO_FLAGS :=
+endif
+
 run: check-tools $(DISK_IMAGE)
-	$(QEMU) $(QEMU_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+	$(QEMU) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 # boot the disk image with UEFI firmware (limine only: stage1 is BIOS-only).
 # the i686 kernel also runs on an x86_64 CPU, so this uses the x86_64
@@ -544,7 +578,8 @@ run: check-tools $(DISK_IMAGE)
 run-uefi: check-tools $(DISK_IMAGE)
 	@test "$(BOOTLOADER)" = limine || { echo "make run-uefi needs BOOTLOADER=limine"; exit 1; }
 	@test -n "$(OVMF_CODE)" || { echo "no OVMF firmware found: set OVMF_CODE=<path to OVMF_CODE.fd>"; exit 1; }
-	$(QEMU_UEFI) $(QEMU_FLAGS) -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+	$(QEMU_UEFI) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) \
+		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 # in-kernel tests: build the test kernel into its own disk image (a copy of the

@@ -2,6 +2,8 @@
 
 #include "kernel/errno.h"
 #include "kernel/vfs/poll.h"
+#include "kernel/device/device.h"
+#include "kernel/fs/devfs.h"
 #include "kernel/memory/heap.h"
 #include "kernel/sync/spinlock.h"
 #include "kernel/assert.h"
@@ -24,6 +26,11 @@ static file_t *file_alloc(const file_ops_t *ops, uint32_t flags)
         file->lookahead = NULL;
     }
     return file;
+}
+
+file_t *file_new(const file_ops_t *ops, uint32_t flags)
+{
+    return file_alloc(ops, flags);
 }
 
 void file_ref(file_t *file)
@@ -294,6 +301,15 @@ kerr_t file_open(const char *path, uint32_t flags, file_t **out)
     {
         kfree(file);
         return err;
+    }
+
+    // a device with its own stream operations makes its own description
+    device_t *dev = devfs_device(&file->vfs.file);
+    if (dev && dev->ops && dev->ops->open)
+    {
+        vfs_close(&file->vfs);
+        kfree(file);
+        return dev->ops->open(dev, flags, out);
     }
 
     *out = file;

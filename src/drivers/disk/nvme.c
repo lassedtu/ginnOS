@@ -11,14 +11,18 @@
  * page (one PRP entry, 8 sectors), because a caller's buffer can be on a
  * kernel stack, which is not physically contiguous.
  *
- * locking: one command at a time, with interrupts off while it runs.
+ * both queues use interrupt vector 0 (MSI-X entry 0, MSI, or INTx). the
+ * waiting process sleeps until it; without an interrupt it polls (see
+ * kernel/sync/completion.h).
+ *
+ * locking: one command at a time (a mutex).
  */
 
 #include "nvme.h"
 
-#include "arch/arch.h"
 #include "common/memory.h"
 #include "drivers/pci/pci.h"
+#include "drivers/pci/pci_irq.h"
 #include "kernel/klog/klog.h"
 #include "kernel/memory/mmio.h"
 #include "kernel/memory/page.h"
@@ -26,6 +30,8 @@
 
 // controller registers
 #define REG_CAP  0x00 // 64 bits
+#define REG_INTMS 0x0C // interrupt mask set (INTx and MSI)
+#define REG_INTMC 0x10 // interrupt mask clear
 #define REG_CC   0x14
 #define REG_CSTS 0x1C
 #define REG_AQA  0x24
@@ -50,7 +56,11 @@
 #define QUEUE_ENTRIES 16
 #define SECTOR_SIZE   512u
 #define BOUNCE_SECTORS (PAGE_SIZE / SECTOR_SIZE)
-#define SPIN_LIMIT    100000000u
+#define COMMAND_TIMEOUT_MS 5000u
+
+// the completion queue flags of CREATE I/O COMPLETION QUEUE (dword 11)
+#define CQ_CONTIGUOUS 0x1u
+#define CQ_IRQ_ON     0x2u // interrupts on, vector 0 (bits 16 to 31)
 
 typedef struct
 {
@@ -69,6 +79,7 @@ static queue_t admin;
 static queue_t io;
 static uint8_t *bounce;
 static nvme_disk_t disk;
+static pci_irq_mode_t irq_mode;
 
 static uint32_t reg_read32(uint32_t reg)
 {
@@ -131,6 +142,42 @@ static bool queue_init(queue_t *queue, uint16_t id)
 }
 
 /**
+ * the entry at the head of a completion queue is new.
+ */
+static bool cq_has_entry(const queue_t *queue)
+{
+    const volatile uint8_t *entry = queue->cq + queue->cq_head * 16;
+    return (entry[14] & 1u) == queue->phase;
+}
+
+/**
+ * a command is done, or the controller has a fatal error.
+ */
+static bool entry_ready(void *context)
+{
+    return cq_has_entry(context) || (reg_read32(REG_CSTS) & CSTS_FATAL);
+}
+
+/**
+ * vector 0: wake the waiter. on a shared INTx line, ignore the interrupt
+ * when no queue has a new entry, and mask the vector until the waiter has
+ * read the entry (the line stays asserted until then).
+ */
+static void nvme_interrupt(void *context)
+{
+    (void)context;
+    if (irq_mode == PCI_IRQ_INTX)
+    {
+        if (!cq_has_entry(&admin) && !(io.cq && cq_has_entry(&io)))
+        {
+            return;
+        }
+        reg_write32(REG_INTMS, 1u);
+    }
+    completion_signal(&disk.done);
+}
+
+/**
  * submit one command and wait for its completion entry.
  * @param command the 64-byte command; the command id is set here.
  * @param result receives dword 0 of the completion (may be NULL).
@@ -147,14 +194,11 @@ static bool submit(queue_t *queue, uint8_t *command, uint32_t *result)
     reg_write32(REG_DOORBELLS + (2u * queue->id) * doorbell_stride, queue->sq_tail);
 
     volatile uint8_t *entry = queue->cq + queue->cq_head * 16;
-    for (uint32_t spin = 0; ((entry[14] & 1u) != queue->phase); spin++)
+    if (!completion_wait_until(&disk.done, entry_ready, queue, COMMAND_TIMEOUT_MS) ||
+        !((entry[14] & 1u) == queue->phase))
     {
-        if (spin > SPIN_LIMIT || (reg_read32(REG_CSTS) & CSTS_FATAL))
-        {
-            return false;
-        }
+        return false;
     }
-
     uint32_t dw0 = get32((const uint8_t *)entry);
     uint16_t status = (uint16_t)((entry[14] | (entry[15] << 8)) >> 1);
 
@@ -164,6 +208,13 @@ static bool submit(queue_t *queue, uint8_t *command, uint32_t *result)
         queue->phase ^= 1u;
     }
     reg_write32(REG_DOORBELLS + (2u * queue->id + 1) * doorbell_stride, queue->cq_head);
+
+    // the INTx handler masked vector 0 to stop the level interrupt; the
+    // entry is consumed now
+    if (irq_mode == PCI_IRQ_INTX)
+    {
+        reg_write32(REG_INTMC, 1u);
+    }
 
     if (result)
     {
@@ -189,7 +240,7 @@ static bool nvme_transfer(nvme_disk_t *d, uint32_t start, uint8_t count, void *b
 
     uint8_t *data = buffer;
     bool ok = true;
-    uint32_t flags = arch_irq_save();
+    mutex_lock(&d->lock);
     while (count > 0 && ok)
     {
         uint32_t chunk = count < BOUNCE_SECTORS ? count : BOUNCE_SECTORS;
@@ -213,7 +264,7 @@ static bool nvme_transfer(nvme_disk_t *d, uint32_t start, uint8_t count, void *b
         start += chunk;
         count = (uint8_t)(count - chunk);
     }
-    arch_irq_restore(flags);
+    mutex_unlock(&d->lock);
     return ok;
 }
 
@@ -232,9 +283,9 @@ static bool nvme_flush(block_device_t *device)
     (void)device;
     uint8_t command[64];
     command_init(command, IO_FLUSH, 1, 0);
-    uint32_t flags = arch_irq_save();
+    mutex_lock(&disk.lock);
     bool ok = submit(&io, command, NULL);
-    arch_irq_restore(flags);
+    mutex_unlock(&disk.lock);
     return ok;
 }
 
@@ -288,7 +339,7 @@ static bool create_io_queues(void)
     uint8_t command[64];
     command_init(command, ADMIN_CREATE_CQ, 0, virt_to_phys(io.cq));
     put32(command + 40, ((uint32_t)(QUEUE_ENTRIES - 1) << 16) | io.id);
-    put32(command + 44, 1); // physically contiguous, no interrupts
+    put32(command + 44, CQ_CONTIGUOUS | (irq_mode != PCI_IRQ_NONE ? CQ_IRQ_ON : 0));
     if (!submit(&admin, command, NULL))
     {
         return false;
@@ -342,9 +393,13 @@ nvme_disk_t *nvme_init(void)
         return NULL;
     }
 
-    uint32_t flags = arch_irq_save();
+    // the admin queue interrupts on vector 0 from now on; the commands
+    // below still poll (completion use_irq is false during boot)
+    mutex_init(&disk.lock);
+    completion_init(&disk.done, "nvme", false);
+    irq_mode = pci_irq_attach(dev, nvme_interrupt, NULL, "nvme");
+
     bool ok = identify_namespace() && create_io_queues();
-    arch_irq_restore(flags);
     if (!ok)
     {
         return NULL;
@@ -356,6 +411,7 @@ nvme_disk_t *nvme_init(void)
     disk.block.read_blocks = nvme_read;
     disk.block.write_blocks = nvme_write;
     disk.block.flush = nvme_flush;
+    disk.done.use_irq = irq_mode != PCI_IRQ_NONE;
     KLOG_INFO("nvme: namespace 1: %u MiB", (uint32_t)(disk.sectors / 2048));
     return &disk;
 }

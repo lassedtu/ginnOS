@@ -6,6 +6,8 @@
 #include "kernel/errno.h"
 #include "kernel/fs/block_cache.h"
 #include "drivers/pci/pci.h"
+#include "drivers/pci/pci_irq.h"
+#include "kernel/audio/audio.h"
 #include "kernel/memory/heap.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/process/process.h"
@@ -20,6 +22,8 @@
  *   /proc/meminfo       physical memory and kernel heap use
  *   /proc/uptime        seconds since boot
  *   /proc/pci           the PCI functions (drivers/pci)
+ *   /proc/interrupts    the device interrupts and their counts
+ *   /proc/audio         the sound device and its counters
  *   /proc/<pid>/status  a process's name, state, parent and resources
  *   /proc/self          the calling process's directory
  *
@@ -52,8 +56,8 @@ typedef struct
 } procfs_node_t;
 
 // the files of the root that are not process directories
-static const char *const root_files[] = {"meminfo", "uptime", "pci", "self"};
-#define ROOT_FILE_COUNT 4
+static const char *const root_files[] = {"meminfo", "uptime", "pci", "interrupts", "audio", "self"};
+#define ROOT_FILE_COUNT 6
 
 /*
  * the kernel's formatter writes one character at a time to a function
@@ -132,6 +136,34 @@ static bool make_text(procfs_node_t *node, const char *name, uint32_t pid)
             FORMAT("%02x:%02x.%u %02x%02x%02x %04x:%04x irq %u %s\n", dev->bus, dev->device, dev->function,
                    dev->class_code, dev->subclass, dev->prog_if, dev->vendor_id, dev->device_id,
                    dev->irq_line, pci_class_name(dev));
+        }
+    }
+    else if (strcmp(name, "audio") == 0)
+    {
+        audio_status_t audio;
+        audio_status(&audio);
+        if (!audio.present)
+        {
+            FORMAT("Device:\tnone\n");
+        }
+        else
+        {
+            FORMAT("Device:\t%s\nCodec:\t%08x\nDetail:\t%s\nRate:\t%u Hz\nOpen:\t%s\nPlaying:\t%s\n"
+                   "Queued:\t%u bytes\nPlayed:\t%lu bytes\nUnderruns:\t%u\n"
+                   "Volume:\t%u %u\n",
+                   audio.name, audio.codec_id, audio.detail, audio.rate, audio.open ? "yes" : "no",
+                   audio.running ? "yes" : "no", audio.queued, (unsigned long)audio.played,
+                   audio.underruns, audio.volume & 0xFF, (audio.volume >> 8) & 0xFF);
+        }
+    }
+    else if (strcmp(name, "interrupts") == 0)
+    {
+        // the device, the mode, the vector or IRQ line, the count
+        pci_irq_info_t irq;
+        for (uint32_t i = 0; pci_irq_info(i, &irq); i++)
+        {
+            FORMAT("%s\t%s\t%u\t%u\n", irq.name, pci_irq_mode_name(irq.mode), irq.number,
+                   irq.count);
         }
     }
     else
@@ -225,7 +257,8 @@ static kerr_t resolve(const char *path, procfs_node_t *node)
     }
 
     if (*rest != '\0' || (strcmp(path, "meminfo") != 0 && strcmp(path, "uptime") != 0 &&
-                           strcmp(path, "pci") != 0))
+                           strcmp(path, "pci") != 0 && strcmp(path, "interrupts") != 0 &&
+                           strcmp(path, "audio") != 0))
     {
         return KERR_NOENT;
     }

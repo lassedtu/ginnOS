@@ -14,9 +14,13 @@
  *
  *   0–31   CPU exceptions, registered by exception_initialize()
  *  32–47   Hardware IRQs , registered by irq_initialize() via PIC_REMAP_OFFSET
- *  48–255  Unassigned    , any new subsystem claiming a vector in this range
+ *  48–127  Device vectors (MSI and MSI-X), allocated by arch_msi_alloc()
+ *          in msi.c
+ *  128     The syscall gate (int 0x80), syscall_dispatch.c
+ *  255     The local APIC spurious vector, apic.c
+ *  others  Unassigned    , any new subsystem claiming a vector in this range
  *          MUST call isr_register_handler() before that vector can fire.
- *          Record the claim here: (none yet)
+ *          Record the claim here.
  */
 static isr_handler_t handlers[256];
 
