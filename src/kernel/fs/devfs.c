@@ -301,3 +301,12 @@ kerr_t devfs_mount(fs_mount_t *mount)
     mount->is_mounted = 1;
     return KERR_OK;
 }
+
+struct device *devfs_device(const fs_file_t *file)
+{
+    if (!file || file->ops != &devfs_ops || file->file_type != FS_TYPE_FILE)
+    {
+        return NULL;
+    }
+    return file->fs_data;
+}

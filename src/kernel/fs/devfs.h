@@ -28,3 +28,12 @@
  * @return KERR_OK on success.
  */
 kerr_t devfs_mount(fs_mount_t *mount);
+
+struct device;
+
+/**
+ * the device of an open devfs node.
+ * @param file an open file of any filesystem.
+ * @return the device, or NULL if the file is not a devfs device node.
+ */
+struct device *devfs_device(const fs_file_t *file);

@@ -74,6 +74,7 @@ struct file
             pipe_buf_t *buf;
             pipe_dir_t dir;
         } pipe; // a pipe end
+        void *device_data; // a device stream (device_ops_t open)
     };
 };
 
@@ -100,6 +101,13 @@ kerr_t file_open_pipe(file_t **read_end, file_t **write_end);
  * @return the console description, with a new reference.
  */
 file_t *file_console(void);
+
+/**
+ * a new description of another kind (a device stream), with one
+ * reference. its ops release it, and free it with kfree.
+ * @return the description, or NULL if the heap is full.
+ */
+file_t *file_new(const file_ops_t *ops, uint32_t flags);
 
 /**
  * add a reference to a description.
