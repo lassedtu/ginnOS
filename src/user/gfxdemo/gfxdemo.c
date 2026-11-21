@@ -223,6 +223,9 @@ int main(int argc, char **argv)
         return 1;
     }
     void *fb = mmap(0, fix.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    // take the screen: the console's echo of what is typed stays off it
+    int on = 1;
+    ioctl(fd, FBIO_GRAPHICS, &on);
     close(fd);
     if (fb == MAP_FAILED)
     {
@@ -304,7 +307,12 @@ int main(int argc, char **argv)
     while (read(0, &c, 1) == 1 && c != '\n')
         ;
     gfx_buffer_free(screen);
-    printf("\033[2J\033[H");
+    // the console comes back as it was (the kernel also does this when
+    // the program ends)
+    int off = 0;
+    int fb_fd = fb_open();
+    ioctl(fb_fd, FBIO_GRAPHICS, &off);
+    close(fb_fd);
     printf("gfxdemo: windows drawn in %u us, then %u us with the glyph cache\n",
            (unsigned)times[0], (unsigned)times[1]);
     if (body_face)
