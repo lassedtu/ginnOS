@@ -28,7 +28,7 @@
 
 // the key event of the console (unistd.h; unistd.h itself is not included,
 // because its KEY_ names are the same as doom's)
-#define KEY_EVENT_RAW 2
+#define CONSOLE_KEY_EVENT_RAW 2
 typedef struct
 {
     int type;
@@ -331,7 +331,7 @@ int DG_GetKey(int *pressed, unsigned char *key)
     ginnos_key_event_t event;
     while (read(0, &event, sizeof(event)) == (ssize_t)sizeof(event))
     {
-        if (event.type != KEY_EVENT_RAW)
+        if (event.type != CONSOLE_KEY_EVENT_RAW)
         {
             continue;
         }
