@@ -53,6 +53,8 @@ struct termios
 // ginnOS: reads return key_event_t records instead of bytes (unistd.h
 // read_event); ttyctl(TTY_RAW) turns this on
 #define XKEYEVENTS 0x40000000
+#define XKEYRAW    0x20000000 // with XKEYEVENTS: every key down and up as a
+                              // KEY_EVENT_RAW event (unistd.h), for games
 
 // c_cc indexes
 #define VINTR  0

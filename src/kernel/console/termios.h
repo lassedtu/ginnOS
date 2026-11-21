@@ -44,6 +44,7 @@ struct ktermios
 // ginnOS: reads return keyboard_event_t records (keys and special keys)
 // instead of bytes; this is what ttyctl(TTY_RAW) turns on
 #define XKEYEVENTS 0x40000000
+#define XKEYRAW    0x20000000 // with XKEYEVENTS: raw key down/up events
 
 // c_cc indexes
 #define VINTR  0

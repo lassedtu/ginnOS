@@ -94,8 +94,21 @@ static const keyboard_special_key_t extended_map[128] = {
  */
 static keyboard_filter_fn event_filter;
 
+// report KEY_EVENT_RAW events instead of characters (keyboard_set_raw_events)
+static volatile bool raw_events;
+
+void keyboard_set_raw_events(bool on)
+{
+    raw_events = on;
+}
+
 static void keyboard_buffer_push(keyboard_event_t event)
 {
+    if (raw_events != (event.type == KEY_EVENT_RAW))
+    {
+        return; // only the kind of event that is on goes into the buffer
+    }
+
     if (event_filter && event_filter(&event))
     {
         return; // the terminal took it (a signal key)
@@ -151,12 +164,12 @@ void keyboard_handle_scancode(uint8_t scancode)
     const keyboard_layout_t *layout = keyboard_get_layout();
 
     // F12 (scancode 0x58 press) toggles debug mode
-    if (scancode == 0x58)
+    if (scancode == 0x58 && !raw_events)
     {
         scancode_debug = !scancode_debug;
         return;
     }
-    if (scancode == 0xD8) // F12 release
+    if (scancode == 0xD8 && !raw_events) // F12 release
         return;
 
     // in debug mode, print raw scancode as hex and push nothing
@@ -197,6 +210,17 @@ void keyboard_handle_scancode(uint8_t scancode)
 
     int released = scancode & 0x80;
     uint8_t key = scancode & 0x7F;
+
+    if (raw_events)
+    {
+        keyboard_event_t event;
+        event.type = KEY_EVENT_RAW;
+        event.raw.code = (uint8_t)(key | (extended_prefix_pending ? 0x80 : 0));
+        event.raw.pressed = released ? 0 : 1;
+        keyboard_buffer_push(event);
+        // the code below keeps the modifier state up to date; its
+        // character events are not pushed while raw events are on
+    }
 
     if (extended_prefix_pending)
     {
