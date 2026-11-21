@@ -527,7 +527,7 @@ kerr_t ext2_remove_dir(ext2_volume_t *volume, const char *path)
 
     if (!directory_is_empty(volume, child_inode_number))
     {
-        return KERR_BUSY;
+        return KERR_NOTEMPTY;
     }
 
     if (!remove_directory_entry(volume, parent_inode_number, name, name_len))
@@ -597,6 +597,48 @@ kerr_t ext2_rename(ext2_volume_t *volume, const char *old_path, const char *new_
         return KERR_NOTFOUND;
     }
 
+    // a directory cannot move into itself or below itself
+    size_t old_path_len = strlen(old_path);
+    if (child_type == EXT2_FT_DIR && strncmp(new_path, old_path, old_path_len) == 0 &&
+        (new_path[old_path_len] == '/' || new_path[old_path_len] == '\0'))
+    {
+        return new_path[old_path_len] == '\0' ? KERR_OK : KERR_INVAL;
+    }
+
+    // an existing target is replaced: a file by a file, an empty directory
+    // by a directory
+    uint32_t target_inode_number;
+    uint8_t target_type;
+    if (lookup_child_type(volume, new_parent_inode_number, new_name, new_name_len, &target_inode_number, &target_type))
+    {
+        kerr_t err;
+        if (target_inode_number == child_inode_number)
+        {
+            return KERR_OK; // two names of the same file
+        }
+        if (child_type == EXT2_FT_DIR)
+        {
+            if (target_type != EXT2_FT_DIR)
+            {
+                return KERR_NOTDIR;
+            }
+            err = ext2_remove_dir(volume, new_path);
+        }
+        else
+        {
+            if (target_type == EXT2_FT_DIR)
+            {
+                return KERR_ISDIR;
+            }
+            err = ext2_remove_file(volume, new_path);
+        }
+        if (kerr_failed(err))
+        {
+            return err;
+        }
+    }
+
+    // read after the replace step: removing a directory changes its parent
     if (kerr_failed(ext2_read_inode(volume, old_parent_inode_number, &old_parent_inode)) || !inode_is_directory(&old_parent_inode))
     {
         return KERR_IO;
@@ -605,11 +647,6 @@ kerr_t ext2_rename(ext2_volume_t *volume, const char *old_path, const char *new_
     if (kerr_failed(ext2_read_inode(volume, new_parent_inode_number, &new_parent_inode)) || !inode_is_directory(&new_parent_inode))
     {
         return KERR_IO;
-    }
-
-    if (lookup_child_type(volume, new_parent_inode_number, new_name, new_name_len, 0, 0))
-    {
-        return KERR_EXIST;
     }
 
     if (old_parent_inode_number == new_parent_inode_number)

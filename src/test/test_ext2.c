@@ -1,6 +1,7 @@
 #include "ktest.h"
 
 #include "common/memory.h"
+#include "common/string.h"
 #include "kernel/vfs/vfs.h"
 
 // the test kernel boots from its own copy of the disk image, so writing to
@@ -92,4 +93,91 @@ KTEST(ext2_root_has_bin_sh)
     vfs_stat_t st;
     KEXPECT(kerr_ok(vfs_stat("/bin/sh", &st)));
     KEXPECT(st.size > 0);
+}
+
+/**
+ * write a few bytes to a new file.
+ */
+static bool make_file(const char *path, const char *text)
+{
+    vfs_file_t file;
+    vfs_remove(path);
+    if (kerr_failed(vfs_create(path)) || kerr_failed(vfs_open(path, &file)))
+    {
+        return false;
+    }
+    uint32_t length = (uint32_t)strlen(text);
+    bool ok = vfs_write(&file, length, text) == length;
+    vfs_close(&file);
+    return ok;
+}
+
+KTEST(ext2_rename_replaces_a_file)
+{
+    KEXPECT(make_file(TEST_FILE, "new"));
+    KEXPECT(make_file(TEST_FILE "2", "old!"));
+    KEXPECT(kerr_ok(vfs_rename(TEST_FILE, TEST_FILE "2")));
+
+    vfs_stat_t st;
+    KEXPECT(kerr_failed(vfs_stat(TEST_FILE, &st)));
+    KEXPECT(kerr_ok(vfs_stat(TEST_FILE "2", &st)));
+    KEXPECT_EQ(st.size, 3); // the renamed file, not the replaced one
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE "2")));
+}
+
+KTEST(ext2_rename_directories)
+{
+    vfs_stat_t st;
+    vfs_rmdir(TEST_DIR "/a/b");
+    vfs_rmdir(TEST_DIR "/a");
+    vfs_rmdir(TEST_DIR "/c");
+    vfs_rmdir(TEST_DIR);
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR)));
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR "/a")));
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR "/a/b")));
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR "/c")));
+
+    // not into itself, nor below itself
+    KEXPECT_EQ(vfs_rename(TEST_DIR "/a", TEST_DIR "/a/b/a"), KERR_INVAL);
+    // not over a directory that has entries, nor over a file
+    KEXPECT_EQ(vfs_rename(TEST_DIR "/c", TEST_DIR "/a"), KERR_NOTEMPTY);
+    KEXPECT(make_file(TEST_FILE, "x"));
+    KEXPECT_EQ(vfs_rename(TEST_DIR "/c", TEST_FILE), KERR_NOTDIR);
+    KEXPECT_EQ(vfs_rename(TEST_FILE, TEST_DIR "/c"), KERR_ISDIR);
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE)));
+
+    // over an empty directory, and to another parent
+    KEXPECT(kerr_ok(vfs_rename(TEST_DIR "/a/b", TEST_DIR "/c")));
+    KEXPECT(kerr_failed(vfs_stat(TEST_DIR "/a/b", &st)));
+    KEXPECT(kerr_ok(vfs_stat(TEST_DIR "/c", &st)));
+    KEXPECT_EQ(st.file_type, FS_TYPE_DIR);
+
+    // the moved directory's ".." follows it: it can be removed, then its
+    // old and new parents
+    KEXPECT(kerr_ok(vfs_rename(TEST_DIR "/c", TEST_DIR "/a/moved")));
+    KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR "/a/moved")));
+    KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR "/a")));
+    KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR)));
+}
+
+KTEST(ext2_rmdir_not_empty)
+{
+    vfs_rmdir(TEST_DIR "/in");
+    vfs_rmdir(TEST_DIR);
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR)));
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR "/in")));
+    KEXPECT_EQ(vfs_rmdir(TEST_DIR), KERR_NOTEMPTY);
+    KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR "/in")));
+    KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR)));
+}
+
+KTEST(ext2_file_times)
+{
+    vfs_stat_t st;
+    KEXPECT(make_file(TEST_FILE, "t"));
+    KEXPECT(kerr_ok(vfs_stat(TEST_FILE, &st)));
+    // the clock is set at boot (2020 or later); new files carry the time
+    KEXPECT(st.mtime > 1577836800u);
+    KEXPECT(st.ctime >= st.mtime);
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE)));
 }
