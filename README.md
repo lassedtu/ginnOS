@@ -50,7 +50,7 @@ today.
 ### Memory management
 
 - Physical memory manager (bitmap allocator)
-- Kernel heap: first-fit allocator with splitting, coalescing, expansion —
+- Kernel heap: first-fit allocator with splitting, coalescing, expansion,
   `kmalloc`/`kfree`/`krealloc` (in-place when possible)/`kcalloc`, allocation
   statistics, and an optional `HEAP_DEBUG` mode (redzone canaries, freed-memory
   poisoning)
@@ -118,7 +118,7 @@ today.
 ### Filesystem and I/O
 
 - VFS layer with a mount table (longest-prefix resolution) and a filesystem
-  operations vtable (`fs_ops_t`) — the VFS never calls a filesystem directly
+  operations vtable (`fs_ops_t`), the VFS never calls a filesystem directly
 - Open files are refcounted open-file descriptions: `dup`, `dup2`, `fork`
   and spawn share one description, so they share the file offset and status
   flags; `FD_CLOEXEC` descriptors close on `execve`
@@ -178,11 +178,11 @@ today.
   (channel size/shift masks), a driver with pixel primitives, and LFB mapping
 - Framebuffer console: JetBrains Mono bitmap-font glyph renderer (font baked
   offline from a TTF), SGR colours, VT100 growth, and double buffering with
-  dirty-row flushing — with automatic fallback to VGA text when no framebuffer
+  dirty-row flushing, with automatic fallback to VGA text when no framebuffer
   is present
 - Linux-style **`/dev/fb0`** framebuffer device: a char device with
   `read`/`write`/`lseek`/`ioctl`/`mmap`, exposing `fb_fix_screeninfo` /
-  `fb_var_screeninfo` (per-channel bitfields) — the stable userspace graphics
+  `fb_var_screeninfo` (per-channel bitfields), the stable userspace graphics
   interface. A `metaballs` demo draws to it via `open` + `ioctl` + `mmap`.
 
 ### C standard library (libc.a)
@@ -243,7 +243,7 @@ today.
 ### Portability and tooling
 
 - Architecture-neutral abstraction layers (`arch_*` for interrupts, MMU,
-  context switch, boot protocol) with x86 as the only current backend —
+  context switch, boot protocol) with x86 as the only current backend,
   groundwork for a future x86_64 port
 - Pointer-width types throughout (`uintptr_t`/`size_t`/`phys_addr_t`, one
   `PAGE_SIZE`, `phys_to_virt`/`virt_to_phys`, a `syscall_arg()` accessor) and

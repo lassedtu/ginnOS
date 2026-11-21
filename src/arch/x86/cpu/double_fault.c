@@ -3,6 +3,7 @@
 #include "gdt.h"
 #include "idt.h"
 #include "paging.h"
+#include "isr.h"
 #include "kernel/memory/kstack.h"
 #include "kernel/panic.h"
 #include "kernel/process/process.h"
@@ -50,6 +51,44 @@ static uint32_t append_string(char *buf, uint32_t pos, const char *str)
     }
     return pos;
 }
+
+#ifdef __x86_64__
+
+/**
+ * the double fault handler. the gate switches to IST1, so it runs on its own
+ * stack also when the kernel stack overflowed into its guard page.
+ */
+static void double_fault_handler(struct registers *regs)
+{
+    uintptr_t fault_address = paging_fault_address();
+
+    if (kstack_is_guard(fault_address) || kstack_is_guard(regs->rsp))
+    {
+        process_t *proc = process_current();
+
+        uint32_t pos = append_string(message, 0, "kernel stack overflow");
+        if (proc)
+        {
+            pos = append_string(message, pos, " (pid ");
+            pos = append_decimal(message, pos, proc->pid);
+            pos = append_string(message, pos, ")");
+        }
+        message[pos] = '\0';
+
+        kernel_panic_at(message, regs->rip, 0, regs->rbp);
+    }
+
+    kernel_panic_at("double fault", regs->rip, 0, regs->rbp);
+}
+
+void double_fault_initialize(void)
+{
+    tss_set_ist(1, (uintptr_t)double_fault_stack + DOUBLE_FAULT_STACK_SIZE);
+    isr_register_handler(8, double_fault_handler);
+    idt_set_ist(8, 1);
+}
+
+#else
 
 /**
  * entry point of the double-fault task. the CPU arrives here on the task's
@@ -100,3 +139,5 @@ void double_fault_initialize(void)
     idt_set_gate(8, 0, GDT_DOUBLE_FAULT_TSS,
                  IDT_FLAG_PRESENT | IDT_FLAG_RING0 | IDT_FLAG_GATE_TASK);
 }
+
+#endif // __x86_64__

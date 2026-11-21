@@ -104,6 +104,48 @@ static void syscall_handler(struct registers *regs)
     REG_RESULT(regs) = (uintptr_t)syscall_table[num](regs);
 }
 
+#ifdef __x86_64__
+
+#define MSR_EFER   0xC0000080u
+#define MSR_STAR   0xC0000081u
+#define MSR_LSTAR  0xC0000082u
+#define MSR_SFMASK 0xC0000084u
+#define EFER_SCE   0x1u
+
+// the flags that syscall clears: TF, IF, DF (the entry runs with
+// interrupts off until the frame is on the kernel stack)
+#define SYSCALL_FLAGS_MASK 0x700u
+
+extern void syscall_entry(void);
+
+static void write_msr(uint32_t msr, uint64_t value)
+{
+    __asm__ volatile("wrmsr" : : "c"(msr), "a"((uint32_t)value), "d"((uint32_t)(value >> 32)));
+}
+
+static uint64_t read_msr(uint32_t msr)
+{
+    uint32_t low;
+    uint32_t high;
+    __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(msr));
+    return ((uint64_t)high << 32) | low;
+}
+
+/**
+ * turn on the syscall instruction. STAR gives the kernel CS (and SS = CS +
+ * 8) for syscall and the base for sysret (user SS = base + 8, CS = base +
+ * 16); LSTAR is the entry (asm64/syscall.asm).
+ */
+static void syscall_instruction_init(void)
+{
+    write_msr(MSR_EFER, read_msr(MSR_EFER) | EFER_SCE);
+    write_msr(MSR_STAR, ((uint64_t)GDT_KERNEL_DATA << 48) | ((uint64_t)GDT_KERNEL_CODE << 32));
+    write_msr(MSR_LSTAR, (uint64_t)(uintptr_t)syscall_entry);
+    write_msr(MSR_SFMASK, SYSCALL_FLAGS_MASK);
+}
+
+#endif
+
 void syscall_initialize(void)
 {
     poll_init();
@@ -123,4 +165,9 @@ void syscall_initialize(void)
         isr_stub_128,
         GDT_KERNEL_CODE,
         IDT_FLAG_RING3 | IDT_FLAG_GATE_32BIT_TRAP | IDT_FLAG_PRESENT);
+
+#ifdef __x86_64__
+    // x86_64 programs use the syscall instruction (the int 0x80 gate stays)
+    syscall_instruction_init();
+#endif
 }

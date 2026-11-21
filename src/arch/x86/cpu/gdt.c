@@ -1,3 +1,9 @@
+/**
+ * the i686 GDT and TSS. the x86_64 kernel uses gdt64.c.
+ */
+
+#ifndef __x86_64__
+
 #include "gdt.h"
 #include "common/memory.h"
 
@@ -154,3 +160,5 @@ void tss_interrupted_state(uint32_t *eip, uint32_t *esp, uint32_t *ebp)
     *esp = tss.esp;
     *ebp = tss.ebp;
 }
+
+#endif // !__x86_64__

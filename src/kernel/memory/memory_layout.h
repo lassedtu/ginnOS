@@ -2,6 +2,61 @@
 
 #include "common/stdint.h"
 
+#ifdef __x86_64__
+
+/**
+ * ginnOS virtual memory layout constants (x86_64, 4-level paging, 48-bit
+ * addresses). the user half is the lower canonical half; the kernel half is
+ * the upper one.
+ *   0x0000000000000000 - 0x0000000000000FFF : null guard (never mapped)
+ *   0x0000000000400000 - ...                : user program text/data/bss
+ *   ...                - ...                : user heap (sbrk)
+ *   0x0000100000000000 - 0x00007EFFFFFFFFFF : user mmap region
+ *   0x00007FFFFEFFF000 - 0x00007FFFFFFFEFFF : user stack (up to 16 MiB)
+ *   0x00007FFFFFFFF000 - 0x00007FFFFFFFFFFF : user stack guard
+ *   0xFFFF800000000000 - ...                : direct map of RAM (limine HHDM)
+ *   0xFFFFC00000000000 - ...                : kernel stacks (kstack.h)
+ *   0xFFFFD00000000000 - 0xFFFFD00003FFFFFF : kernel MMIO window (ioremap)
+ *   0xFFFFFFFF80000000 - ...                : the kernel image
+ */
+
+#define USER_SPACE_START 0x0000000000001000ul
+#define USER_SPACE_END   0x0000800000000000ul
+
+/* the physical address of the kernel image is set by limine (phys.h) */
+
+/* first physical byte above the legacy area (VGA memory, BIOS ROMs) */
+#define LOW_MEMORY_END   0x00100000ul
+
+#define USER_LOAD_ADDR   0x00400000ul
+
+#define USER_STACK_TOP   0x00007FFFFFFFF000ul
+#define USER_STACK_MAX   0x01000000ul
+#define USER_STACK_LIMIT (USER_STACK_TOP - USER_STACK_MAX)
+#define USER_STACK_SIZE  0x00004000ul
+#define USER_STACK_BASE  (USER_STACK_TOP - USER_STACK_SIZE)
+
+/* the direct map. limine maps the HHDM here (4-level paging, no
+ * randomisation); the kernel checks it at boot and makes its own map of all
+ * RAM at the same address */
+#define KERNEL_VIRT_BASE 0xFFFF800000000000ul
+
+/* most RAM the kernel uses (the direct map is 64 TiB, the PMM is smaller) */
+#define PHYS_MAP_SIZE 0x0000001000000000ul
+
+#define KSTACK_REGION_BASE 0xFFFFC00000000000ul
+
+#define MMIO_REGION_BASE 0xFFFFD00000000000ul
+#define MMIO_REGION_END  0xFFFFD00004000000ul
+
+#define USER_MMAP_BASE 0x0000100000000000ul
+#define USER_MMAP_END  0x00007F0000000000ul
+
+/* the kernel image is linked here (linker/x86_64/kernel.ld) */
+#define KERNEL_IMAGE_BASE 0xFFFFFFFF80000000ul
+
+#else
+
 /**
  * ginnOS virtual memory layout constants.
  *
@@ -77,6 +132,8 @@
  * process. this is also where a device mapping (e.g. mmap of /dev/fb0) lands. */
 #define USER_MMAP_BASE 0x40000000u
 #define USER_MMAP_END  0xB0000000u
+
+#endif // __x86_64__
 
 /**
  * check whether a pointer with a given length falls entirely within

@@ -49,7 +49,7 @@ typedef struct
 
     // the fields below are not shared with stage2
 
-    uint32_t boot_protocol; // BOOT_PROTOCOL_STAGE2 or BOOT_PROTOCOL_MULTIBOOT2.
+    uint32_t boot_protocol; // BOOT_PROTOCOL_STAGE2, _MULTIBOOT2 or _LIMINE.
 
     // a root filesystem image that the bootloader loaded into RAM (a boot
     // module), or 0 and 0. the physical range [initrd_start, initrd_end)
@@ -66,6 +66,7 @@ typedef struct
 
 #define BOOT_PROTOCOL_STAGE2     0 // the custom BIOS bootloader (src/bootloader)
 #define BOOT_PROTOCOL_MULTIBOOT2 1 // a multiboot 2 bootloader, for example limine
+#define BOOT_PROTOCOL_LIMINE     2 // the limine boot protocol (x86_64)
 
 /* the part of boot_info_t that stage2 fills in */
 #define BOOT_INFO_STAGE2_SIZE __builtin_offsetof(boot_info_t, _fb_pad)

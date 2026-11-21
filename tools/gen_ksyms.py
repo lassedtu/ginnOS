@@ -60,7 +60,7 @@ def render(symbols):
     out.append("KSYMS const ksym_t ksym_table[] = {")
     offset = 0
     for addr, name in symbols:
-        out.append("    {0x%08xu, %du}," % (addr, offset))
+        out.append("    {0x%08xul, %du}," % (addr, offset))
         offset += len(name) + 1
     if not symbols:
         out.append("    {0u, 0u},")

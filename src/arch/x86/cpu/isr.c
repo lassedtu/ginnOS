@@ -50,7 +50,11 @@ void isr_initialize(void)
  *
  * called from the assembly ISR stubs.
  */
+#ifdef __x86_64__
+void isr_handler(struct registers *regs)
+#else
 void __attribute__((cdecl)) isr_handler(struct registers *regs)
+#endif
 {
     if (handlers[regs->interrupt])
     {

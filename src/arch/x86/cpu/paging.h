@@ -23,18 +23,6 @@
 #define PTE_DIRTY 0x040u         // set by CPU when the page is written to
 #define PTE_GLOBAL 0x100u        // page is not flushed from TLB on CR3 reload
 
-// extract the page directory index (bits 22–31) from a virtual address.
-#define PAGE_DIR_INDEX(vaddr) ((uint32_t)((uintptr_t)(vaddr) >> 22) & 0x3FF)
-
-// extract the page table index (bits 12–21) from a virtual address.
-#define PAGE_TABLE_INDEX(vaddr) ((uint32_t)((uintptr_t)(vaddr) >> 12) & 0x3FF)
-
-// extract the physical frame address from a PDE or PTE (upper 20 bits).
-#define PAGE_FRAME(entry) ((phys_addr_t)(entry) & ~(phys_addr_t)PAGE_OFFSET_MASK)
-
-// number of entries in a page directory or page table.
-#define PAGE_ENTRIES 1024u
-
 // kernel read/write page: present, writable, supervisor-only.
 #define PTE_KERNEL_RW (PTE_PRESENT | PTE_READ_WRITE)
 
@@ -47,18 +35,42 @@
 // user read/write page directory entry.
 #define PDE_USER_RW (PDE_PRESENT | PDE_READ_WRITE | PDE_USER)
 
+#ifdef __x86_64__
+
+// 4-level paging: PML4, page directory pointer table (PDPT), page
+// directory (PD) and page table (PT), 512 entries of 64 bits each. bits
+// 47-39, 38-30, 29-21 and 20-12 of an address select the entries.
+#define PAGE_ENTRIES 512u
+#define PML4_INDEX(vaddr) ((uint32_t)(((uintptr_t)(vaddr) >> 39) & 0x1FF))
+#define PDPT_INDEX(vaddr) ((uint32_t)(((uintptr_t)(vaddr) >> 30) & 0x1FF))
+#define PD_INDEX(vaddr)   ((uint32_t)(((uintptr_t)(vaddr) >> 21) & 0x1FF))
+#define PT_INDEX(vaddr)   ((uint32_t)(((uintptr_t)(vaddr) >> 12) & 0x1FF))
+
+// the physical address in an entry: bits 51-12 (bit 63 is NX)
+#define PAGE_FRAME(entry) ((phys_addr_t)(entry) & 0x000FFFFFFFFFF000ul)
+
+// a 2 MiB page (in a PD entry) or 1 GiB page (in a PDPT entry)
+#define PTE_HUGE 0x080u
+
+// a paging structure entry at any level
+typedef uint64_t pte_t;
+
+#else
+
+// extract the page directory index (bits 22-31) from a virtual address.
+#define PAGE_DIR_INDEX(vaddr) ((uint32_t)((uintptr_t)(vaddr) >> 22) & 0x3FF)
+
+// extract the page table index (bits 12-21) from a virtual address.
+#define PAGE_TABLE_INDEX(vaddr) ((uint32_t)((uintptr_t)(vaddr) >> 12) & 0x3FF)
+
+// extract the physical frame address from a PDE or PTE (upper 20 bits).
+#define PAGE_FRAME(entry) ((phys_addr_t)(entry) & ~(phys_addr_t)PAGE_OFFSET_MASK)
+
+// number of entries in a page directory or page table.
+#define PAGE_ENTRIES 1024u
+
 // a page directory or page table entry (32-bit, non-PAE paging)
 typedef uint32_t pte_t;
-
-/**
- * the page table a directory entry points to, as a kernel pointer.
- * @param entry a present page directory entry.
- * @return pointer to its page table.
- */
-static inline pte_t *entry_table(pte_t entry)
-{
-    return (pte_t *)phys_to_virt(PAGE_FRAME(entry));
-}
 
 /**
  * a page directory: array of 1024 32-bit entries.
@@ -71,6 +83,18 @@ typedef pte_t page_directory_t[PAGE_ENTRIES];
  * each entry maps a 4 KiB virtual page to a physical frame.
  */
 typedef pte_t page_table_t[PAGE_ENTRIES];
+
+#endif // __x86_64__
+
+/**
+ * the table an entry points to, as a kernel pointer.
+ * @param entry a present entry that points to a table.
+ * @return pointer to that table.
+ */
+static inline pte_t *entry_table(pte_t entry)
+{
+    return (pte_t *)phys_to_virt(PAGE_FRAME(entry));
+}
 
 /**
  * initialize the paging subsystem.

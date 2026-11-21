@@ -47,6 +47,14 @@
 #include "test/ktest.h"
 #endif
 
+#ifdef __x86_64__
+#define ARCH_NAME "x86_64"
+#else
+#define ARCH_NAME "i686"
+#endif
+
+#ifndef __x86_64__
+
 // the kernel's copy of the boot information. the bootloader's copy is in
 // memory that the PMM gives away later.
 static boot_info_t boot_info;
@@ -75,6 +83,8 @@ void cstart(phys_addr_t boot_phys, uint32_t magic)
 
     kernel_main(&boot_info);
 }
+
+#endif // !__x86_64__
 
 /**
  * register a block device with the device model. the device must exist
@@ -135,7 +145,9 @@ static block_device_t *find_root_device(const boot_info_t *boot)
         }
     }
 
-    if (boot->initrd_end > boot->initrd_start && boot->initrd_end <= PHYS_MAP_SIZE &&
+    // the image must be in the direct map (always true on x86_64)
+    phys_addr_t initrd_end = boot->initrd_end;
+    if (boot->initrd_end > boot->initrd_start && initrd_end - 1 < PHYS_MAP_SIZE &&
         ramdisk_initialize(&ramdisk, phys_to_virt(boot->initrd_start),
                            boot->initrd_end - boot->initrd_start))
     {
@@ -156,7 +168,7 @@ void kernel_main(boot_info_t *boot)
     // the VGA console, so boot diagnostics are visible over QEMU -serial even
     // if later init faults.
     klog_init();
-    KLOG_INFO("kernel: entered 32-bit C main");
+    KLOG_INFO("kernel: entered C main (%s)", ARCH_NAME);
 
     // set up the device registry before any driver init tries to register.
     device_registry_init();
@@ -197,7 +209,7 @@ void kernel_main(boot_info_t *boot)
     // serial klog has covered diagnostics up to this point.
     console_initialize(boot);
     stdio_set_putchar(console_putchar);
-    printf("Kernel: entered 32-bit C main\r\n");
+    printf("Kernel: entered C main (%s)\r\n", ARCH_NAME);
 
     syscall_initialize();
 
