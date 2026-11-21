@@ -7,6 +7,7 @@
 #include "fs/fs.h"
 #include "fs/devfs.h"
 #include "fs/tmpfs.h"
+#include "fs/procfs.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
@@ -168,6 +169,13 @@ void kernel_main(boot_info_t *boot)
     if (kerr_failed(tmpfs_mount(&tmpfs)) || kerr_failed(vfs_mount("/tmp", &tmpfs)))
     {
         KLOG_WARN("kernel: tmpfs mount failed; /tmp unavailable");
+    }
+
+    // kernel state as text at /proc
+    static fs_mount_t procfs;
+    if (kerr_failed(procfs_mount(&procfs)) || kerr_failed(vfs_mount("/proc", &procfs)))
+    {
+        KLOG_WARN("kernel: procfs mount failed; /proc unavailable");
     }
 
 #ifdef KERNEL_TEST

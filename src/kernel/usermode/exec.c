@@ -86,6 +86,7 @@ int exec_program(const char *path, const char **argv)
 
     child->brk = elf.brk;
     child->parent_pid = parent ? parent->pid : PID_NONE;
+    process_set_name(child, path);
 
     // deep-copy argv into kernel heap (survives until trampoline consumes it)
     child->argv = argv_copy(argv);
@@ -154,6 +155,7 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     proc->page_directory = as;
     proc->vmas = *vmas;
     proc->brk = elf.brk;
+    process_set_name(proc, path);
     // the tty mode is still per process (until termios): a new program
     // starts in cooked mode, as a spawned one does
     proc->tty_raw = 0;

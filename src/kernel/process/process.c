@@ -146,6 +146,7 @@ process_t *process_fork(const struct registers *regs)
 
     child->parent_pid = parent->pid;
     child->tty_raw = parent->tty_raw;
+    memcpy(child->name, parent->name, sizeof(child->name));
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
 
     // every fd is inherited: the child's descriptors share the parent's
@@ -322,6 +323,71 @@ process_t *process_find_zombie_child(process_t *parent, int32_t pid, bool *has_c
     }
     spin_unlock_irqrestore(&table_lock, flags);
     return found;
+}
+
+uint32_t process_list_pids(uint32_t *pids, uint32_t max)
+{
+    uint32_t count = 0;
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX && count < max; i++)
+    {
+        if (proc_table[i].state != PROC_STATE_UNUSED)
+        {
+            pids[count++] = proc_table[i].pid;
+        }
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+    return count;
+}
+
+bool process_info(uint32_t pid, process_info_t *info)
+{
+    bool found = false;
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX; i++)
+    {
+        process_t *proc = &proc_table[i];
+        if (proc->state == PROC_STATE_UNUSED || proc->pid != pid)
+        {
+            continue;
+        }
+
+        // copied with the table locked: the slot cannot be freed meanwhile
+        info->pid = proc->pid;
+        info->parent_pid = proc->parent_pid;
+        info->state = proc->state;
+        memcpy(info->name, proc->name, sizeof(info->name));
+        info->areas = proc->vmas.count;
+        info->open_fds = 0;
+        for (int fd = 0; fd < FD_MAX; fd++)
+        {
+            info->open_fds += proc->fds[fd].file != NULL;
+        }
+        info->brk = proc->brk;
+        found = true;
+        break;
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+    return found;
+}
+
+void process_set_name(process_t *proc, const char *path)
+{
+    const char *name = path;
+    for (const char *c = path; *c; c++)
+    {
+        if (*c == '/')
+        {
+            name = c + 1;
+        }
+    }
+
+    uint32_t i = 0;
+    for (; name[i] && i < PROCESS_NAME_MAX - 1; i++)
+    {
+        proc->name[i] = name[i];
+    }
+    proc->name[i] = '\0';
 }
 
 process_t *process_get(uint32_t pid)

@@ -34,6 +34,9 @@ typedef enum
 
 #define PATH_MAX 256
 
+// longest process name, NUL included
+#define PROCESS_NAME_MAX 32
+
 /**
  * process control block.
  */
@@ -64,6 +67,7 @@ typedef struct process
     // never on both lists at once.
     struct process *wait_next;
 
+    char name[PROCESS_NAME_MAX]; // the program's file name (procfs)
     char cwd[PATH_MAX];     // current working directory
     fd_entry_t fds[FD_MAX]; // per-process file descriptor table
 } process_t;
@@ -155,6 +159,43 @@ void process_reap_orphans(void);
  * @return a matching zombie child, or NULL if none has exited yet.
  */
 process_t *process_find_zombie_child(process_t *parent, int32_t pid, bool *has_child);
+
+/**
+ * a copy of what procfs shows about a process.
+ */
+typedef struct
+{
+    uint32_t pid;
+    uint32_t parent_pid;
+    process_state_t state;
+    char name[PROCESS_NAME_MAX];
+    uint32_t areas;    // memory areas (VMAs)
+    uint32_t open_fds;
+    uintptr_t brk;
+} process_info_t;
+
+/**
+ * list the pids in use.
+ * @param pids receives up to max pids, in table order.
+ * @param max capacity of pids.
+ * @return the number stored.
+ */
+uint32_t process_list_pids(uint32_t *pids, uint32_t max);
+
+/**
+ * copy what procfs shows about a process, safely against its exit.
+ * @param pid the process.
+ * @param info receives the copy.
+ * @return false if no such process exists.
+ */
+bool process_info(uint32_t pid, process_info_t *info);
+
+/**
+ * set a process's name from a program path (its last component).
+ * @param proc the process.
+ * @param path the program's path.
+ */
+void process_set_name(process_t *proc, const char *path);
 
 /**
  * look up a process by PID. the pointer stays valid only while the process
