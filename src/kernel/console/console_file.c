@@ -247,13 +247,18 @@ static int32_t read_raw(char *buf, uint32_t count)
 }
 
 /**
- * XKEYEVENTS: one keyboard_event_t per read.
+ * XKEYEVENTS: one keyboard_event_t per read. with VMIN 0 the read does not
+ * wait: it returns 0 if no event is ready.
  */
 static int32_t read_event(char *buf, uint32_t count)
 {
     if (count < sizeof(keyboard_event_t))
     {
         return -EINVAL;
+    }
+    if (settings.c_cc[VMIN] == 0 && !keyboard_available())
+    {
+        return 0;
     }
 
     keyboard_event_t event;
@@ -350,6 +355,8 @@ static int32_t console_file_ioctl(file_t *file, uint32_t request, void *arg)
             keyboard_flush();
         }
         settings = next; // output is written at once, so there is nothing to drain
+        keyboard_set_raw_events((settings.c_lflag & (XKEYEVENTS | XKEYRAW)) ==
+                                (XKEYEVENTS | XKEYRAW));
         return 0;
     }
 

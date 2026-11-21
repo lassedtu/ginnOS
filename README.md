@@ -247,6 +247,15 @@ Everything below is implemented and working today.
   `pread`, `getdents`, `poll`/`select`, tmpfs, large ext2 files), and
   `sigtest`, which tests signals, process groups and the terminal, and
   `libctest`, which tests the C library
+- `doom`: Doom through [doomgeneric](https://github.com/ozkl/doomgeneric)
+  (a submodule, not changed), with the free
+  [Freedoom](https://freedoom.github.io/) game data in `/usr/share/doom`.
+  It draws on the framebuffer and reads raw key events. Keys: arrows to
+  move, Ctrl to fire, Space to open doors, Shift to run, Alt to strafe,
+  Escape for the menu. No sound yet. Doom is not built by default; build
+  it with `make DOOM=1` (add `FREEDOOM=0` to leave out the 28 MiB game
+  data).
+- `reboot` (root only)
 
 ### Portability and tooling
 
@@ -390,6 +399,14 @@ Use the older custom BIOS bootloader instead of Limine:
 make BOOTLOADER=custom
 make run BOOTLOADER=custom
 ```
+
+The first build with `DOOM=1` also fetches Freedoom 0.13.0 (checked by
+SHA-256) into `build/freedoom`.
+
+If an i686 build fails with `unknown pseudo-op: .base64`, the cross gcc is
+newer than its binutils (gcc 16 needs binutils 2.43 or later). The build
+then looks for newer binutils from Homebrew (`brew install
+i686-elf-binutils`) and uses them; or update binutils in your toolchain.
 
 `make GPT=1` makes a GPT disk instead of an MBR disk (it boots with BIOS
 and UEFI too).

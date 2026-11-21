@@ -48,6 +48,27 @@ void free(void *ptr);
 int atoi(const char *s);
 
 /**
+ * a decimal floating-point number at the start of str: an optional sign,
+ * digits with an optional point, and an optional exponent (e or E).
+ * @param end receives the first character after the number (may be NULL).
+ * @return the number, or 0 if there is none (then *end is str).
+ */
+double strtod(const char *str, char **end);
+
+/**
+ * strtod(str, NULL).
+ */
+double atof(const char *str);
+
+/**
+ * run a command with "/bin/sh -c" and wait for it.
+ * @param command the command line, or NULL to ask whether there is a shell.
+ * @return the wait status of the shell, or -1 if it could not run (for
+ *         NULL: non-zero if /bin/sh exists).
+ */
+int system(const char *command);
+
+/**
  * the environment: a NULL-terminated array of "KEY=VALUE" strings.
  */
 extern char **environ;

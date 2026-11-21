@@ -10,6 +10,7 @@
 #pragma once
 
 #include <sys/types.h>
+#include <stdbool.h>
 #include <termios.h>
 
 #define JOBS_MAX 16
@@ -44,6 +45,11 @@ typedef struct
  * ignores SIGINT, SIGQUIT, SIGTSTP, SIGTTIN and SIGTTOU.
  */
 void jobs_init(void);
+
+/**
+ * true if the shell does job control (an interactive shell; not "sh -c").
+ */
+bool jobs_enabled(void);
 
 /**
  * in a forked child, before execve: join the job's group (0: lead a new

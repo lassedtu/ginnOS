@@ -50,9 +50,15 @@ PYTHON  ?= python3
 GDB     ?= gdb
 GDB_PORT ?= 1234
 
+# extra flags the cross toolchain needs (tools/toolchain_flags.sh): for a
+# gcc 16 with binutils older than 2.43, "-B <dir>" for newer binutils from
+# homebrew. set TOOLCHAIN_FLAGS= to turn the probe off.
+TOOLCHAIN_FLAGS ?= $(shell tools/toolchain_flags.sh $(CC) $(patsubst %-,%,$(CROSS)))
+TOOLCHAIN_FLAGS := $(TOOLCHAIN_FLAGS)
+
 # shared base flags
 BASE_WARNINGS := -Wall -Wextra
-BASE_CFLAGS   := -std=gnu11 -ffreestanding $(ARCH_CFLAGS) -I src -MMD -MP
+BASE_CFLAGS   := -std=gnu11 -ffreestanding $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) -I src -MMD -MP
 
 # the kernel keeps a full frame-pointer chain (in release too) so panics can
 # walk the stack and print a backtrace: no omitted frames, not even in leaf
@@ -130,6 +136,15 @@ BOOTLOADER ?= limine
 # GPT=1 makes a GPT disk (with a BIOS boot partition for limine's BIOS
 # stage) instead of an MBR disk; limine only
 GPT ?=
+
+# DOOM=1 builds /bin/doom (src/user/doom) and puts the Freedoom game data
+# (freedoom1.wad, about 28 MiB) into /usr/share/doom. the data is fetched once
+# into build/freedoom (a pinned, checksum-checked release). the default (DOOM=0)
+# leaves both out. DOOM=1 FREEDOOM=0 builds the program without the data.
+DOOM     ?= 0
+FREEDOOM ?= $(DOOM)
+FREEDOOM_FETCH := tools/freedoom/fetch.sh
+FREEDOOM_CACHE := build/freedoom
 
 LIMINE_DIR       := build/limine
 LIMINE_FETCH     := tools/limine/fetch.sh
@@ -230,7 +245,7 @@ USER_CRT0    := $(BUILD_DIR)/user/lib/crt0.o
 USER_CRT0_SRC := src/user/lib/$(ARCH)/crt0.asm
 
 # libc
-LIBC_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) \
+LIBC_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
                 -fno-pie -fno-stack-protector -Isrc/libc/include -MMD -MP
 LIBC_C_SRCS  := $(shell find src/libc/src -name '*.c' 2>/dev/null | sort)
 LIBC_ASM_SRCS := $(shell find src/libc/arch/$(ARCH) -name '*.asm' 2>/dev/null | sort)
@@ -242,13 +257,16 @@ LIBC_A       := $(BUILD_DIR)/libc/libc.a
 # user programs: automatic discovery via per-program Makefiles.
 # each program lives in src/user/<name>/ with its own Makefile.
 # src/user/lib/ is excluded (it contains crt0, not a program).
-USER_PROG_DIRS := $(sort $(filter-out src/user/lib,$(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
+# src/user/doom is built only with DOOM=1.
+USER_PROG_DIRS := $(sort $(filter-out src/user/lib $(if $(filter 1,$(DOOM)),,src/user/doom),\
+                  $(patsubst %/Makefile,%,$(wildcard src/user/*/Makefile))))
 USER_PROG_NAMES := $(notdir $(USER_PROG_DIRS))
 USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
 
 # what the per-program Makefiles (src/user/program.mk) need to know
 USER_MAKE_VARS := CROSS=$(CROSS) BUILD_ROOT=$(abspath $(BUILD_DIR)) \
-                  ARCH_CFLAGS=$(ARCH_CFLAGS) USER_LD_SCRIPT=$(abspath $(LINKER_DIR)/user.ld)
+                  ARCH_CFLAGS=$(ARCH_CFLAGS) USER_LD_SCRIPT=$(abspath $(LINKER_DIR)/user.ld) \
+                  TOOLCHAIN_FLAGS="$(TOOLCHAIN_FLAGS)"
 
 # dependency files (C compilations only)
 DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d) \
@@ -502,6 +520,7 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs
 	@for prog in $(USER_PROGRAMS); do \
 		cp $$prog $(ROOTFS_STAGING)/bin/$$(basename $$prog); \
 	done
+	$(if $(filter 1,$(FREEDOOM)),./$(FREEDOOM_FETCH) $(FREEDOOM_CACHE) $(ROOTFS_STAGING)/usr/share/doom)
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(ROOTFS_STAGING)" \
 		--output "$(ROOTFS_IMAGE)" \
@@ -566,10 +585,11 @@ else
 	$(call assemble_disk,$(TEST_DISK_IMAGE),$(TEST_ROOTFS_IMAGE))
 endif
 
-# clean keeps the fetched limine release (build/limine); distclean removes it
+# clean keeps the fetched limine and freedoom releases (build/limine,
+# build/freedoom); distclean removes them
 clean:
 	@if [ -d $(BUILD_DIR) ]; then \
-		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine -exec rm -rf {} +; \
+		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine ! -name freedoom -exec rm -rf {} +; \
 	fi
 	rm -rf $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)

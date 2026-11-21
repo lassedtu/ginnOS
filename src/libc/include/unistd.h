@@ -255,6 +255,7 @@ int ioctl(int fd, unsigned int request, void *arg);
 /* keyboard event types (matches kernel keyboard_event_type_t) */
 #define KEY_EVENT_CHAR    0
 #define KEY_EVENT_SPECIAL 1
+#define KEY_EVENT_RAW     2 // with the XKEYRAW termios flag (termios.h)
 
 /* special key codes (matches kernel keyboard_special_key_t) */
 #define KEY_ARROW_UP    1
@@ -279,6 +280,11 @@ typedef struct
     {
         char character;  // valid when type == KEY_EVENT_CHAR
         int  special;    // valid when type == KEY_EVENT_SPECIAL
+        struct
+        {
+            unsigned char code;    // PS/2 set 1 scan code; bit 7: an 0xE0 key
+            unsigned char pressed; // 1: down, 0: up
+        } raw;                     // valid when type == KEY_EVENT_RAW
     };
 } key_event_t;
 

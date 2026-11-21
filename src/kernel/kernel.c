@@ -31,6 +31,7 @@
 
 #include "console/console.h"
 #include "kernel/device/device.h"
+#include "kernel/device/null.h"
 #include "drivers/video/fb/fb.h"
 #include "common/memory.h"
 #include "common/string.h"
@@ -212,6 +213,7 @@ void kernel_main(boot_info_t *boot)
 
     // set up the device registry before any driver init tries to register.
     device_registry_init();
+    null_devices_init();
 
     hal_initialize();
 

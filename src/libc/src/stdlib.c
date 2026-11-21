@@ -5,6 +5,8 @@
 #include "errno.h"
 #include "signal.h"
 #include "sys/mman.h"
+#include "sys/wait.h"
+#include "ctype.h"
 
 /**
  * @file stdlib.c
@@ -669,4 +671,118 @@ int unsetenv(const char *name)
         environ[environ_count] = NULL;
     }
     return 0;
+}
+
+double strtod(const char *str, char **end)
+{
+    const char *p = str;
+    while (isspace((unsigned char)*p))
+    {
+        p++;
+    }
+
+    double sign = 1.0;
+    if (*p == '+' || *p == '-')
+    {
+        sign = *p == '-' ? -1.0 : 1.0;
+        p++;
+    }
+
+    double value = 0.0;
+    int digits = 0;
+    while (isdigit((unsigned char)*p))
+    {
+        value = value * 10.0 + (*p++ - '0');
+        digits++;
+    }
+    if (*p == '.')
+    {
+        p++;
+        double scale = 0.1;
+        while (isdigit((unsigned char)*p))
+        {
+            value += (*p++ - '0') * scale;
+            scale *= 0.1;
+            digits++;
+        }
+    }
+    if (digits == 0)
+    {
+        if (end)
+        {
+            *end = (char *)str;
+        }
+        return 0.0;
+    }
+
+    // an exponent counts only if digits follow it
+    if (*p == 'e' || *p == 'E')
+    {
+        const char *q = p + 1;
+        int exp_sign = 1;
+        if (*q == '+' || *q == '-')
+        {
+            exp_sign = *q == '-' ? -1 : 1;
+            q++;
+        }
+        if (isdigit((unsigned char)*q))
+        {
+            int exponent = 0;
+            while (isdigit((unsigned char)*q))
+            {
+                if (exponent < 10000)
+                {
+                    exponent = exponent * 10 + (*q - '0');
+                }
+                q++;
+            }
+            double factor = exp_sign > 0 ? 10.0 : 0.1;
+            while (exponent-- > 0)
+            {
+                value *= factor;
+            }
+            p = q;
+        }
+    }
+
+    if (end)
+    {
+        *end = (char *)p;
+    }
+    return sign * value;
+}
+
+double atof(const char *str)
+{
+    return strtod(str, NULL);
+}
+
+int system(const char *command)
+{
+    if (!command)
+    {
+        return access("/bin/sh", X_OK) == 0;
+    }
+
+    pid_t child = fork();
+    if (child < 0)
+    {
+        return -1;
+    }
+    if (child == 0)
+    {
+        char *argv[] = {"sh", "-c", (char *)command, NULL};
+        execve("/bin/sh", argv, environ);
+        _exit(127);
+    }
+
+    int status;
+    while (waitpid(child, &status, 0) < 0)
+    {
+        if (errno != EINTR)
+        {
+            return -1;
+        }
+    }
+    return status;
 }
