@@ -2,7 +2,10 @@
  * @file gfxdemo.c
  * @brief draw a mock desktop with libgfx on /dev/fb0.
  *
- * usage: gfxdemo
+ * usage: gfxdemo [image]
+ *
+ * with an image (PNG, JPEG or BMP), it is the wallpaper, scaled to the
+ * screen.
  *
  * draws into a buffer in memory, then copies it to the screen in one
  * step (gfx_present), and waits for Enter. a test of libgfx on the real
@@ -10,6 +13,7 @@
  */
 
 #include <gfx.h>
+#include <image.h>
 #include <stdio.h>
 #include <sys/fb.h>
 #include <sys/ioctl.h>
@@ -52,7 +56,7 @@ static void draw_window(gfx_buffer_t *buf, gfx_rect_t r, gfx_color_t title)
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     int fd = fb_open();
     fb_var_screeninfo_t var;
@@ -87,6 +91,19 @@ int main(void)
 
     // the wallpaper, and a panel at the bottom
     gfx_fill_gradient(screen, gfx_rect(0, 0, w, h), gfx_rgb(40, 60, 110), gfx_rgb(120, 70, 130));
+    if (argc > 1)
+    {
+        const char *error = NULL;
+        gfx_buffer_t *wallpaper = image_load(argv[1], &error);
+        if (!wallpaper)
+        {
+            printf("gfxdemo: %s: %s\n", argv[1], error);
+            return 1;
+        }
+        gfx_blend_scaled(screen, gfx_rect(0, 0, w, h), wallpaper,
+                         gfx_rect(0, 0, wallpaper->width, wallpaper->height), 255);
+        gfx_buffer_free(wallpaper);
+    }
     gfx_fill_rect(screen, gfx_rect(0, h - 40, w, 40), gfx_rgba(10, 10, 20, 170));
     for (int32_t i = 0; i < 5; i++)
         gfx_fill_round_rect(screen, gfx_rect(12 + i * 40, h - 32, 28, 24), 6,

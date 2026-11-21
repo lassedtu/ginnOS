@@ -1,4 +1,4 @@
 PROG := gfxdemo
 SRCS := gfxdemo.c
-LIBS := gfx
+LIBS := image gfx
 include ../program.mk
