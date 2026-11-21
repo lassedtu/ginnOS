@@ -39,6 +39,8 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_MPROTECT] = sys_mprotect,
     [SYS_FORK] = sys_fork,
     [SYS_EXECVE] = sys_execve,
+    [SYS_GETPPID] = sys_getppid,
+    [SYS_SCHED_YIELD] = sys_sched_yield,
 };
 
 /**

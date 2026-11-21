@@ -33,7 +33,7 @@ bool mm_fault_in(process_t *proc, uintptr_t addr, bool write);
 /**
  * handle a page fault raised by user code. returns if the page was backed
  * and the instruction can be retried; otherwise prints a segmentation fault
- * report and terminates the process (exit status 139, 128 + SIGSEGV).
+ * report and terminates the process as killed by SIGSEGV.
  * @param addr the faulting address (CR2).
  * @param write true if the access was a write.
  * @param present true if the page was present (a protection violation).

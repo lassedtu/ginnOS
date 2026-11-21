@@ -79,15 +79,30 @@ int execve(const char *path, char *const argv[], char *const envp[])
     return -1;
 }
 
-int waitpid(pid_t pid)
+pid_t waitpid(pid_t pid, int *status, int options)
 {
-    int ret = _syscall(SYS_WAITPID, (int)pid, 0, 0, 0, 0);
+    int ret = _syscall(SYS_WAITPID, (int)pid, (int)status, options, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
         return -1;
     }
-    return ret;
+    return (pid_t)ret;
+}
+
+pid_t wait(int *status)
+{
+    return waitpid(-1, status, 0);
+}
+
+pid_t getppid(void)
+{
+    return (pid_t)_syscall(SYS_GETPPID, 0, 0, 0, 0, 0);
+}
+
+int sched_yield(void)
+{
+    return _syscall(SYS_SCHED_YIELD, 0, 0, 0, 0, 0);
 }
 
 void _exit(int status)

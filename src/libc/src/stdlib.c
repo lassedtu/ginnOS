@@ -267,7 +267,27 @@ char *getenv(const char *name)
     return NULL;
 }
 
+// functions registered with atexit, run in reverse order by exit
+#define ATEXIT_MAX 32
+static void (*atexit_handlers[ATEXIT_MAX])(void);
+static int atexit_count;
+
+int atexit(void (*function)(void))
+{
+    if (atexit_count == ATEXIT_MAX)
+    {
+        return -1;
+    }
+    atexit_handlers[atexit_count++] = function;
+    return 0;
+}
+
 void exit(int status)
 {
+    // stdout is not buffered, so the handlers are all there is to run
+    while (atexit_count > 0)
+    {
+        atexit_handlers[--atexit_count]();
+    }
     _exit(status);
 }

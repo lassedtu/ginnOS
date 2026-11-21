@@ -35,9 +35,11 @@
 #define SYS_MPROTECT 26
 #define SYS_FORK 27
 #define SYS_EXECVE 28
+#define SYS_GETPPID 29
+#define SYS_SCHED_YIELD 30
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 29
+#define SYSCALL_COUNT 31
 
 /**
  * initialize the system call interface.

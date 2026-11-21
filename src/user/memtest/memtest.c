@@ -59,7 +59,7 @@ __attribute__((noinline)) static int test_heap(void)
         printf("memtest heap: exec failed\n");
         return 1;
     }
-    waitpid(child);
+    waitpid(child, NULL, 0);
 
     for (int i = 0; i < HEAP_BLOCKS; i++)
     {

@@ -35,6 +35,8 @@
 #define SYS_MPROTECT 26 // change the protection of a range of memory
 #define SYS_FORK 27     // create a copy of the calling process
 #define SYS_EXECVE 28   // replace the calling process's program
+#define SYS_GETPPID 29  // get the parent's process ID
+#define SYS_SCHED_YIELD 30 // let other processes run first
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

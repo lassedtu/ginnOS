@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/wait.h>
+
 /**
  * @file unistd.h
  * @brief This file contains the declarations of POSIX-like system call wrappers.
@@ -71,17 +73,22 @@ pid_t fork(void);
 int execve(const char *path, char *const argv[], char *const envp[]);
 
 /**
- * wait for a child process to exit.
- * @param pid child PID to wait for.
- * @return child's exit code, or -1 on error.
- */
-int waitpid(pid_t pid);
-
-/**
  * terminate the current process.
  * @param status exit code.
  */
 void _exit(int status) __attribute__((noreturn));
+
+/**
+ * get the parent's process ID.
+ * @return the parent's PID, or 0 if the parent has exited.
+ */
+pid_t getppid(void);
+
+/**
+ * let other ready processes run before this one continues.
+ * @return 0.
+ */
+int sched_yield(void);
 
 /**
  * get the current process ID.

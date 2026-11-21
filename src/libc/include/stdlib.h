@@ -60,7 +60,15 @@ extern char **environ;
 char *getenv(const char *name);
 
 /**
- * terminate the process with an exit code.
+ * register a function for exit() to call. handlers run in the reverse
+ * order of registration; _exit() skips them.
+ * @param function the handler.
+ * @return 0, or -1 if 32 handlers are registered already.
+ */
+int atexit(void (*function)(void));
+
+/**
+ * run the atexit handlers, then terminate the process with an exit code.
  * @param status exit code.
  */
 void exit(int status) __attribute__((noreturn));

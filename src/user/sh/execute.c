@@ -282,14 +282,18 @@ void execute_pipeline(pipeline_t *pipeline)
         close(pipe_fds[i][1]);
     }
 
-    // the status of a pipeline is that of its last stage
+    // the status of a pipeline is that of its last stage: its exit code,
+    // or 128 + the signal that killed it
     int last_exit = 127;
     for (int i = 0; i < pipeline->count; i++)
     {
-        if (children[i] >= 0)
-            last_exit = waitpid(children[i]);
-        else
+        int status;
+        if (children[i] < 0 || waitpid(children[i], &status, 0) < 0)
             last_exit = 127;
+        else if (WIFEXITED(status))
+            last_exit = WEXITSTATUS(status);
+        else
+            last_exit = 128 + WTERMSIG(status);
     }
 
     shell_last_exit_code = last_exit;

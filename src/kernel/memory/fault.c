@@ -8,10 +8,9 @@
 #include "common/memory.h"
 #include "common/stdio.h"
 #include "kernel/klog/klog.h"
+#include "kernel/signal/signal.h"
 #include "kernel/usermode/usermode.h"
 
-// exit status of a process killed by a bad memory access (128 + SIGSEGV)
-#define SEGFAULT_EXIT_STATUS 139
 
 /**
  * the MMU flags for a backed page of an area.
@@ -130,5 +129,5 @@ void mm_handle_user_fault(uintptr_t addr, bool write, bool present, uintptr_t pc
     // exiting may sleep (closing files): leave the fault's interrupt gate
     // state behind. this process never returns to the faulting instruction.
     arch_enable_interrupts();
-    usermode_exit(SEGFAULT_EXIT_STATUS);
+    usermode_kill(SIGSEGV);
 }

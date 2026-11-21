@@ -8,6 +8,7 @@
 #include "kernel/memory/mman.h"
 #include "kernel/elf/elf_loader.h"
 #include "kernel/process/process.h"
+#include "kernel/process/wait_status.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/panic.h"
 #include "kernel/klog/klog.h"
@@ -184,7 +185,12 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     return KERR_OK;
 }
 
-void usermode_exit(int exit_code)
+/**
+ * end the current process with a wait status (wait_status.h). never returns.
+ */
+static void process_exit(int32_t status) __attribute__((noreturn));
+
+static void process_exit(int32_t status)
 {
     process_t *proc = process_current();
 
@@ -193,8 +199,8 @@ void usermode_exit(int exit_code)
         // PID 1 (init, for now /bin/sh) has no parent to reap it. with no
         // init left the system cannot do anything more: halt.
         arch_disable_interrupts();
-        KLOG_WARN("kernel: init exited with code %d, system halted", exit_code);
-        printf("init exited with code %d. System halted.\r\n", exit_code);
+        KLOG_WARN("kernel: init ended with wait status 0x%x, system halted", (uint32_t)status);
+        printf("init ended (wait status 0x%x). System halted.\r\n", (uint32_t)status);
         arch_halt_forever();
     }
 
@@ -214,20 +220,15 @@ void usermode_exit(int exit_code)
     arch_disable_interrupts();
 
     proc->state = PROC_STATE_ZOMBIE;
-    proc->exit_code = exit_code;
+    proc->exit_status = status;
     scheduler_remove(proc);
 
     // parent_pid is PID_NONE if our parent exited first
     process_t *parent = process_get(proc->parent_pid);
     if (parent)
     {
-        // wake the parent if it is blocked in waitpid for us
-        if (parent->state == PROC_STATE_BLOCKED && parent->wait_for_pid == proc->pid)
-        {
-            parent->state = PROC_STATE_READY;
-            parent->wait_for_pid = PID_NONE;
-            scheduler_ready(parent);
-        }
+        // a parent in waitpid sleeps on its child_exit queue
+        wait_queue_wake_all(&parent->child_exit);
     }
     else
     {
@@ -238,5 +239,15 @@ void usermode_exit(int exit_code)
     scheduler_yield();
 
     // unreachable
-    kernel_panic("usermode_exit: a zombie woke up... run.");
+    kernel_panic("process_exit: a zombie woke up... run.");
+}
+
+void usermode_exit(int exit_code)
+{
+    process_exit(WAIT_STATUS_EXITED(exit_code));
+}
+
+void usermode_kill(int signal)
+{
+    process_exit(WAIT_STATUS_SIGNALED(signal));
 }

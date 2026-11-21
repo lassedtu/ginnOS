@@ -8,6 +8,8 @@
  *          (copy-on-write)
  *   pipe   fork with a pipe between parent and child
  *   many   fork until the process table is full, then reap every child
+ *   wait   waitpid with WNOHANG and pid -1, ECHILD, the status of a child
+ *          killed by SIGSEGV, and getppid
  *   exec   execve a missing program (must fail and return), then fork and
  *          execve this program in the child with its own argv and
  *          environment (the child checks them in mode "execed")
@@ -19,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <errno.h>
 #include <unistd.h>
 
 #define MANY_MAX 100
@@ -58,10 +61,10 @@ static int test_fork(void)
         _exit(seen && changed ? 7 : 1);
     }
 
-    int status = waitpid(child);
-    if (status != 7)
+    int status;
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 7)
     {
-        printf("proctest fork: child failed (status %d)\n", status);
+        printf("proctest fork: child failed (status 0x%x)\n", status);
         return 1;
     }
     if (global_value != 1 || stack_value != 2 || *heap_value != 3 || *mmap_value != 4)
@@ -118,7 +121,7 @@ static int test_pipe(void)
     }
     buffer[total] = '\0';
     close(fds[0]);
-    waitpid(child);
+    waitpid(child, NULL, 0);
 
     if (strcmp(buffer, "hello from the child") != 0)
     {
@@ -166,7 +169,8 @@ static int test_many(void)
     int failed = 0;
     for (int i = 0; i < count; i++)
     {
-        if (waitpid(children[i]) != 0)
+        int status;
+        if (waitpid(children[i], &status, 0) != children[i] || status != 0)
         {
             failed++;
         }
@@ -179,6 +183,65 @@ static int test_many(void)
     }
 
     printf("proctest many: %d children, ok\n", count);
+    return 0;
+}
+
+static int test_wait(void)
+{
+    pid_t self = getpid();
+    int fds[2];
+    pipe(fds);
+
+    // a child that waits for the parent's signal (a byte on the pipe), then
+    // checks getppid
+    pid_t slow = fork();
+    if (slow == 0)
+    {
+        char byte;
+        close(fds[1]);
+        read(fds[0], &byte, 1);
+        _exit(getppid() == self ? 3 : 1);
+    }
+    close(fds[0]);
+
+    // a child killed by a bad memory access
+    pid_t crash = fork();
+    if (crash == 0)
+    {
+        volatile int *null = NULL;
+        _exit(*null);
+    }
+
+    int status;
+    if (waitpid(slow, &status, WNOHANG) != 0)
+    {
+        printf("proctest wait: WNOHANG did not return 0\n");
+        return 1;
+    }
+
+    // the first child to exit is the crashing one: the other is waiting
+    pid_t first = waitpid(-1, &status, 0);
+    if (first != crash || !WIFSIGNALED(status) || WTERMSIG(status) != 11)
+    {
+        printf("proctest wait: got pid %d status 0x%x\n", first, status);
+        return 1;
+    }
+
+    write(fds[1], "x", 1);
+    close(fds[1]);
+    if (wait(&status) != slow || !WIFEXITED(status) || WEXITSTATUS(status) != 3)
+    {
+        printf("proctest wait: slow child status 0x%x\n", status);
+        return 1;
+    }
+
+    if (wait(&status) != -1 || errno != ECHILD)
+    {
+        printf("proctest wait: no ECHILD without children\n");
+        return 1;
+    }
+
+    printf("proctest wait: ok\n");
     return 0;
 }
 
@@ -205,10 +268,11 @@ static int test_exec(void)
         _exit(99); // execve failed
     }
 
-    int status = waitpid(child);
-    if (status != 42)
+    int status;
+    waitpid(child, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 42)
     {
-        printf("proctest exec: child exited with %d\n", status);
+        printf("proctest exec: child status 0x%x\n", status);
         return 1;
     }
 
@@ -234,7 +298,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: proctest fork|pipe|many|exec\n");
+        printf("usage: proctest fork|pipe|many|wait|exec\n");
         return 1;
     }
 
@@ -244,6 +308,8 @@ int main(int argc, char **argv)
         return test_pipe();
     if (strcmp(argv[1], "many") == 0)
         return test_many();
+    if (strcmp(argv[1], "wait") == 0)
+        return test_wait();
     if (strcmp(argv[1], "exec") == 0)
         return test_exec();
     if (strcmp(argv[1], "execed") == 0)

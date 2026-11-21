@@ -4,6 +4,7 @@
 #include "kernel/vfs/vfs.h"
 #include "kernel/usermode/usermode.h"
 #include "kernel/process/process.h"
+#include "kernel/process/wait_status.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/pmm_layout.h"
@@ -191,61 +192,82 @@ syscall_ret_t sys_getpid(struct registers *regs)
 }
 
 /**
- * SYS_waitpid: wait for a child process to exit.
- * args: EBX = child PID to wait for.
- * returns the child's exit code on success, or negative errno on error.
- *
- * if the child is already a zombie, reaps it immediately.
- * otherwise, blocks the calling process until the child exits.
+ * SYS_waitpid: wait for a child process to exit and reap it.
+ * args: EBX = pid (a child's pid, or -1 for any child),
+ *       ECX = int *status (may be NULL; receives the wait status,
+ *             wait_status.h), EDX = options (WNOHANG).
+ * returns the reaped child's pid; 0 with WNOHANG when no matching child
+ * has exited yet; -ECHILD if there is no matching child; -EINVAL for a
+ * pid of 0 or below -1 (process groups come later); -EFAULT for a bad
+ * status pointer (the child is reaped anyway).
  */
 syscall_ret_t sys_waitpid(struct registers *regs)
 {
-    uint32_t child_pid = (uint32_t)syscall_arg(regs, 0);
+    int32_t pid = (int32_t)syscall_arg(regs, 0);
+    int32_t *user_status = (int32_t *)syscall_arg(regs, 1);
+    uint32_t options = (uint32_t)syscall_arg(regs, 2);
     process_t *parent = process_current();
 
-    if (!parent)
+    if (!parent || pid == 0 || pid < -1 || (options & ~(uint32_t)WNOHANG))
     {
         return -3; /* EINVAL */
     }
 
-    process_t *child = process_get(child_pid);
-    if (!child)
-    {
-        return -19; /* ESRCH */
-    }
-
-    /* verify this is actually our child */
-    if (child->parent_pid != parent->pid)
-    {
-        return -20; /* ECHILD */
-    }
-
-    /* mask interrupts from the zombie check until we are blocked, so the
-     * child cannot exit in between (it would see us not yet BLOCKED, skip
-     * the wakeup, and we would sleep forever). */
+    // masked from the search until blocked: a child that exits in between
+    // would wake an empty queue, and this process would sleep forever
     uint32_t flags = arch_irq_save();
-
-    /* child is still running: block the parent until it exits */
-    if (child->state != PROC_STATE_ZOMBIE)
+    process_t *child;
+    for (;;)
     {
-        parent->state = PROC_STATE_BLOCKED;
-        parent->wait_for_pid = child_pid;
-        scheduler_remove(parent);
-        scheduler_yield();
-
-        /* woken up: the child should now be a zombie */
-        child = process_get(child_pid);
+        bool has_child;
+        child = process_find_zombie_child(parent, pid, &has_child);
+        if (child)
+        {
+            break;
+        }
+        if (!has_child)
+        {
+            arch_irq_restore(flags);
+            return -20; /* ECHILD */
+        }
+        if (options & WNOHANG)
+        {
+            arch_irq_restore(flags);
+            return 0;
+        }
+        wait_queue_block(&parent->child_exit);
     }
-
-    int32_t result = -19; /* ESRCH: child disappeared somehow */
-    if (child && child->state == PROC_STATE_ZOMBIE)
-    {
-        result = child->exit_code;
-        process_destroy(child);
-    }
-
     arch_irq_restore(flags);
-    return result;
+
+    int32_t status = child->exit_status;
+    uint32_t child_pid = child->pid;
+    process_destroy(child);
+
+    if (user_status && kerr_failed(copy_to_user(user_status, &status, sizeof(status))))
+    {
+        return -18; /* EFAULT */
+    }
+    return (syscall_ret_t)child_pid;
+}
+
+/**
+ * SYS_getppid: return the parent's pid, or 0 if the parent has exited.
+ */
+syscall_ret_t sys_getppid(struct registers *regs)
+{
+    (void)regs;
+    process_t *proc = process_current();
+    return proc ? (syscall_ret_t)proc->parent_pid : 0;
+}
+
+/**
+ * SYS_sched_yield: let other ready processes run first. returns 0.
+ */
+syscall_ret_t sys_sched_yield(struct registers *regs)
+{
+    (void)regs;
+    scheduler_yield();
+    return 0;
 }
 
 /**

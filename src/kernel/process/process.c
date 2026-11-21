@@ -83,8 +83,8 @@ process_t *process_create(void)
     proc->parent_pid = PID_NONE;
     proc->brk = 0;
     vma_table_init(&proc->vmas);
-    proc->exit_code = 0;
-    proc->wait_for_pid = PID_NONE;
+    proc->exit_status = 0;
+    wait_queue_init(&proc->child_exit);
 
     // allocate a guarded kernel stack (zeroed)
     uintptr_t stack = kstack_alloc();
@@ -294,6 +294,31 @@ void process_reap_orphans(void)
             orphan_zombies--;
         }
     }
+}
+
+process_t *process_find_zombie_child(process_t *parent, int32_t pid, bool *has_child)
+{
+    process_t *found = NULL;
+    *has_child = false;
+
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX; i++)
+    {
+        process_t *child = &proc_table[i];
+        if (child->state == PROC_STATE_UNUSED || child->parent_pid != parent->pid ||
+            (pid != -1 && child->pid != (uint32_t)pid))
+        {
+            continue;
+        }
+        *has_child = true;
+        if (child->state == PROC_STATE_ZOMBIE)
+        {
+            found = child;
+            break;
+        }
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+    return found;
 }
 
 process_t *process_get(uint32_t pid)

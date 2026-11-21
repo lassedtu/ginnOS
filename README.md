@@ -55,7 +55,7 @@ today.
   16 MiB with a guard page under it
 - Each process keeps a table of its memory areas (VMAs). Pages are allocated
   when they are first touched, and a bad access kills only the process
-  ("segmentation fault", exit status 139) instead of the kernel
+  ("segmentation fault", killed by SIGSEGV) instead of the kernel
 - `mmap` (anonymous and device-backed, `MAP_FIXED`), `munmap` and `mprotect`
 
 ### Processes and multitasking

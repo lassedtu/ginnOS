@@ -79,11 +79,18 @@ int exec_program(const char *path, const char **argv);
 
 /**
  * called by SYS_exit: the current process becomes a zombie for its parent
- * to reap, and never runs again. if it has no parent (PID 1), the system
- * halts.
- * @param exit_code the exit code passed by the user program.
+ * to reap, and never runs again. its wait status says it exited with
+ * exit_code. if it has no parent (PID 1), the system halts.
+ * @param exit_code the exit code passed by the user program (low 8 bits).
  */
-void usermode_exit(int exit_code);
+void usermode_exit(int exit_code) __attribute__((noreturn));
+
+/**
+ * end the current process as killed by a signal: like usermode_exit, but
+ * the wait status names the signal (SIGSEGV for a bad memory access).
+ * @param signal the signal number (kernel/signal/signal.h).
+ */
+void usermode_kill(int signal) __attribute__((noreturn));
 
 /**
  * get the current program break (end of the user heap).

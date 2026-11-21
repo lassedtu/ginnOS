@@ -118,6 +118,8 @@ syscall_ret_t sys_fork(struct registers *regs);
  * SYS_execve: replace the calling process's program with a new one.
  */
 syscall_ret_t sys_execve(struct registers *regs);
+syscall_ret_t sys_getppid(struct registers *regs);
+syscall_ret_t sys_sched_yield(struct registers *regs);
 
 /* sys_misc.c */
 syscall_ret_t sys_getcwd(struct registers *regs);

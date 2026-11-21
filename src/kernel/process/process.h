@@ -5,6 +5,7 @@
 #include "kernel/memory/vma.h"
 #include "arch/arch.h"
 #include "kernel/syscall/fd_table.h"
+#include "kernel/sync/wait_queue.h"
 
 // maximum number of concurrent processes.
 #define PROCESS_MAX 64
@@ -44,12 +45,12 @@ typedef struct process
     process_state_t state;  // current state
     uintptr_t brk;          // program break (for sbrk)
     vma_table_t vmas;       // what is mapped in the user half (vma.h)
-    int32_t exit_code;      // exit code (valid in ZOMBIE state)
+    int32_t exit_status;    // wait status (wait_status.h), valid in ZOMBIE state
     uintptr_t kernel_stack; // lowest address of the kernel stack (kstack.h)
     uintptr_t kernel_esp;   // saved kernel ESP (for context switch)
     uintptr_t entry;        // ELF entry point (used by trampoline on first schedule)
     addr_space_t page_directory; // this process's address space (page directory)
-    uint32_t wait_for_pid;  // PID this process is waiting for (0 = not waiting)
+    wait_queue_t child_exit; // where this process waits for a child to exit
     char **argv;            // kernel-heap copy of argv (freed at exit)
     uint8_t tty_raw;        // 0 = cooked (line-buffered), 1 = raw (event-based)
 
@@ -144,6 +145,16 @@ void process_note_orphan_zombie(void);
  * never freed while in use. runs with interrupts masked.
  */
 void process_reap_orphans(void);
+
+/**
+ * find a zombie child of a process.
+ * @param parent the parent.
+ * @param pid a child's pid, or -1 for any child.
+ * @param has_child set to true if parent has at least one matching child,
+ *        exited or not.
+ * @return a matching zombie child, or NULL if none has exited yet.
+ */
+process_t *process_find_zombie_child(process_t *parent, int32_t pid, bool *has_child);
 
 /**
  * look up a process by PID. the pointer stays valid only while the process

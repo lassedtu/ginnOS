@@ -8,13 +8,14 @@
 ;   [esp+8]  = argv (pointer to a NULL-terminated char* array)
 ;   [esp+12] = envp (pointer to a NULL-terminated char* array)
 ;
-; sets environ, calls main(argc, argv, envp), then invokes SYS_exit with the
-; return value.
+; sets environ, calls main(argc, argv, envp), then exit() with the return
+; value (exit runs the atexit handlers).
 
 BITS 32
 
 extern main
 extern environ
+extern exit
 global _start
 
 _start:
@@ -29,10 +30,8 @@ _start:
     call main              ; int main(int argc, char **argv, char **envp)
     add esp, 12            ; clean up arguments
 
-    ; SYS_exit(return value from main is in EAX)
-    mov ebx, eax           ; exit code = main's return value
-    mov eax, 0             ; SYS_EXIT = 0
-    int 0x80               ; syscall
+    push eax               ; exit(main's return value)
+    call exit
 
     ; unreachable
     jmp $
