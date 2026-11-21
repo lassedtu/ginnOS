@@ -53,6 +53,7 @@ typedef struct
     int32_t (*read_entry)(file_t *file, fs_dirent_t *entry);
     int32_t (*truncate)(file_t *file);
     int32_t (*stat)(file_t *file, struct kstat *st);
+    uint32_t (*poll)(file_t *file); // POLL* events that would not block now
     void (*release)(file_t *file); // the last reference is gone
 } file_ops_t;
 
@@ -141,6 +142,13 @@ int32_t file_read_entry(file_t *file, fs_dirent_t *entry);
 int32_t file_unread_entry(file_t *file, const fs_dirent_t *entry);
 int32_t file_truncate(file_t *file);
 int32_t file_stat(file_t *file, struct kstat *st);
+
+/**
+ * the readiness of a file (kernel/vfs/poll.h). a file without a poll op
+ * (a regular file) is always ready to read and write.
+ * @return POLL* events.
+ */
+uint32_t file_poll(file_t *file);
 
 /**
  * read or write at an offset without moving the description's offset

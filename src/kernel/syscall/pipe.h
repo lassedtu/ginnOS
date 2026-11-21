@@ -99,3 +99,13 @@ int32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count, bool nonblock);
  *         open; -EAGAIN if nonblocking and nothing fitted.
  */
 int32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count, bool nonblock);
+
+/**
+ * the readiness of one end of a pipe: the read end has POLLIN when there
+ * is data or no writer is left (POLLHUP then too); the write end has
+ * POLLOUT when PIPE_BUF bytes fit, and POLLERR when no reader is left.
+ * @param pipe the pipe.
+ * @param dir which end.
+ * @return POLL* events (kernel/vfs/poll.h).
+ */
+uint32_t pipe_poll(pipe_buf_t *pipe, pipe_dir_t dir);

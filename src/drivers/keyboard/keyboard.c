@@ -7,6 +7,7 @@
 
 #include "keyboard.h"
 #include "keyboard_layout.h"
+#include "kernel/vfs/poll.h"
 
 #include "arch/arch.h"
 #include "kernel/irq/irq.h"
@@ -105,6 +106,7 @@ static void keyboard_buffer_push(keyboard_event_t event)
         buffer_write = next;
         // every sleeping reader re-checks; whoever runs first takes it
         wait_queue_wake_all(&readers);
+        poll_notify();
     }
 
     spin_unlock_irqrestore(&buffer_lock, flags);

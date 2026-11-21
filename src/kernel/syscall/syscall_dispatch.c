@@ -1,6 +1,7 @@
 #include "syscall.h"
 #include "syscall_internal.h"
 #include "fd_table.h"
+#include "kernel/vfs/poll.h"
 
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/idt.h"
@@ -47,6 +48,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_PWRITE] = sys_pwrite,
     [SYS_FSYNC] = sys_fsync,
     [SYS_GETDENTS] = sys_getdents,
+    [SYS_POLL] = sys_poll,
 };
 
 /**
@@ -70,6 +72,8 @@ static void syscall_handler(struct registers *regs)
 
 void syscall_initialize(void)
 {
+    poll_init();
+
 
     /* register the handler in the ISR dispatch table */
     isr_register_handler(SYSCALL_VECTOR, syscall_handler);

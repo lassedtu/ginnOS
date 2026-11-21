@@ -3,6 +3,8 @@
 #include "fd_table.h"
 
 #include "kernel/vfs/file.h"
+#include "kernel/vfs/poll.h"
+#include "kernel/time/timer.h"
 #include "kernel/process/process.h"
 
 /**
@@ -361,4 +363,91 @@ syscall_ret_t sys_pwrite(struct registers *regs)
 syscall_ret_t sys_fsync(struct registers *regs)
 {
     return fd_get((int)syscall_arg(regs, 0)) ? 0 : -EBADF;
+}
+
+// most descriptors one poll call may watch
+#define POLL_FDS_MAX 64
+
+/**
+ * struct pollfd (ABI, as in libc poll.h).
+ */
+typedef struct
+{
+    int32_t fd;
+    int16_t events;
+    int16_t revents;
+} kpollfd_t;
+
+/**
+ * fill in revents for each entry.
+ * @return the number of entries with revents set.
+ */
+static int32_t poll_scan(kpollfd_t *fds, uint32_t count)
+{
+    int32_t ready = 0;
+    for (uint32_t i = 0; i < count; i++)
+    {
+        fds[i].revents = 0;
+        if (fds[i].fd < 0)
+        {
+            continue; // ignored, as POSIX says
+        }
+
+        fd_entry_t *entry = fd_get(fds[i].fd);
+        uint32_t events = POLLNVAL;
+        if (entry)
+        {
+            // errors and hang-ups are reported even when not asked for
+            uint32_t wanted = (uint16_t)fds[i].events | POLLERR | POLLHUP;
+            events = file_poll(entry->file) & wanted;
+        }
+
+        fds[i].revents = (int16_t)events;
+        if (events)
+        {
+            ready++;
+        }
+    }
+    return ready;
+}
+
+/**
+ * SYS_poll: wait until one of a set of descriptors is ready.
+ * args: EBX = struct pollfd array, ECX = count (at most 64),
+ *       EDX = timeout in milliseconds (negative: no limit, 0: do not wait).
+ * returns the number of descriptors with events, 0 on timeout, or a
+ * negative errno.
+ */
+syscall_ret_t sys_poll(struct registers *regs)
+{
+    kpollfd_t *user_fds = (kpollfd_t *)syscall_arg(regs, 0);
+    uint32_t count = (uint32_t)syscall_arg(regs, 1);
+    int32_t timeout = (int32_t)syscall_arg(regs, 2);
+
+    if (count > POLL_FDS_MAX)
+        return -EINVAL;
+
+    kpollfd_t fds[POLL_FDS_MAX];
+    if (kerr_failed(copy_from_user(fds, user_fds, count * sizeof(kpollfd_t))))
+        return -EFAULT;
+
+    uint64_t deadline = TIMER_NEVER;
+    if (timeout >= 0)
+        deadline = timer_now() + timer_ms_to_ticks((uint32_t)timeout);
+
+    // masked from each scan until asleep, so a notify in between is not lost
+    uint32_t flags = arch_irq_save();
+    int32_t ready;
+    for (;;)
+    {
+        ready = poll_scan(fds, count);
+        if (ready > 0 || timeout == 0 || timer_now() >= deadline)
+            break;
+        poll_wait(deadline);
+    }
+    arch_irq_restore(flags);
+
+    if (kerr_failed(copy_to_user(user_fds, fds, count * sizeof(kpollfd_t))))
+        return -EFAULT;
+    return ready;
 }

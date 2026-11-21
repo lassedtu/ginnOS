@@ -1,6 +1,7 @@
 #include "file.h"
 
 #include "kernel/errno.h"
+#include "kernel/vfs/poll.h"
 #include "kernel/memory/heap.h"
 #include "kernel/sync/spinlock.h"
 #include "kernel/assert.h"
@@ -128,6 +129,24 @@ int32_t file_truncate(file_t *file)
         return -EINVAL;
     }
     return file->ops->truncate(file);
+}
+
+uint32_t file_poll(file_t *file)
+{
+    if (file->ops->poll)
+    {
+        return file->ops->poll(file);
+    }
+    uint32_t events = 0;
+    if (file_readable(file))
+    {
+        events |= POLLIN;
+    }
+    if (file_writable(file))
+    {
+        events |= POLLOUT;
+    }
+    return events;
 }
 
 int32_t file_stat(file_t *file, struct kstat *st)
@@ -301,6 +320,11 @@ static int32_t pipe_kind_stat(file_t *file, struct kstat *st)
     return 0;
 }
 
+static uint32_t pipe_kind_poll(file_t *file)
+{
+    return pipe_poll(file->pipe.buf, file->pipe.dir);
+}
+
 static void pipe_kind_release(file_t *file)
 {
     pipe_unref(file->pipe.buf, file->pipe.dir);
@@ -311,6 +335,7 @@ static const file_ops_t pipe_file_ops = {
     .read = pipe_kind_read,
     .write = pipe_kind_write,
     .stat = pipe_kind_stat,
+    .poll = pipe_kind_poll,
     .release = pipe_kind_release,
 };
 

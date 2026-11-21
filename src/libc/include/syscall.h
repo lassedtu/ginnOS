@@ -45,6 +45,7 @@
 #define SYS_PWRITE 36   // write at an offset
 #define SYS_FSYNC 37    // write a file's data to disk
 #define SYS_GETDENTS 38 // read directory records
+#define SYS_POLL 39     // wait for file descriptors to become ready
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

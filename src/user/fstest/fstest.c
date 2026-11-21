@@ -9,6 +9,8 @@
  *          a pipe)
  *   rename rename a file, access before and after
  *   pread  pread and pwrite leave the file offset alone
+ *   poll   poll and select on pipes: timeout, data from a child, hang-up,
+ *          a broken pipe, and a closed descriptor
  *   dirent readdir over a directory of 20 files, and getdents with a buffer
  *          that holds one record at a time
  *
@@ -18,6 +20,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <sys/select.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -165,6 +169,74 @@ static int test_pread(void)
     return ok();
 }
 
+static int test_poll(void)
+{
+    int fds[2];
+    pipe(fds);
+
+    // nothing to read yet: the timeout runs out
+    struct pollfd watch = {fds[0], POLLIN, 0};
+    if (poll(&watch, 1, 50) != 0 || watch.revents != 0)
+        return failed("poll timeout on an empty pipe");
+
+    // a child writes after a while; poll without a time limit wakes
+    pid_t child = fork();
+    if (child == 0)
+    {
+        close(fds[0]);
+        for (int i = 0; i < 20; i++)
+            sched_yield();
+        write(fds[1], "x", 1);
+        _exit(0);
+    }
+    close(fds[1]);
+
+    if (poll(&watch, 1, -1) != 1 || !(watch.revents & POLLIN))
+        return failed("poll for data from a child");
+    char byte;
+    read(fds[0], &byte, 1);
+
+    // the writer has exited (or will): the read end hangs up
+    waitpid(child, NULL, 0);
+    if (poll(&watch, 1, -1) != 1 || !(watch.revents & POLLHUP))
+        return failed("POLLHUP after the writer closed");
+    close(fds[0]);
+
+    // a write end without a reader reports an error
+    pipe(fds);
+    close(fds[0]);
+    struct pollfd writer = {fds[1], POLLOUT, 0};
+    if (poll(&writer, 1, 0) != 1 || !(writer.revents & POLLERR))
+        return failed("POLLERR with no reader");
+    close(fds[1]);
+
+    struct pollfd closed = {50, POLLIN, 0};
+    if (poll(&closed, 1, 0) != 1 || closed.revents != POLLNVAL)
+        return failed("POLLNVAL for a closed descriptor");
+
+    // select: the write end of a fresh pipe is writable, the read end not
+    pipe(fds);
+    fd_set readable;
+    fd_set writable;
+    FD_ZERO(&readable);
+    FD_ZERO(&writable);
+    FD_SET(fds[0], &readable);
+    FD_SET(fds[1], &writable);
+    struct timeval no_wait = {0, 0};
+    if (select(fds[1] + 1, &readable, &writable, NULL, &no_wait) != 1 ||
+        FD_ISSET(fds[0], &readable) || !FD_ISSET(fds[1], &writable))
+        return failed("select");
+
+    write(fds[1], "y", 1);
+    FD_SET(fds[0], &readable);
+    if (select(fds[0] + 1, &readable, NULL, NULL, NULL) != 1 || !FD_ISSET(fds[0], &readable))
+        return failed("select for data");
+    close(fds[0]);
+    close(fds[1]);
+
+    return ok();
+}
+
 #define DIRENT_FILES 20
 
 /**
@@ -246,7 +318,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: fstest stat|fcntl|rename|pread|dirent\n");
+        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll\n");
         return 1;
     }
 
@@ -261,6 +333,8 @@ int main(int argc, char **argv)
         return test_pread();
     if (strcmp(argv[1], "dirent") == 0)
         return test_dirent();
+    if (strcmp(argv[1], "poll") == 0)
+        return test_poll();
 
     printf("fstest: unknown mode %s\n", argv[1]);
     return 1;

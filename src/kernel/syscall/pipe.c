@@ -2,6 +2,7 @@
 
 #include "common/memory.h"
 #include "kernel/errno.h"
+#include "kernel/vfs/poll.h"
 #include "kernel/memory/heap.h"
 #include "kernel/assert.h"
 
@@ -122,6 +123,9 @@ void pipe_unref(pipe_buf_t *pipe, pipe_dir_t dir)
 
     spin_unlock_irqrestore(&pipe->lock, flags);
 
+    // the other end may now see EOF or a broken pipe
+    poll_notify();
+
     if (closed)
     {
         pipe_free(pipe);
@@ -155,6 +159,7 @@ int32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count, bool nonblock)
     wait_queue_wake_all(&pipe->writers);
 
     spin_unlock_irqrestore(&pipe->lock, flags);
+    poll_notify();
     return (int32_t)to_read;
 }
 
@@ -198,7 +203,43 @@ int32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count, bool nonbl
     }
 
     spin_unlock_irqrestore(&pipe->lock, flags);
+    if (written > 0)
+    {
+        poll_notify();
+    }
 
     // bytes that went in count, even if the rest could not
     return written > 0 ? (int32_t)written : result;
+}
+
+uint32_t pipe_poll(pipe_buf_t *pipe, pipe_dir_t dir)
+{
+    uint32_t events = 0;
+    uint32_t flags = spin_lock_irqsave(&pipe->lock);
+
+    if (dir == PIPE_READ)
+    {
+        if (pipe->count > 0)
+        {
+            events |= POLLIN;
+        }
+        if (pipe->write_refs == 0)
+        {
+            events |= POLLIN | POLLHUP; // a read returns EOF at once
+        }
+    }
+    else
+    {
+        if (pipe->read_refs == 0)
+        {
+            events |= POLLERR; // a write fails with EPIPE at once
+        }
+        else if (PIPE_CAPACITY - pipe->count >= PIPE_BUF)
+        {
+            events |= POLLOUT;
+        }
+    }
+
+    spin_unlock_irqrestore(&pipe->lock, flags);
+    return events;
 }

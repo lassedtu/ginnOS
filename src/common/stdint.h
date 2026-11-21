@@ -26,6 +26,7 @@ typedef __UINTPTR_TYPE__ uintptr_t;
 #define UINTPTR_MAX __UINTPTR_MAX__
 #define UINT16_MAX 0xFFFF
 #define UINT32_MAX 0xFFFFFFFFu
+#define UINT64_MAX 0xFFFFFFFFFFFFFFFFull
 
 typedef uint8_t bool;
 

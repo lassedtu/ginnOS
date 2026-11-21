@@ -10,6 +10,7 @@
 #include "kernel/errno.h"
 #include "kernel/process/process.h"
 #include "kernel/vfs/file.h"
+#include "kernel/vfs/poll.h"
 #include "common/memory.h"
 
 /**
@@ -93,10 +94,17 @@ static int32_t console_file_stat(file_t *file, struct kstat *st)
     return 0;
 }
 
+static uint32_t console_file_poll(file_t *file)
+{
+    (void)file;
+    return POLLOUT | (keyboard_available() ? POLLIN : 0);
+}
+
 static const file_ops_t console_file_ops = {
     .read = console_file_read,
     .write = console_file_write,
     .stat = console_file_stat,
+    .poll = console_file_poll,
 };
 
 // the reference it starts with is never dropped, so it is never released

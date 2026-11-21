@@ -5,6 +5,7 @@
 #include "kernel/irq/irq.h"
 #include "kernel/device/device.h"
 #include "kernel/scheduler/scheduler.h"
+#include "kernel/time/timer.h"
 #include "common/string.h"
 
 enum
@@ -34,6 +35,7 @@ static void pit_irq_handler(uint32_t irq, trap_frame_t *frame)
     (void)frame;
 
     ticks++;
+    timer_tick(ticks);
     scheduler_tick();
 }
 

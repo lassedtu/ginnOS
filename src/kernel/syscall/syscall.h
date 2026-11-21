@@ -45,9 +45,10 @@
 #define SYS_PWRITE 36
 #define SYS_FSYNC 37
 #define SYS_GETDENTS 38
+#define SYS_POLL 39
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 39
+#define SYSCALL_COUNT 40
 
 /**
  * initialize the system call interface.
