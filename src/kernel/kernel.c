@@ -21,6 +21,7 @@
 #include "drivers/disk/partition.h"
 #include "drivers/disk/ramdisk.h"
 #include "drivers/disk/ahci.h"
+#include "drivers/disk/nvme.h"
 #include "drivers/pci/pci.h"
 #include "acpi/acpi.h"
 #include "arch/x86/cpu/apic.h"
@@ -126,7 +127,8 @@ static block_device_t *use_disk_root(partition_device_t *part, const char *disk_
 /**
  * find the block device with the root filesystem:
  *   1. a partition with the ginnOS root label on the primary ATA disk,
- *   2. or on a SATA disk of the AHCI controller (MBR or GPT),
+ *   2. or on a SATA disk of the AHCI controller, or on the NVMe disk (MBR
+ *      or GPT),
  *   3. else a root image that the bootloader loaded as a module (a boot
  *      from a USB stick: the kernel has no USB storage driver). the changes
  *      are lost at the next boot.
@@ -167,6 +169,18 @@ static block_device_t *find_root_device(const boot_info_t *boot)
         {
             register_block_device(&part_device, "root", &part.block);
             return use_disk_root(&part, sata_names[i]);
+        }
+    }
+
+    static device_t nvme_device;
+    nvme_disk_t *nvme = nvme_init();
+    if (nvme)
+    {
+        register_block_device(&nvme_device, "nvme0", &nvme->block);
+        if (partition_find_ginnos_root(&part, &nvme->block))
+        {
+            register_block_device(&part_device, "root", &part.block);
+            return use_disk_root(&part, "nvme0");
         }
     }
 
