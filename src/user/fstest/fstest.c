@@ -13,6 +13,8 @@
  *          a broken pipe, and a closed descriptor
  *   tmpfs  files and directories in /tmp: write, read back, append, rename,
  *          unlink while open, rmdir of a full directory, a 100 KiB file
+ *   bigfile write a 300 KiB file to ext2 (past the direct and single-indirect
+ *          blocks), read it back and stat it; "fstest bigfile keep" keeps it
  *   dirent readdir over a directory of 20 files, and getdents with a buffer
  *          that holds one record at a time
  *
@@ -306,6 +308,46 @@ static int test_tmpfs(void)
     return ok();
 }
 
+#define EXT2_BIG_SIZE (300 * 1024)
+
+static int test_bigfile(int keep)
+{
+    static char data[EXT2_BIG_SIZE];
+    static char check[EXT2_BIG_SIZE];
+    const char *path = "/fstest.big";
+
+    for (int i = 0; i < EXT2_BIG_SIZE; i++)
+        data[i] = (char)(i * 13 + i / 1024);
+
+    int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0)
+        return failed("create");
+    for (int done = 0; done < EXT2_BIG_SIZE; done += 1000)
+    {
+        int chunk = EXT2_BIG_SIZE - done < 1000 ? EXT2_BIG_SIZE - done : 1000;
+        if (write(fd, data + done, chunk) != chunk)
+            return failed("write");
+    }
+    close(fd);
+
+    struct stat st;
+    if (stat(path, &st) != 0 || st.st_size != EXT2_BIG_SIZE)
+        return failed("size after writing");
+
+    fd = open(path, O_RDONLY);
+    int total = 0;
+    int n;
+    while ((n = read(fd, check + total, EXT2_BIG_SIZE - total)) > 0)
+        total += n;
+    close(fd);
+    if (total != EXT2_BIG_SIZE || memcmp(data, check, EXT2_BIG_SIZE) != 0)
+        return failed("data read back");
+
+    if (!keep)
+        unlink(path);
+    return ok();
+}
+
 #define DIRENT_FILES 20
 
 /**
@@ -387,7 +429,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll|tmpfs\n");
+        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll|tmpfs|bigfile\n");
         return 1;
     }
 
@@ -406,6 +448,8 @@ int main(int argc, char **argv)
         return test_poll();
     if (strcmp(argv[1], "tmpfs") == 0)
         return test_tmpfs();
+    if (strcmp(argv[1], "bigfile") == 0)
+        return test_bigfile(argc > 2 && strcmp(argv[2], "keep") == 0);
 
     printf("fstest: unknown mode %s\n", argv[1]);
     return 1;
