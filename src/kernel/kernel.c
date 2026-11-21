@@ -35,6 +35,7 @@
 #include "console/console.h"
 #include "kernel/device/device.h"
 #include "kernel/input/input.h"
+#include "kernel/tty/pty.h"
 #include "kernel/device/null.h"
 #include "drivers/video/fb/fb.h"
 #include "common/memory.h"
@@ -219,6 +220,7 @@ void kernel_main(boot_info_t *boot)
     device_registry_init();
     null_devices_init();
     input_init();
+    pty_init();
 
     hal_initialize();
 
