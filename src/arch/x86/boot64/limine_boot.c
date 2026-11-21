@@ -296,21 +296,6 @@ static void read_cmdline(const struct limine_cmdline_response *response)
     boot_info.cmdline_addr = (uint32_t)virt_to_phys(cmdline_copy);
 }
 
-/**
- * limine enables the local APIC (base revision 5 and later) and masks its
- * LINT0 input, so the interrupts of the 8259 PIC do not arrive. with the
- * APIC off (IA32_APIC_BASE bit 11), the PIC is connected to the CPU again.
- * the kernel uses the PIC until it has an APIC driver.
- */
-static void disable_local_apic(void)
-{
-    uint32_t low;
-    uint32_t high;
-    __asm__ volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x1Bu));
-    low &= ~(1u << 11);
-    __asm__ volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x1Bu));
-}
-
 void cstart(void)
 {
     (void)requests_start;
@@ -350,7 +335,6 @@ void cstart(void)
         read_cmdline(cmdline_request.response);
     }
 
-    disable_local_apic();
     kernel_main(&boot_info);
 }
 

@@ -3,6 +3,7 @@
 #include "arch/x86/cpu/irq.h"
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/pic.h"
+#include "arch/x86/cpu/apic.h"
 
 /**
  * @file arch_irq_x86.c
@@ -22,6 +23,9 @@
 
 // neutral handlers registered by portable drivers, one per IRQ line.
 static irq_handler_fn neutral_handlers[IRQ_LINE_COUNT];
+
+// the lines the IRQ layer has enabled, so apic_init can enable them again
+static uint16_t enabled_lines;
 
 /**
  * shared x86-side adapter. runs in the x86 IRQ dispatch path, recovers the
@@ -51,17 +55,51 @@ int arch_irq_register(uint32_t irq, irq_handler_fn handler)
 
 void arch_irq_enable(uint32_t irq)
 {
-    pic_unmask((int)irq);
+    if (irq < IRQ_LINE_COUNT)
+    {
+        enabled_lines |= (uint16_t)(1u << irq);
+    }
+    if (apic_active())
+    {
+        apic_set_irq_masked(irq, false);
+    }
+    else
+    {
+        pic_unmask((int)irq);
+    }
 }
 
 void arch_irq_disable(uint32_t irq)
 {
-    pic_mask((int)irq);
+    if (irq < IRQ_LINE_COUNT)
+    {
+        enabled_lines &= (uint16_t)~(1u << irq);
+    }
+    if (apic_active())
+    {
+        apic_set_irq_masked(irq, true);
+    }
+    else
+    {
+        pic_mask((int)irq);
+    }
 }
 
 void arch_irq_ack(uint32_t irq)
 {
-    pic_send_eoi((int)irq);
+    if (apic_active())
+    {
+        apic_eoi();
+    }
+    else
+    {
+        pic_send_eoi((int)irq);
+    }
+}
+
+bool irq_line_wanted(uint32_t irq)
+{
+    return irq < IRQ_LINE_COUNT && (enabled_lines & (1u << irq)) != 0;
 }
 
 bool arch_frame_is_user(const trap_frame_t *frame)
