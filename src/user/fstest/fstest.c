@@ -15,6 +15,8 @@
  *          unlink while open, rmdir of a full directory, a 100 KiB file
  *   bigfile write a 300 KiB file to ext2 (past the direct and single-indirect
  *          blocks), read it back and stat it; "fstest bigfile keep" keeps it
+ *   perm   a child that gives up root: file modes, directory rights, the
+ *          sticky /tmp, setuid back, and a set-uid program (fstest itself)
  *   dirent readdir over a directory of 20 files, and getdents with a buffer
  *          that holds one record at a time
  *
@@ -27,8 +29,10 @@
 #include <poll.h>
 #include <sys/select.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 static const char *mode_name;
@@ -250,7 +254,7 @@ static int test_tmpfs(void)
     char buf[32] = {0};
     struct stat st;
 
-    if (mkdir("/tmp/dir") != 0)
+    if (mkdir("/tmp/dir", 0755) != 0)
         return failed("mkdir /tmp/dir");
     int fd = open("/tmp/dir/file", O_RDWR | O_CREAT | O_EXCL, 0644);
     if (fd < 0 || write(fd, "hello", 5) != 5)
@@ -348,6 +352,79 @@ static int test_bigfile(int keep)
     return ok();
 }
 
+/**
+ * the checks run as user 1000 (in a child); the exit code is the number
+ * of the first check that failed.
+ */
+static int checks_as_user(void)
+{
+    if (setgid(1000) != 0 || setuid(1000) != 0 || geteuid() != 1000)
+        return 1;
+    if (setuid(0) != -1 || errno != EPERM)
+        return 2;
+    if (open("/fstest.root", O_WRONLY) != -1 || errno != EACCES)
+        return 3;
+    int fd = open("/fstest.root", O_RDONLY);
+    if (fd < 0)
+        return 4;
+    close(fd);
+    if (open("/fstest.user", O_WRONLY | O_CREAT, 0644) != -1 || errno != EACCES)
+        return 5;
+    if (chmod("/fstest.root", 0666) != -1 || errno != EPERM)
+        return 6;
+    if (access("/fstest.root", W_OK) != -1 || access("/fstest.root", R_OK) != 0)
+        return 7;
+
+    // /tmp is sticky and open to all: a file of one's own, not another's
+    fd = open("/tmp/fstest.mine", O_WRONLY | O_CREAT, 0666);
+    struct stat st;
+    if (fd < 0 || fstat(fd, &st) != 0 || st.st_uid != 1000 || (st.st_mode & 0777) != 0644)
+        return 8;
+    close(fd);
+    if (unlink("/tmp/fstest.mine") != 0)
+        return 9;
+    if (unlink("/tmp/fstest.root") != -1 || errno != EPERM)
+        return 10;
+
+    char *noexec_argv[] = {"noexec", NULL};
+    if (execve("/tmp/fstest.root", noexec_argv, environ) != -1 || errno != EACCES)
+        return 11;
+
+    // fstest is set-uid root now: it runs with root's effective uid
+    char *argv[] = {"fstest", "euid", NULL};
+    execve("/bin/fstest", argv, environ);
+    return 12;
+}
+
+static int test_perm(void)
+{
+    if (geteuid() != 0)
+        return failed("must start as root");
+
+    int fd = open("/fstest.root", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    write(fd, "root", 4);
+    close(fd);
+    close(open("/tmp/fstest.root", O_WRONLY | O_CREAT | O_TRUNC, 0644));
+    chmod("/bin/fstest", 04755);
+
+    pid_t child = fork();
+    if (child == 0)
+        _exit(checks_as_user());
+    int status;
+    waitpid(child, &status, 0);
+
+    chmod("/bin/fstest", 0755);
+    unlink("/fstest.root");
+    unlink("/tmp/fstest.root");
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+    {
+        printf("fstest perm: check %d failed\n", WEXITSTATUS(status));
+        return 1;
+    }
+    return ok();
+}
+
 #define DIRENT_FILES 20
 
 /**
@@ -382,7 +459,7 @@ static int test_dirent(void)
     const char *dir_path = "/fstest.dir";
     char path[64];
 
-    mkdir(dir_path);
+    mkdir(dir_path, 0755);
     for (int i = 0; i < DIRENT_FILES; i++)
     {
         dirent_file(path, dir_path, i);
@@ -429,7 +506,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll|tmpfs|bigfile\n");
+        printf("usage: fstest stat|fcntl|rename|pread|dirent|poll|tmpfs|bigfile|perm\n");
         return 1;
     }
 
@@ -448,6 +525,10 @@ int main(int argc, char **argv)
         return test_poll();
     if (strcmp(argv[1], "tmpfs") == 0)
         return test_tmpfs();
+    if (strcmp(argv[1], "perm") == 0)
+        return test_perm();
+    if (strcmp(argv[1], "euid") == 0)
+        return geteuid() == 0 && getuid() == 1000 ? 0 : 13;
     if (strcmp(argv[1], "bigfile") == 0)
         return test_bigfile(argc > 2 && strcmp(argv[2], "keep") == 0);
 

@@ -40,6 +40,9 @@ typedef struct tmpfs_node
     uint32_t capacity;
     uint32_t open_count;        // open files that use the node
     bool removed;               // unlinked; freed at the last close
+    uint32_t mode;              // permission bits (07777)
+    uint32_t uid;
+    uint32_t gid;
 } tmpfs_node_t;
 
 static mutex_t tmpfs_lock = MUTEX_INIT;
@@ -58,6 +61,8 @@ static tmpfs_node_t *node_new(const char *name, uint8_t type)
         strncpy(node->name, name, TMPFS_NAME_MAX - 1);
         node->type = type;
         node->inode = next_inode++;
+        // the creator sets its own mode and owner right after (sys_open)
+        node->mode = type == FS_TYPE_DIR ? 0755 : 0644;
     }
     return node;
 }
@@ -280,8 +285,9 @@ static void fill_stat(const tmpfs_node_t *node, fs_stat_t *stat_out)
     memset(stat_out, 0, sizeof(*stat_out));
     stat_out->inode = node->inode;
     stat_out->file_type = node->type;
-    // like a usual /tmp: anyone may create files in a directory
-    stat_out->mode = node->type == FS_TYPE_DIR ? (S_IFDIR | 01777) : (S_IFREG | 0644);
+    stat_out->mode = (node->type == FS_TYPE_DIR ? S_IFDIR : S_IFREG) | node->mode;
+    stat_out->uid = (uint16_t)node->uid;
+    stat_out->gid = (uint16_t)node->gid;
     stat_out->links_count = 1;
     stat_out->size = node->size;
     stat_out->blocks = (node->capacity + 511) / 512;
@@ -616,6 +622,23 @@ static int32_t tmpfs_seek(fs_file_t *file, int32_t offset, int whence)
     return position;
 }
 
+static kerr_t tmpfs_setattr(fs_file_t *file, const fs_attr_t *attr)
+{
+    mutex_lock(&tmpfs_lock);
+    tmpfs_node_t *node = file->fs_data;
+    if (attr->what & FS_ATTR_MODE)
+    {
+        node->mode = attr->mode & 07777u;
+    }
+    if (attr->what & FS_ATTR_OWNER)
+    {
+        node->uid = attr->uid;
+        node->gid = attr->gid;
+    }
+    mutex_unlock(&tmpfs_lock);
+    return KERR_OK;
+}
+
 static const fs_ops_t tmpfs_ops = {
     .open = tmpfs_open,
     .create = tmpfs_create,
@@ -625,6 +648,7 @@ static const fs_ops_t tmpfs_ops = {
     .rename = tmpfs_rename,
     .stat = tmpfs_stat,
     .fstat = tmpfs_fstat,
+    .setattr = tmpfs_setattr,
     .read = tmpfs_read,
     .write = tmpfs_write,
     .truncate = tmpfs_truncate,
@@ -644,6 +668,8 @@ kerr_t tmpfs_mount(fs_mount_t *mount)
     root.type = FS_TYPE_DIR;
     root.inode = 1;
     root.parent = &root;
+    // like a usual /tmp: anyone may make files, only owners remove them
+    root.mode = 01777;
 
     mount->ops = &tmpfs_ops;
     mount->fs_data = &root;

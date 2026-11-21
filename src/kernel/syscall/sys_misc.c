@@ -5,6 +5,7 @@
 #include "kernel/process/process.h"
 #include "common/string.h"
 #include "fd_table.h"
+#include "kernel/vfs/permission.h"
 
 /**
  * SYS_getcwd: copy the current working directory into a user buffer.
@@ -63,6 +64,13 @@ syscall_ret_t sys_chdir(struct registers *regs)
     if (stat.file_type != FS_TYPE_DIR)
     {
         return -ENOTDIR;
+    }
+
+    // entering a directory needs its search (execute) right
+    int32_t allowed = permission_check(&stat, proc->euid, proc->egid, MAY_EXEC);
+    if (allowed < 0)
+    {
+        return allowed;
     }
 
     strncpy(proc->cwd, resolved, PATH_MAX - 1);

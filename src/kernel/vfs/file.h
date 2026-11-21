@@ -115,6 +115,11 @@ void file_ref(file_t *file);
 void file_unref(file_t *file);
 
 /**
+ * true if the description is a filesystem file (not a pipe or the console).
+ */
+bool file_is_vfs(const file_t *file);
+
+/**
  * true if the description was opened for reading (or writing).
  */
 bool file_readable(const file_t *file);

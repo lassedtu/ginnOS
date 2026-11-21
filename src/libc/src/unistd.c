@@ -190,9 +190,9 @@ int create(const char *path)
     return 0;
 }
 
-int mkdir(const char *path)
+int mkdir(const char *path, mode_t mode)
 {
-    int ret = _syscall(SYS_MKDIR, (int)path, 0, 0, 0, 0);
+    int ret = _syscall(SYS_MKDIR, (int)path, (int)mode, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -349,4 +349,64 @@ pid_t setsid(void)
 pid_t getsid(pid_t pid)
 {
     return check(_syscall(SYS_GETSID, pid, 0, 0, 0, 0));
+}
+
+uid_t getuid(void)
+{
+    return (uid_t)_syscall(SYS_GETUID, 0, 0, 0, 0, 0);
+}
+
+uid_t geteuid(void)
+{
+    return (uid_t)_syscall(SYS_GETEUID, 0, 0, 0, 0, 0);
+}
+
+gid_t getgid(void)
+{
+    return (gid_t)_syscall(SYS_GETGID, 0, 0, 0, 0, 0);
+}
+
+gid_t getegid(void)
+{
+    return (gid_t)_syscall(SYS_GETEGID, 0, 0, 0, 0, 0);
+}
+
+int setuid(uid_t uid)
+{
+    return check(_syscall(SYS_SETUID, (int)uid, 0, 0, 0, 0));
+}
+
+int setgid(gid_t gid)
+{
+    return check(_syscall(SYS_SETGID, (int)gid, 0, 0, 0, 0));
+}
+
+int seteuid(uid_t uid)
+{
+    return check(_syscall(SYS_SETEUID, (int)uid, 0, 0, 0, 0));
+}
+
+int setegid(gid_t gid)
+{
+    return check(_syscall(SYS_SETEGID, (int)gid, 0, 0, 0, 0));
+}
+
+int chmod(const char *path, mode_t mode)
+{
+    return check(_syscall(SYS_CHMOD, (int)path, (int)mode, 0, 0, 0));
+}
+
+int fchmod(int fd, mode_t mode)
+{
+    return check(_syscall(SYS_FCHMOD, fd, (int)mode, 0, 0, 0));
+}
+
+int chown(const char *path, uid_t uid, gid_t gid)
+{
+    return check(_syscall(SYS_CHOWN, (int)path, (int)uid, (int)gid, 0, 0));
+}
+
+mode_t umask(mode_t mask)
+{
+    return (mode_t)_syscall(SYS_UMASK, (int)mask, 0, 0, 0, 0);
 }

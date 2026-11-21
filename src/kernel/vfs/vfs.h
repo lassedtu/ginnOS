@@ -255,3 +255,12 @@ void vfs_seek_end(vfs_file_t *file);
  * @return KERR_OK, or an error code.
  */
 kerr_t vfs_fstat(vfs_file_t *file, vfs_stat_t *stat_out);
+
+/**
+ * change the permission bits and/or owner of a file by path, or of an
+ * open file.
+ * @return KERR_OK, KERR_PERM if the filesystem keeps no owners, or the
+ *         error of opening the path.
+ */
+kerr_t vfs_setattr(const char *path, const fs_attr_t *attr);
+kerr_t vfs_fsetattr(vfs_file_t *file, const fs_attr_t *attr);

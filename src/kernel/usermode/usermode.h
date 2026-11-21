@@ -59,8 +59,8 @@ void usermode_reset_frame(struct registers *regs, uintptr_t entry, uintptr_t use
  * @param path absolute path of the ELF executable.
  * @param argv NULL-terminated argument strings in kernel memory.
  * @param envp NULL-terminated environment strings in kernel memory.
- * @return KERR_OK, KERR_NOENT if the program cannot be loaded, or
- *         KERR_NOMEM.
+ * @return KERR_OK, KERR_NOENT if the program cannot be loaded, KERR_PERM
+ *         if the caller may not run it, or KERR_NOMEM.
  */
 kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
                     const char **envp);

@@ -57,6 +57,15 @@ typedef syscall_ret_t (*syscall_fn_t)(struct registers *regs);
  */
 int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size);
 
+/**
+ * give a file the caller has just created its mode (taken through the
+ * umask) and the caller's effective user and group as owner.
+ * @param path the new file's absolute path.
+ * @param mode the permission bits asked for.
+ * @return 0, or a negative errno.
+ */
+int32_t set_new_owner(const char *path, uint32_t mode);
+
 /* sys_io.c */
 syscall_ret_t sys_write(struct registers *regs);
 syscall_ret_t sys_read(struct registers *regs);
@@ -74,6 +83,20 @@ syscall_ret_t sys_unlink(struct registers *regs);
 syscall_ret_t sys_rmdir(struct registers *regs);
 syscall_ret_t sys_getdents(struct registers *regs);
 syscall_ret_t sys_poll(struct registers *regs);
+
+/* sys_cred.c */
+syscall_ret_t sys_getuid(struct registers *regs);
+syscall_ret_t sys_geteuid(struct registers *regs);
+syscall_ret_t sys_getgid(struct registers *regs);
+syscall_ret_t sys_getegid(struct registers *regs);
+syscall_ret_t sys_setuid(struct registers *regs);
+syscall_ret_t sys_setgid(struct registers *regs);
+syscall_ret_t sys_seteuid(struct registers *regs);
+syscall_ret_t sys_setegid(struct registers *regs);
+syscall_ret_t sys_chmod(struct registers *regs);
+syscall_ret_t sys_fchmod(struct registers *regs);
+syscall_ret_t sys_chown(struct registers *regs);
+syscall_ret_t sys_umask(struct registers *regs);
 
 /* kernel/time/clock.c */
 syscall_ret_t sys_clock_gettime(struct registers *regs);

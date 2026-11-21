@@ -77,3 +77,24 @@ int stat(const char *path, struct stat *st);
  * @return 0, or -1 (errno set).
  */
 int fstat(int fd, struct stat *st);
+
+#define S_ISUID 04000 // run with the owner's user id
+#define S_ISGID 02000 // run with the file's group id
+#define S_ISVTX 01000 // sticky directory
+
+/**
+ * create a directory with a mode (taken through the umask).
+ */
+int mkdir(const char *path, mode_t mode);
+
+/**
+ * change the permission bits of a file (owner or root only).
+ */
+int chmod(const char *path, mode_t mode);
+int fchmod(int fd, mode_t mode);
+
+/**
+ * set the mask taken off the mode of new files.
+ * @return the old mask.
+ */
+mode_t umask(mode_t mask);

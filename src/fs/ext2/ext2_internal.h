@@ -65,8 +65,3 @@ bool initialize_directory_block(ext2_volume_t *volume, uint32_t inode_number, ui
 bool lookup_parent_and_name(ext2_volume_t *volume, const char *path, uint32_t *parent_inode_out, char *name_out, uint32_t name_out_size, char *parent_path, uint32_t parent_path_size);
 bool lookup_child_type(ext2_volume_t *volume, uint32_t parent_inode_number, const char *name, uint32_t name_len, uint32_t *child_inode_out, uint8_t *child_type_out);
 bool free_inode_and_blocks(ext2_volume_t *volume, uint32_t inode_number, ext2_inode_t *inode);
-
-/**
- * the time for inode times: ext2_clock, or a fixed time without one.
- */
-uint32_t ext2_now(void);

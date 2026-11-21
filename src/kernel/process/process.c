@@ -86,6 +86,7 @@ process_t *process_create(void)
     vma_table_init(&proc->vmas);
     proc->exit_status = 0;
     wait_queue_init(&proc->child_exit);
+    proc->umask = 022; // the ids start as root's (0), from the cleared slot
     arch_fpu_clean(proc->fpu_state);
 
     // allocate a guarded kernel stack (zeroed)
@@ -149,6 +150,7 @@ process_t *process_fork(const struct registers *regs)
     child->parent_pid = parent->pid;
     child->pgid = parent->pgid;
     child->sid = parent->sid;
+    process_copy_credentials(child, parent);
     memcpy(child->name, parent->name, sizeof(child->name));
     signal_fork(child, parent);
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
@@ -459,6 +461,17 @@ void process_account_tick(bool user)
     {
         proc->stime++;
     }
+}
+
+void process_copy_credentials(process_t *child, const process_t *parent)
+{
+    child->uid = parent->uid;
+    child->euid = parent->euid;
+    child->suid = parent->suid;
+    child->gid = parent->gid;
+    child->egid = parent->egid;
+    child->sgid = parent->sgid;
+    child->umask = parent->umask;
 }
 
 process_t *process_get(uint32_t pid)

@@ -292,3 +292,25 @@ kerr_t vfs_fstat(vfs_file_t *file, vfs_stat_t *stat_out)
     }
     return fs_fstat(&file->file, stat_out);
 }
+
+kerr_t vfs_setattr(const char *path, const fs_attr_t *attr)
+{
+    vfs_file_t file;
+    kerr_t err = vfs_open(path, &file);
+    if (kerr_failed(err))
+    {
+        return err;
+    }
+    err = fs_setattr(&file.file, attr);
+    vfs_close(&file);
+    return err;
+}
+
+kerr_t vfs_fsetattr(vfs_file_t *file, const fs_attr_t *attr)
+{
+    if (!file || !file->mount)
+    {
+        return KERR_INVAL;
+    }
+    return fs_setattr(&file->file, attr);
+}

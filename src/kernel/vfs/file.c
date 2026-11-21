@@ -276,6 +276,11 @@ static const file_ops_t vfs_file_ops = {
     .release = vfs_kind_release,
 };
 
+bool file_is_vfs(const file_t *file)
+{
+    return file->ops == &vfs_file_ops;
+}
+
 kerr_t file_open(const char *path, uint32_t flags, file_t **out)
 {
     file_t *file = file_alloc(&vfs_file_ops, flags);

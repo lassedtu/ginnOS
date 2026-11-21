@@ -60,6 +60,18 @@
 #define SYS_CLOCK_GETTIME 51 // read a clock
 #define SYS_NANOSLEEP 52 // sleep for a time span
 #define SYS_TIMES 53    // process CPU times
+#define SYS_GETUID 54 // real user id
+#define SYS_GETEUID 55 // effective user id
+#define SYS_GETGID 56 // real group id
+#define SYS_GETEGID 57 // effective group id
+#define SYS_SETUID 58 // set the user ids
+#define SYS_SETGID 59 // set the group ids
+#define SYS_SETEUID 60 // set the effective user id
+#define SYS_SETEGID 61 // set the effective group id
+#define SYS_CHMOD 62 // change a file's mode
+#define SYS_FCHMOD 63 // change an open file's mode
+#define SYS_CHOWN 64 // change a file's owner
+#define SYS_UMASK 65 // set the file creation mask
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

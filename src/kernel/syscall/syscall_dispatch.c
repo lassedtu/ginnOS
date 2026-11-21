@@ -65,6 +65,18 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_CLOCK_GETTIME] = sys_clock_gettime,
     [SYS_NANOSLEEP] = sys_nanosleep,
     [SYS_TIMES] = sys_times,
+    [SYS_GETUID] = sys_getuid,
+    [SYS_GETEUID] = sys_geteuid,
+    [SYS_GETGID] = sys_getgid,
+    [SYS_GETEGID] = sys_getegid,
+    [SYS_SETUID] = sys_setuid,
+    [SYS_SETGID] = sys_setgid,
+    [SYS_SETEUID] = sys_seteuid,
+    [SYS_SETEGID] = sys_setegid,
+    [SYS_CHMOD] = sys_chmod,
+    [SYS_FCHMOD] = sys_fchmod,
+    [SYS_CHOWN] = sys_chown,
+    [SYS_UMASK] = sys_umask,
 };
 
 /**

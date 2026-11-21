@@ -285,6 +285,47 @@ static kerr_t locked_fstat(fs_file_t *file, fs_stat_t *stat_out)
     return err;
 }
 
+/**
+ * change an open file's permission bits and/or owner in its inode.
+ */
+static kerr_t ext2_ops_setattr(fs_file_t *file, const fs_attr_t *attr)
+{
+    ext2_file_t *ext2 = &file->ext2_file;
+    ext2_inode_t inode;
+
+    kerr_t err = ext2_read_inode(ext2->volume, ext2->inode, &inode);
+    if (kerr_failed(err))
+    {
+        return err;
+    }
+
+    if (attr->what & FS_ATTR_MODE)
+    {
+        inode.i_mode = (uint16_t)((inode.i_mode & 0xF000u) | (attr->mode & 07777u));
+    }
+    if (attr->what & FS_ATTR_OWNER)
+    {
+        inode.i_uid = (uint16_t)attr->uid;
+        inode.i_gid = (uint16_t)attr->gid;
+    }
+    inode.i_ctime = ext2_now();
+
+    if (!ext2_write_inode(ext2->volume, ext2->inode, &inode))
+    {
+        return KERR_IO;
+    }
+    ext2->inode_cache = inode;
+    return KERR_OK;
+}
+
+static kerr_t locked_setattr(fs_file_t *file, const fs_attr_t *attr)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_ops_setattr(file, attr);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
 static void locked_close(fs_file_t *file)
 {
     mutex_lock(&ext2_lock);
@@ -306,6 +347,7 @@ static const fs_ops_t ext2_ops = {
     .truncate = locked_truncate,
     .read_entry = locked_read_entry,
     .fstat = locked_fstat,
+    .setattr = locked_setattr,
     .close = locked_close,
 };
 

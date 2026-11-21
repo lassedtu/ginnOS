@@ -161,6 +161,17 @@ typedef struct
 extern uint32_t (*ext2_clock)(void);
 
 /**
+ * the time for inode times: ext2_clock, or a fixed time without one.
+ */
+uint32_t ext2_now(void);
+
+/**
+ * write an inode back to the volume.
+ * @return true on success.
+ */
+bool ext2_write_inode(ext2_volume_t *volume, uint32_t inode_number, const ext2_inode_t *inode);
+
+/**
  * initialize an ext2 volume from a disk.
  * @param volume volume object to initialize.
  * @param disk initialized block device backend.

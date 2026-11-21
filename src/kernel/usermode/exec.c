@@ -9,6 +9,9 @@
 #include "kernel/elf/elf_loader.h"
 #include "kernel/process/process.h"
 #include "kernel/process/wait_status.h"
+#include "kernel/vfs/permission.h"
+#include "kernel/vfs/stat.h"
+#include "kernel/vfs/vfs.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/panic.h"
 #include "kernel/klog/klog.h"
@@ -18,6 +21,45 @@
 
 // exit status of a process whose execve failed after its old image was gone
 #define EXEC_FAILED_EXIT_STATUS 127
+
+/**
+ * check that the current process may run a program file, and read its
+ * mode and owner for the set-uid and set-gid bits.
+ * @return KERR_OK, KERR_NOENT, or KERR_PERM (no execute right, or not a
+ *         regular file).
+ */
+static kerr_t check_program(const char *path, vfs_stat_t *st)
+{
+    if (kerr_failed(vfs_stat(path, st)))
+    {
+        return KERR_NOENT;
+    }
+    process_t *proc = process_current();
+    if ((st->mode & S_IFMT) != S_IFREG ||
+        (proc && permission_check(st, proc->euid, proc->egid, MAY_EXEC) < 0))
+    {
+        return KERR_PERM;
+    }
+    return KERR_OK;
+}
+
+/**
+ * a program with the set-uid or set-gid bit runs as the file's owner or
+ * group.
+ */
+static void apply_set_ids(process_t *proc, const vfs_stat_t *st)
+{
+    if (st->mode & S_ISUID)
+    {
+        proc->euid = st->uid;
+        proc->suid = st->uid;
+    }
+    if (st->mode & S_ISGID)
+    {
+        proc->egid = st->gid;
+        proc->sgid = st->gid;
+    }
+}
 
 /**
  * deep-copy a null-terminated argv array into kernel heap.
@@ -61,6 +103,12 @@ int exec_program(const char *path, const char **argv)
     elf_load_result_t elf;
     process_t *parent = process_current();
 
+    vfs_stat_t program;
+    if (kerr_failed(check_program(path, &program)))
+    {
+        return -1;
+    }
+
     // create a child process first (to get its page directory)
     process_t *child = process_create();
     if (!child)
@@ -92,6 +140,11 @@ int exec_program(const char *path, const char **argv)
     // (init) leads its own of both
     child->pgid = parent ? parent->pgid : child->pid;
     child->sid = parent ? parent->sid : child->pid;
+    if (parent)
+    {
+        process_copy_credentials(child, parent);
+    }
+    apply_set_ids(child, &program);
 
     // deep-copy argv into kernel heap (survives until trampoline consumes it)
     child->argv = argv_copy(argv);
@@ -126,6 +179,13 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
                     const char **envp)
 {
     process_t *proc = process_current();
+
+    vfs_stat_t program;
+    kerr_t allowed = check_program(path, &program);
+    if (kerr_failed(allowed))
+    {
+        return allowed;
+    }
 
     // load the new program into a new address space. the old one stays
     // untouched until the load has worked, so a failed execve returns.
@@ -162,6 +222,7 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     proc->brk = elf.brk;
     process_set_name(proc, path);
     signal_exec(proc);
+    apply_set_ids(proc, &program);
 
     // the new program starts with clean FPU/SSE registers
     arch_fpu_clean(proc->fpu_state);

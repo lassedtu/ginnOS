@@ -4,6 +4,7 @@
 
 #include "kernel/vfs/file.h"
 #include "kernel/vfs/poll.h"
+#include "kernel/vfs/permission.h"
 #include "kernel/time/timer.h"
 #include "kernel/process/process.h"
 
@@ -83,10 +84,12 @@ static int32_t open_create(const char *path, uint32_t flags)
 /**
  * SYS_open: open a file by path.
  * args: EBX = path string pointer, ECX = flags (O_*), EDX = mode for a
- *       created file (not stored yet: files have no owner or permission
- *       checks until users exist).
+ *       created file (taken through the umask; the caller's effective user
+ *       and group own it).
  * returns the lowest free fd, or negative errno on failure:
  *   EEXIST  O_CREAT | O_EXCL and the file exists
+ *   EACCES  the file's mode does not allow the access mode, or a new
+ *           file's directory is not writable
  *   ENOTDIR O_DIRECTORY and it is not a directory
  *   EISDIR  a directory opened for writing
  *   EINVAL  an access mode other than O_RDONLY, O_WRONLY or O_RDWR
@@ -107,9 +110,32 @@ syscall_ret_t sys_open(struct registers *regs)
     if (ret < 0)
         return ret;
 
-    if (flags & O_CREAT)
+    // the rights the access mode needs, on an existing file; a new one
+    // needs write and search rights on its directory
+    vfs_stat_t existing;
+    bool exists = kerr_ok(vfs_stat(resolved, &existing));
+    if (exists)
     {
-        ret = open_create(resolved, flags);
+        if ((flags & O_CREAT) && (flags & O_EXCL))
+            return -EEXIST;
+
+        uint32_t want = 0;
+        if (access != O_WRONLY)
+            want |= MAY_READ;
+        if (access != O_RDONLY || (flags & O_TRUNC))
+            want |= MAY_WRITE;
+        process_t *caller = process_current();
+        ret = permission_check(&existing, caller->euid, caller->egid, want);
+        if (ret < 0)
+            return ret;
+    }
+    else if (flags & O_CREAT)
+    {
+        ret = permission_check_parent(resolved, false);
+        if (ret == 0)
+            ret = open_create(resolved, flags);
+        if (ret == 0)
+            ret = set_new_owner(resolved, (uint32_t)syscall_arg(regs, 2));
         if (ret < 0)
             return ret;
     }

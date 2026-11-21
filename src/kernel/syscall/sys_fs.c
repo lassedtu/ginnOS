@@ -2,6 +2,8 @@
 #include "syscall.h"
 #include "fd_table.h"
 #include "kernel/vfs/stat.h"
+#include "kernel/vfs/permission.h"
+#include "kernel/process/process.h"
 #include "kernel/vfs/dirent.h"
 #include "common/memory.h"
 #include "common/string.h"
@@ -27,6 +29,21 @@ int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size)
         return -EINVAL;
 
     return 0;
+}
+
+int32_t set_new_owner(const char *path, uint32_t mode)
+{
+    process_t *proc = process_current();
+    fs_attr_t attr = {
+        .what = FS_ATTR_MODE | FS_ATTR_OWNER,
+        .mode = mode & ~proc->umask & 07777u,
+        .uid = proc->euid,
+        .gid = proc->egid,
+    };
+
+    // a filesystem without owners (devfs) keeps its own
+    kerr_t err = vfs_setattr(path, &attr);
+    return err == KERR_PERM ? 0 : kerr_to_errno(err);
 }
 
 /**
@@ -75,6 +92,13 @@ syscall_ret_t sys_rename(struct registers *regs)
     if (vfs_resolve_mount_path(old_path, NULL) != vfs_resolve_mount_path(new_path, NULL))
         return -EXDEV;
 
+    // both directories change
+    err = permission_check_parent(old_path, true);
+    if (err == 0)
+        err = permission_check_parent(new_path, true);
+    if (err < 0)
+        return err;
+
     return kerr_to_errno(vfs_rename(old_path, new_path));
 }
 
@@ -84,8 +108,9 @@ syscall_ret_t sys_rename(struct registers *regs)
 /**
  * SYS_access: check that a file exists and may be accessed.
  * args: EBX = path, ECX = mode (F_OK, or R_OK | W_OK | X_OK).
- * there are no users yet, so any existing file allows every access.
- * returns 0, or a negative errno (ENOENT if it does not exist).
+ * the check uses the real user and group ids, not the effective ones (a
+ * set-uid program asks what its caller may do).
+ * returns 0, or a negative errno (ENOENT, EACCES).
  */
 syscall_ret_t sys_access(struct registers *regs)
 {
@@ -100,31 +125,41 @@ syscall_ret_t sys_access(struct registers *regs)
         return err;
 
     vfs_stat_t st;
-    return kerr_to_errno(vfs_stat(resolved, &st));
+    kerr_t found = vfs_stat(resolved, &st);
+    if (kerr_failed(found))
+        return kerr_to_errno(found);
+
+    // R_OK, W_OK and X_OK are the MAY_* bits
+    process_t *proc = process_current();
+    return permission_check(&st, proc->uid, proc->gid, mode);
 }
 
 /**
  * SYS_mkdir: create a directory.
- * args: EBX = path string pointer.
+ * args: EBX = path string pointer, ECX = mode (taken through the umask).
+ * the new directory belongs to the caller's effective user and group.
  * returns 0 on success, negative errno on failure.
  */
 syscall_ret_t sys_mkdir(struct registers *regs)
 {
     const char *path = (const char *)syscall_arg(regs, 0);
+    uint32_t mode = (uint32_t)syscall_arg(regs, 1);
 
-    /* copy the path in from user memory, resolved against the cwd */
+    // copy the path in from user memory, resolved against the cwd
     char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
+    int32_t ret = resolve_user_path(path, resolved, sizeof(resolved));
+    if (ret < 0)
+        return ret;
+
+    ret = permission_check_parent(resolved, false);
+    if (ret < 0)
+        return ret;
 
     kerr_t err = vfs_mkdir(resolved);
     if (kerr_failed(err))
-    {
         return kerr_to_errno(err);
-    }
 
-    return 0;
+    return set_new_owner(resolved, mode);
 }
 
 /**
@@ -141,6 +176,10 @@ syscall_ret_t sys_unlink(struct registers *regs)
     int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
     if (path_err < 0)
         return path_err;
+
+    int32_t allowed = permission_check_parent(resolved, true);
+    if (allowed < 0)
+        return allowed;
 
     kerr_t err = vfs_remove(resolved);
     if (kerr_failed(err))
@@ -165,6 +204,10 @@ syscall_ret_t sys_rmdir(struct registers *regs)
     int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
     if (path_err < 0)
         return path_err;
+
+    int32_t allowed = permission_check_parent(resolved, true);
+    if (allowed < 0)
+        return allowed;
 
     kerr_t err = vfs_rmdir(resolved);
     if (kerr_failed(err))

@@ -60,9 +60,21 @@
 #define SYS_CLOCK_GETTIME 51
 #define SYS_NANOSLEEP 52
 #define SYS_TIMES 53
+#define SYS_GETUID 54
+#define SYS_GETEUID 55
+#define SYS_GETGID 56
+#define SYS_GETEGID 57
+#define SYS_SETUID 58
+#define SYS_SETGID 59
+#define SYS_SETEUID 60
+#define SYS_SETEGID 61
+#define SYS_CHMOD 62
+#define SYS_FCHMOD 63
+#define SYS_CHOWN 64
+#define SYS_UMASK 65
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 54
+#define SYSCALL_COUNT 66
 
 /**
  * initialize the system call interface.

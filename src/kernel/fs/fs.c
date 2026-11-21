@@ -232,3 +232,16 @@ kerr_t fs_fstat(fs_file_t *file, fs_stat_t *stat_out)
     }
     return file->ops->fstat(file, stat_out);
 }
+
+kerr_t fs_setattr(fs_file_t *file, const fs_attr_t *attr)
+{
+    if (!file || !file->is_open)
+    {
+        return KERR_INVAL;
+    }
+    if (!file->ops->setattr)
+    {
+        return KERR_PERM;
+    }
+    return file->ops->setattr(file, attr);
+}

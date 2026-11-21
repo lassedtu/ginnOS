@@ -59,6 +59,9 @@ typedef struct process
                             // which the kernel reaps itself when they exit
     uint32_t pgid;          // process group (job control)
     uint32_t sid;           // session
+    uint32_t uid, euid, suid; // real, effective and saved user id
+    uint32_t gid, egid, sgid; // real, effective and saved group id
+    uint32_t umask;         // permission bits taken off new files
     process_state_t state;  // current state
     uintptr_t brk;          // program break (for sbrk)
     vma_table_t vmas;       // what is mapped in the user half (vma.h)
@@ -256,6 +259,11 @@ void process_set_name(process_t *proc, const char *path);
  * @param user true if user code was running.
  */
 void process_account_tick(bool user);
+
+/**
+ * give a new process the user and group ids and umask of another.
+ */
+void process_copy_credentials(process_t *child, const process_t *parent);
 
 /**
  * look up a process by PID. the pointer stays valid only while the process

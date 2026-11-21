@@ -589,3 +589,8 @@ bool free_inode_block_chain(ext2_volume_t *volume, ext2_inode_t *inode)
 
     return true;
 }
+
+bool ext2_write_inode(ext2_volume_t *volume, uint32_t inode_number, const ext2_inode_t *inode)
+{
+    return write_inode(volume, inode_number, inode);
+}

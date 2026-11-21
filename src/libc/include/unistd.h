@@ -138,6 +138,29 @@ pid_t getpgrp(void);
 pid_t setsid(void);
 pid_t getsid(pid_t pid);
 
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
+
+/**
+ * user and group ids: real (who started the process) and effective (what
+ * it may do). setuid/setgid as root set all ids; otherwise only to the
+ * real or saved id. set the group before giving up root.
+ */
+uid_t getuid(void);
+uid_t geteuid(void);
+gid_t getgid(void);
+gid_t getegid(void);
+int setuid(uid_t uid);
+int setgid(gid_t gid);
+int seteuid(uid_t uid);
+int setegid(gid_t gid);
+
+/**
+ * change the owner of a file. root may give a file to anyone; an owner may
+ * only change its group to its own. (uid_t)-1 or (gid_t)-1 keeps one.
+ */
+int chown(const char *path, uid_t uid, gid_t gid);
+
 /**
  * get the parent's process ID.
  * @return the parent's PID, or 0 if the parent has exited.
@@ -198,13 +221,6 @@ int rmdir(const char *path);
  * @return 0 on success, -1 on failure.
  */
 int create(const char *path);
-
-/**
- * create a directory.
- * @param path path to the directory to create.
- * @return 0 on success, -1 on failure.
- */
-int mkdir(const char *path);
 
 /* terminal mode constants */
 #define TTY_COOKED 0

@@ -32,6 +32,21 @@ typedef struct fs_file fs_file_t;
 typedef struct fs_dirent fs_dirent_t;
 typedef struct fs_stat fs_stat_t;
 
+// which fields of an fs_attr_t to set
+#define FS_ATTR_MODE  0x1 // the permission bits (07777)
+#define FS_ATTR_OWNER 0x2 // uid and gid
+
+/**
+ * a change of a file's permissions or owner (setattr).
+ */
+typedef struct
+{
+    uint32_t what; // FS_ATTR_* bits
+    uint32_t mode; // permission bits; the file type is kept
+    uint32_t uid;
+    uint32_t gid;
+} fs_attr_t;
+
 typedef struct
 {
     kerr_t (*open)(fs_mount_t *mount, const char *path, fs_file_t *file);
@@ -47,6 +62,11 @@ typedef struct
     kerr_t (*truncate)(fs_file_t *file);
     kerr_t (*read_entry)(fs_file_t *file, fs_dirent_t *entry_out);
     kerr_t (*fstat)(fs_file_t *file, fs_stat_t *stat_out);
+    /**
+     * change the permission bits and/or owner of an open file (optional;
+     * NULL means the filesystem keeps no owners: KERR_PERM).
+     */
+    kerr_t (*setattr)(fs_file_t *file, const fs_attr_t *attr);
     void (*close)(fs_file_t *file);
 
     /**
@@ -226,6 +246,14 @@ kerr_t fs_truncate(fs_file_t *file);
  * @return KERR_OK, or KERR_INVAL if the filesystem cannot stat open files.
  */
 kerr_t fs_fstat(fs_file_t *file, fs_stat_t *stat_out);
+
+/**
+ * change an open file's permission bits and/or owner.
+ * @param file open file handle.
+ * @param attr what to change.
+ * @return KERR_OK, or KERR_PERM if the filesystem keeps no owners.
+ */
+kerr_t fs_setattr(fs_file_t *file, const fs_attr_t *attr);
 
 /**
  * read a directory entry from an open directory file.
