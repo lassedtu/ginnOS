@@ -53,6 +53,15 @@ int close(int fd);
 pid_t exec(const char *path, const char **argv);
 
 /**
+ * create a child process that is a copy of the caller. the two share
+ * nothing after the call: memory is copied (lazily, on the first write),
+ * and the child gets its own copy of every fd.
+ * @return the child's PID in the parent, 0 in the child, -1 on failure
+ *         (errno set).
+ */
+pid_t fork(void);
+
+/**
  * wait for a child process to exit.
  * @param pid child PID to wait for.
  * @return child's exit code, or -1 on error.

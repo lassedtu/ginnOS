@@ -110,6 +110,21 @@ syscall_ret_t sys_exec(struct registers *regs)
 }
 
 /**
+ * SYS_fork: create a child process that is a copy of the caller.
+ * no arguments. returns the child's PID in the parent, 0 in the child (set
+ * up by process_fork), or -ENOMEM.
+ */
+syscall_ret_t sys_fork(struct registers *regs)
+{
+    process_t *child = process_fork(regs);
+    if (!child)
+    {
+        return -4; /* ENOMEM */
+    }
+    return (syscall_ret_t)child->pid;
+}
+
+/**
  * SYS_getpid: return the current process ID.
  */
 syscall_ret_t sys_getpid(struct registers *regs)

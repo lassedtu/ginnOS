@@ -9,6 +9,10 @@
  * time they are touched. the page-fault handler (and the kernel's user-copy
  * helpers, before they touch user memory) ask mm_fault_in to back a page; an
  * access no area allows kills the process instead of the kernel.
+ *
+ * after fork, parent and child share their RAM pages read-only
+ * (copy-on-write). the first write to such a page in a writable area also
+ * comes here: the process gets its own copy of the frame.
  */
 
 #include "common/stdint.h"
@@ -16,7 +20,8 @@
 
 /**
  * back the page containing addr if the process's areas allow the access:
- * allocate a zeroed frame and map it with the area's protection.
+ * allocate a zeroed frame and map it with the area's protection. a write to
+ * a copy-on-write page gives the process its own writable copy.
  * @param proc the process (its own address space is the target).
  * @param addr the user address being accessed.
  * @param write true for a write access.

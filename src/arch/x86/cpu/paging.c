@@ -21,6 +21,7 @@ extern uint32_t paging_read_cr2(void);
 #define KERNEL_PDE_START PAGE_DIR_INDEX(KERNEL_VIRT_BASE)
 extern uint32_t paging_read_cr0(void);
 extern void paging_load_cr3(uint32_t page_directory_phys);
+extern uint32_t paging_read_cr3(void);
 
 #define PF_PRESENT 0x01u        /* 0 = not-present page, 1 = protection violation */
 #define PF_WRITE 0x02u          /* 0 = read access, 1 = write access */
@@ -370,10 +371,12 @@ void paging_free_directory(phys_addr_t pd_phys)
 
         pte_t *table = entry_table(dir[i]);
 
-        // only user-mapped frames belong to the process
+        // every frame mapped in the user half belongs to the process, also
+        // a page made supervisor-only by mprotect(PROT_NONE). a shared
+        // (copy-on-write) frame only loses this process's reference.
         for (uint32_t j = 0; j < PAGE_ENTRIES; j++)
         {
-            if ((table[j] & PTE_PRESENT) && (table[j] & PTE_USER))
+            if (table[j] & PTE_PRESENT)
             {
                 phys_addr_t frame = PAGE_FRAME(table[j]);
                 // skip device mappings (e.g. a framebuffer mapped into the
@@ -424,6 +427,62 @@ bool paging_map_in(phys_addr_t pd_phys, uintptr_t virt, phys_addr_t phys, uint32
     table = entry_table(dir[dir_index]);
     table[tbl_index] = (pte_t)(PAGE_ALIGN_DOWN(phys) | (flags & PAGE_OFFSET_MASK));
 
+    // the entry can replace a present one (copy-on-write): drop a cached
+    // translation of the old one
+    paging_invalidate(virt);
+    return true;
+}
+
+bool paging_copy_user(phys_addr_t dst_phys, phys_addr_t src_phys)
+{
+    pte_t *src = (pte_t *)phys_to_virt(src_phys);
+    pte_t *dst = (pte_t *)phys_to_virt(dst_phys);
+
+    for (uint32_t i = 0; i < KERNEL_PDE_START; i++)
+    {
+        if (!(src[i] & PDE_PRESENT))
+        {
+            continue;
+        }
+
+        void *table_page = pmm_alloc_page();
+        if (!table_page)
+        {
+            return false; // the caller frees dst, which drops its references
+        }
+        memset(table_page, 0, PAGE_SIZE);
+        dst[i] = (pte_t)virt_to_phys(table_page) | (src[i] & PAGE_OFFSET_MASK);
+
+        pte_t *src_table = entry_table(src[i]);
+        pte_t *dst_table = (pte_t *)table_page;
+        for (uint32_t j = 0; j < PAGE_ENTRIES; j++)
+        {
+            pte_t pte = src_table[j];
+            if (!(pte & PTE_PRESENT))
+            {
+                continue;
+            }
+
+            phys_addr_t frame = PAGE_FRAME(pte);
+            if (pmm_owns(frame))
+            {
+                // RAM: both processes share the frame read-only. the first
+                // write in either one copies it (mm_fault_in).
+                pte &= ~(pte_t)PTE_READ_WRITE;
+                src_table[j] = pte;
+                pmm_page_ref(phys_to_virt(frame));
+            }
+            // device memory is shared as it is
+            dst_table[j] = pte;
+        }
+    }
+
+    // the source lost write access to its pages: drop its cached entries
+    // if it is the live directory
+    if (paging_read_cr3() == src_phys)
+    {
+        paging_load_cr3((uint32_t)src_phys);
+    }
     return true;
 }
 

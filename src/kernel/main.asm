@@ -20,6 +20,7 @@ BOOT_MAP_PDES       equ 128          ; 128 x 4 MiB = PHYS_MAP_SIZE
 PDE_4M_KERNEL_RW    equ 0x83         ; present | writable | 4 MiB page
 CR4_PSE             equ 0x10
 CR0_PG              equ 0x80000000
+CR0_WP              equ 0x00010000   ; read-only pages are read-only to ring 0 too
 
 section .boot.text progbits alloc exec
 global _start
@@ -34,8 +35,12 @@ _start:
     mov eax, boot_page_directory ; .boot is linked at its physical address
     mov cr3, eax
 
+    ; with WP set, a kernel write to a read-only user page (a copy-on-write
+    ; page after fork) faults instead of changing a frame another process
+    ; shares. user copies go through uaccess.c, which breaks the sharing
+    ; first.
     mov eax, cr0
-    or eax, CR0_PG
+    or eax, CR0_PG | CR0_WP
     mov cr0, eax
 
     ; paging is on: continue at the higher-half link address

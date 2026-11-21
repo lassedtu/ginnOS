@@ -37,6 +37,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_MMAP] = sys_mmap,
     [SYS_MUNMAP] = sys_munmap,
     [SYS_MPROTECT] = sys_mprotect,
+    [SYS_FORK] = sys_fork,
 };
 
 /**

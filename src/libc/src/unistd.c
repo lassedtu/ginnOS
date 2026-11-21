@@ -61,6 +61,17 @@ pid_t exec(const char *path, const char **argv)
     return (pid_t)ret;
 }
 
+pid_t fork(void)
+{
+    int ret = _syscall(SYS_FORK, 0, 0, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return (pid_t)ret;
+}
+
 int waitpid(pid_t pid)
 {
     int ret = _syscall(SYS_WAITPID, (int)pid, 0, 0, 0, 0);

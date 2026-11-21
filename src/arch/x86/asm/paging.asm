@@ -10,6 +10,7 @@ global paging_invalidate
 global paging_read_cr2
 global paging_read_cr0
 global paging_load_cr3
+global paging_read_cr3
 
 
 ; void paging_flush(uint32_t page_directory_phys)
@@ -70,5 +71,15 @@ paging_load_cr3:
     mov eax, [esp + 4]  ; page directory physical address
 
     mov cr3, eax        ; load page directory into CR3
+
+    ret
+
+
+; uint32_t paging_read_cr3(void)
+; returns the physical address of the active page directory.
+
+paging_read_cr3:
+
+    mov eax, cr3        ; read the active page directory
 
     ret

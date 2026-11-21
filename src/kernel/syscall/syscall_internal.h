@@ -107,6 +107,13 @@ syscall_ret_t sys_mmap(struct registers *regs);
 syscall_ret_t sys_munmap(struct registers *regs);
 syscall_ret_t sys_mprotect(struct registers *regs);
 
+/**
+ * SYS_fork: create a child process that is a copy of the caller.
+ * returns the child's PID in the parent and 0 in the child, or a negative
+ * errno.
+ */
+syscall_ret_t sys_fork(struct registers *regs);
+
 /* sys_misc.c */
 syscall_ret_t sys_getcwd(struct registers *regs);
 syscall_ret_t sys_chdir(struct registers *regs);

@@ -111,6 +111,16 @@ addr_space_t arch_kernel_address_space(void);
 addr_space_t arch_create_address_space(void);
 
 /**
+ * copy the user half of an address space into a new, empty one (fork).
+ * writable RAM pages become copy-on-write in both: read-only, with the
+ * frame shared until one of them writes (mm_fault_in copies it then).
+ * @param dst the new address space (from arch_create_address_space()).
+ * @param src the address space to copy.
+ * @return true on success. on failure dst holds a partial copy; destroy it.
+ */
+bool arch_copy_user_space(addr_space_t dst, addr_space_t src);
+
+/**
  * tear down an address space created with arch_create_address_space(),
  * freeing its user page tables and mapped frames. the kernel address
  * space and ADDR_SPACE_NONE are ignored.

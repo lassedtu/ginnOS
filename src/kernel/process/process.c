@@ -3,6 +3,8 @@
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/memory_layout.h"
 #include "arch/arch.h"
+#include "arch/arch_context.h"
+#include "kernel/scheduler/scheduler.h"
 #include "kernel/sync/spinlock.h"
 #include "kernel/memory/heap.h"
 #include "kernel/assert.h"
@@ -115,6 +117,46 @@ process_t *process_create(void)
     proc->cwd[1] = '\0';
 
     return proc;
+}
+
+process_t *process_fork(const struct registers *regs)
+{
+    process_t *parent = current_process;
+    if (!parent)
+    {
+        return NULL;
+    }
+
+    process_t *child = process_create();
+    if (!child)
+    {
+        return NULL;
+    }
+
+    // the memory: the same areas, and the parent's pages shared
+    // copy-on-write
+    if (!arch_copy_user_space(child->page_directory, parent->page_directory))
+    {
+        process_destroy(child);
+        return NULL;
+    }
+    child->vmas = parent->vmas;
+    child->brk = parent->brk;
+
+    child->parent_pid = parent->pid;
+    child->tty_raw = parent->tty_raw;
+    memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
+
+    // every fd is inherited; pipe ends get one more reference
+    for (int i = 0; i < FD_MAX; i++)
+    {
+        fd_copy_entry(&child->fds[i], &parent->fds[i]);
+    }
+
+    // the child resumes from the same syscall, which returns 0 there
+    arch_setup_fork_stack(child, regs);
+    scheduler_ready(child);
+    return child;
 }
 
 process_t *process_current(void)

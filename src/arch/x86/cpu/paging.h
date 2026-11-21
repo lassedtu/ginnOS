@@ -151,6 +151,18 @@ phys_addr_t paging_clone_directory(void);
 void paging_free_directory(phys_addr_t pd_phys);
 
 /**
+ * copy the user half of one page directory into another, empty one, for
+ * fork. RAM frames are shared copy-on-write: they lose write access in both
+ * directories and get one more reference each. device frames are shared as
+ * they are.
+ * @param dst_phys the new directory (its user half must be empty).
+ * @param src_phys the directory to copy.
+ * @return true on success. on failure dst holds a partial copy, which the
+ *         caller frees with paging_free_directory.
+ */
+bool paging_copy_user(phys_addr_t dst_phys, phys_addr_t src_phys);
+
+/**
  * map a page in a specific page directory (not necessarily the current one).
  * used to set up process address spaces before switching to them.
  * @param pd_phys physical address of the target page directory.

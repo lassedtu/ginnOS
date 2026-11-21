@@ -33,9 +33,10 @@
 #define SYS_MMAP 24
 #define SYS_MUNMAP 25
 #define SYS_MPROTECT 26
+#define SYS_FORK 27
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 27
+#define SYSCALL_COUNT 28
 
 /**
  * initialize the system call interface.

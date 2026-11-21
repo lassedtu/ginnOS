@@ -82,6 +82,19 @@ void process_init(void);
  */
 process_t *process_create(void);
 
+struct registers;
+
+/**
+ * fork the current process. the child is a copy of the caller: the same
+ * memory (shared copy-on-write), areas, fds, cwd and break. it is made
+ * runnable at once and resumes from the same syscall, which returns 0 in
+ * the child.
+ * @param regs the caller's saved user registers (its syscall frame).
+ * @return the child, or NULL if the process table, a kernel stack or
+ *         memory for the page tables ran out.
+ */
+process_t *process_fork(const struct registers *regs);
+
 /**
  * get the currently running process.
  * @return pointer to the current process, or NULL if none is running.

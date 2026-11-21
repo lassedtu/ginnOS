@@ -88,7 +88,17 @@ kerr_t mm_protect(process_t *proc, uintptr_t start, uintptr_t end, uint32_t prot
     uint32_t flags = mmu_flags_for(prot);
     for (uintptr_t page = start; page < end; page += PAGE_SIZE)
     {
-        arch_protect_page(proc->page_directory, page, flags);
+        uint32_t page_flags = flags;
+        phys_addr_t frame = arch_translate_in(proc->page_directory, page);
+
+        // a frame shared copy-on-write stays read-only: the first write
+        // copies it (mm_fault_in)
+        if (frame != 0 && pmm_owns(frame) &&
+            pmm_page_refcount(phys_to_virt(PAGE_ALIGN_DOWN(frame))) > 1)
+        {
+            page_flags &= ~MMU_FLAG_WRITE;
+        }
+        arch_protect_page(proc->page_directory, page, page_flags);
     }
     return KERR_OK;
 }
