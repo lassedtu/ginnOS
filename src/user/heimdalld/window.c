@@ -365,6 +365,7 @@ void window_destroy(window_t *w)
         S.last_click_window = NULL;
     if (w->map)
         munmap(w->map, w->map_size);
+    gfx_buffer_free(w->own);
     if (w->pending_map)
         munmap(w->pending_map, w->pending_size);
     gfx_buffer_free(w->bar);

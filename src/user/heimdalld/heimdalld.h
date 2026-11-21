@@ -78,7 +78,12 @@ typedef struct window
 
     int32_t x; // the top left of the frame (the title bar)
     int32_t y;
-    gfx_buffer_t content; // over the client's shared memory (read only)
+    // the client's buffer is copied at each commit (the part it changed)
+    // into the server's own copy, and only the copy is drawn: so what the
+    // client draws next never shows half done
+    gfx_buffer_t content; // the server's copy (the pixels of own)
+    gfx_buffer_t *own;
+    gfx_buffer_t shared; // over the client's shared memory (read only)
     void *map;
     size_t map_size;
     gfx_buffer_t pending; // attached, shown at the next commit

@@ -154,7 +154,6 @@ static void compose_rect(gfx_rect_t r)
         draw_outline(S.drag_rect);
     cursor_draw(S.screen, S.cursor, S.px, S.py);
     gfx_reset_clip(S.screen);
-    gfx_present(S.fb, S.pitch, S.width, S.height, &S.format, S.screen, r);
 }
 
 void screen_compose(void)
@@ -169,8 +168,12 @@ void screen_compose(void)
         S.cursor_rect = now;
     }
 
+    // all of it into the composition first, then to the screen in one go,
+    // so the screen shows old and new together for as short a time as can be
     for (int i = 0; i < S.damage_count; i++)
         compose_rect(S.damage[i]);
+    for (int i = 0; i < S.damage_count; i++)
+        gfx_present(S.fb, S.pitch, S.width, S.height, &S.format, S.screen, S.damage[i]);
     S.damage_count = 0;
 
     // the commits are on the screen now

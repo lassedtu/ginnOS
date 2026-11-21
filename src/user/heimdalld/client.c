@@ -177,26 +177,40 @@ static void attach(client_t *c, window_t *w, const heim_msg_t *msg)
 
 static void commit(client_t *c, window_t *w, const heim_msg_t *msg)
 {
+    gfx_rect_t changed = gfx_rect(msg->rect.x, msg->rect.y, msg->rect.width, msg->rect.height);
     if (w->pending_map)
     {
         // a new buffer: from now on the window has its size
+        gfx_buffer_t *own = gfx_buffer_new(w->pending.width, w->pending.height);
+        if (!own)
+        {
+            kill_client(c, "out of memory");
+            return;
+        }
         window_damage(w);
         if (w->map)
             munmap(w->map, w->map_size);
+        gfx_buffer_free(w->own);
         int32_t old_width = w->content.width;
-        w->content = w->pending;
+        w->own = own;
+        w->content = *own;
+        w->content.owned = false;
+        w->shared = w->pending;
         w->map = w->pending_map;
         w->map_size = w->pending_size;
         w->pending_map = NULL;
         if (old_width != w->content.width)
             w->bar_dirty = true;
+        changed = gfx_rect(0, 0, own->width, own->height); // all of it
         window_damage(w);
     }
-    if (!w->content.pixels)
+    if (!w->own)
     {
         kill_client(c, "a commit without a buffer");
         return;
     }
+    changed = gfx_rect_intersect(changed, gfx_rect(0, 0, w->own->width, w->own->height));
+    gfx_copy(w->own, changed.x, changed.y, &w->shared, changed);
     if (!w->shown)
     {
         window_show(w);
@@ -205,8 +219,7 @@ static void commit(client_t *c, window_t *w, const heim_msg_t *msg)
     else
     {
         gfx_rect_t cr = window_content(w);
-        gfx_rect_t d = gfx_rect(cr.x + msg->rect.x, cr.y + msg->rect.y, msg->rect.width,
-                                msg->rect.height);
+        gfx_rect_t d = gfx_rect(cr.x + changed.x, cr.y + changed.y, changed.w, changed.h);
         if (window_visible(w))
             screen_damage(gfx_rect_intersect(d, cr));
     }
