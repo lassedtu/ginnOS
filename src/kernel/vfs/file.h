@@ -64,6 +64,7 @@ struct file
     const file_ops_t *ops;
     uint32_t refcount; // descriptors (and kernel users) referring to it
     uint32_t flags;    // O_ access mode and status flags
+    fs_dirent_t *lookahead; // a directory entry read but not yet returned
     union
     {
         vfs_file_t vfs; // a filesystem file or directory (its offset inside)
@@ -131,6 +132,13 @@ int32_t file_ioctl(file_t *file, uint32_t request, void *arg);
 int32_t file_mmap(file_t *file, addr_space_t as, uintptr_t virt, size_t length, int prot,
                   uint32_t offset);
 int32_t file_read_entry(file_t *file, fs_dirent_t *entry);
+
+/**
+ * give back the entry file_read_entry returned last, so the next call
+ * returns it again (getdents, when it does not fit the caller's buffer).
+ * @return 0, or -ENOMEM.
+ */
+int32_t file_unread_entry(file_t *file, const fs_dirent_t *entry);
 int32_t file_truncate(file_t *file);
 int32_t file_stat(file_t *file, struct kstat *st);
 

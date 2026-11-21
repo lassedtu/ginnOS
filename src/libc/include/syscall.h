@@ -20,7 +20,7 @@
 #define SYS_SBRK 11    // increase program data space
 #define SYS_GETCWD 12  // get current working directory
 #define SYS_CHDIR 13   // change current working directory
-#define SYS_READDIR 14 // read a directory entry
+#define SYS_READDIR 14 // retired: use SYS_GETDENTS
 #define SYS_UNLINK 15  // remove a file or directory
 #define SYS_RMDIR 16   // remove a directory
 #define SYS_TTYCTL 17  // control terminal behavior
@@ -44,6 +44,7 @@
 #define SYS_PREAD 35    // read at an offset
 #define SYS_PWRITE 36   // write at an offset
 #define SYS_FSYNC 37    // write a file's data to disk
+#define SYS_GETDENTS 38 // read directory records
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

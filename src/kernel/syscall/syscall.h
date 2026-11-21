@@ -20,7 +20,7 @@
 #define SYS_SBRK 11
 #define SYS_GETCWD 12
 #define SYS_CHDIR 13
-#define SYS_READDIR 14
+#define SYS_READDIR 14 // retired: use SYS_GETDENTS
 #define SYS_UNLINK 15
 #define SYS_RMDIR 16
 #define SYS_TTYCTL 17
@@ -44,9 +44,10 @@
 #define SYS_PREAD 35
 #define SYS_PWRITE 36
 #define SYS_FSYNC 37
+#define SYS_GETDENTS 38
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 38
+#define SYSCALL_COUNT 39
 
 /**
  * initialize the system call interface.

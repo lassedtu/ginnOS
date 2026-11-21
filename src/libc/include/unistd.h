@@ -146,30 +146,6 @@ int getcwd(char *buf, size_t size);
 int chdir(const char *path);
 
 /**
- * directory entry structure (matches kernel fs_dirent_t).
- */
-typedef struct dirent
-{
-    unsigned int inode;
-    unsigned char file_type;
-    unsigned int size;
-    char name[256];
-} dirent_t;
-
-/* file type constants */
-#define FT_UNKNOWN 0
-#define FT_FILE    1
-#define FT_DIR     2
-
-/**
- * read the next directory entry from an open directory fd.
- * @param fd file descriptor for an open directory.
- * @param entry pointer to dirent structure to fill.
- * @return 0 on success, -1 on end-of-directory or error.
- */
-int readdir(int fd, dirent_t *entry);
-
-/**
  * remove (unlink) a file.
  * @param path path to the file to remove.
  * @return 0 on success, -1 on failure.

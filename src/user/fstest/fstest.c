@@ -9,10 +9,13 @@
  *          a pipe)
  *   rename rename a file, access before and after
  *   pread  pread and pwrite leave the file offset alone
+ *   dirent readdir over a directory of 20 files, and getdents with a buffer
+ *          that holds one record at a time
  *
  * each mode prints "fstest <mode>: ok" when it passes.
  */
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -162,11 +165,88 @@ static int test_pread(void)
     return ok();
 }
 
+#define DIRENT_FILES 20
+
+/**
+ * the path of test file i: <dir>/fileNN.
+ */
+static void dirent_file(char *path, const char *dir, int i)
+{
+    snprintf(path, 64, "%s/file", dir);
+    int len = strlen(path);
+    path[len] = (char)('0' + i / 10);
+    path[len + 1] = (char)('0' + i % 10);
+    path[len + 2] = '\0';
+}
+
+/**
+ * count the entries of a directory with readdir.
+ */
+static int count_entries(const char *path)
+{
+    DIR *dir = opendir(path);
+    if (!dir)
+        return -1;
+    int count = 0;
+    while (readdir(dir))
+        count++;
+    closedir(dir);
+    return count;
+}
+
+static int test_dirent(void)
+{
+    const char *dir_path = "/fstest.dir";
+    char path[64];
+
+    mkdir(dir_path);
+    for (int i = 0; i < DIRENT_FILES; i++)
+    {
+        dirent_file(path, dir_path, i);
+        close(open(path, O_WRONLY | O_CREAT, 0644));
+    }
+
+    // the files, "." and ".."
+    if (count_entries(dir_path) != DIRENT_FILES + 2)
+        return failed("readdir count");
+
+    // a 20-byte buffer holds one record ("file00" needs 16 bytes): every
+    // record that does not fit must come back in the next call
+    int fd = open(dir_path, O_RDONLY | O_DIRECTORY);
+    char buf[20];
+    int records = 0;
+    int n;
+    while ((n = getdents(fd, buf, sizeof(buf))) > 0)
+        records++;
+    if (n != 0 || records != DIRENT_FILES + 2)
+        return failed("getdents one record at a time");
+    close(fd);
+
+    fd = open(dir_path, O_RDONLY | O_DIRECTORY);
+    if (getdents(fd, buf, 4) != -1 || errno != EINVAL)
+        return failed("getdents with a buffer too small for any record");
+    close(fd);
+
+    int devices = count_entries("/dev");
+    if (devices < 1)
+        return failed("readdir of /dev");
+    if (opendir("/bin/cat") != NULL || errno != ENOTDIR)
+        return failed("opendir of a file");
+
+    for (int i = 0; i < DIRENT_FILES; i++)
+    {
+        dirent_file(path, dir_path, i);
+        unlink(path);
+    }
+    rmdir(dir_path);
+    return ok();
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: fstest stat|fcntl|rename|pread\n");
+        printf("usage: fstest stat|fcntl|rename|pread|dirent\n");
         return 1;
     }
 
@@ -179,6 +259,8 @@ int main(int argc, char **argv)
         return test_rename();
     if (strcmp(argv[1], "pread") == 0)
         return test_pread();
+    if (strcmp(argv[1], "dirent") == 0)
+        return test_dirent();
 
     printf("fstest: unknown mode %s\n", argv[1]);
     return 1;

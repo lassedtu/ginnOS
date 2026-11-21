@@ -72,7 +72,7 @@ syscall_ret_t sys_stat(struct registers *regs);
 syscall_ret_t sys_mkdir(struct registers *regs);
 syscall_ret_t sys_unlink(struct registers *regs);
 syscall_ret_t sys_rmdir(struct registers *regs);
-syscall_ret_t sys_readdir(struct registers *regs);
+syscall_ret_t sys_getdents(struct registers *regs);
 
 /* sys_proc.c */
 syscall_ret_t sys_exit(struct registers *regs);

@@ -23,7 +23,6 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_SBRK] = sys_sbrk,
     [SYS_GETCWD] = sys_getcwd,
     [SYS_CHDIR] = sys_chdir,
-    [SYS_READDIR] = sys_readdir,
     [SYS_UNLINK] = sys_unlink,
     [SYS_RMDIR] = sys_rmdir,
     [SYS_TTYCTL] = sys_ttyctl,
@@ -47,6 +46,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_PREAD] = sys_pread,
     [SYS_PWRITE] = sys_pwrite,
     [SYS_FSYNC] = sys_fsync,
+    [SYS_GETDENTS] = sys_getdents,
 };
 
 /**

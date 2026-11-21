@@ -20,6 +20,7 @@ static file_t *file_alloc(const file_ops_t *ops, uint32_t flags)
         file->ops = ops;
         file->refcount = 1;
         file->flags = flags;
+        file->lookahead = NULL;
     }
     return file;
 }
@@ -98,7 +99,26 @@ int32_t file_mmap(file_t *file, addr_space_t as, uintptr_t virt, size_t length, 
 
 int32_t file_read_entry(file_t *file, fs_dirent_t *entry)
 {
+    if (file->lookahead)
+    {
+        *entry = *file->lookahead;
+        kfree(file->lookahead);
+        file->lookahead = NULL;
+        return 0;
+    }
     return file->ops->read_entry ? file->ops->read_entry(file, entry) : -ENOTDIR;
+}
+
+int32_t file_unread_entry(file_t *file, const fs_dirent_t *entry)
+{
+    KASSERT(!file->lookahead, "file_unread_entry: an entry is already given back");
+    file->lookahead = kmalloc(sizeof(fs_dirent_t));
+    if (!file->lookahead)
+    {
+        return -ENOMEM;
+    }
+    *file->lookahead = *entry;
+    return 0;
 }
 
 int32_t file_truncate(file_t *file)
@@ -220,6 +240,7 @@ static int32_t vfs_kind_stat(file_t *file, struct kstat *st)
 
 static void vfs_kind_release(file_t *file)
 {
+    kfree(file->lookahead);
     vfs_close(&file->vfs);
     kfree(file);
 }

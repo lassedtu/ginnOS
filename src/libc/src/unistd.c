@@ -152,17 +152,6 @@ int chdir(const char *path)
     return ret;
 }
 
-int readdir(int fd, dirent_t *entry)
-{
-    int ret = _syscall(SYS_READDIR, fd, (int)entry, 0, 0, 0);
-    if (ret < 0)
-    {
-        errno = -ret;
-        return -1;
-    }
-    return ret;
-}
-
 int unlink(const char *path)
 {
     int ret = _syscall(SYS_UNLINK, (int)path, 0, 0, 0, 0);

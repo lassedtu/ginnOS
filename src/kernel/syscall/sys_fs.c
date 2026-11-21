@@ -2,6 +2,9 @@
 #include "syscall.h"
 #include "fd_table.h"
 #include "kernel/vfs/stat.h"
+#include "kernel/vfs/dirent.h"
+#include "common/memory.h"
+#include "common/string.h"
 
 #include "kernel/vfs/vfs.h"
 #include "kernel/process/process.h"
@@ -172,40 +175,83 @@ syscall_ret_t sys_rmdir(struct registers *regs)
     return 0;
 }
 
+// the size of a record with the longest name (a name has at most
+// EXT2_NAME_MAX - 1 characters and its NUL)
+#define DIRENT_RECORD_MAX ((KDIRENT_HEADER + EXT2_NAME_MAX + 3) & ~3u)
+
 /**
- * SYS_readdir: read the next directory entry from an open directory fd.
- * args: EBX = fd, ECX = pointer to user dirent struct.
- *
- * user dirent layout (matches fs_dirent_t):
- *   uint32_t inode
- *   uint8_t  file_type
- *   uint32_t size
- *   char     name[256]
- *
- * returns 0 on success, negative errno on failure or end of directory.
+ * the DT_ type of a directory entry.
  */
-syscall_ret_t sys_readdir(struct registers *regs)
+static uint8_t dirent_type(const fs_dirent_t *entry)
 {
-    int fd_num = (int)syscall_arg(regs, 0);
-    fs_dirent_t *user_dirent = (fs_dirent_t *)syscall_arg(regs, 1);
+    switch (entry->file_type)
+    {
+    case FS_TYPE_DIR:
+        return DT_DIR;
+    case FS_TYPE_FILE:
+        return DT_REG;
+    default:
+        return DT_UNKNOWN;
+    }
+}
 
-    /* check before reading: the read advances the directory position */
-    if (!user_access_ok(user_dirent, sizeof(fs_dirent_t), true))
+/**
+ * SYS_getdents: read directory entries.
+ * args: EBX = fd of an open directory, ECX = buffer, EDX = buffer size.
+ * fills the buffer with as many whole records (kernel/vfs/dirent.h) as fit.
+ * returns the bytes written, 0 at the end of the directory, or a negative
+ * errno (EINVAL if the buffer cannot hold the next record, ENOTDIR if fd
+ * is not a directory).
+ */
+syscall_ret_t sys_getdents(struct registers *regs)
+{
+    uint8_t *user_buf = (uint8_t *)syscall_arg(regs, 1);
+    uint32_t size = (uint32_t)syscall_arg(regs, 2);
+
+    if (!user_access_ok(user_buf, size, true))
         return -EFAULT;
-
-    fd_entry_t *entry = fd_get(fd_num);
-    if (!entry)
-    {
+    fd_entry_t *fd_entry = fd_get((int)syscall_arg(regs, 0));
+    if (!fd_entry)
         return -EBADF;
-    }
 
-    fs_dirent_t dirent;
-    int32_t err = file_read_entry(entry->file, &dirent);
-    if (err < 0)
+    // one record at a time, built here and copied out
+    uint8_t record[DIRENT_RECORD_MAX];
+    fs_dirent_t entry;
+    uint32_t used = 0;
+
+    for (;;)
     {
-        return err;
+        int32_t err = file_read_entry(fd_entry->file, &entry);
+        if (err == -ENOENT)
+            break; // the end of the directory
+        if (err < 0)
+            return used > 0 ? (syscall_ret_t)used : err;
+
+        entry.name[EXT2_NAME_MAX - 1] = '\0';
+        uint32_t name_len = (uint32_t)strlen(entry.name); // < EXT2_NAME_MAX
+        uint32_t reclen = (KDIRENT_HEADER + name_len + 1 + 3) & ~3u;
+        if (used + reclen > size)
+        {
+            // keep it for the next call
+            err = file_unread_entry(fd_entry->file, &entry);
+            if (err < 0)
+                return err;
+            if (used == 0)
+                return -EINVAL;
+            break;
+        }
+
+        struct kdirent *out = (struct kdirent *)record;
+        memset(record, 0, reclen);
+        out->d_ino = entry.inode;
+        out->d_reclen = (uint16_t)reclen;
+        out->d_type = dirent_type(&entry);
+        memcpy(out->d_name, entry.name, name_len + 1);
+
+        if (kerr_failed(copy_to_user(user_buf + used, record, reclen)))
+            return -EFAULT;
+        used += reclen;
     }
 
-    /* copy to userspace */
-    return kerr_to_errno(copy_to_user(user_dirent, &dirent, sizeof(fs_dirent_t)));
+    return (syscall_ret_t)used;
 }
