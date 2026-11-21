@@ -19,13 +19,13 @@ syscall_ret_t sys_getcwd(struct registers *regs)
 
     if (!proc || size == 0)
     {
-        return -3; /* EINVAL */
+        return -EINVAL;
     }
 
     size_t len = strlen(proc->cwd);
     if (len + 1 > size)
     {
-        return -17; /* ERANGE */
+        return -ERANGE;
     }
 
     return kerr_to_errno(copy_to_user(buf, proc->cwd, len + 1));
@@ -43,7 +43,7 @@ syscall_ret_t sys_chdir(struct registers *regs)
 
     if (!proc)
     {
-        return -3; /* EINVAL */
+        return -EINVAL;
     }
 
     /* copy the path in from user memory, resolved against the cwd */
@@ -62,7 +62,7 @@ syscall_ret_t sys_chdir(struct registers *regs)
 
     if (stat.file_type != FS_TYPE_DIR)
     {
-        return -11; /* ENOTDIR */
+        return -ENOTDIR;
     }
 
     strncpy(proc->cwd, resolved, PATH_MAX - 1);
@@ -81,10 +81,10 @@ syscall_ret_t sys_ttyctl(struct registers *regs)
     process_t *proc = process_current();
 
     if (!proc)
-        return -3; /* EINVAL */
+        return -EINVAL;
 
     if (mode > 1)
-        return -3; /* EINVAL */
+        return -EINVAL;
 
     int32_t prev = (int32_t)proc->tty_raw;
     proc->tty_raw = (uint8_t)mode;
@@ -110,7 +110,7 @@ syscall_ret_t sys_ioctl(struct registers *regs)
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
     {
-        return -9; /* EBADF */
+        return -EBADF;
     }
 
     // ioctls are only defined for file-backed descriptors (the transport to a
@@ -118,7 +118,7 @@ syscall_ret_t sys_ioctl(struct registers *regs)
     // ioctl surface.
     if (entry->type != FD_TYPE_FILE)
     {
-        return -25; /* ENOTTY */
+        return -ENOTTY;
     }
 
     return vfs_ioctl(&entry->file, request, arg);

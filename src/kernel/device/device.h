@@ -49,7 +49,7 @@ typedef struct
      * @param request driver-defined request code.
      * @param arg request-specific argument (often a user pointer, already
      *            bounds-checked by the syscall layer before it reaches here).
-     * @return 0 on success, or a negative errno on failure (-25/-ENOTTY for an
+     * @return 0 on success, or a negative errno on failure (-ENOTTY for an
      *         unrecognized request).
      */
     int32_t (*ioctl)(device_t *dev, uint32_t request, void *arg);

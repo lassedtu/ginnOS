@@ -24,7 +24,7 @@ syscall_ret_t sys_write(struct registers *regs)
 
     /* the whole buffer must be readable user memory */
     if (!user_access_ok(buf, count, false))
-        return -18; /* EFAULT */
+        return -EFAULT;
 
     if (count == 0)
         return 0;
@@ -32,7 +32,7 @@ syscall_ret_t sys_write(struct registers *regs)
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
     {
-        return -2; /* EBADF */
+        return -EBADF;
     }
 
     if (entry->type == FD_TYPE_CONSOLE)
@@ -47,11 +47,11 @@ syscall_ret_t sys_write(struct registers *regs)
     {
         /* only the write end can write */
         if (entry->pipe.dir != PIPE_WRITE)
-            return -3; /* EINVAL */
+            return -EINVAL;
 
         /* a short count means every read end closed partway through */
         uint32_t written = pipe_write(entry->pipe.buf, buf, count);
-        return written > 0 ? (int32_t)written : -7; /* EPIPE */
+        return written > 0 ? (int32_t)written : -EPIPE;
     }
 
     if (entry->type == FD_TYPE_FILE)
@@ -60,7 +60,7 @@ syscall_ret_t sys_write(struct registers *regs)
         return (int32_t)bytes_written;
     }
 
-    return -2; /* EBADF */
+    return -EBADF;
 }
 
 /**
@@ -78,7 +78,7 @@ syscall_ret_t sys_read(struct registers *regs)
 
     /* the whole buffer must be writable user memory */
     if (!user_access_ok(buf, count, true))
-        return -18; /* EFAULT */
+        return -EFAULT;
 
     if (count == 0)
         return 0;
@@ -86,7 +86,7 @@ syscall_ret_t sys_read(struct registers *regs)
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
     {
-        return -2; /* EBADF */
+        return -EBADF;
     }
 
     if (entry->type == FD_TYPE_CONSOLE)
@@ -94,7 +94,7 @@ syscall_ret_t sys_read(struct registers *regs)
         /* only stdin (fd 0) is readable */
         if (fd_num != 0)
         {
-            return -2; /* EBADF */
+            return -EBADF;
         }
 
         process_t *proc = process_current();
@@ -105,7 +105,7 @@ syscall_ret_t sys_read(struct registers *regs)
              * the buffer must be large enough to hold the struct (8 bytes). */
             if (count < sizeof(keyboard_event_t))
             {
-                return -3; /* EINVAL */
+                return -EINVAL;
             }
 
             keyboard_event_t event;
@@ -158,13 +158,13 @@ syscall_ret_t sys_read(struct registers *regs)
     {
         /* only the read end can read */
         if (entry->pipe.dir != PIPE_READ)
-            return -2; /* EBADF */
+            return -EBADF;
 
         /* blocks until data is available; 0 means EOF */
         return (int32_t)pipe_read(entry->pipe.buf, buf, count);
     }
 
-    return -2; /* EBADF */
+    return -EBADF;
 }
 
 /**
@@ -194,7 +194,7 @@ syscall_ret_t sys_open(struct registers *regs)
     if (fd < 0)
     {
         vfs_close(&file);
-        return -12; /* EMFILE */
+        return -EMFILE;
     }
 
     return (int32_t)fd;
@@ -212,12 +212,12 @@ syscall_ret_t sys_close(struct registers *regs)
     /* don't allow closing stdin/stdout/stderr */
     if (fd < FD_STDIO_COUNT)
     {
-        return -3; /* EINVAL */
+        return -EINVAL;
     }
 
     if (fd_free(fd) != 0)
     {
-        return -2; /* EBADF */
+        return -EBADF;
     }
 
     return 0;
@@ -236,15 +236,15 @@ syscall_ret_t sys_lseek(struct registers *regs)
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry)
-        return -2; /* EBADF */
+        return -EBADF;
 
     if (entry->type != FD_TYPE_FILE)
-        return -8; /* ESPIPE */
+        return -ESPIPE;
 
     // try the filesystem's own seek first (devfs and other non-ext2 backends).
     // -ENOSYS means "no seek op" — fall back to the ext2 file cursor below.
     int32_t seeked = vfs_seek(&entry->file, offset, whence);
-    if (seeked != -38)
+    if (seeked != -ENOSYS)
     {
         return seeked;
     }
@@ -265,7 +265,7 @@ syscall_ret_t sys_lseek(struct registers *regs)
         new_pos = (int32_t)size + offset;
         break;
     default:
-        return -3; /* EINVAL */
+        return -EINVAL;
     }
 
     if (new_pos < 0)
@@ -286,10 +286,10 @@ syscall_ret_t sys_ftruncate(struct registers *regs)
     fd_entry_t *entry = fd_get(fd_num);
 
     if (!entry)
-        return -2; /* EBADF */
+        return -EBADF;
 
     if (entry->type != FD_TYPE_FILE)
-        return -3; /* EINVAL */
+        return -EINVAL;
 
     kerr_t err = vfs_truncate(&entry->file);
     if (kerr_failed(err))
@@ -311,13 +311,13 @@ syscall_ret_t sys_dup2(struct registers *regs)
     process_t *proc = process_current();
 
     if (!proc)
-        return -3; /* EINVAL */
+        return -EINVAL;
 
     if (old_fd < 0 || old_fd >= FD_MAX || new_fd < 0 || new_fd >= FD_MAX)
-        return -2; /* EBADF */
+        return -EBADF;
 
     if (proc->fds[old_fd].type == FD_TYPE_NONE)
-        return -2; /* EBADF */
+        return -EBADF;
 
     /* if same fd, just return it */
     if (old_fd == new_fd)
@@ -347,10 +347,10 @@ syscall_ret_t sys_pipe(struct registers *regs)
 
     /* checked up front: the fds are allocated before they are copied out */
     if (!user_access_ok(user_fds, 2 * sizeof(int), true))
-        return -18; /* EFAULT */
+        return -EFAULT;
 
     if (!proc)
-        return -3; /* EINVAL */
+        return -EINVAL;
 
     /* find two free fd slots */
     int read_fd = -1;
@@ -368,12 +368,12 @@ syscall_ret_t sys_pipe(struct registers *regs)
     }
 
     if (read_fd < 0 || write_fd < 0)
-        return -12; /* EMFILE */
+        return -EMFILE;
 
     /* allocate the pipe with one read end and one write end */
     pipe_buf_t *buf = pipe_alloc();
     if (!buf)
-        return -21; /* ENOBUFS */
+        return -ENOBUFS;
 
     /* set up read end */
     proc->fds[read_fd].type = FD_TYPE_PIPE;

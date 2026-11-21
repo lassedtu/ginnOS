@@ -29,6 +29,19 @@ const char *strerror(int errnum)
     case ESRCH:   return "no such process";
     case ECHILD:  return "no child processes";
     case ENOBUFS: return "no buffer space available";
+    case ENOTTY:  return "inappropriate ioctl for device";
+    case ENODEV:  return "no such device";
+    case EINTR:   return "interrupted system call";
+    case EAGAIN:  return "resource temporarily unavailable";
+    case E2BIG:   return "argument list too long";
+    case ENOEXEC: return "exec format error";
+    case ENOTEMPTY: return "directory not empty";
+    case EXDEV:   return "cross-device link";
+    case ENAMETOOLONG: return "file name too long";
+    case EPERM:   return "operation not permitted";
+    case ELOOP:   return "too many levels of symbolic links";
+    case EROFS:   return "read-only file system";
+    case ETIMEDOUT: return "timed out";
     }
     return "unknown error";
 }

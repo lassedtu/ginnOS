@@ -12,15 +12,15 @@ int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size)
     char path[PATH_MAX];
     int32_t len = strncpy_from_user(path, user_path, sizeof(path));
     if (len == KERR_FAULT)
-        return -18; /* EFAULT */
+        return -EFAULT;
     if (len < 0)
-        return -3; /* EINVAL: longer than PATH_MAX */
+        return -EINVAL; // longer than PATH_MAX
 
     process_t *proc = process_current();
     const char *cwd = proc ? proc->cwd : "/";
 
     if (!vfs_resolve_path(cwd, path, resolved, size))
-        return -3; /* EINVAL */
+        return -EINVAL;
 
     return 0;
 }
@@ -167,12 +167,12 @@ syscall_ret_t sys_readdir(struct registers *regs)
 
     /* check before reading: the read advances the directory position */
     if (!user_access_ok(user_dirent, sizeof(fs_dirent_t), true))
-        return -18; /* EFAULT */
+        return -EFAULT;
 
     fd_entry_t *entry = fd_get(fd_num);
     if (!entry || entry->type != FD_TYPE_FILE)
     {
-        return -2; /* EBADF */
+        return -EBADF;
     }
 
     fs_dirent_t dirent;

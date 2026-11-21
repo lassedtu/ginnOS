@@ -64,18 +64,18 @@ static int32_t copy_vector_from_user(const char **user_vector, const char **kvec
     {
         const char *entry;
         if (kerr_failed(copy_from_user(&entry, &user_vector[count], sizeof(entry))))
-            return -18; /* EFAULT */
+            return -EFAULT;
         if (!entry)
             break;
         if (count == EXEC_VECTOR_MAX)
-            return -3; /* EINVAL: too many entries */
+            return -EINVAL; // too many entries
 
         char *dst = strings->bytes + strings->used;
         int32_t len = strncpy_from_user(dst, entry, EXEC_STRING_BYTES - strings->used);
         if (len == KERR_FAULT)
-            return -18; /* EFAULT */
+            return -EFAULT;
         if (len < 0)
-            return -3; /* EINVAL: strings too long */
+            return -EINVAL; // strings too long
 
         kvector[count++] = dst;
         strings->used += (uint32_t)len + 1;
@@ -104,7 +104,7 @@ syscall_ret_t sys_exec(struct registers *regs)
     /* argv and its strings are user memory too: copy them in first */
     exec_strings_t strings = {kmalloc(EXEC_STRING_BYTES), 0};
     if (!strings.bytes)
-        return -4; /* ENOMEM */
+        return -ENOMEM;
 
     const char *kargv[EXEC_VECTOR_MAX + 1];
     int32_t ret = copy_vector_from_user(argv, kargv, &strings);
@@ -112,7 +112,7 @@ syscall_ret_t sys_exec(struct registers *regs)
     {
         ret = (int32_t)exec_program(resolved, kargv);
         if (ret < 0)
-            ret = -5; /* ENOENT */
+            ret = -ENOENT;
     }
 
     kfree(strings.bytes);
@@ -145,7 +145,7 @@ syscall_ret_t sys_execve(struct registers *regs)
     {
         kfree(strings.bytes);
         kfree(kargv);
-        return -4; /* ENOMEM */
+        return -ENOMEM;
     }
     const char **kenvp = kargv + EXEC_VECTOR_MAX + 1;
 
@@ -172,7 +172,7 @@ syscall_ret_t sys_fork(struct registers *regs)
     process_t *child = process_fork(regs);
     if (!child)
     {
-        return -4; /* ENOMEM */
+        return -ENOMEM;
     }
     return (syscall_ret_t)child->pid;
 }
@@ -210,7 +210,7 @@ syscall_ret_t sys_waitpid(struct registers *regs)
 
     if (!parent || pid == 0 || pid < -1 || (options & ~(uint32_t)WNOHANG))
     {
-        return -3; /* EINVAL */
+        return -EINVAL;
     }
 
     // masked from the search until blocked: a child that exits in between
@@ -228,7 +228,7 @@ syscall_ret_t sys_waitpid(struct registers *regs)
         if (!has_child)
         {
             arch_irq_restore(flags);
-            return -20; /* ECHILD */
+            return -ECHILD;
         }
         if (options & WNOHANG)
         {
@@ -245,7 +245,7 @@ syscall_ret_t sys_waitpid(struct registers *regs)
 
     if (user_status && kerr_failed(copy_to_user(user_status, &status, sizeof(status))))
     {
-        return -18; /* EFAULT */
+        return -EFAULT;
     }
     return (syscall_ret_t)child_pid;
 }
@@ -460,7 +460,7 @@ syscall_ret_t sys_munmap(struct registers *regs)
     size_t len_pages = PAGE_ALIGN_UP(length);
     if (!proc || length == 0 || len_pages == 0 || addr + len_pages < addr)
     {
-        return -3; /* EINVAL */
+        return -EINVAL;
     }
 
     return kerr_to_errno(mm_unmap(proc, addr, addr + len_pages));
@@ -482,13 +482,13 @@ syscall_ret_t sys_mprotect(struct registers *regs)
     size_t len_pages = PAGE_ALIGN_UP(length);
     if (!proc || length == 0 || len_pages == 0 || addr + len_pages < addr)
     {
-        return -3; /* EINVAL */
+        return -EINVAL;
     }
 
     kerr_t err = mm_protect(proc, addr, addr + len_pages, prot);
     if (err == KERR_NOENT)
     {
-        return -4; /* ENOMEM: POSIX's error for an unmapped range */
+        return -ENOMEM; // POSIX's error for an unmapped range
     }
     return kerr_to_errno(err);
 }

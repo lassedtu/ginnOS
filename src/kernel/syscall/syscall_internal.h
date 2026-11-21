@@ -1,6 +1,7 @@
 #pragma once
 
 #include "arch/x86/cpu/isr.h"
+#include "kernel/errno.h"
 #include "common/stdint.h"
 #include "common/error.h"
 #include "kernel/memory/memory_layout.h"
@@ -50,22 +51,22 @@ static inline int32_t kerr_to_errno(kerr_t err)
     switch (err)
     {
     case KERR_OK:       return 0;
-    case KERR_NOMEM:    return -4;  /* ENOMEM */
-    case KERR_IO:       return -14; /* EIO */
-    case KERR_NOTFOUND: return -5;  /* ENOENT */
-    case KERR_PERM:     return -6;  /* EACCES */
-    case KERR_INVAL:    return -3;  /* EINVAL */
-    case KERR_BUSY:     return -16; /* EBUSY */
-    case KERR_NOSPC:    return -15; /* ENOSPC */
-    case KERR_RANGE:    return -17; /* ERANGE */
-    case KERR_EXIST:    return -9;  /* EEXIST */
-    case KERR_ISDIR:    return -10; /* EISDIR */
-    case KERR_NOTDIR:   return -11; /* ENOTDIR */
-    case KERR_PIPE:     return -7;  /* EPIPE */
-    case KERR_NOENT:    return -5;  /* ENOENT */
-    case KERR_FAULT:    return -18; /* EFAULT */
+    case KERR_NOMEM:    return -ENOMEM;
+    case KERR_IO:       return -EIO;
+    case KERR_NOTFOUND: return -ENOENT;
+    case KERR_PERM:     return -EACCES;
+    case KERR_INVAL:    return -EINVAL;
+    case KERR_BUSY:     return -EBUSY;
+    case KERR_NOSPC:    return -ENOSPC;
+    case KERR_RANGE:    return -ERANGE;
+    case KERR_EXIST:    return -EEXIST;
+    case KERR_ISDIR:    return -EISDIR;
+    case KERR_NOTDIR:   return -ENOTDIR;
+    case KERR_PIPE:     return -EPIPE;
+    case KERR_NOENT:    return -ENOENT;
+    case KERR_FAULT:    return -EFAULT;
     }
-    return -3; /* EINVAL as fallback */
+    return -EINVAL; // as fallback
 }
 
 /**

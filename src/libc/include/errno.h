@@ -1,7 +1,8 @@
 #pragma once
 
 /**
- * posix-compatible errno constants for ginnOS userspace.
+ * posix-compatible errno constants for ginnOS userspace. the numbers are
+ * ABI: src/kernel/errno.h has the same ones.
  *
  * syscalls return negative errno values on failure. the libc wrappers
  * extract the error, store it in the global errno variable, and return -1
@@ -29,6 +30,21 @@
 #define ESRCH   19 /* no such process */
 #define ECHILD  20 /* no child processes */
 #define ENOBUFS 21 /* no buffer space available */
+#define ENOTTY  22 /* inappropriate ioctl for device */
+#define ENODEV  23 /* no such device */
+#define EINTR   24 /* interrupted system call */
+#define EAGAIN  25 /* resource temporarily unavailable */
+#define E2BIG   26 /* argument list too long */
+#define ENOEXEC 27 /* exec format error */
+#define ENOTEMPTY 28 /* directory not empty */
+#define EXDEV   29 /* cross-device link */
+#define ENAMETOOLONG 30 /* file name too long */
+#define EPERM   31 /* operation not permitted */
+#define ELOOP   32 /* too many levels of symbolic links */
+#define EROFS   33 /* read-only file system */
+#define ETIMEDOUT 34 /* timed out */
+
+#define EWOULDBLOCK EAGAIN
 
 /* global errno variable, set by libc wrappers on syscall failure */
 extern int errno;

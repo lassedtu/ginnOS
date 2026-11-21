@@ -1,4 +1,5 @@
 #include "fb.h"
+#include "kernel/errno.h"
 #include "kernel/usermode/uaccess.h"
 
 #include "arch/x86/cpu/paging.h"
@@ -80,7 +81,7 @@ static int32_t fb_dev_mmap(device_t *dev, addr_space_t as, uintptr_t virt,
 
     if (!fb_ready)
     {
-        return -19; /* ENODEV */
+        return -ENODEV;
     }
 
     uint32_t fb_bytes = fb.height * fb.pitch;
@@ -88,7 +89,7 @@ static int32_t fb_dev_mmap(device_t *dev, addr_space_t as, uintptr_t virt,
     // clamp the request to the framebuffer; reject an offset past the end.
     if (offset >= fb_bytes)
     {
-        return -22; /* EINVAL */
+        return -EINVAL;
     }
     if (length > fb_bytes - offset)
     {
@@ -107,7 +108,7 @@ static int32_t fb_dev_mmap(device_t *dev, addr_space_t as, uintptr_t virt,
     {
         if (arch_map_page(as, v, p, flags) != 0)
         {
-            return -12; /* ENOMEM */
+            return -ENOMEM;
         }
         v += PAGE_SIZE;
     }
@@ -200,7 +201,7 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
 
     if (!fb_ready)
     {
-        return -19; /* ENODEV */
+        return -ENODEV;
     }
 
     switch (request)
@@ -216,7 +217,7 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
         fix.type = FB_TYPE_PACKED_PIXELS;
         fix.visual = FB_VISUAL_TRUECOLOR;
         fix.line_length = fb.pitch;
-        return kerr_failed(copy_to_user(arg, &fix, sizeof(fix))) ? -18 /* EFAULT */ : 0;
+        return kerr_failed(copy_to_user(arg, &fix, sizeof(fix))) ? -EFAULT : 0;
     }
 
     case FBIOGET_VSCREENINFO:
@@ -232,7 +233,7 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
         fb_fill_bitfield(&var.green, fb.green_size, fb.green_shift);
         fb_fill_bitfield(&var.blue, fb.blue_size, fb.blue_shift);
         fb_fill_bitfield(&var.transp, 0, 0); // no alpha
-        return kerr_failed(copy_to_user(arg, &var, sizeof(var))) ? -18 /* EFAULT */ : 0;
+        return kerr_failed(copy_to_user(arg, &var, sizeof(var))) ? -EFAULT : 0;
     }
 
     case FBIOPUT_VSCREENINFO:
@@ -242,17 +243,17 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
         fb_var_screeninfo_t var;
         if (kerr_failed(copy_from_user(&var, arg, sizeof(var))))
         {
-            return -18; /* EFAULT */
+            return -EFAULT;
         }
         if (var.xres == fb.width && var.yres == fb.height && var.bits_per_pixel == fb.bpp)
         {
             return 0;
         }
-        return -22; /* EINVAL */
+        return -EINVAL;
     }
 
     default:
-        return -25; /* ENOTTY: unknown request */
+        return -ENOTTY; // unknown request
     }
 }
 

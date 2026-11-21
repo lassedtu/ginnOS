@@ -1,4 +1,5 @@
 #include "devfs.h"
+#include "kernel/errno.h"
 
 #include "common/string.h"
 #include "kernel/device/device.h"
@@ -199,7 +200,7 @@ static int32_t devfs_ioctl(fs_file_t *file, uint32_t request, void *arg)
     device_t *dev = (device_t *)file->fs_data;
     if (!dev || !dev->ops || !dev->ops->ioctl)
     {
-        return -25; /* ENOTTY: device supports no ioctls */
+        return -ENOTTY; // device supports no ioctls
     }
 
     return dev->ops->ioctl(dev, request, arg);
@@ -213,7 +214,7 @@ static int32_t devfs_mmap(fs_file_t *file, addr_space_t as, uintptr_t virt,
     device_t *dev = (device_t *)file->fs_data;
     if (!dev || !dev->ops || !dev->ops->mmap)
     {
-        return -19; /* ENODEV: device is not mappable */
+        return -ENODEV; // device is not mappable
     }
 
     return dev->ops->mmap(dev, as, virt, length, prot, offset);
@@ -237,7 +238,7 @@ static int32_t devfs_seek(fs_file_t *file, int32_t offset, int whence)
         base = (int32_t)size;
         break;
     default:
-        return -22; /* EINVAL */
+        return -EINVAL;
     }
 
     int32_t new_pos = base + offset;

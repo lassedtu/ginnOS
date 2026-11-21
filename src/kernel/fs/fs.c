@@ -1,4 +1,5 @@
 #include "fs.h"
+#include "kernel/errno.h"
 #include "ext2_ops.h"
 
 /**
@@ -177,14 +178,14 @@ int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg)
 {
     if (!file || !file->is_open)
     {
-        return -9; /* EBADF */
+        return -EBADF;
     }
 
     // a filesystem without an ioctl op supports no device control: -ENOTTY,
     // the same "inappropriate ioctl for device" errno a regular file returns.
     if (!file->ops->ioctl)
     {
-        return -25; /* ENOTTY */
+        return -ENOTTY;
     }
 
     return file->ops->ioctl(file, request, arg);
@@ -195,13 +196,13 @@ int32_t fs_mmap(fs_file_t *file, addr_space_t as, uintptr_t virt,
 {
     if (!file || !file->is_open)
     {
-        return -9; /* EBADF */
+        return -EBADF;
     }
 
     // a filesystem without an mmap op has nothing mappable: -ENODEV.
     if (!file->ops->mmap)
     {
-        return -19; /* ENODEV */
+        return -ENODEV;
     }
 
     return file->ops->mmap(file, as, virt, length, prot, offset);
@@ -211,13 +212,13 @@ int32_t fs_seek(fs_file_t *file, int32_t offset, int whence)
 {
     if (!file || !file->is_open)
     {
-        return -9; /* EBADF */
+        return -EBADF;
     }
 
     // no seek op: tell the caller to handle it (ext2 uses its own cursor).
     if (!file->ops->seek)
     {
-        return -38; /* ENOSYS */
+        return -ENOSYS;
     }
 
     return file->ops->seek(file, offset, whence);
