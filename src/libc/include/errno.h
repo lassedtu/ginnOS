@@ -43,6 +43,14 @@
 #define ELOOP   32 /* too many levels of symbolic links */
 #define EROFS   33 /* read-only file system */
 #define ETIMEDOUT 34 /* timed out */
+#define ENOTSOCK 35 /* not a socket */
+#define EADDRINUSE 36 /* address in use */
+#define ECONNREFUSED 37 /* connection refused */
+#define EISCONN 38 /* already connected */
+#define ENOTCONN 39 /* not connected */
+#define EAFNOSUPPORT 40 /* address family not supported */
+#define EPROTONOSUPPORT 41 /* protocol not supported */
+#define EOPNOTSUPP 42 /* operation not supported */
 
 #define EWOULDBLOCK EAGAIN
 
