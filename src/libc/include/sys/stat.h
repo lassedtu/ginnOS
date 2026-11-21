@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file sys/stat.h
  * @brief file metadata: stat() and fstat().
@@ -8,18 +10,6 @@
  * src/kernel/vfs/stat.h exactly.
  */
 
-typedef unsigned int mode_t;
-typedef unsigned int ino_t;
-typedef unsigned int dev_t;
-typedef unsigned int nlink_t;
-typedef unsigned int uid_t;
-typedef unsigned int gid_t;
-typedef int off_t;
-typedef unsigned int time_t;
-typedef unsigned int blksize_t;
-typedef unsigned int blkcnt_t;
-
-// file type bits of st_mode
 #define S_IFMT   0170000
 #define S_IFIFO  0010000
 #define S_IFCHR  0020000
@@ -61,9 +51,9 @@ struct stat
     off_t st_size;
     blksize_t st_blksize;
     blkcnt_t st_blocks;
-    time_t st_atime;
-    time_t st_mtime;
-    time_t st_ctime;
+    unsigned int st_atime; // 32 bits in the kernel ABI (time_t is wider on x86_64)
+    unsigned int st_mtime;
+    unsigned int st_ctime;
 };
 
 /**

@@ -10,14 +10,14 @@ extern void __sigreturn_restorer(void);
 /**
  * a negative syscall result sets errno.
  */
-static int check(int ret)
+static int check(long ret)
 {
     if (ret < 0)
     {
         errno = -ret;
         return -1;
     }
-    return ret;
+    return (int)ret;
 }
 
 /**
@@ -25,9 +25,9 @@ static int check(int ret)
  */
 struct ksigaction
 {
-    unsigned int handler;
+    unsigned long handler; // pointer-wide
     unsigned int flags;
-    unsigned int restorer;
+    unsigned long restorer; // pointer-wide
     unsigned int mask;
 };
 
@@ -38,13 +38,13 @@ int sigaction(int sig, const struct sigaction *act, struct sigaction *oldact)
 
     if (act)
     {
-        knew.handler = (unsigned int)act->sa_handler;
+        knew.handler = (unsigned long)act->sa_handler;
         knew.flags = (unsigned int)act->sa_flags | SA_RESTORER;
-        knew.restorer = (unsigned int)__sigreturn_restorer;
+        knew.restorer = (unsigned long)__sigreturn_restorer;
         knew.mask = act->sa_mask;
     }
 
-    int ret = check(_syscall(SYS_SIGACTION, sig, act ? (int)&knew : 0, oldact ? (int)&kold : 0,
+    int ret = check(_syscall(SYS_SIGACTION, sig, act ? (long)&knew : 0, oldact ? (long)&kold : 0,
                              0, 0));
     if (ret == 0 && oldact)
     {
@@ -82,17 +82,17 @@ int raise(int sig)
 
 int sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {
-    return check(_syscall(SYS_SIGPROCMASK, how, (int)set, (int)oldset, 0, 0));
+    return check(_syscall(SYS_SIGPROCMASK, how, (long)set, (long)oldset, 0, 0));
 }
 
 int sigpending(sigset_t *set)
 {
-    return check(_syscall(SYS_SIGPENDING, (int)set, 0, 0, 0, 0));
+    return check(_syscall(SYS_SIGPENDING, (long)set, 0, 0, 0, 0));
 }
 
 int sigsuspend(const sigset_t *mask)
 {
-    return check(_syscall(SYS_SIGSUSPEND, (int)mask, 0, 0, 0, 0));
+    return check(_syscall(SYS_SIGSUSPEND, (long)mask, 0, 0, 0, 0));
 }
 
 int sigemptyset(sigset_t *set)
@@ -145,7 +145,7 @@ int sigismember(const sigset_t *set, int sig)
 
 unsigned int alarm(unsigned int seconds)
 {
-    return (unsigned int)_syscall(SYS_ALARM, (int)seconds, 0, 0, 0, 0);
+    return (long)_syscall(SYS_ALARM, (long)seconds, 0, 0, 0, 0);
 }
 
 int pause(void)

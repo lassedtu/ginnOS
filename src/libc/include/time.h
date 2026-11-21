@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file time.h
  * @brief clocks, sleeping and calendar time (UTC only: there are no time
@@ -12,11 +14,7 @@
 #define NULL ((void *)0)
 #endif
 
-typedef long time_t;
-typedef long clock_t;
 typedef int clockid_t;
-typedef unsigned int size_t;
-
 #define CLOCK_REALTIME           0
 #define CLOCK_MONOTONIC          1
 #define CLOCK_PROCESS_CPUTIME_ID 2

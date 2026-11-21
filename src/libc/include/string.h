@@ -1,11 +1,11 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file string.h
  * @brief This file contains the declarations of string manipulation functions.
  */
-
-typedef unsigned int size_t;
 
 #ifndef NULL
 #define NULL ((void *)0)

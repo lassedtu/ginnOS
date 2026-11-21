@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 #include <fcntl.h>
 #include <sys/wait.h>
 
@@ -9,10 +11,6 @@
  */
 
 #include "syscall.h"
-
-typedef unsigned int size_t;
-typedef int ssize_t;
-typedef int pid_t;
 
 /**
  * write bytes to a file descriptor.
@@ -137,9 +135,6 @@ pid_t getpgid(pid_t pid);
 pid_t getpgrp(void);
 pid_t setsid(void);
 pid_t getsid(pid_t pid);
-
-typedef unsigned int uid_t;
-typedef unsigned int gid_t;
 
 /**
  * user and group ids: real (who started the process) and effective (what

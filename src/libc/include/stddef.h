@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file stddef.h
  * @brief NULL, size_t, ptrdiff_t, offsetof.
@@ -9,8 +11,7 @@
 #define NULL ((void *)0)
 #endif
 
-typedef unsigned int size_t;
-typedef int ptrdiff_t;
-typedef int wchar_t;
+typedef __PTRDIFF_TYPE__ ptrdiff_t;
+typedef __WCHAR_TYPE__ wchar_t;
 
 #define offsetof(type, member) __builtin_offsetof(type, member)

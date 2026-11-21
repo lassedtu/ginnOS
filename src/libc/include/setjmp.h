@@ -4,11 +4,12 @@
  * @file setjmp.h
  * @brief non-local jumps.
  *
- * a jmp_buf keeps the registers a function call must keep (ebx, esi, edi,
- * ebp), the stack pointer and the return address.
+ * a jmp_buf keeps the registers a function call must keep (i686: ebx, esi,
+ * edi, ebp; x86_64: rbx, rbp, r12 to r15), the stack pointer and the return
+ * address.
  */
 
-typedef unsigned int jmp_buf[6];
+typedef unsigned long jmp_buf[8]; // the registers setjmp saves (arch/*/setjmp.asm)
 
 /**
  * save the calling context.

@@ -1,12 +1,11 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file pwd.h
  * @brief the user database (/etc/passwd: name:password:uid:gid:gecos:home:shell).
  */
-
-typedef unsigned int uid_t;
-typedef unsigned int gid_t;
 
 struct passwd
 {

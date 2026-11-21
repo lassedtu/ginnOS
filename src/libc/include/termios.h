@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file termios.h
  * @brief terminal settings.
@@ -11,8 +13,6 @@
 typedef unsigned int tcflag_t;
 typedef unsigned char cc_t;
 typedef unsigned int speed_t;
-typedef int pid_t;
-
 #define NCCS 19
 
 struct termios

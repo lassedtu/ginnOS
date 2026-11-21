@@ -8,7 +8,12 @@
 PROG := ze
 
 ROOT     := ../../..
-BUILD    := $(ROOT)/build/user
+# the top Makefile passes these for the architecture it builds
+BUILD_ROOT     ?= $(ROOT)/build
+ARCH_CFLAGS    ?= -m32
+USER_LD_SCRIPT ?= $(ROOT)/linker/user.ld
+
+BUILD    := $(BUILD_ROOT)/user
 LIBC_INC := $(ROOT)/src/libc/include
 
 ZE_SRC   := zen-editor
@@ -17,14 +22,14 @@ CROSS   ?= i686-elf-
 CC      := $(CROSS)gcc
 LD      := $(CROSS)ld
 
-CFLAGS  := -std=c99 -ffreestanding -O2 -Wall -Wextra -m32 \
+CFLAGS  := -std=c99 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) \
            -fno-pie -fno-stack-protector -nostdlib \
            -I$(ZE_SRC)/include -I$(LIBC_INC) -MMD -MP
 
-LDFLAGS := -T $(ROOT)/linker/user.ld -nostdlib
+LDFLAGS := -T $(USER_LD_SCRIPT) -nostdlib
 
 CRT0    := $(BUILD)/lib/crt0.o
-LIBC    := $(ROOT)/build/libc/libc.a
+LIBC    := $(BUILD_ROOT)/libc/libc.a
 
 OBJDIR  := $(BUILD)/$(PROG)
 TARGET  := $(BUILD)/bin/$(PROG)
@@ -60,6 +65,12 @@ $(OBJDIR)/core/%.o: $(ZE_SRC)/src/%.c
 $(OBJDIR)/plat/%.o: $(ZE_SRC)/platforms/ginnos/%.c compat/ze_compat.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -include compat/ze_compat.h -c $< -o $@
+
+# terminal.c declares its own size_t and ssize_t (see compat/ze_terminal_compat.h)
+$(OBJDIR)/plat/terminal.o: $(ZE_SRC)/platforms/ginnos/terminal.c compat/ze_compat.h \
+                           compat/ze_terminal_compat.h
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -include compat/ze_compat.h -include compat/ze_terminal_compat.h -c $< -o $@
 
 $(TARGET): $(OBJS) $(CRT0) $(LIBC)
 	@mkdir -p $(dir $@)

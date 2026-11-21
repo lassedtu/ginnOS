@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /**
  * @file signal.h
  * @brief signals: kill, sigaction, masks.
@@ -8,7 +10,6 @@
  * match src/kernel/signal/signal.h exactly.
  */
 
-typedef int pid_t;
 typedef unsigned int sigset_t;
 typedef int sig_atomic_t;
 
