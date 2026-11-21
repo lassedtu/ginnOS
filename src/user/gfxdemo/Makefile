@@ -1,4 +1,4 @@
 PROG := gfxdemo
 SRCS := gfxdemo.c
-LIBS := image gfx
+LIBS := bragi image gfx
 include ../program.mk
