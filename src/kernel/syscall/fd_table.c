@@ -1,142 +1,59 @@
 #include "fd_table.h"
+
+#include "kernel/errno.h"
 #include "kernel/process/process.h"
-#include "common/memory.h"
 
-// system-wide pipe buffer pool
-static pipe_buf_t pipe_pool[PIPE_MAX];
-
-void fd_table_init(void)
+int fd_install(process_t *proc, file_t *file, uint32_t fd_flags, int min_fd)
 {
-    // initialize pipe pool
-    for (int i = 0; i < PIPE_MAX; i++)
+    for (int fd = min_fd < 0 ? 0 : min_fd; fd < FD_MAX; fd++)
     {
-        pipe_pool[i].ref_count = 0;
-        pipe_pool[i].read_refs = 0;
-        pipe_pool[i].write_refs = 0;
-    }
-}
-
-int fd_alloc(vfs_file_t *file)
-{
-    process_t *proc = process_current();
-    if (!proc)
-    {
-        return -1;
-    }
-
-    /* start searching at fd 3 (0/1/2 are reserved) */
-    for (int i = 3; i < FD_MAX; i++)
-    {
-        if (proc->fds[i].type == FD_TYPE_NONE)
+        if (!proc->fds[fd].file)
         {
-            proc->fds[i].type = FD_TYPE_FILE;
-            proc->fds[i].file = *file;
-            return i;
+            proc->fds[fd].file = file;
+            proc->fds[fd].flags = fd_flags;
+            return fd;
         }
     }
-
-    return -1;
+    return -EMFILE;
 }
 
 fd_entry_t *fd_get(int fd)
 {
     process_t *proc = process_current();
-    if (!proc)
+    if (!proc || fd < 0 || fd >= FD_MAX || !proc->fds[fd].file)
     {
         return NULL;
     }
-
-    if (fd < 0 || fd >= FD_MAX)
-    {
-        return NULL;
-    }
-
-    if (proc->fds[fd].type == FD_TYPE_NONE)
-    {
-        return NULL;
-    }
-
     return &proc->fds[fd];
 }
 
-int fd_free(int fd)
+int fd_close(int fd)
 {
-    process_t *proc = process_current();
-    if (!proc)
+    fd_entry_t *entry = fd_get(fd);
+    if (!entry)
     {
-        return -1;
+        return -EBADF;
     }
-
-    if (fd < 0 || fd >= FD_MAX)
-    {
-        return -1;
-    }
-
-    if (proc->fds[fd].type == FD_TYPE_NONE)
-    {
-        return -1;
-    }
-
-    if (proc->fds[fd].type == FD_TYPE_FILE)
-    {
-        vfs_close(&proc->fds[fd].file);
-    }
-    else if (proc->fds[fd].type == FD_TYPE_PIPE)
-    {
-        pipe_buf_t *buf = proc->fds[fd].pipe.buf;
-        pipe_dir_t dir = proc->fds[fd].pipe.dir;
-
-        if (dir == PIPE_READ)
-        {
-            buf->read_refs--;
-            // last reader gone: wake blocked writers so they see EPIPE
-            // instead of waiting forever for space that will never be read.
-            if (buf->read_refs <= 0)
-                wait_queue_wake_all(&buf->writers);
-        }
-        else
-        {
-            buf->write_refs--;
-            // last writer gone: wake blocked readers so they observe EOF.
-            if (buf->write_refs <= 0)
-                wait_queue_wake_all(&buf->readers);
-        }
-
-        buf->ref_count--;
-        if (buf->ref_count <= 0)
-            pipe_release(buf);
-    }
-
-    proc->fds[fd].type = FD_TYPE_NONE;
+    fd_close_entry(entry);
     return 0;
 }
 
-pipe_buf_t *pipe_alloc(void)
+void fd_close_entry(fd_entry_t *entry)
 {
-    for (int i = 0; i < PIPE_MAX; i++)
-    {
-        if (pipe_pool[i].ref_count == 0)
-        {
-            pipe_pool[i].read_pos = 0;
-            pipe_pool[i].write_pos = 0;
-            pipe_pool[i].count = 0;
-            pipe_pool[i].read_refs = 1;
-            pipe_pool[i].write_refs = 1;
-            pipe_pool[i].ref_count = 2; // read end + write end
-            wait_queue_init(&pipe_pool[i].readers);
-            wait_queue_init(&pipe_pool[i].writers);
-            return &pipe_pool[i];
-        }
-    }
-    return NULL;
+    // free the slot first: the release may sleep, and the slot must not
+    // look open meanwhile
+    file_t *file = entry->file;
+    entry->file = NULL;
+    entry->flags = 0;
+    file_unref(file);
 }
 
-void pipe_release(pipe_buf_t *buf)
+void fd_copy_entry(fd_entry_t *dst, const fd_entry_t *src)
 {
-    buf->ref_count = 0;
-    buf->read_refs = 0;
-    buf->write_refs = 0;
-    buf->count = 0;
-    buf->read_pos = 0;
-    buf->write_pos = 0;
+    dst->file = src->file;
+    dst->flags = src->flags;
+    if (dst->file)
+    {
+        file_ref(dst->file);
+    }
 }

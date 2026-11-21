@@ -15,47 +15,17 @@ void stdio_putchar(char c)
     }
 }
 
-enum
+// length modifiers: which integer type the conversion reads
+typedef enum
 {
-    PRINTF_STATE_NORMAL = 0,   // normal state, not parsing a format specifier
-    PRINTF_STATE_LENGTH,       // parsing length modifier (h, hh, l, ll)
-    PRINTF_STATE_LENGTH_SHORT, // parsing length modifier (h)
-    PRINTF_STATE_LENGTH_LONG,  // parsing length modifier (l)
-    PRINTF_STATE_SPEC,         // parsing format specifier (d, u, x, s, c, etc.)
-};
+    LENGTH_INT,       // (none), hh, h: int (char and short promote to int)
+    LENGTH_LONG,      // l
+    LENGTH_LONG_LONG, // ll
+    LENGTH_SIZE,      // z: size_t / ssize_t
+} printf_length_t;
 
-enum
-{
-    PRINTF_LENGTH_DEFAULT = 0, // default length (int or pointer)
-    PRINTF_LENGTH_SHORT_SHORT, // short short length (char)
-    PRINTF_LENGTH_SHORT,       // short length (short)
-    PRINTF_LENGTH_LONG,        // long length (long)
-    PRINTF_LENGTH_LONG_LONG,   // long long length (long long)
-};
-
-/**
- * context structure for printf state machine.
- */
-typedef struct
-{
-    int state;  // current state of the printf parser (one of PRINTF_STATE_*)
-    int length; // current length modifier (one of PRINTF_LENGTH_*)
-    int radix;  // current numeric base for number formatting (e.g., 10 for decimal, 16 for hexadecimal)
-    bool sign;  // flag indicating whether the number is signed (true for signed, false for unsigned)
-} printf_context_t;
-
-static const char g_HexChars[] = "0123456789abcdef"; // hexadecimal characters for number formatting
-
-/**
- * reset the printf context to its default state.
- */
-static void printf_context_reset(printf_context_t *ctx)
-{
-    ctx->state = PRINTF_STATE_NORMAL;
-    ctx->length = PRINTF_LENGTH_DEFAULT;
-    ctx->radix = 10;
-    ctx->sign = false;
-}
+static const char lower_digits[] = "0123456789abcdef";
+static const char upper_digits[] = "0123456789ABCDEF";
 
 /**
  * compute the quotient and remainder of a 64-bit unsigned integer divided by a 32-bit unsigned integer.
@@ -83,15 +53,15 @@ static void div64_32(uint64_t dividend, uint32_t divisor, uint64_t *quotientOut,
 }
 
 /**
- * write a number through the given output backend.
- */
-static int *printf_number(StdioPutCharFn out, int *argp, int length, bool sign, int radix);
-
-/**
  * write a null-terminated string through the given output backend.
  */
 static void puts_to(StdioPutCharFn out, const char *str)
 {
+    if (!str)
+    {
+        str = "(null)";
+    }
+
     while (*str)
     {
         out(*str);
@@ -100,161 +70,177 @@ static void puts_to(StdioPutCharFn out, const char *str)
 }
 
 /**
- * handle a format specifier in printf and write the corresponding output.
+ * write an unsigned number in a radix (8, 10 or 16).
  */
-static int *printf_handle_spec(StdioPutCharFn out, int *argp, printf_context_t *ctx, char spec)
+static void put_unsigned(StdioPutCharFn out, uint64_t number, uint32_t radix, bool upper)
 {
-    switch (spec)
+    const char *digits = upper ? upper_digits : lower_digits;
+    char buffer[24]; // 2^64 needs 22 octal digits
+    int pos = 0;
+
+    do
     {
-    case 'c':
-        out((char)*argp);
-        argp++;
-        break;
+        uint32_t rem;
+        div64_32(number, radix, &number, &rem);
+        buffer[pos++] = digits[rem];
+    } while (number > 0);
 
-    case 's':
-        if (ctx->length == PRINTF_LENGTH_LONG || ctx->length == PRINTF_LENGTH_LONG_LONG)
-        {
-            puts_to(out, *(const char **)argp);
-            argp += 2;
-        }
-        else
-        {
-            puts_to(out, *(const char **)argp);
-            argp++;
-        }
-        break;
-
-    case '%':
-        out('%');
-        break;
-
-    case 'd':
-    case 'i':
-        ctx->radix = 10;
-        ctx->sign = true;
-        argp = printf_number(out, argp, ctx->length, ctx->sign, ctx->radix);
-        break;
-
-    case 'u':
-        ctx->radix = 10;
-        ctx->sign = false;
-        argp = printf_number(out, argp, ctx->length, ctx->sign, ctx->radix);
-        break;
-
-    case 'X':
-    case 'x':
-    case 'p':
-        ctx->radix = 16;
-        ctx->sign = false;
-        argp = printf_number(out, argp, ctx->length, ctx->sign, ctx->radix);
-        break;
-
-    case 'o':
-        ctx->radix = 8;
-        ctx->sign = false;
-        argp = printf_number(out, argp, ctx->length, ctx->sign, ctx->radix);
-        break;
-
-    default:
-        break;
+    while (--pos >= 0)
+    {
+        out(buffer[pos]);
     }
-
-    printf_context_reset(ctx);
-    return argp;
 }
 
 /**
- * core format engine: walks fmt and the arg list, emitting each character
- * through out. printf, stdio_printf_to, and klog all share this so the
- * formatter lives in exactly one place.
+ * read a signed integer argument of the given length, widened to 64 bits.
  */
-void stdio_format_args(StdioPutCharFn out, const char *fmt, int *argp)
+static int64_t arg_signed(va_list *args, printf_length_t length)
 {
-    printf_context_t ctx;
+    switch (length)
+    {
+    case LENGTH_LONG:
+        return va_arg(*args, long);
+    case LENGTH_LONG_LONG:
+        return va_arg(*args, long long);
+    case LENGTH_SIZE:
+        return va_arg(*args, ssize_t);
+    default:
+        return va_arg(*args, int);
+    }
+}
 
-    printf_context_reset(&ctx);
+/**
+ * read an unsigned integer argument of the given length, widened to 64 bits.
+ */
+static uint64_t arg_unsigned(va_list *args, printf_length_t length)
+{
+    switch (length)
+    {
+    case LENGTH_LONG:
+        return va_arg(*args, unsigned long);
+    case LENGTH_LONG_LONG:
+        return va_arg(*args, unsigned long long);
+    case LENGTH_SIZE:
+        return va_arg(*args, size_t);
+    default:
+        return va_arg(*args, unsigned int);
+    }
+}
+
+void stdio_format_args(StdioPutCharFn out, const char *fmt, va_list args)
+{
+    // va_list may be an array type (x86_64): work on a copy we can address
+    va_list ap;
+    va_copy(ap, args);
 
     while (*fmt)
     {
-        char ch = *fmt;
-        bool advance = true;
-
-        switch (ctx.state)
+        if (*fmt != '%')
         {
-        case PRINTF_STATE_NORMAL:
-            if (ch == '%')
-            {
-                ctx.state = PRINTF_STATE_LENGTH;
-            }
-            else
-            {
-                out(ch);
-            }
-            break;
-
-        case PRINTF_STATE_LENGTH:
-            if (ch == 'h')
-            {
-                ctx.length = PRINTF_LENGTH_SHORT;
-                ctx.state = PRINTF_STATE_LENGTH_SHORT;
-            }
-            else if (ch == 'l')
-            {
-                ctx.length = PRINTF_LENGTH_LONG;
-                ctx.state = PRINTF_STATE_LENGTH_LONG;
-            }
-            else
-            {
-                ctx.state = PRINTF_STATE_SPEC;
-                advance = false;
-            }
-            break;
-
-        case PRINTF_STATE_LENGTH_SHORT:
-            if (ch == 'h')
-            {
-                ctx.length = PRINTF_LENGTH_SHORT_SHORT;
-                ctx.state = PRINTF_STATE_SPEC;
-            }
-            else
-            {
-                ctx.state = PRINTF_STATE_SPEC;
-                advance = false;
-            }
-            break;
-
-        case PRINTF_STATE_LENGTH_LONG:
-            if (ch == 'l')
-            {
-                ctx.length = PRINTF_LENGTH_LONG_LONG;
-                ctx.state = PRINTF_STATE_SPEC;
-            }
-            else
-            {
-                ctx.state = PRINTF_STATE_SPEC;
-                advance = false;
-            }
-            break;
-
-        case PRINTF_STATE_SPEC:
-            argp = printf_handle_spec(out, argp, &ctx, ch);
-            break;
+            out(*fmt++);
+            continue;
         }
+        fmt++;
 
-        if (advance)
+        // length modifier
+        printf_length_t length = LENGTH_INT;
+        if (*fmt == 'h')
         {
             fmt++;
+            if (*fmt == 'h')
+            {
+                fmt++;
+            }
+        }
+        else if (*fmt == 'l')
+        {
+            fmt++;
+            length = LENGTH_LONG;
+            if (*fmt == 'l')
+            {
+                fmt++;
+                length = LENGTH_LONG_LONG;
+            }
+        }
+        else if (*fmt == 'z')
+        {
+            fmt++;
+            length = LENGTH_SIZE;
+        }
+
+        char spec = *fmt;
+        if (spec == '\0')
+        {
+            break; // a lone '%' at the end of the format
+        }
+        fmt++;
+
+        switch (spec)
+        {
+        case 'd':
+        case 'i':
+        {
+            int64_t n = arg_signed(&ap, length);
+            uint64_t magnitude = (uint64_t)n;
+            if (n < 0)
+            {
+                out('-');
+                magnitude = 0 - magnitude;
+            }
+            put_unsigned(out, magnitude, 10, false);
+            break;
+        }
+
+        case 'u':
+            put_unsigned(out, arg_unsigned(&ap, length), 10, false);
+            break;
+
+        case 'x':
+            put_unsigned(out, arg_unsigned(&ap, length), 16, false);
+            break;
+
+        case 'X':
+            put_unsigned(out, arg_unsigned(&ap, length), 16, true);
+            break;
+
+        case 'o':
+            put_unsigned(out, arg_unsigned(&ap, length), 8, false);
+            break;
+
+        case 'p':
+            puts_to(out, "0x");
+            put_unsigned(out, (uintptr_t)va_arg(ap, void *), 16, false);
+            break;
+
+        case 'c':
+            out((char)va_arg(ap, int));
+            break;
+
+        case 's':
+            puts_to(out, va_arg(ap, const char *));
+            break;
+
+        case '%':
+            out('%');
+            break;
+
+        default:
+            // unknown conversion: print it as written
+            out('%');
+            out(spec);
+            break;
         }
     }
+
+    va_end(ap);
 }
 
 void printf(const char *fmt, ...)
 {
-    // argp points at the first variadic argument (just past fmt on the stack).
-    int *argp = (int *)&fmt;
-    argp++;
-
-    stdio_format_args(stdio_putchar, fmt, argp);
+    va_list args;
+    va_start(args, fmt);
+    stdio_format_args(stdio_putchar, fmt, args);
+    va_end(args);
 }
 
 void stdio_printf_to(StdioPutCharFn out, const char *fmt, ...)
@@ -264,92 +250,10 @@ void stdio_printf_to(StdioPutCharFn out, const char *fmt, ...)
         return;
     }
 
-    int *argp = (int *)&fmt;
-    argp++;
-
-    stdio_format_args(out, fmt, argp);
-}
-
-static int *printf_number(StdioPutCharFn out, int *argp, int length, bool sign, int radix)
-{
-    char buffer[32];
-    unsigned long long number = 0;
-    int number_sign = 1;
-    int pos = 0;
-
-    switch (length)
-    {
-    case PRINTF_LENGTH_SHORT_SHORT:
-    case PRINTF_LENGTH_SHORT:
-    case PRINTF_LENGTH_DEFAULT:
-        if (sign)
-        {
-            int n = *argp;
-            if (n < 0)
-            {
-                n = -n;
-                number_sign = -1;
-            }
-            number = (unsigned long long)n;
-        }
-        else
-        {
-            number = *(unsigned int *)argp;
-        }
-        argp++;
-        break;
-
-    case PRINTF_LENGTH_LONG:
-        if (sign)
-        {
-            long int n = *(long int *)argp;
-            if (n < 0)
-            {
-                n = -n;
-                number_sign = -1;
-            }
-            number = (unsigned long long)n;
-        }
-        else
-        {
-            number = *(unsigned long int *)argp;
-        }
-        argp += 2;
-        break;
-
-    case PRINTF_LENGTH_LONG_LONG:
-        if (sign)
-        {
-            long long int n = *(long long int *)argp;
-            if (n < 0)
-            {
-                n = -n;
-                number_sign = -1;
-            }
-            number = (unsigned long long)n;
-        }
-        else
-        {
-            number = *(unsigned long long int *)argp;
-        }
-        argp += 4;
-        break;
-    }
-
-    do
-    {
-        uint32_t rem;
-        div64_32(number, (uint32_t)radix, &number, &rem);
-        buffer[pos++] = g_HexChars[rem];
-    } while (number > 0);
-
-    if (sign && number_sign < 0)
-        buffer[pos++] = '-';
-
-    while (--pos >= 0)
-        out(buffer[pos]);
-
-    return argp;
+    va_list args;
+    va_start(args, fmt);
+    stdio_format_args(out, fmt, args);
+    va_end(args);
 }
 
 void puts(const char *str)

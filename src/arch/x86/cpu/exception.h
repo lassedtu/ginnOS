@@ -13,3 +13,17 @@ void exception_initialize(void);
  * @param regs pointer to the registers structure containing the CPU state at the time of the exception.
  */
 void exception_handler(struct registers *regs);
+
+/**
+ * print the general-purpose and segment registers of a trapped context.
+ * @param regs the saved register state.
+ */
+void exception_dump_regs(const struct registers *regs);
+
+/**
+ * panic for a trapped context: prints the faulting pc and, for faults in
+ * kernel mode, a backtrace from the trapped frame.
+ * @param message description of the fault.
+ * @param regs the saved register state.
+ */
+void exception_panic(const char *message, const struct registers *regs) __attribute__((noreturn));

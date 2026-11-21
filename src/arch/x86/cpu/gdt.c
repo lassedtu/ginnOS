@@ -56,9 +56,12 @@ struct tss_entry
 extern void gdt_flush(uint32_t);
 extern void tss_flush(void);
 
-static struct gdt_entry gdt[6];
+static struct gdt_entry gdt[7];
 static struct gdt_ptr gp;
 static struct tss_entry tss;
+
+// the double-fault task's TSS (GDT index 6)
+static struct tss_entry double_fault_tss;
 
 static void gdt_set_entry(int index, uint32_t base, uint32_t limit, uint8_t access, uint8_t granularity)
 {
@@ -75,7 +78,7 @@ static void gdt_set_entry(int index, uint32_t base, uint32_t limit, uint8_t acce
 
 static void tss_install(int index)
 {
-    uint32_t base = (uint32_t)&tss;
+    uint32_t base = (uint32_t)(uintptr_t)&tss;
     uint32_t limit = sizeof(tss) - 1;
 
     memset(&tss, 0, sizeof(tss));
@@ -91,7 +94,7 @@ static void tss_install(int index)
 void gdt_initialize(void)
 {
     gp.limit = sizeof(gdt) - 1;
-    gp.base = (uint32_t)&gdt;
+    gp.base = (uint32_t)(uintptr_t)&gdt;
 
     /* index 0: null descriptor */
     gdt_set_entry(0, 0, 0, 0, 0);
@@ -111,11 +114,43 @@ void gdt_initialize(void)
     /* index 5: TSS */
     tss_install(5);
 
-    gdt_flush((uint32_t)&gp);
+    gdt_flush((uint32_t)(uintptr_t)&gp);
     tss_flush();
 }
 
-void tss_set_kernel_stack(uint32_t esp0)
+void tss_set_kernel_stack(uintptr_t esp0)
 {
-    tss.esp0 = esp0;
+    tss.esp0 = (uint32_t)esp0;
+}
+
+void tss_install_double_fault(void (*entry)(void), uintptr_t stack_top)
+{
+    memset(&double_fault_tss, 0, sizeof(double_fault_tss));
+
+    double_fault_tss.eip = (uint32_t)(uintptr_t)entry;
+    double_fault_tss.esp = (uint32_t)stack_top;
+    double_fault_tss.ebp = 0; // ends the backtrace frame chain
+    double_fault_tss.eflags = 0x2; // reserved bit 1 set, interrupts off
+    double_fault_tss.cs = GDT_KERNEL_CODE;
+    double_fault_tss.ss = GDT_KERNEL_DATA;
+    double_fault_tss.ds = GDT_KERNEL_DATA;
+    double_fault_tss.es = GDT_KERNEL_DATA;
+    double_fault_tss.fs = GDT_KERNEL_DATA;
+    double_fault_tss.gs = GDT_KERNEL_DATA;
+    double_fault_tss.iomap_base = sizeof(double_fault_tss);
+
+    // available 32-bit TSS, DPL 0. the GDT limit already covers index 6.
+    gdt_set_entry(6, (uint32_t)(uintptr_t)&double_fault_tss, sizeof(double_fault_tss) - 1, 0x89, 0x00);
+}
+
+void tss_set_double_fault_cr3(uint32_t cr3)
+{
+    double_fault_tss.cr3 = cr3;
+}
+
+void tss_interrupted_state(uint32_t *eip, uint32_t *esp, uint32_t *ebp)
+{
+    *eip = tss.eip;
+    *esp = tss.esp;
+    *ebp = tss.ebp;
 }

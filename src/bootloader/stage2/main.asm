@@ -30,8 +30,8 @@ BITS 16
 %define BOOT_INFO_FB_BLUE_SHIFT         675
 
 ; trailing arch-neutral fields the BIOS boot path zeroes by default. covers
-; framebuffer_addr..cmdline plus the pixel-format block and 2 pad bytes:
-; 4+4+4+4 (addr,width,height,cmdline) + 4 (pitch) + 1+1 (bpp,type)
+; framebuffer_addr..cmdline_addr plus the pixel-format block and 2 pad bytes:
+; 4+4+4+4 (addr,width,height,cmdline_addr) + 4 (pitch) + 1+1 (bpp,type)
 ; + 6 (channel size/shift) + 2 (pad) = 28 bytes.
 %define BOOT_INFO_TRAILER_SIZE          28
 %define BOOT_INFO_TOTAL_SIZE            (BOOT_INFO_MEMORY_MAP_REGIONS + MEMORY_MAP_MAX_REGIONS * MEMORY_REGION_SIZE + BOOT_INFO_TRAILER_SIZE)

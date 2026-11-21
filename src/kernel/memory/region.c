@@ -6,7 +6,7 @@
 static region_entry_t region_table[REGION_TABLE_MAX];
 static uint32_t region_table_count = 0;
 
-void region_reserve(uint32_t start, uint32_t end, const char *label)
+void region_reserve(phys_addr_t start, phys_addr_t end, const char *label)
 {
     if (start >= end)
     {
@@ -24,7 +24,7 @@ void region_reserve(uint32_t start, uint32_t end, const char *label)
     region_table_count++;
 }
 
-bool region_is_reserved(uint32_t address)
+bool region_is_reserved(phys_addr_t address)
 {
     uint32_t i;
 
@@ -39,7 +39,7 @@ bool region_is_reserved(uint32_t address)
     return false;
 }
 
-bool region_overlaps(uint32_t start, uint32_t end)
+bool region_overlaps(phys_addr_t start, phys_addr_t end)
 {
     uint32_t i;
 
@@ -67,7 +67,7 @@ void region_print_all(void)
 
     for (i = 0; i < region_table_count; i++)
     {
-        printf("  [%u] 0x%x - 0x%x (%u bytes) %s\r\n",
+        printf("  [%u] 0x%lx - 0x%lx (%lu bytes) %s\r\n",
                i,
                region_table[i].start,
                region_table[i].end,

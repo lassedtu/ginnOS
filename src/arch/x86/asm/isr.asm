@@ -58,6 +58,10 @@ isr_common:
     call isr_handler
     add esp, 4          ; clean up the argument
 
+; the return half of isr_common. a forked child starts here, with ESP at a
+; copy of its parent's saved registers (arch_setup_fork_stack).
+global isr_exit
+isr_exit:
     pop eax             ; restore the original data segment selector
     mov ds, ax
     mov es, ax

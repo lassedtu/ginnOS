@@ -15,10 +15,19 @@
 #define HEAP_MIN_BLOCK_DATA 16
 
 /**
- * number of pages to add when the heap needs to grow.
- * 4 pages = 16 KiB per expansion.
+ * minimum number of pages to add when the heap needs to grow.
+ * 16 pages = 64 KiB per expansion, so the segment table fills slowly.
  */
-#define HEAP_EXPAND_PAGES 4
+#define HEAP_EXPAND_PAGES 16
+
+/**
+ * maximum number of separate physical regions (segments) the heap can span.
+ * the heap grows in place when the pages after its newest segment are free,
+ * otherwise it takes a new contiguous run of pages from anywhere in RAM.
+ * that works because all RAM is identity-mapped; a later virtual-memory heap
+ * (kernel plan K3) removes the limit.
+ */
+#define HEAP_MAX_SEGMENTS 64
 
 #ifdef HEAP_DEBUG
 // redzone canary value placed before and after each allocation.
@@ -38,7 +47,7 @@
  */
 typedef struct heap_block
 {
-    uint32_t size;            // size of the data area in bytes (excludes header)
+    size_t size;              // size of the data area in bytes (excludes header)
     bool free;                // true if this block is available for allocation
     struct heap_block *next;  // next block in the linked list (NULL if last)
 } heap_block_t;
@@ -50,8 +59,8 @@ typedef struct
 {
     uint32_t total_allocs;   // total number of kmalloc/kcalloc/krealloc calls that succeeded
     uint32_t total_frees;    // total number of kfree calls (excluding NULL)
-    uint32_t current_usage;  // bytes currently allocated (data only, excludes headers)
-    uint32_t peak_usage;     // highest current_usage value ever reached
+    size_t current_usage;    // bytes currently allocated (data only, excludes headers)
+    size_t peak_usage;       // highest current_usage value ever reached
 } heap_stats_t;
 
 /**
@@ -67,7 +76,7 @@ void heap_init(void);
  * @param size number of bytes to allocate.
  * @return pointer to the allocated memory, or NULL on failure.
  */
-void *kmalloc(uint32_t size);
+void *kmalloc(size_t size);
 
 /**
  * allocate zeroed memory for an array.
@@ -75,7 +84,7 @@ void *kmalloc(uint32_t size);
  * @param size size of each element in bytes.
  * @return pointer to zeroed memory, or NULL on failure.
  */
-void *kcalloc(uint32_t count, uint32_t size);
+void *kcalloc(size_t count, size_t size);
 
 /**
  * resize a previously allocated block.
@@ -85,7 +94,7 @@ void *kcalloc(uint32_t count, uint32_t size);
  * @param new_size new size in bytes. if 0, equivalent to kfree(ptr).
  * @return pointer to the resized memory, or NULL on failure (original unchanged).
  */
-void *krealloc(void *ptr, uint32_t new_size);
+void *krealloc(void *ptr, size_t new_size);
 
 /**
  * free a previously allocated block.
@@ -95,24 +104,19 @@ void *krealloc(void *ptr, uint32_t new_size);
 void kfree(void *ptr);
 
 /**
- * return the start address of the heap region.
+ * return the total heap size in bytes, summed over all segments.
  */
-uint32_t heap_start_address(void);
+size_t heap_total_size(void);
 
 /**
- * return the current end address of the heap region (exclusive).
+ * return the number of physical segments the heap currently spans.
  */
-uint32_t heap_end_address(void);
-
-/**
- * return the total heap size in bytes.
- */
-uint32_t heap_total_size(void);
+uint32_t heap_segment_count(void);
 
 /**
  * return the number of free bytes available in the heap.
  */
-uint32_t heap_free_size(void);
+size_t heap_free_size(void);
 
 /**
  * return the total number of blocks (free + used) in the heap.
@@ -123,3 +127,12 @@ uint32_t heap_block_count(void);
  * return a snapshot of the heap allocation statistics.
  */
 heap_stats_t heap_get_stats(void);
+
+/**
+ * walk the block list and check its invariants: every block lies entirely
+ * inside one segment, blocks inside a segment are back to back and cover it
+ * exactly, and no two adjacent blocks are both free (they would have been
+ * merged). intended for tests and debugging.
+ * @return true if the heap is consistent.
+ */
+bool heap_check(void);

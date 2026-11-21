@@ -8,8 +8,10 @@
 #include "execute.h"
 #include "redir.h"
 #include "env.h"
+#include "jobs.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -73,7 +75,7 @@ static int resolve_path(const char *cmd, char *out_path, int out_size)
         out_path[len + cmd_len] = '\0';
 
         // try to open to check existence
-        int fd = open(out_path, 0);
+        int fd = open(out_path, O_RDONLY);
         if (fd >= 0)
         {
             close(fd);
@@ -93,7 +95,7 @@ static int apply_redirections(redir_t *redir_in, redir_t *redir_out)
 {
     if (redir_in->type == REDIR_IN)
     {
-        int fd = open(redir_in->filename, 0);
+        int fd = open(redir_in->filename, O_RDONLY);
         if (fd < 0)
         {
             printf("skl: cannot open '%s' for input\n", redir_in->filename);
@@ -105,26 +107,15 @@ static int apply_redirections(redir_t *redir_in, redir_t *redir_out)
 
     if (redir_out->type == REDIR_OUT || redir_out->type == REDIR_APPEND)
     {
-        // create the file if it doesn't exist
-        create(redir_out->filename);
+        // > truncates, >> appends; both create the file if needed
+        int flags = O_WRONLY | O_CREAT;
+        flags |= redir_out->type == REDIR_OUT ? O_TRUNC : O_APPEND;
 
-        int fd = open(redir_out->filename, 0);
+        int fd = open(redir_out->filename, flags, 0644);
         if (fd < 0)
         {
             printf("skl: cannot open '%s' for output\n", redir_out->filename);
             return -1;
-        }
-
-        // for > (truncate mode), truncate the file first
-        if (redir_out->type == REDIR_OUT)
-        {
-            ftruncate(fd);
-        }
-
-        // for >> (append mode), seek to end of file
-        if (redir_out->type == REDIR_APPEND)
-        {
-            lseek(fd, 0, SEEK_END);
         }
 
         dup2(fd, 1); // redirect stdout
@@ -135,164 +126,207 @@ static int apply_redirections(redir_t *redir_in, redir_t *redir_out)
 }
 
 /**
- * restore stdin/stdout to console after redirection.
- * uses dup2 from stderr (fd 2, never redirected) to reset 0 and 1.
- * Note: for pipe fds, this will decrement ref counts, but the child
- * already has its own reference so the pipe stays alive.
+ * build the environment for a program from the shell's variables, as
+ * "KEY=VALUE" strings. runs in a forked child, so nothing is freed.
+ * @return a NULL-terminated array, or NULL if memory ran out.
  */
-static void restore_stdio(void)
+static char **build_environment(void)
 {
-    dup2(2, 0);
-    dup2(2, 1);
+    int count = env_count();
+    char **envp = malloc((count + 1) * sizeof(char *));
+    if (!envp)
+        return NULL;
+
+    char key[ENV_KEY_MAX];
+    char value[ENV_VAL_MAX];
+    int used = 0;
+    for (int i = 0; i < count; i++)
+    {
+        if (env_get_by_index(i, key, value) != 0)
+            break;
+
+        int key_len = strlen(key);
+        int value_len = strlen(value);
+        char *entry = malloc(key_len + value_len + 2);
+        if (!entry)
+            return NULL;
+        memcpy(entry, key, key_len);
+        entry[key_len] = '=';
+        memcpy(entry + key_len + 1, value, value_len + 1);
+        envp[used++] = entry;
+    }
+    envp[used] = NULL;
+    return envp;
 }
 
 /**
- * execute a single stage (one command with optional redirections).
- * used for both simple commands and individual pipeline stages.
+ * in a forked child: run a stage's command. never returns.
+ * @param stage the stage (its argv and redirections).
+ * @param path the resolved program path.
  */
-static pid_t exec_stage(pipeline_stage_t *stage)
+static void exec_in_child(pipeline_stage_t *stage, const char *path)
 {
-    if (stage->tokens.count == 0)
-        return -1;
+    if (apply_redirections(&stage->redir_in, &stage->redir_out) < 0)
+        _exit(1);
 
-    const char *cmd = stage->tokens.tokens[0];
-    char path[PATH_BUF_SIZE];
-
-    if (!resolve_path(cmd, path, sizeof(path)))
-    {
-        printf("%s: command not found\n", cmd);
-        return -1;
-    }
-
-    // build argv
-    const char *argv[TOKEN_MAX + 1];
+    char *argv[TOKEN_MAX + 1];
     for (int i = 0; i < stage->tokens.count; i++)
         argv[i] = stage->tokens.tokens[i];
     argv[stage->tokens.count] = NULL;
 
-    pid_t child = exec(path, argv);
-    return child;
+    execve(path, argv, build_environment());
+    fprintf(stderr, "skl: %s: cannot execute\n", path);
+    _exit(126);
 }
 
 /**
- * execute a pipeline (one or more stages connected by pipes).
+ * resolve a stage's command to a program path, printing an error if there
+ * is none.
+ * @return 1 if found, 0 if not (or the stage is empty).
  */
-void execute_pipeline(pipeline_t *pipeline)
+static int resolve_stage(pipeline_stage_t *stage, char *path)
+{
+    if (stage->tokens.count == 0)
+        return 0;
+
+    const char *cmd = stage->tokens.tokens[0];
+    if (!resolve_path(cmd, path, PATH_BUF_SIZE))
+    {
+        printf("%s: command not found\n", cmd);
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * the command line of a pipeline, for the job table.
+ */
+static void describe(token_list_t *tokens, int background, char *out, int size)
+{
+    int used = 0;
+    out[0] = '\0';
+    for (int i = 0; i < tokens->count && used < size - 1; i++)
+    {
+        used += snprintf(out + used, size - used, i ? " %s" : "%s", tokens->tokens[i]);
+    }
+    if (background && used < size - 3)
+        strcpy(out + used, " &");
+}
+
+/**
+ * execute a pipeline (one or more stages connected by pipes) as a job:
+ * every stage runs in a forked child, in one process group per pipeline.
+ * the child sets up its own stdin/stdout and execs the program; the
+ * shell's own fds never change. a foreground job gets the terminal until
+ * it ends or stops; a background job runs on.
+ */
+static void execute_pipeline(pipeline_t *pipeline, int background, const char *command)
 {
     if (pipeline->count == 0)
         return;
 
-    // single command. simple case with redirection
-    if (pipeline->count == 1)
-    {
-        pipeline_stage_t *stage = &pipeline->stages[0];
-
-        int has_redir = (stage->redir_in.type != REDIR_NONE ||
-                         stage->redir_out.type != REDIR_NONE);
-
-        if (has_redir)
-        {
-            if (apply_redirections(&stage->redir_in, &stage->redir_out) < 0)
-            {
-                shell_last_exit_code = 1;
-                restore_stdio();
-                return;
-            }
-        }
-
-        pid_t child = exec_stage(stage);
-
-        if (has_redir)
-            restore_stdio();
-
-        if (child < 0)
-        {
-            shell_last_exit_code = 127;
-            return;
-        }
-
-        shell_last_exit_code = waitpid(child);
-        return;
-    }
-
-    // multi-stage pipeline
     pid_t children[PIPELINE_MAX];
-    int pipe_fds[PIPELINE_MAX - 1][2]; // pipe_fds[i] connects stage i → stage i+1
+    int child_count = 0;
+    pid_t pgid = 0;
+    int pipe_fds[PIPELINE_MAX - 1][2]; // pipe_fds[i] connects stage i to stage i+1
+    int pipe_count = pipeline->count - 1;
 
-    // create all pipes
-    for (int i = 0; i < pipeline->count - 1; i++)
+    for (int i = 0; i < pipe_count; i++)
     {
         if (pipe(pipe_fds[i]) < 0)
         {
             printf("skl: failed to create pipe\n");
+            for (int j = 0; j < i; j++)
+            {
+                close(pipe_fds[j][0]);
+                close(pipe_fds[j][1]);
+            }
             shell_last_exit_code = 1;
             return;
         }
     }
 
-    // spawn each stage
     for (int i = 0; i < pipeline->count; i++)
     {
         pipeline_stage_t *stage = &pipeline->stages[i];
+        char path[PATH_BUF_SIZE];
 
-        // set up redirections for this stage
-        // stdin: from previous pipe's read end (except first stage)
-        if (i > 0)
-            dup2(pipe_fds[i - 1][0], 0);
+        if (!resolve_stage(stage, path))
+            continue;
 
-        // stdout: to next pipe's write end (except last stage)
-        if (i < pipeline->count - 1)
-            dup2(pipe_fds[i][1], 1);
-
-        // apply explicit redirections (override pipe if specified)
-        if (stage->redir_in.type != REDIR_NONE)
+        pid_t child = fork();
+        if (child < 0)
         {
-            int fd = open(stage->redir_in.filename, 0);
-            if (fd >= 0)
-            {
-                dup2(fd, 0);
-                close(fd);
-            }
-        }
-        if (stage->redir_out.type != REDIR_NONE)
-        {
-            create(stage->redir_out.filename);
-            int fd = open(stage->redir_out.filename, 0);
-            if (fd >= 0)
-            {
-                dup2(fd, 1);
-                close(fd);
-            }
+            printf("skl: fork failed\n");
+            continue;
         }
 
-        children[i] = exec_stage(stage);
+        if (child == 0)
+        {
+            jobs_child_setup(pgid, !background);
 
-        // restore stdin/stdout for the shell (so next iteration works)
-        restore_stdio();
+            // stdin from the previous stage, stdout to the next one; an
+            // explicit redirection in the stage overrides these
+            if (i > 0)
+                dup2(pipe_fds[i - 1][0], 0);
+            if (i < pipe_count)
+                dup2(pipe_fds[i][1], 1);
+
+            // the child keeps only its stdio ends, so a reader sees EOF
+            // once every writer has exited
+            for (int j = 0; j < pipe_count; j++)
+            {
+                close(pipe_fds[j][0]);
+                close(pipe_fds[j][1]);
+            }
+
+            exec_in_child(stage, path);
+        }
+
+        if (pgid == 0)
+            pgid = child;
+        setpgid(child, pgid);
+        children[child_count++] = child;
     }
 
-    // close all pipe fds in the shell (children already have what they need)
-    for (int i = 0; i < pipeline->count - 1; i++)
+    for (int i = 0; i < pipe_count; i++)
     {
         close(pipe_fds[i][0]);
         close(pipe_fds[i][1]);
     }
 
-    // wait for all children
-    int last_exit = 0;
-    for (int i = 0; i < pipeline->count; i++)
+    if (child_count == 0)
     {
-        if (children[i] >= 0)
-            last_exit = waitpid(children[i]);
+        shell_last_exit_code = 127;
+        return;
     }
 
-    shell_last_exit_code = last_exit;
+    job_t *job = jobs_add(pgid, children, child_count, command, !background);
+    if (!job)
+    {
+        printf("skl: too many jobs\n");
+        return;
+    }
+    if (!background)
+        jobs_wait_foreground(job);
 }
 
-// keep the old execute() as a convenience wrapper for main.c
 void execute(token_list_t *tokens)
 {
+    // a trailing & runs the pipeline in the background
+    int background = 0;
+    if (tokens->count > 0 && strcmp(tokens->tokens[tokens->count - 1], "&") == 0)
+    {
+        background = 1;
+        tokens->count--;
+    }
+    if (tokens->count == 0)
+        return;
+
+    char command[JOB_COMMAND_MAX];
+    describe(tokens, background, command, sizeof(command));
+
     pipeline_t pipeline;
     pipeline_parse(tokens, &pipeline);
-    execute_pipeline(&pipeline);
+    execute_pipeline(&pipeline, background, command);
 }

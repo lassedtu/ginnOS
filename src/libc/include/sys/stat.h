@@ -1,0 +1,100 @@
+#pragma once
+
+/**
+ * @file sys/stat.h
+ * @brief file metadata: stat() and fstat().
+ *
+ * struct stat and the S_ bits are ABI and must match the kernel side in
+ * src/kernel/vfs/stat.h exactly.
+ */
+
+typedef unsigned int mode_t;
+typedef unsigned int ino_t;
+typedef unsigned int dev_t;
+typedef unsigned int nlink_t;
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
+typedef int off_t;
+typedef unsigned int time_t;
+typedef unsigned int blksize_t;
+typedef unsigned int blkcnt_t;
+
+// file type bits of st_mode
+#define S_IFMT   0170000
+#define S_IFIFO  0010000
+#define S_IFCHR  0020000
+#define S_IFDIR  0040000
+#define S_IFBLK  0060000
+#define S_IFREG  0100000
+#define S_IFLNK  0120000
+
+#define S_ISFIFO(m) (((m) & S_IFMT) == S_IFIFO)
+#define S_ISCHR(m)  (((m) & S_IFMT) == S_IFCHR)
+#define S_ISDIR(m)  (((m) & S_IFMT) == S_IFDIR)
+#define S_ISBLK(m)  (((m) & S_IFMT) == S_IFBLK)
+#define S_ISREG(m)  (((m) & S_IFMT) == S_IFREG)
+#define S_ISLNK(m)  (((m) & S_IFMT) == S_IFLNK)
+
+// permission bits
+#define S_IRWXU 0700
+#define S_IRUSR 0400
+#define S_IWUSR 0200
+#define S_IXUSR 0100
+#define S_IRWXG 0070
+#define S_IRGRP 0040
+#define S_IWGRP 0020
+#define S_IXGRP 0010
+#define S_IRWXO 0007
+#define S_IROTH 0004
+#define S_IWOTH 0002
+#define S_IXOTH 0001
+
+struct stat
+{
+    dev_t st_dev;
+    ino_t st_ino;
+    mode_t st_mode;
+    nlink_t st_nlink;
+    uid_t st_uid;
+    gid_t st_gid;
+    dev_t st_rdev;
+    off_t st_size;
+    blksize_t st_blksize;
+    blkcnt_t st_blocks;
+    time_t st_atime;
+    time_t st_mtime;
+    time_t st_ctime;
+};
+
+/**
+ * get a file's metadata by path.
+ * @return 0, or -1 (errno set).
+ */
+int stat(const char *path, struct stat *st);
+
+/**
+ * get an open file's metadata (pipes and the console too).
+ * @return 0, or -1 (errno set).
+ */
+int fstat(int fd, struct stat *st);
+
+#define S_ISUID 04000 // run with the owner's user id
+#define S_ISGID 02000 // run with the file's group id
+#define S_ISVTX 01000 // sticky directory
+
+/**
+ * create a directory with a mode (taken through the umask).
+ */
+int mkdir(const char *path, mode_t mode);
+
+/**
+ * change the permission bits of a file (owner or root only).
+ */
+int chmod(const char *path, mode_t mode);
+int fchmod(int fd, mode_t mode);
+
+/**
+ * set the mask taken off the mode of new files.
+ * @return the old mask.
+ */
+mode_t umask(mode_t mask);

@@ -10,5 +10,6 @@ pkgs.mkShell {
     pkgs.nasm
     pkgs.qemu
     pkgs.python3
+    pkgs.gdb
   ];
 }

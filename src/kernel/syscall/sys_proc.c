@@ -4,24 +4,27 @@
 #include "kernel/vfs/vfs.h"
 #include "kernel/usermode/usermode.h"
 #include "kernel/process/process.h"
+#include "kernel/process/wait_status.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/pmm_layout.h"
 #include "kernel/memory/mman.h"
+#include "kernel/memory/mm.h"
 #include "kernel/memory/memory_layout.h"
 #include "fd_table.h"
 #include "arch/arch.h"
 #include "common/memory.h"
 #include "common/string.h"
+#include "kernel/memory/heap.h"
 
 /**
  * SYS_exit: terminate the current process.
  * arg: EBX = exit code.
- * returns control to the kernel (exec_program caller).
+ * never returns: the process becomes a zombie until its parent reaps it.
  */
-int32_t sys_exit(struct registers *regs)
+syscall_ret_t sys_exit(struct registers *regs)
 {
-    int32_t code = (int32_t)regs->ebx;
+    int32_t code = (int32_t)syscall_arg(regs, 0);
 
     usermode_exit(code);
 
@@ -29,41 +32,155 @@ int32_t sys_exit(struct registers *regs)
     return 0;
 }
 
+// most entries a copied argv or envp may have, and most bytes (NULs
+// included) all copied strings of one exec may take together
+#define EXEC_VECTOR_MAX USER_ARGC_MAX
+#define EXEC_STRING_BYTES 4096
+
 /**
- * SYS_exec: load and execute an ELF binary.
- * args: EBX = path string pointer, ECX = argv array pointer (may be NULL).
- * does not return on success. returns negative errno on failure.
+ * where the strings of one exec are copied to.
  */
-int32_t sys_exec(struct registers *regs)
+typedef struct
 {
-    const char *path = (const char *)regs->ebx;
-    const char **argv = (const char **)regs->ecx;
+    char *bytes;   // EXEC_STRING_BYTES of kernel memory
+    uint32_t used; // bytes taken so far
+} exec_strings_t;
 
-    if (!is_user_str(path))
-        return -18; /* EFAULT */
+/**
+ * copy a user string vector (argv or envp) and its strings into kernel
+ * memory.
+ * @param user_vector the user's NULL-terminated array (may itself be NULL).
+ * @param kvector receives EXEC_VECTOR_MAX + 1 pointers into strings.
+ * @param strings the string buffer, shared by the vectors of one exec.
+ * @return the entry count, or a negative errno (EFAULT for bad memory,
+ *         EINVAL when over EXEC_VECTOR_MAX or EXEC_STRING_BYTES).
+ */
+static int32_t copy_vector_from_user(const char **user_vector, const char **kvector,
+                                     exec_strings_t *strings)
+{
+    uint32_t count = 0;
 
-    /* resolve relative paths against the process's cwd */
+    while (user_vector)
+    {
+        const char *entry;
+        if (kerr_failed(copy_from_user(&entry, &user_vector[count], sizeof(entry))))
+            return -EFAULT;
+        if (!entry)
+            break;
+        if (count == EXEC_VECTOR_MAX)
+            return -EINVAL; // too many entries
+
+        char *dst = strings->bytes + strings->used;
+        int32_t len = strncpy_from_user(dst, entry, EXEC_STRING_BYTES - strings->used);
+        if (len == KERR_FAULT)
+            return -EFAULT;
+        if (len < 0)
+            return -EINVAL; // strings too long
+
+        kvector[count++] = dst;
+        strings->used += (uint32_t)len + 1;
+    }
+
+    kvector[count] = NULL;
+    return (int32_t)count;
+}
+
+/**
+ * SYS_exec: start an ELF binary as a child process (spawn, not execve).
+ * args: EBX = path string pointer, ECX = argv array pointer (may be NULL).
+ * returns the child's PID, or negative errno on failure.
+ */
+syscall_ret_t sys_exec(struct registers *regs)
+{
+    const char *path = (const char *)syscall_arg(regs, 0);
+    const char **argv = (const char **)syscall_arg(regs, 1);
+
+    /* copy the path in from user memory, resolved against the cwd */
     char resolved[PATH_MAX];
-    process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
+    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
+    if (path_err < 0)
+        return path_err;
 
-    if (!vfs_resolve_path(cwd, path, resolved, sizeof(resolved)))
+    /* argv and its strings are user memory too: copy them in first */
+    exec_strings_t strings = {kmalloc(EXEC_STRING_BYTES), 0};
+    if (!strings.bytes)
+        return -ENOMEM;
+
+    const char *kargv[EXEC_VECTOR_MAX + 1];
+    int32_t ret = copy_vector_from_user(argv, kargv, &strings);
+    if (ret >= 0)
     {
-        return -3; /* EINVAL */
+        ret = (int32_t)exec_program(resolved, kargv);
+        if (ret < 0)
+            ret = -ENOENT;
     }
 
-    int32_t ret = (int32_t)exec_program(resolved, argv);
-    if (ret < 0)
-    {
-        return -5; /* ENOENT */
-    }
+    kfree(strings.bytes);
     return ret;
+}
+
+/**
+ * SYS_execve: replace the calling process's program.
+ * args: EBX = path, ECX = argv, EDX = envp (both NULL-terminated, may be
+ *       NULL).
+ * on success it does not return: the syscall frame now enters the new
+ * program (exec_replace). returns a negative errno on failure, with the
+ * old program still running.
+ */
+syscall_ret_t sys_execve(struct registers *regs)
+{
+    const char *path = (const char *)syscall_arg(regs, 0);
+    const char **argv = (const char **)syscall_arg(regs, 1);
+    const char **envp = (const char **)syscall_arg(regs, 2);
+
+    char resolved[PATH_MAX];
+    int32_t ret = resolve_user_path(path, resolved, sizeof(resolved));
+    if (ret < 0)
+        return ret;
+
+    // the vectors are big for a kernel stack: keep them on the heap
+    exec_strings_t strings = {kmalloc(EXEC_STRING_BYTES), 0};
+    const char **kargv = kmalloc(2 * (EXEC_VECTOR_MAX + 1) * sizeof(char *));
+    if (!strings.bytes || !kargv)
+    {
+        kfree(strings.bytes);
+        kfree(kargv);
+        return -ENOMEM;
+    }
+    const char **kenvp = kargv + EXEC_VECTOR_MAX + 1;
+
+    ret = copy_vector_from_user(argv, kargv, &strings);
+    if (ret >= 0)
+        ret = copy_vector_from_user(envp, kenvp, &strings);
+    if (ret >= 0)
+        ret = kerr_to_errno(exec_replace(regs, resolved, kargv, kenvp));
+
+    kfree(strings.bytes);
+    kfree(kargv);
+
+    // on success the frame's EAX was cleared for the new program; keep it
+    return ret == 0 ? (syscall_ret_t)regs->eax : ret;
+}
+
+/**
+ * SYS_fork: create a child process that is a copy of the caller.
+ * no arguments. returns the child's PID in the parent, 0 in the child (set
+ * up by process_fork), or -ENOMEM.
+ */
+syscall_ret_t sys_fork(struct registers *regs)
+{
+    process_t *child = process_fork(regs);
+    if (!child)
+    {
+        return -ENOMEM;
+    }
+    return (syscall_ret_t)child->pid;
 }
 
 /**
  * SYS_getpid: return the current process ID.
  */
-int32_t sys_getpid(struct registers *regs)
+syscall_ret_t sys_getpid(struct registers *regs)
 {
     (void)regs;
     process_t *proc = process_current();
@@ -75,198 +192,402 @@ int32_t sys_getpid(struct registers *regs)
 }
 
 /**
- * SYS_waitpid: wait for a child process to exit.
- * args: EBX = child PID to wait for.
- * returns the child's exit code on success, or negative errno on error.
- *
- * if the child is already a zombie, reaps it immediately.
- * otherwise, blocks the calling process until the child exits.
+ * SYS_waitpid: wait for a child process to exit and reap it.
+ * args: EBX = pid (a child's pid, or -1 for any child),
+ *       ECX = int *status (may be NULL; receives the wait status,
+ *             wait_status.h), EDX = options (WNOHANG).
+ * with WUNTRACED a stopped child and with WCONTINUED a continued one is
+ * reported (once) too, without reaping it.
+ * returns the child's pid; 0 with WNOHANG when no matching child has
+ * anything to report yet; -ECHILD if there is no matching child; -EINVAL for a
+ * pid of 0 or below -1 (process groups come later); -EFAULT for a bad
+ * status pointer (the child is reaped anyway).
  */
-int32_t sys_waitpid(struct registers *regs)
+syscall_ret_t sys_waitpid(struct registers *regs)
 {
-    uint32_t child_pid = regs->ebx;
+    int32_t pid = (int32_t)syscall_arg(regs, 0);
+    int32_t *user_status = (int32_t *)syscall_arg(regs, 1);
+    uint32_t options = (uint32_t)syscall_arg(regs, 2);
     process_t *parent = process_current();
 
-    if (!parent)
+    if (!parent || pid == 0 || pid < -1 || (options & ~(uint32_t)(WNOHANG | WUNTRACED | WCONTINUED)))
     {
-        return -3; /* EINVAL */
+        return -EINVAL;
     }
 
-    process_t *child = process_get(child_pid);
-    if (!child)
+    // masked from the search until blocked: a child that exits in between
+    // would wake an empty queue, and this process would sleep forever
+    uint32_t flags = arch_irq_save();
+    process_t *child;
+    for (;;)
     {
-        return -19; /* ESRCH */
+        bool has_child;
+        child = process_find_waitable_child(parent, pid, options, &has_child);
+        if (child)
+        {
+            break;
+        }
+        if (!has_child)
+        {
+            arch_irq_restore(flags);
+            return -ECHILD;
+        }
+        if (options & WNOHANG)
+        {
+            arch_irq_restore(flags);
+            return 0;
+        }
+        if (signal_pending(parent))
+        {
+            arch_irq_restore(flags);
+            return -ERESTARTSYS;
+        }
+        wait_queue_block_interruptible(&parent->child_exit);
     }
 
-    /* verify this is actually our child */
-    if (child->parent_pid != parent->pid)
-    {
-        return -20; /* ECHILD */
-    }
-
-    /* if child is already a zombie, reap immediately */
+    // a stop or a continue is reported once; an exit reaps the child
+    int32_t status;
+    uint32_t child_pid = child->pid;
     if (child->state == PROC_STATE_ZOMBIE)
     {
-        int32_t code = child->exit_code;
+        status = child->exit_status;
+        // the child's CPU time, and its children's, counts as the parent's
+        parent->cutime += child->utime + child->cutime;
+        parent->cstime += child->stime + child->cstime;
+        arch_irq_restore(flags);
         process_destroy(child);
-        return code;
     }
-
-    /* child is still running block the parent */
-    parent->state = PROC_STATE_BLOCKED;
-    parent->wait_for_pid = child_pid;
-    scheduler_remove(parent);
-    scheduler_yield();
-
-    /* we've been woken up child should now be a zombie */
-    child = process_get(child_pid);
-    if (child && child->state == PROC_STATE_ZOMBIE)
+    else
     {
-        int32_t code = child->exit_code;
-        process_destroy(child);
-        return code;
+        status = child->wait_report == WAIT_REPORT_STOPPED ? WAIT_STATUS_STOPPED(child->stop_signal)
+                                                           : WAIT_STATUS_CONTINUED;
+        child->wait_report = WAIT_REPORT_NONE;
+        arch_irq_restore(flags);
     }
 
-    /* child disappeared somehow */
-    return -19; /* ESRCH */
+    if (user_status && kerr_failed(copy_to_user(user_status, &status, sizeof(status))))
+    {
+        return -EFAULT;
+    }
+    return (syscall_ret_t)child_pid;
+}
+
+/**
+ * SYS_getppid: return the parent's pid, or 0 if the parent has exited.
+ */
+syscall_ret_t sys_getppid(struct registers *regs)
+{
+    (void)regs;
+    process_t *proc = process_current();
+    return proc ? (syscall_ret_t)proc->parent_pid : 0;
+}
+
+/**
+ * SYS_sched_yield: let other ready processes run first. returns 0.
+ */
+syscall_ret_t sys_sched_yield(struct registers *regs)
+{
+    (void)regs;
+    scheduler_yield();
+    return 0;
 }
 
 /**
  * SYS_sbrk: grow the user program break.
  * args: EBX = increment (signed; only positive values supported for now).
- * returns the previous break address on success, or (uint32_t)-1 on failure.
+ * returns the previous break address on success, or -1 on failure.
  *
  * if increment is 0, simply returns the current break without changing it.
- * for positive increments, allocates physical pages and maps them as
- * user-accessible for any new pages between the old and new break.
+ * for positive increments, grows the heap area; the new pages are backed
+ * with zeroed frames on first touch.
  */
-int32_t sys_sbrk(struct registers *regs)
+syscall_ret_t sys_sbrk(struct registers *regs)
 {
-    int32_t increment = (int32_t)regs->ebx;
-    uint32_t old_brk = usermode_get_brk();
+    intptr_t increment = (intptr_t)syscall_arg(regs, 0);
+    uintptr_t old_brk = usermode_get_brk();
 
     /* increment of 0: just return current break */
     if (increment == 0)
     {
-        return (int32_t)old_brk;
+        return (syscall_ret_t)old_brk;
     }
 
     /* negative increment not supported yet */
     if (increment < 0)
     {
-        return (int32_t)(uint32_t)-1;
+        return -1;
     }
 
-    uint32_t new_brk = old_brk + (uint32_t)increment;
+    uintptr_t new_brk = old_brk + (uintptr_t)increment;
 
     /* overflow check */
     if (new_brk < old_brk)
     {
-        return (int32_t)(uint32_t)-1;
+        return -1;
     }
 
-    /* allocate and map any new pages between old_brk and new_brk */
-    uint32_t page = old_brk & ~(PAGE_SIZE - 1);
-    uint32_t end = (new_brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     process_t *proc = process_current();
-    uint32_t pd = proc ? proc->page_directory : arch_kernel_address_space();
-
-    for (; page < end; page += PAGE_SIZE)
+    if (!proc)
     {
-        void *frame = pmm_alloc_page();
-        if (!frame)
+        return -1;
+    }
+
+    /* pages up to PAGE_ALIGN_UP(old_brk) are already mapped (the page
+     * holding old_brk may contain earlier allocations): map only the pages
+     * from there to PAGE_ALIGN_UP(new_brk). */
+    uintptr_t page = PAGE_ALIGN_UP(old_brk);
+    uintptr_t end = PAGE_ALIGN_UP(new_brk);
+
+    if (end > page)
+    {
+        /* the heap area grows to cover the new pages; it may not run into
+         * another area (the stack, an mmap) */
+        if (!vma_range_free(&proc->vmas, page, end))
         {
-            return (int32_t)(uint32_t)-1;
+            return -1;
         }
 
-        memset(frame, 0, PAGE_SIZE);
-        arch_map_page(pd, page, (uint32_t)frame, MMU_USER_RW);
+        vma_t *heap = vma_find_kind(&proc->vmas, VMA_HEAP);
+        if (heap && heap->end == page)
+        {
+            heap->end = end;
+        }
+        else if (kerr_failed(vma_insert(&proc->vmas, page, end, PROT_READ | PROT_WRITE,
+                                        VMA_HEAP)))
+        {
+            return -1;
+        }
     }
 
+    /* the new pages are backed on first touch (demand paging) */
     usermode_set_brk(new_brk);
-    return (int32_t)old_brk;
+    return (syscall_ret_t)old_brk;
 }
 
 /**
  * SYS_mmap: map memory into the calling process.
- * args: EBX = length, ECX = prot, EDX = flags, ESI = fd, EDI = offset.
- * (POSIX's advisory addr is dropped; the kernel always picks the range.)
+ * args: EBX = addr, ECX = length, EDX = prot | flags << 8, ESI = fd,
+ *       EDI = offset (prot and flags share a register: all five are taken).
  *
  * two forms:
- *   - anonymous (MAP_ANONYMOUS, fd < 0): allocate zeroed physical pages.
+ *   - anonymous (MAP_ANONYMOUS, fd < 0): zero-filled pages, backed on first
+ *     touch.
  *   - device-backed (fd is an open device node): route through vfs_mmap so the
  *     device maps its own memory (e.g. the framebuffer's LFB).
- * ranges come from the per-process mmap bump region. eager, no demand paging.
- * returns the mapped address, or MAP_FAILED ((uint32_t)-1) on error.
+ * with MAP_FIXED the mapping is placed exactly at addr (page-aligned, user
+ * space), replacing whatever was mapped there. otherwise addr is a hint,
+ * used if that range of the mmap region is free; failing that, the lowest
+ * free range of the region is used.
+ * returns the mapped address, or MAP_FAILED (-1) on error.
  */
-int32_t sys_mmap(struct registers *regs)
+syscall_ret_t sys_mmap(struct registers *regs)
 {
-    uint32_t length = regs->ebx;
-    int prot = (int)regs->ecx;
-    int flags = (int)regs->edx;
-    int32_t fd = (int32_t)regs->esi;
-    uint32_t offset = regs->edi;
+    uintptr_t hint = syscall_arg(regs, 0);
+    size_t length = syscall_arg(regs, 1);
+    uint32_t prot_flags = (uint32_t)syscall_arg(regs, 2);
+    int prot = (int)(prot_flags & 0xFFu);
+    int flags = (int)(prot_flags >> 8);
+    int32_t fd = (int32_t)syscall_arg(regs, 3);
+    uint32_t offset = (uint32_t)syscall_arg(regs, 4);
 
     process_t *proc = process_current();
-    if (!proc || length == 0)
+    size_t len_pages = PAGE_ALIGN_UP(length);
+    if (!proc || length == 0 || len_pages == 0)
     {
-        return (int32_t)(uint32_t)MAP_FAILED;
+        return (syscall_ret_t)MAP_FAILED; // empty, or so large it wrapped
     }
 
     // offset must be page-aligned (file/device mappings start on a page).
-    if (offset & (PAGE_SIZE - 1))
+    if (!PAGE_IS_ALIGNED(offset))
     {
-        return (int32_t)(uint32_t)MAP_FAILED;
+        return (syscall_ret_t)MAP_FAILED;
     }
 
-    // reserve a page-aligned range from the process's mmap bump cursor.
-    uint32_t len_pages = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    uint32_t virt = proc->mmap_next;
-    if (virt < USER_MMAP_BASE || len_pages > USER_MMAP_END - virt)
+    // a device mapping needs an open device node behind fd
+    fd_entry_t *entry = NULL;
+    if (!(flags & MAP_ANONYMOUS))
     {
-        return (int32_t)(uint32_t)MAP_FAILED; /* region exhausted */
-    }
-
-    if (flags & MAP_ANONYMOUS)
-    {
-        // anonymous: back each page with a fresh zeroed frame, user-accessible.
-        uint32_t mapped = 0;
-        for (; mapped < len_pages; mapped += PAGE_SIZE)
+        entry = (fd >= 0) ? fd_get(fd) : NULL;
+        if (!entry)
         {
-            void *frame = pmm_alloc_page();
-            if (!frame)
-            {
-                return (int32_t)(uint32_t)MAP_FAILED;
-            }
-            memset(frame, 0, PAGE_SIZE);
-
-            uint32_t page_flags = (prot & PROT_WRITE)
-                                      ? MMU_USER_RW
-                                      : (MMU_FLAG_PRESENT | MMU_FLAG_USER);
-            arch_map_page(proc->page_directory, virt + mapped, (uint32_t)frame, page_flags);
+            return (syscall_ret_t)MAP_FAILED;
         }
+    }
+
+    // choose the range, then record it as an area before mapping anything
+    uintptr_t virt;
+    if (flags & MAP_FIXED)
+    {
+        if (!PAGE_IS_ALIGNED(hint) || hint < USER_SPACE_START ||
+            len_pages > USER_SPACE_END - hint)
+        {
+            return (syscall_ret_t)MAP_FAILED;
+        }
+        if (kerr_failed(mm_unmap(proc, hint, hint + len_pages)))
+        {
+            return (syscall_ret_t)MAP_FAILED;
+        }
+        virt = hint;
+    }
+    else if (hint != 0 && PAGE_IS_ALIGNED(hint) && hint >= USER_MMAP_BASE &&
+             len_pages <= USER_MMAP_END - hint &&
+             vma_range_free(&proc->vmas, hint, hint + len_pages))
+    {
+        virt = hint;
     }
     else
     {
-        // device-backed: the fd must be an open device node; dispatch to it.
-        if (fd < 0)
+        virt = vma_find_free(&proc->vmas, len_pages, USER_MMAP_BASE, USER_MMAP_END);
+        if (virt == 0)
         {
-            return (int32_t)(uint32_t)MAP_FAILED;
-        }
-
-        fd_entry_t *entry = fd_get(fd);
-        if (!entry || entry->type != FD_TYPE_FILE)
-        {
-            return (int32_t)(uint32_t)MAP_FAILED;
-        }
-
-        int32_t err = vfs_mmap(&entry->file, proc->page_directory, virt, len_pages, prot, offset);
-        if (err != 0)
-        {
-            return (int32_t)(uint32_t)MAP_FAILED;
+            return (syscall_ret_t)MAP_FAILED; /* region exhausted */
         }
     }
 
-    proc->mmap_next = virt + len_pages;
-    return (int32_t)virt;
+    uint32_t area_prot = (uint32_t)prot & (PROT_READ | PROT_WRITE | PROT_EXEC);
+    vma_kind_t kind = (flags & MAP_ANONYMOUS) ? VMA_ANON : VMA_DEVICE;
+    if (kerr_failed(vma_insert(&proc->vmas, virt, virt + len_pages, area_prot, kind)))
+    {
+        return (syscall_ret_t)MAP_FAILED; /* too many areas */
+    }
+
+    // anonymous memory needs nothing now: each page is backed with a zeroed
+    // frame the first time it is touched (demand paging). a device maps its
+    // own memory up front.
+    if (!(flags & MAP_ANONYMOUS))
+    {
+        int32_t err = file_mmap(entry->file, proc->page_directory, virt, len_pages, prot, offset);
+        if (err != 0)
+        {
+            vma_remove(&proc->vmas, virt, virt + len_pages);
+            return (syscall_ret_t)MAP_FAILED;
+        }
+    }
+
+    return (syscall_ret_t)virt;
+}
+
+/**
+ * SYS_munmap: remove mappings from the calling process.
+ * args: EBX = addr (page-aligned), ECX = length.
+ * every page of [addr, addr + length) that is mapped is removed; parts that
+ * are not mapped are skipped. returns 0, or a negative errno.
+ */
+syscall_ret_t sys_munmap(struct registers *regs)
+{
+    uintptr_t addr = syscall_arg(regs, 0);
+    size_t length = syscall_arg(regs, 1);
+    process_t *proc = process_current();
+
+    size_t len_pages = PAGE_ALIGN_UP(length);
+    if (!proc || length == 0 || len_pages == 0 || addr + len_pages < addr)
+    {
+        return -EINVAL;
+    }
+
+    return kerr_to_errno(mm_unmap(proc, addr, addr + len_pages));
+}
+
+/**
+ * SYS_mprotect: change the protection of mapped memory.
+ * args: EBX = addr (page-aligned), ECX = length, EDX = prot.
+ * returns 0, -ENOMEM if part of the range is not mapped, or another
+ * negative errno.
+ */
+syscall_ret_t sys_mprotect(struct registers *regs)
+{
+    uintptr_t addr = syscall_arg(regs, 0);
+    size_t length = syscall_arg(regs, 1);
+    uint32_t prot = (uint32_t)syscall_arg(regs, 2) & (PROT_READ | PROT_WRITE | PROT_EXEC);
+    process_t *proc = process_current();
+
+    size_t len_pages = PAGE_ALIGN_UP(length);
+    if (!proc || length == 0 || len_pages == 0 || addr + len_pages < addr)
+    {
+        return -EINVAL;
+    }
+
+    kerr_t err = mm_protect(proc, addr, addr + len_pages, prot);
+    if (err == KERR_NOENT)
+    {
+        return -ENOMEM; // POSIX's error for an unmapped range
+    }
+    return kerr_to_errno(err);
+}
+
+/**
+ * the process a pid names for setpgid and friends: 0 is the caller.
+ */
+static process_t *target_process(int32_t pid)
+{
+    if (pid < 0)
+        return NULL;
+    return pid == 0 ? process_current() : process_get((uint32_t)pid);
+}
+
+/**
+ * SYS_setpgid: move a process into a process group.
+ * args: EBX = pid (0: the caller; else the caller or one of its children),
+ *       ECX = pgid (0: the target's own pid, a new group).
+ * the group must be new or exist in the caller's session.
+ * returns 0, or -ESRCH, -EPERM, -EINVAL.
+ */
+syscall_ret_t sys_setpgid(struct registers *regs)
+{
+    int32_t pid = (int32_t)syscall_arg(regs, 0);
+    int32_t pgid = (int32_t)syscall_arg(regs, 1);
+    process_t *caller = process_current();
+
+    if (pgid < 0)
+        return -EINVAL;
+
+    process_t *target = target_process(pid);
+    if (!target || (target != caller && target->parent_pid != caller->pid) ||
+        target->state == PROC_STATE_ZOMBIE)
+        return -ESRCH;
+    if (target->sid != caller->sid || target->sid == target->pid)
+        return -EPERM; // another session, or a session leader
+
+    uint32_t group = pgid == 0 ? target->pid : (uint32_t)pgid;
+    if (group != target->pid && !process_group_exists(group, caller->sid))
+        return -EPERM;
+
+    target->pgid = group;
+    return 0;
+}
+
+/**
+ * SYS_getpgid: the process group of a process (pid 0: the caller).
+ */
+syscall_ret_t sys_getpgid(struct registers *regs)
+{
+    process_t *target = target_process((int32_t)syscall_arg(regs, 0));
+    return target ? (syscall_ret_t)target->pgid : -ESRCH;
+}
+
+/**
+ * SYS_setsid: start a new session, with the caller as the leader of it and
+ * of a new process group, and no controlling terminal.
+ * returns the new session id, or -EPERM if the caller leads a group.
+ */
+syscall_ret_t sys_setsid(struct registers *regs)
+{
+    (void)regs;
+    process_t *caller = process_current();
+
+    if (caller->pgid == caller->pid || process_group_exists(caller->pid, caller->sid))
+        return -EPERM;
+
+    caller->sid = caller->pid;
+    caller->pgid = caller->pid;
+    return (syscall_ret_t)caller->sid;
+}
+
+/**
+ * SYS_getsid: the session of a process (pid 0: the caller).
+ */
+syscall_ret_t sys_getsid(struct registers *regs)
+{
+    process_t *target = target_process((int32_t)syscall_arg(regs, 0));
+    return target ? (syscall_ret_t)target->sid : -ESRCH;
 }

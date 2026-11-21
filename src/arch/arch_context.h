@@ -12,6 +12,7 @@
 
 struct process;
 typedef struct process process_t;
+struct registers;
 
 /**
  * switch kernel execution from one process to another.
@@ -21,7 +22,7 @@ typedef struct process process_t;
  * @param old_sp where to store the outgoing process's kernel stack pointer.
  * @param new_sp the incoming process's saved kernel stack pointer.
  */
-void arch_context_switch(uint32_t *old_sp, uint32_t new_sp);
+void arch_context_switch(uintptr_t *old_sp, uintptr_t new_sp);
 
 /**
  * prepare a process's kernel stack so its first arch_context_switch() into it
@@ -31,3 +32,12 @@ void arch_context_switch(uint32_t *old_sp, uint32_t new_sp);
  * @param entry_fn the function the process should start running.
  */
 void arch_setup_initial_stack(process_t *proc, void (*entry_fn)(void));
+
+/**
+ * prepare a forked child's kernel stack so its first arch_context_switch()
+ * into it returns to user mode with the parent's registers, except that
+ * the syscall returns 0.
+ * @param child the new process (uses kernel_stack, sets kernel_esp).
+ * @param regs the parent's saved user registers (its fork syscall frame).
+ */
+void arch_setup_fork_stack(process_t *child, const struct registers *regs);

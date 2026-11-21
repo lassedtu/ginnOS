@@ -4,6 +4,7 @@
 #include "arch/x86/cpu/idt.h"
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/exception.h"
+#include "arch/x86/cpu/double_fault.h"
 #include "arch/x86/cpu/irq.h"
 #include "kernel/irq/irq.h"
 #include "drivers/pit/pit.h"
@@ -68,6 +69,9 @@ void hal_initialize(void)
     idt_initialize();
     isr_initialize();
     exception_initialize();
+    // vector 8 becomes a task gate with its own stack, so a kernel stack
+    // overflow reports a panic instead of triple faulting.
+    double_fault_initialize();
     irq_initialize();
     irq_manager_init();
     pit_initialize(PIT_FREQUENCY_HZ);

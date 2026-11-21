@@ -13,11 +13,13 @@
 #define PROT_NONE  0x0 // pages may not be accessed
 #define PROT_READ  0x1 // pages may be read
 #define PROT_WRITE 0x2 // pages may be written
+#define PROT_EXEC  0x4 // pages may be executed
 
 // mapping flags (flags argument).
 #define MAP_SHARED    0x01 // changes are shared (device/shared memory)
 #define MAP_PRIVATE   0x02 // changes are private to the process
 #define MAP_ANONYMOUS 0x04 // not backed by a file; zero-filled (fd ignored)
+#define MAP_FIXED     0x10 // place the mapping exactly at addr, replacing what is there
 
 // mmap failure return value (a userspace pointer sentinel).
 #define MAP_FAILED ((void *)-1)

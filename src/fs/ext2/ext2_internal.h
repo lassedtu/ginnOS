@@ -8,7 +8,7 @@
 
 #define EXT2_SECTOR_SIZE 512u
 #define EXT2_MIN(a, b) ((a) < (b) ? (a) : (b))
-#define OFFSETOF(type, member) ((uint32_t)&(((type *)0)->member))
+#define OFFSETOF(type, member) ((uint32_t)offsetof(type, member))
 
 // inline utilities
 static inline uint32_t ext2_align4(uint32_t value)

@@ -2,10 +2,12 @@
 
 /**
  * @file stdio.h
- * @brief minimal stdio for ginnOS libc.
+ * @brief buffered streams and formatted input/output.
  *
- * supports: putchar, puts, printf, fprintf, snprintf, vsnprintf.
- * format specifiers: %d, %i, %u, %x, %X, %s, %c, %%.
+ * a FILE buffers the bytes of one file descriptor. a stream on a terminal
+ * is written out at the end of every stdio call (so printf and write
+ * calls stay in order); other streams are written out when the buffer is
+ * full, by fflush, by fclose, and by exit (not by _exit).
  */
 
 #ifndef NULL
@@ -13,50 +15,93 @@
 #endif
 
 typedef unsigned int size_t;
+typedef int ssize_t;
+typedef int off_t;
 
-/* variadic argument support */
-typedef __builtin_va_list va_list;
-#define va_start(ap, last) __builtin_va_start(ap, last)
-#define va_arg(ap, type)   __builtin_va_arg(ap, type)
-#define va_end(ap)         __builtin_va_end(ap)
-#define va_copy(dst, src)  __builtin_va_copy(dst, src)
+#include <stdarg.h>
 
-/* standard file descriptors as "FILE *" for fprintf compatibility */
-typedef int FILE;
-#define stdin  ((FILE *)0)
-#define stdout ((FILE *)1)
-#define stderr ((FILE *)2)
+typedef struct stdio_file FILE;
 
+extern FILE *stdin;
+extern FILE *stdout;
+extern FILE *stderr;
+
+#define EOF (-1)
+#define BUFSIZ 1024
+
+// setvbuf modes
+#define _IOFBF 0 // full buffering
+#define _IOLBF 1 // line buffering
+#define _IONBF 2 // no buffering
+
+// fseek whence
+#ifndef SEEK_SET
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+#endif
+
+// opening and closing
+FILE *fopen(const char *path, const char *mode);
+FILE *fdopen(int fd, const char *mode);
+int fclose(FILE *stream);
+int fflush(FILE *stream); // NULL flushes every stream
+int setvbuf(FILE *stream, char *buf, int mode, size_t size);
+void setbuf(FILE *stream, char *buf);
+int fileno(FILE *stream);
+
+// bytes and lines
+size_t fread(void *ptr, size_t size, size_t count, FILE *stream);
+size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream);
+int fgetc(FILE *stream);
+int getc(FILE *stream);
+int getchar(void);
+int ungetc(int c, FILE *stream);
+char *fgets(char *buf, int size, FILE *stream);
+int fputc(int c, FILE *stream);
+int putc(int c, FILE *stream);
 int putchar(int c);
+int fputs(const char *s, FILE *stream);
 int puts(const char *s);
+
+// position and state
+int fseek(FILE *stream, long offset, int whence);
+long ftell(FILE *stream);
+void rewind(FILE *stream);
+int feof(FILE *stream);
+int ferror(FILE *stream);
+void clearerr(FILE *stream);
+
+/**
+ * formatted output. conversions: d i u o x X c s p n f F e E g G %;
+ * flags - + space # 0; a width and a precision (also as *); lengths hh h
+ * l ll z j t L.
+ */
 int printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
-
-/**
- * write formatted output to a file stream.
- * @param stream file stream (stdin/stdout/stderr).
- * @param fmt format string.
- * @return number of characters written.
- */
-int fprintf(FILE *stream, const char *fmt, ...)
-    __attribute__((format(printf, 2, 3)));
-
-/**
- * write formatted output to a buffer with a size limit.
- * @param buf destination buffer.
- * @param size buffer size (including space for null terminator).
- * @param fmt format string.
- * @return number of characters that would have been written (excluding null),
- *         regardless of size limit (like C99 snprintf).
- */
-int snprintf(char *buf, size_t size, const char *fmt, ...)
-    __attribute__((format(printf, 3, 4)));
-
-/**
- * write formatted output to a buffer with a size limit (va_list version).
- * @param buf destination buffer.
- * @param size buffer size (including space for null terminator).
- * @param fmt format string.
- * @param ap argument list.
- * @return number of characters that would have been written (excluding null).
- */
+int fprintf(FILE *stream, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+int dprintf(int fd, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+int sprintf(char *buf, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+int snprintf(char *buf, size_t size, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
+int vprintf(const char *fmt, va_list ap);
+int vfprintf(FILE *stream, const char *fmt, va_list ap);
+int vdprintf(int fd, const char *fmt, va_list ap);
+int vsprintf(char *buf, const char *fmt, va_list ap);
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap);
+
+/**
+ * formatted input from a string: %d %i %u %x %o %c %s %[...] %n and %%,
+ * with widths and the lengths hh h l ll z.
+ * @return the number of fields stored, or EOF at the end of the input.
+ */
+int sscanf(const char *str, const char *fmt, ...);
+
+/**
+ * rename a file or directory (on the same filesystem).
+ * @return 0, or -1 (errno set; EXDEV across filesystems).
+ */
+int rename(const char *old_path, const char *new_path);
+
+/**
+ * remove a file or an empty directory.
+ */
+int remove(const char *path);

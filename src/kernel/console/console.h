@@ -12,22 +12,37 @@
 void console_initialize(const boot_info_t *boot);
 
 /**
- * write a single character to the console.
+ * write a single character to the console. safe from any context,
+ * including interrupt handlers.
  * @param c the character to write
  */
 void console_putchar(char c);
 
 /**
- * write a null-terminated string to the console.
+ * write a null-terminated string to the console. safe from any context.
  * @param str the string to write
  */
 void console_write(const char *str);
 
 /**
- * read a line of input from the console.
- * this function will block until a line of input is available.
- * @param buffer pointer to a buffer to receive the input line.
- * @param size size of the buffer in bytes.
- * @return the number of characters read, or -1 if an error occurred.
+ * write a buffer to the console as one update: the whole buffer is drawn,
+ * then the caret is placed and the display flushed once. translates \n to
+ * \r\n. this is the write syscall's path to the terminal. process context
+ * only: it may sleep until another process's write has finished.
+ * @param buf bytes to write (need not be null-terminated).
+ * @param len number of bytes.
  */
-int console_readline(char *buffer, int size);
+void console_write_bytes(const char *buf, uint32_t len);
+
+/**
+ * stop locking the console: a panic is printing and the CPU will halt, so
+ * nothing else runs, and the panic may have hit while the lock was held.
+ */
+void console_panic_mode(void);
+
+/**
+ * the size of the console in character cells.
+ * @param rows receives the number of rows.
+ * @param cols receives the number of columns.
+ */
+void console_size(uint32_t *rows, uint32_t *cols);

@@ -13,6 +13,7 @@
 #include "line.h"
 #include "history.h"
 #include "env.h"
+#include "jobs.h"
 
 #define INPUT_MAX 256
 #define CWD_MAX 256
@@ -23,12 +24,23 @@ static char cwd_buf[CWD_MAX];
 // global shell state used by expand.c and execute.c
 int shell_last_exit_code = 0;
 
-void print_prompt(void)
+int format_prompt(char *buf, int size)
 {
     if (getcwd(cwd_buf, sizeof(cwd_buf)) < 0)
         strcpy(cwd_buf, "?");
 
-    printf("skl:%s $ ", cwd_buf);
+    int len = snprintf(buf, size, "skl:%s $ ", cwd_buf);
+    if (len >= size)
+        len = size - 1; // truncated
+    return len;
+}
+
+void print_prompt(void)
+{
+    char prompt[PROMPT_MAX];
+    int len = format_prompt(prompt, sizeof(prompt));
+    if (len > 0)
+        write(1, prompt, len);
 }
 
 static int prompt_len(void)
@@ -48,6 +60,7 @@ int main(void)
     env_init();
     line_init();
     history_init();
+    jobs_init();
 
     // set default environment
     env_set("PATH", "/bin");
@@ -55,6 +68,9 @@ int main(void)
 
     while (1)
     {
+        // say which background jobs ended or stopped since the last prompt
+        jobs_report();
+
         print_prompt();
         line_set_prompt_len(prompt_len());
 

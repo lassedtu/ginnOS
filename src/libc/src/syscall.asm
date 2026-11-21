@@ -37,3 +37,20 @@ _syscall:
     pop ebx
     pop ebp
     ret
+
+
+; void __sigreturn_restorer(void);
+;
+; where a signal handler returns to: the kernel puts this address under the
+; handler's argument as its return address (sa_restorer). it asks the
+; kernel to restore the registers saved before the handler ran, and never
+; returns.
+
+SYS_SIGRETURN equ 43            ; SYS_SIGRETURN in syscall.h
+
+global __sigreturn_restorer
+
+__sigreturn_restorer:
+    mov eax, SYS_SIGRETURN
+    int 0x80
+    jmp $                       ; not reached

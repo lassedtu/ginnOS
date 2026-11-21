@@ -29,7 +29,14 @@ today.
 - IDT, 8259 PIC, IRQ handling and a 256-vector ISR framework
 - Shared-IRQ registration layer (`irq_request`/`irq_free`, per-handler enable)
 - Kernel panic + assertion infrastructure, unified `kerr_t` error type
+- Symbolised backtraces on panics and CPU exceptions (frame-pointer walk +
+  a symbol table embedded at build time), on screen and over serial
 - E820 memory-map detection and boot-time region reservation
+- CMOS real-time clock for the wall-clock time; `clock_gettime`
+  (`CLOCK_REALTIME`, `CLOCK_MONOTONIC`, process CPU time), `nanosleep` and
+  `times` with per-process user and system time
+- The FPU and SSE registers of each process are saved on every process
+  switch and in signal frames
 - Serial (COM1 16550 UART) driver + leveled kernel logging (`klog`) for
   headless debugging
 
@@ -40,53 +47,125 @@ today.
   `kmalloc`/`kfree`/`krealloc` (in-place when possible)/`kcalloc`, allocation
   statistics, and an optional `HEAP_DEBUG` mode (redzone canaries, freed-memory
   poisoning)
-- Virtual memory: paging with per-process page directories, a page-fault
-  handler, and a map/unmap/translate API
-- `SYS_mmap` (anonymous + device-backed) with a per-process mmap region
+- Virtual memory: a higher-half kernel at `0xC0000000` with a direct map of
+  RAM, kernel page tables shared by every process, a separate user half per
+  process, `ioremap` for device memory, a page-fault handler, and a
+  map/unmap/translate API
+- 8 KiB kernel stacks with an unmapped guard page below each; a double-fault
+  task gate (its own TSS and stack) reports an overflow as a "kernel stack
+  overflow" panic with a backtrace instead of a silent triple-fault reset
+- User address space: the program at `0x400000` with read-only code, an
+  unmapped null page, a heap after the program, an mmap region at
+  `0x40000000`, and a stack below `0xC0000000` that grows on demand up to
+  16 MiB with a guard page under it
+- Each process keeps a table of its memory areas (VMAs). Pages are allocated
+  when they are first touched, and a bad access kills only the process
+  ("segmentation fault", killed by SIGSEGV) instead of the kernel
+- `mmap` (anonymous and device-backed, `MAP_FIXED`), `munmap` and `mprotect`
 
 ### Processes and multitasking
 
 - Process table with per-process page directory, kernel stack, fd table, cwd
-- ELF32 loader (`PT_LOAD` mapping) with `argc`/`argv` passing
+- `/bin/init` is PID 1: it runs the shell in its own session, starts a new
+  one when the shell exits, and reaps orphans (the kernel gives orphans to
+  init)
+- Users and groups: real, effective and saved ids, `setuid`/`setgid`,
+  set-uid and set-gid programs, a umask, and file permission checks on
+  open, create, remove, rename, chdir and exec (with sticky `/tmp`);
+  `/etc/passwd` and `/etc/group`
+- ELF32 loader (`PT_LOAD` mapping) with `argc`/`argv`/`envp` passing
+- `fork` with copy-on-write: parent and child share their pages read-only
+  (each frame has a reference count) until one of them writes
+- `execve` replaces the calling program and keeps its pid, cwd and fds; a
+  failed `execve` returns to the old program. The shell runs every command
+  and pipeline stage with `fork` + `execve`
 - Ring 3 execution via `iret`, TSS kernel-stack switching
 - Round-robin scheduler with an O(1) intrusive ready queue and an idle (hlt)
   task
-- Parent/child relationships, `waitpid` with zombie reaping
-- fd inheritance across `exec` (close-on-exec for pipe fds beyond stdio)
+- Parent/child relationships, `waitpid(pid, &status, options)` with `-1`
+  (any child), `WNOHANG`, `WUNTRACED`, `WCONTINUED` and POSIX status words,
+  `getppid`, `sched_yield`; a process frees its fds, argv and address space
+  when it exits, and orphans are reaped by the kernel
+- POSIX signals: `kill` (also to process groups), `sigaction` (`SA_RESTART`,
+  `SA_NODEFER`, `SA_RESETHAND`, `SA_NOCLDSTOP`), `sigprocmask`,
+  `sigpending`, `sigsuspend`, `alarm`; user handlers run on a frame on the
+  user stack and return through `sigreturn`; default actions terminate,
+  ignore, stop or continue; a sleeping syscall is interrupted (`EINTR`) or
+  restarted (`SA_RESTART`)
+- Faults in user code are signals, not kernel panics: `SIGSEGV`, `SIGFPE`
+  (divide by zero), `SIGILL`, `SIGBUS`, `SIGTRAP`; also `SIGPIPE`,
+  `SIGCHLD` and `SIGALRM`
+- Process groups and sessions (`setpgid`, `getpgid`, `setsid`, `getsid`)
 
 ### Concurrency
 
-- Spinlocks (`spin_lock`/`spin_lock_irqsave`) with nesting-safe
-  `arch_irq_save`/`arch_irq_restore`
-- Generic wait queues (block/wake-one/wake-all); pipes and blocking I/O use them
-  instead of busy-waiting
+- Syscalls are preemptible, so shared kernel state is locked: spinlocks
+  (`spin_lock_irqsave`) on the heap, PMM, process table, pipes, keyboard ring,
+  console, device registry and mount table; a sleeping `mutex_t` serialises
+  ext2 and whole console writes. The rules are written down at the top of
+  `src/kernel/sync/spinlock.h`
+- Generic wait queues (block/wake-one/wake-all), and
+  `wait_queue_block_locked()` to sleep on a condition without losing a wakeup;
+  pipes and keyboard reads sleep instead of busy-waiting
 
 ### Filesystem and I/O
 
 - VFS layer with a mount table (longest-prefix resolution) and a filesystem
   operations vtable (`fs_ops_t`) — the VFS never calls a filesystem directly
-- ext2 driver: read/write, direct + single/double/triple-indirect blocks, inode
-  and block allocation, directory operations (create, remove, read, write,
-  truncate, stat, rename), re-entrant per-volume scratch buffers
-- devfs mounted at `/dev`, enumerating the device registry (`fb0`, `tty0`,
-  `hda`, `hda1`, `pit`, `kbd`)
+- Open files are refcounted open-file descriptions: `dup`, `dup2`, `fork`
+  and spawn share one description, so they share the file offset and status
+  flags; `FD_CLOEXEC` descriptors close on `execve`
+- `open` flags: `O_RDONLY`/`O_WRONLY`/`O_RDWR` (checked on every read and
+  write), `O_CREAT`, `O_EXCL`, `O_TRUNC`, `O_APPEND`, `O_DIRECTORY`,
+  `O_CLOEXEC`, `O_NONBLOCK`
+- ext2 driver: reads and writes through direct and single/double-indirect
+  blocks (files up to 64 MiB with 1 KiB blocks; reads also triple-indirect);
+  inode and block allocation, directory operations (create, remove, read,
+  write, truncate, stat, rename); freed inodes and truncated blocks go back
+  to the volume (`e2fsck` finds no errors after the test programs run)
+- A write-through, LRU sector cache (512 KiB) under the root filesystem
+- devfs at `/dev`, enumerating the device registry (`fb0`, `tty0`, `hda`,
+  `hda1`, `pit`, `kbd`)
+- tmpfs at `/tmp`: files and directories in kernel memory
+- procfs at `/proc`: `meminfo` (memory, heap and cache use), `uptime`,
+  `<pid>/status` and `self`
+- `poll` and `select` over pipes, the console and files
 - Block-device abstraction (ATA PIO driver + MBR partition parsing)
-- Pipes (circular buffers) with blocking, EOF/EPIPE, reference-counted endpoints
-- `dup2` fd redirection
+- Pipes (16 KiB ring buffers on the kernel heap, no fixed limit) with
+  blocking, EOF/EPIPE, reference-counted endpoints, and atomic writes of up
+  to `PIPE_BUF` (4 KiB)
 
 ### System calls
 
-- 25 syscalls via `int 0x80` with proper `-errno` returns
-- Process/IO: `exit`, `write`, `read`, `open`, `close`, `stat`, `create`,
-  `mkdir`, `exec`, `getpid`, `waitpid`, `sbrk`, `getcwd`, `chdir`, `readdir`,
-  `unlink`, `rmdir`, `pipe`, `dup2`, `ftruncate`, `lseek`
-- Device/terminal/graphics: `ttyctl`, `ioctl` (general device control),
-  `mmap`, `pollkey`
+- 63 syscalls via `int 0x80` with `-errno` returns; the kernel and libc share
+  one errno table
+- User pointers are checked against the page tables (`copy_from_user`,
+  `copy_to_user`, `strncpy_from_user`): a bad pointer returns `-EFAULT`
+  instead of crashing the kernel
+- Processes: `exit`, `exec` (spawn), `fork`, `execve`, `getpid`, `getppid`,
+  `waitpid`, `sched_yield`, `sbrk`, `setpgid`, `getpgid`, `setsid`,
+  `getsid`
+- Users and time: `getuid`, `geteuid`, `getgid`, `getegid`, `setuid`,
+  `setgid`, `seteuid`, `setegid`, `umask`, `clock_gettime`, `nanosleep`,
+  `times`
+- Signals: `kill`, `sigaction`, `sigprocmask`, `sigreturn`, `sigpending`,
+  `sigsuspend`, `alarm`
+- Files: `open`, `close`, `read`, `write`, `pread`, `pwrite`, `lseek`,
+  `ftruncate`, `fsync`, `fcntl`, `dup2`, `pipe`, `poll`, `stat`, `fstat`,
+  `access`, `rename`, `unlink`, `mkdir`, `rmdir`, `getdents`, `getcwd`,
+  `chdir`, `chmod`, `fchmod`, `chown`
+- Device/terminal/graphics: `ioctl` (device control, termios and job
+  control on the console), `mmap`, `munmap`, `mprotect`, `pollkey`
 
 ### Terminal and graphics (Bifröst framebuffer)
 
 - Layered TTY: a device-independent VT/ANSI terminal state machine
   (`tty_backend_t`) decoupled from the output device
+- The console is a POSIX-style terminal: termios (`ICANON` line editing with
+  erase/kill/EOF, `ECHO`, `ISIG`, non-canonical input, and a ginnOS key-event
+  mode for full-screen programs), a foreground process group, Ctrl+C,
+  Ctrl+\ and Ctrl+Z sending `SIGINT`, `SIGQUIT` and `SIGTSTP`, `SIGTTIN` for
+  background reads, and `TIOCGWINSZ`
 - VGA text-mode backend (fallback console)
 - Linear VBE framebuffer: bootloader mode-set with full pixel-format reporting
   (channel size/shift masks), a driver with pixel primitives, and LFB mapping
@@ -101,15 +180,29 @@ today.
 
 ### C standard library (libc.a)
 
-- `<string.h>`: `strlen`, `strcpy`/`strncpy`, `strcat`, `strcmp`/`strncmp`,
-  `strchr`/`strrchr`, `strstr`, `strtok`, `memcpy`/`memmove`/`memset`/`memcmp`
-- `<stdio.h>`: `printf`/`fprintf` (`%s %d %u %x %c %%`), `puts`, `putchar`
-- `<stdlib.h>`: `atoi`, `malloc`/`free`, `exit`
-- `<unistd.h>`: the full syscall surface (`read`/`write`/`open`/`close`/`exec`/
-  `waitpid`/`pipe`/`dup2`/`lseek`/`ioctl`/`readdir`/… and `read_event`)
-- `<sys/mman.h>` (`mmap`), `<sys/fb.h>` (framebuffer)
+- `<stdio.h>`: buffered `FILE` streams (`fopen`, `fgets`, `fread`,
+  `fwrite`, `fseek`, `setvbuf`, ...), a full `printf` family (flags, width,
+  precision, `hh`/`h`/`l`/`ll`/`z`, `%f %e %g`), `sscanf`
+- `<string.h>`: the usual functions, also `strdup`, `strndup`, `strtok_r`,
+  `strspn`, `strcasecmp`, `memchr`
+- `<stdlib.h>`: `malloc` (large blocks from `mmap`), `strtol` family, `qsort`,
+  `bsearch`, `rand`, `setenv`/`getenv`, `atexit`, `abort`
+- `<time.h>` (`time`, `clock_gettime`, `nanosleep`, `gmtime`, `mktime`,
+  `strftime`), `<sys/time.h>`, `<sys/times.h>`, `<ctype.h>`, `<setjmp.h>`,
+  `<assert.h>`, `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>`, `<stddef.h>`,
+  `<pwd.h>`, `<grp.h>`
+- `<unistd.h>`: the syscall surface (`read`/`write`/`close`/`fork`/`execve`/
+  `pipe`/`dup`/`dup2`/`lseek`/`pread`/`access`/`fsync`/… and `read_event`)
+- `<fcntl.h>` (`open`, `creat`, `fcntl`), `<sys/stat.h>` (`stat`, `fstat`,
+  `S_IS*`), `<dirent.h>` (`opendir`, `readdir`, `closedir`), `<poll.h>`,
+  `<sys/select.h>`, `<sys/wait.h>` (`waitpid`, `wait`, `W*` macros),
+  `<limits.h>`, `<stdarg.h>`
+- `<signal.h>` (`sigaction`, `signal`, `kill`, `raise`, masks), `<termios.h>`
+  (`tcgetattr`, `tcsetattr`, `cfmakeraw`, `tcsetpgrp`), `<sys/ioctl.h>`,
+  `<sys/types.h>`
+- `<sys/mman.h>` (`mmap`, `munmap`, `mprotect`), `<sys/fb.h>` (framebuffer)
 - `<errno.h>`: `errno`, `perror`, `strerror`
-- `crt0` with `argc`/`argv` setup; `int 0x80` syscall stubs
+- `crt0` with `argc`/`argv`/`envp` setup; `int 0x80` syscall stubs
 
 ### Userspace shell (skl -> /bin/sh)
 
@@ -120,22 +213,38 @@ today.
 - PATH-based command lookup
 - Tokenizer with double/single quoting and backslash escaping
 - Pipelines (`cmd1 | cmd2 | cmd3`) and I/O redirection (`>`, `>>`, `<`)
+- Job control: each pipeline is a process group; `cmd &`, Ctrl+Z, `jobs`,
+  `fg`, `bg`, `kill [-signal] pid|%job`, and a note when a background job
+  ends
 - Builtins: `cd`, `exit`, `history`, `export`, `unset`, `env`, `printenv`,
-  `which`
+  `which`, `jobs`, `fg`, `bg`, `kill`
 
 ### Bundled userspace programs
 
-- `cat`, `clear`, `echo`, `ls`, `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `touch`,
-  `ze` (text editor), and a `metaballs` framebuffer demo
+- `cat`, `chmod`, `chown`, `clear`, `date`, `echo`, `id`, `init`, `ls`,
+  `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `sleep`, `su`, `touch`, `uptime`,
+  `whoami`, `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
+  tests the kernel's handling of user memory (heap, stack growth, `mmap`,
+  `munmap`, `mprotect`, and faults that must kill only the process), and
+  `proctest`, which tests the process model (`fork`, copy-on-write, pipes,
+  atomic pipe writes, open flags, shared offsets, `waitpid`, `execve`), and
+  `fstest`, which tests the file syscalls (`stat`, `fcntl`, `rename`,
+  `pread`, `getdents`, `poll`/`select`, tmpfs, large ext2 files), and
+  `sigtest`, which tests signals, process groups and the terminal, and
+  `libctest`, which tests the C library
 
 ### Portability and tooling
 
 - Architecture-neutral abstraction layers (`arch_*` for interrupts, MMU,
   context switch, boot protocol) with x86 as the only current backend —
   groundwork for a future x86_64 port
+- Pointer-width types throughout (`uintptr_t`/`size_t`/`phys_addr_t`, one
+  `PAGE_SIZE`, `phys_to_virt`/`virt_to_phys`, a `syscall_arg()` accessor) and
+  compiler-checked printf formats
 - Multi-arch-ready build system (`ARCH` switch), `make lint` (clang-tidy),
-  `make format` (clang-format), `make debug` (QEMU + GDB stub), `make iso`
-  (GRUB-bootable), and `compile_commands.json` generation for LSP
+  `make check64` (x86_64 portability check), `make format` (clang-format),
+  `make gdb`/`make debug` (QEMU + gdb attached), `make iso` (GRUB-bootable), and `compile_commands.json`
+  generation for LSP
 - Consistent `snake_case` conventions documented in `STYLE.md`; ext2 image and
   bitmap-font helper tools under `tools/`
 
@@ -154,6 +263,7 @@ Only install what this two-stage build needs:
 
 ```bash
 brew install gmp mpfr libmpc texinfo nasm qemu
+brew install gdb   # optional, for make gdb / make debug
 ```
 
 ### Build i686 cross compiler manually
@@ -242,6 +352,13 @@ make
 make run
 ```
 
+Run the in-kernel test suite (boots a separate test kernel headless and exits
+with the result):
+
+```bash
+make test
+```
+
 ## Ubuntu / Debian Toolchain Setup (Manual)
 
 ### Clone the project
@@ -260,6 +377,7 @@ sudo apt update
 sudo apt install build-essential curl nasm qemu-system-x86 \
   libgmp-dev libmpfr-dev libmpc-dev texinfo bison flex \
   python3 e2fsprogs
+sudo apt install gdb   # optional, for make gdb / make debug
 ```
 
 ### Build i686 cross compiler manually
@@ -384,6 +502,40 @@ From project root:
 make
 make run
 ```
+
+Run the in-kernel test suite (boots a separate test kernel headless and exits
+with the result):
+
+```bash
+make test
+```
+
+Check the kernel for 64-bit portability (needs a host `clang`; nothing is
+built or run). It compiles every kernel, driver, filesystem and test source
+for x86_64 without linking, and fails on any pointer/integer cast, 64-to-32-bit
+narrowing or printf format mismatch, so code that only works with 32-bit
+pointers is caught before the x86_64 port:
+
+```bash
+make check64
+```
+
+Debug the kernel with gdb. QEMU starts halted with a gdb stub, gdb attaches
+with `build/kernel.elf` and `tools/gdb/ginnos.gdb` (breakpoints on
+`kernel_panic`/`kernel_panic_at`), and QEMU stops when gdb exits. Type `c` to
+boot. `make debug` does the same with the kernel built `-Og -DDEBUG`, which is
+easier to step through:
+
+```bash
+make gdb                 # optimised kernel, with debug info
+make debug               # -Og kernel
+make gdb GDB_PORT=1240   # if port 1234 is taken
+```
+
+gdb must support i386 (Homebrew's and most distro `gdb` builds do; set
+`GDB=...` to use another one, e.g. `i686-elf-gdb`). Kernel panics and CPU
+exceptions also print a symbolised backtrace on screen and over serial, so
+many crashes can be read without a debugger.
 
 ## ext2 Side-Disk Helper
 

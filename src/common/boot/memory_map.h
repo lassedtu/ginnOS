@@ -11,7 +11,7 @@ typedef struct
     uint64_t length; // length of the memory region in bytes.
     uint32_t type;   // type of the memory region (1 = usable, 2 = reserved, etc.).
 
-} memory_region_t;
+} __attribute__((packed)) memory_region_t; // 20 bytes as stage2 writes it, on any target
 
 /**
  * structure representing the system's memory map, containing multiple memory regions.

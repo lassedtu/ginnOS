@@ -1,4 +1,5 @@
 #include "string.h"
+#include "stdlib.h"
 
 /**
  * @file string.c
@@ -190,4 +191,134 @@ void *memmove(void *dst, const void *src, size_t n)
             *--d = *--s;
     }
     return dst;
+}
+
+size_t strnlen(const char *s, size_t max)
+{
+    size_t n = 0;
+    while (n < max && s[n])
+        n++;
+    return n;
+}
+
+char *strncat(char *dst, const char *src, size_t n)
+{
+    char *end = dst + strlen(dst);
+    size_t i = 0;
+    for (; i < n && src[i]; i++)
+        end[i] = src[i];
+    end[i] = '\0';
+    return dst;
+}
+
+char *strdup(const char *s)
+{
+    return strndup(s, strlen(s));
+}
+
+char *strndup(const char *s, size_t n)
+{
+    size_t len = strnlen(s, n);
+    char *copy = malloc(len + 1);
+    if (copy)
+    {
+        memcpy(copy, s, len);
+        copy[len] = '\0';
+    }
+    return copy;
+}
+
+char *strpbrk(const char *s, const char *accept)
+{
+    for (; *s; s++)
+        if (strchr(accept, *s))
+            return (char *)s;
+    return NULL;
+}
+
+size_t strspn(const char *s, const char *accept)
+{
+    size_t n = 0;
+    while (s[n] && strchr(accept, s[n]))
+        n++;
+    return n;
+}
+
+size_t strcspn(const char *s, const char *reject)
+{
+    size_t n = 0;
+    while (s[n] && !strchr(reject, s[n]))
+        n++;
+    return n;
+}
+
+char *strtok_r(char *str, const char *delim, char **saveptr)
+{
+    char *s = str ? str : *saveptr;
+    if (!s)
+        return NULL;
+    s += strspn(s, delim);
+    if (*s == '\0')
+    {
+        *saveptr = NULL;
+        return NULL;
+    }
+    char *end = s + strcspn(s, delim);
+    if (*end)
+    {
+        *end = '\0';
+        *saveptr = end + 1;
+    }
+    else
+    {
+        *saveptr = NULL;
+    }
+    return s;
+}
+
+static int lower(int c)
+{
+    return c >= 'A' && c <= 'Z' ? c + 32 : c;
+}
+
+int strncasecmp(const char *a, const char *b, size_t n)
+{
+    for (size_t i = 0; i < n; i++)
+    {
+        int ca = lower((unsigned char)a[i]);
+        int cb = lower((unsigned char)b[i]);
+        if (ca != cb || ca == 0)
+            return ca - cb;
+    }
+    return 0;
+}
+
+int strcasecmp(const char *a, const char *b)
+{
+    return strncasecmp(a, b, (size_t)-1);
+}
+
+int strcoll(const char *a, const char *b)
+{
+    return strcmp(a, b); // one locale: the C locale
+}
+
+void *memchr(const void *s, int c, size_t n)
+{
+    const unsigned char *p = s;
+    for (size_t i = 0; i < n; i++)
+        if (p[i] == (unsigned char)c)
+            return (void *)(p + i);
+    return NULL;
+}
+
+char *strstr(const char *haystack, const char *needle)
+{
+    size_t len = strlen(needle);
+    if (len == 0)
+        return (char *)haystack;
+    for (; *haystack; haystack++)
+        if (*haystack == *needle && strncmp(haystack, needle, len) == 0)
+            return (char *)haystack;
+    return NULL;
 }

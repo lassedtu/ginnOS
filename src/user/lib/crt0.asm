@@ -1,34 +1,37 @@
 ; crt0.asm user program entry point for ginnOS.
-; the kernel pushes argc/argv onto the user stack before jumping here.
+; the kernel puts argc, argv and envp on the user stack before it jumps here
+; (usermode_build_stack in the kernel).
 ;
 ; stack layout on entry:
-;   [esp]   = 0 (fake return address)
-;   [esp+4] = argc
-;   [esp+8] = argv (pointer to char* array)
+;   [esp]    = 0 (fake return address)
+;   [esp+4]  = argc
+;   [esp+8]  = argv (pointer to a NULL-terminated char* array)
+;   [esp+12] = envp (pointer to a NULL-terminated char* array)
 ;
-; calls main(argc, argv), then invokes SYS_exit with the return value.
+; sets environ, calls main(argc, argv, envp), then exit() with the return
+; value (exit runs the atexit handlers).
 
 BITS 32
 
 extern main
+extern environ
+extern exit
 global _start
 
 _start:
-    ; argc and argv are already on the stack in the right position
-    ; for a cdecl call to main(int argc, char **argv).
-    ; the fake return address at [esp] acts as the return address
-    ; slot, so [esp+4] = first arg, [esp+8] = second arg.
     mov eax, [esp + 4]     ; argc
     mov ebx, [esp + 8]     ; argv
-    push ebx               ; push argv (second argument)
-    push eax               ; push argc (first argument)
-    call main              ; call int main(int argc, char **argv)
-    add esp, 8             ; clean up arguments
+    mov ecx, [esp + 12]    ; envp
+    mov [environ], ecx     ; the libc environment starts as the one passed in
 
-    ; SYS_exit(return value from main is in EAX)
-    mov ebx, eax           ; exit code = main's return value
-    mov eax, 0             ; SYS_EXIT = 0
-    int 0x80               ; syscall
+    push ecx               ; envp (third argument)
+    push ebx               ; argv (second argument)
+    push eax               ; argc (first argument)
+    call main              ; int main(int argc, char **argv, char **envp)
+    add esp, 12            ; clean up arguments
+
+    push eax               ; exit(main's return value)
+    call exit
 
     ; unreachable
     jmp $

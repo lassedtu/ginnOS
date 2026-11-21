@@ -11,15 +11,16 @@ void memory_reserve_stage2(void)
 
 void memory_reserve_kernel(void)
 {
-    region_reserve(kernel_start_address(), kernel_end_address(), "kernel");
+    region_reserve(virt_to_phys((void *)kernel_start_address()),
+                   virt_to_phys((void *)kernel_end_address()), "kernel");
 }
 
-void memory_reserve_pmm_bitmap(uint32_t start, uint32_t end)
+void memory_reserve_pmm_bitmap(phys_addr_t start, phys_addr_t end)
 {
     region_reserve(start, end, "pmm_bitmap");
 }
 
-void memory_reserve_heap(uint32_t start, uint32_t end)
+void memory_reserve_heap(phys_addr_t start, phys_addr_t end)
 {
     region_reserve(start, end, "kernel_heap");
 }

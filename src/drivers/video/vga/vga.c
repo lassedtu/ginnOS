@@ -1,8 +1,11 @@
 #include "vga.h"
 
 #include "arch/x86/cpu/io.h"
+#include "kernel/memory/phys.h"
 
-#define VGA_TEXT_BUFFER ((volatile uint16_t *)0xB8000)
+// the VGA text buffer is RAM-like memory below 1 MiB, inside the direct map
+#define VGA_TEXT_PHYS 0xB8000u
+#define VGA_TEXT_BUFFER ((volatile uint16_t *)phys_to_virt(VGA_TEXT_PHYS))
 
 #define VGA_WIDTH 80u
 #define VGA_HEIGHT 25u

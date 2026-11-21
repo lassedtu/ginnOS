@@ -1,9 +1,8 @@
 #pragma once
 
 #include "common/stdint.h"
-
-// Page size
-#define PAGE_SIZE 4096u
+#include "kernel/memory/page.h"
+#include "kernel/memory/phys.h"
 
 // Page Directory Entry (PDE) flags
 #define PDE_PRESENT 0x001u       // page table is present in memory
@@ -25,13 +24,13 @@
 #define PTE_GLOBAL 0x100u        // page is not flushed from TLB on CR3 reload
 
 // extract the page directory index (bits 22–31) from a virtual address.
-#define PAGE_DIR_INDEX(vaddr) (((uint32_t)(vaddr) >> 22) & 0x3FF)
+#define PAGE_DIR_INDEX(vaddr) ((uint32_t)((uintptr_t)(vaddr) >> 22) & 0x3FF)
 
 // extract the page table index (bits 12–21) from a virtual address.
-#define PAGE_TABLE_INDEX(vaddr) (((uint32_t)(vaddr) >> 12) & 0x3FF)
+#define PAGE_TABLE_INDEX(vaddr) ((uint32_t)((uintptr_t)(vaddr) >> 12) & 0x3FF)
 
 // extract the physical frame address from a PDE or PTE (upper 20 bits).
-#define PAGE_FRAME(entry) ((uint32_t)(entry) & 0xFFFFF000u)
+#define PAGE_FRAME(entry) ((phys_addr_t)(entry) & ~(phys_addr_t)PAGE_OFFSET_MASK)
 
 // number of entries in a page directory or page table.
 #define PAGE_ENTRIES 1024u
@@ -48,17 +47,30 @@
 // user read/write page directory entry.
 #define PDE_USER_RW (PDE_PRESENT | PDE_READ_WRITE | PDE_USER)
 
+// a page directory or page table entry (32-bit, non-PAE paging)
+typedef uint32_t pte_t;
+
+/**
+ * the page table a directory entry points to, as a kernel pointer.
+ * @param entry a present page directory entry.
+ * @return pointer to its page table.
+ */
+static inline pte_t *entry_table(pte_t entry)
+{
+    return (pte_t *)phys_to_virt(PAGE_FRAME(entry));
+}
+
 /**
  * a page directory: array of 1024 32-bit entries.
  * each entry points to a page table (or is not present).
  */
-typedef uint32_t page_directory_t[PAGE_ENTRIES];
+typedef pte_t page_directory_t[PAGE_ENTRIES];
 
 /**
  * a page table: array of 1024 32-bit entries.
  * each entry maps a 4 KiB virtual page to a physical frame.
  */
-typedef uint32_t page_table_t[PAGE_ENTRIES];
+typedef pte_t page_table_t[PAGE_ENTRIES];
 
 /**
  * initialize the paging subsystem.
@@ -76,14 +88,14 @@ void paging_init(void);
  * @param flags PTE flags to apply (e.g. PTE_KERNEL_RW).
  * @return true on success, false if page table allocation fails.
  */
-bool paging_map(uint32_t virt, uint32_t phys, uint32_t flags);
+bool paging_map(uintptr_t virt, phys_addr_t phys, uint32_t flags);
 
 /**
  * unmap a single 4 KiB virtual page.
  * clears the PTE and invalidates the TLB entry.
  * @param virt virtual address to unmap (must be page-aligned).
  */
-void paging_unmap(uint32_t virt);
+void paging_unmap(uintptr_t virt);
 
 /**
  * translate a virtual address to its mapped physical address.
@@ -91,7 +103,7 @@ void paging_unmap(uint32_t virt);
  * @param virt virtual address to translate.
  * @return physical address, or 0 if the page is not mapped.
  */
-uint32_t paging_get_physical(uint32_t virt);
+phys_addr_t paging_get_physical(uintptr_t virt);
 
 /**
  * translate a virtual address to its physical address within a specific
@@ -101,13 +113,13 @@ uint32_t paging_get_physical(uint32_t virt);
  * @param virt virtual address to translate.
  * @return physical address, or 0 if the page is not mapped.
  */
-uint32_t paging_get_physical_in(uint32_t pd_phys, uint32_t virt);
+phys_addr_t paging_get_physical_in(phys_addr_t pd_phys, uintptr_t virt);
 
 /**
  * return the physical address of the kernel page directory.
  * only valid after paging_init() has been called.
  */
-uint32_t paging_directory_address(void);
+phys_addr_t paging_directory_address(void);
 
 /**
  * return the number of page tables currently allocated.
@@ -127,7 +139,7 @@ bool paging_is_enabled(void);
  * user entries (indices 0–767) are left empty (not present).
  * @return physical address of the new page directory, or 0 on failure.
  */
-uint32_t paging_clone_directory(void);
+phys_addr_t paging_clone_directory(void);
 
 /**
  * free a process page directory.
@@ -136,7 +148,19 @@ uint32_t paging_clone_directory(void);
  * does NOT free kernel page tables (indices 768–1023) since those are shared.
  * @param pd_phys physical address of the page directory to free.
  */
-void paging_free_directory(uint32_t pd_phys);
+void paging_free_directory(phys_addr_t pd_phys);
+
+/**
+ * copy the user half of one page directory into another, empty one, for
+ * fork. RAM frames are shared copy-on-write: they lose write access in both
+ * directories and get one more reference each. device frames are shared as
+ * they are.
+ * @param dst_phys the new directory (its user half must be empty).
+ * @param src_phys the directory to copy.
+ * @return true on success. on failure dst holds a partial copy, which the
+ *         caller frees with paging_free_directory.
+ */
+bool paging_copy_user(phys_addr_t dst_phys, phys_addr_t src_phys);
 
 /**
  * map a page in a specific page directory (not necessarily the current one).
@@ -147,11 +171,57 @@ void paging_free_directory(uint32_t pd_phys);
  * @param flags PTE flags.
  * @return true on success, false on failure.
  */
-bool paging_map_in(uint32_t pd_phys, uint32_t virt, uint32_t phys, uint32_t flags);
+bool paging_map_in(phys_addr_t pd_phys, uintptr_t virt, phys_addr_t phys, uint32_t flags);
+
+/**
+ * make sure the kernel page directory has a page table for every 4 MiB in
+ * [start, end). must run before the first paging_clone_directory(): clones
+ * copy the directory entries, so only tables that exist by then are shared
+ * by every address space, and later mappings in them are seen everywhere.
+ * @param start first virtual address of the range.
+ * @param end first virtual address past the range.
+ */
+void paging_reserve_tables(uintptr_t start, uintptr_t end);
+
+/**
+ * check that every page of [addr, addr + len) is mapped user-accessible in
+ * a page directory (and writable, if write is set), at both the directory
+ * and the table level.
+ * @param pd_phys physical address of the page directory to walk.
+ * @param addr first byte of the range.
+ * @param len length of the range in bytes (0 is always accessible).
+ * @param write true if the kernel will write to the range.
+ * @return true if user code could make the same accesses.
+ */
+bool paging_user_range_ok(phys_addr_t pd_phys, uintptr_t addr, size_t len, bool write);
+
+/**
+ * read CR2, the address of the most recent page fault.
+ * @return the faulting linear address.
+ */
+uintptr_t paging_fault_address(void);
+
+/**
+ * remove a user mapping from a page directory and drop its TLB entry.
+ * @param pd_phys physical address of the page directory.
+ * @param virt page-aligned user address.
+ * @return the frame that was mapped there, or 0 if nothing was.
+ */
+phys_addr_t paging_unmap_in(phys_addr_t pd_phys, uintptr_t virt);
+
+/**
+ * change the flags of an existing user mapping, keeping its frame, and drop
+ * its TLB entry.
+ * @param pd_phys physical address of the page directory.
+ * @param virt page-aligned user address.
+ * @param flags new PTE flags (PTE_PRESENT must be set).
+ * @return true if a mapping was there and changed.
+ */
+bool paging_protect_in(phys_addr_t pd_phys, uintptr_t virt, uint32_t flags);
 
 /**
  * switch the active page directory (load CR3).
  * does not modify CR0 paging must already be enabled.
  * @param pd_phys physical address of the page directory to activate.
  */
-void paging_switch_directory(uint32_t pd_phys);
+void paging_switch_directory(phys_addr_t pd_phys);

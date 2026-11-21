@@ -50,7 +50,7 @@ void klog_init(void);
  * @param level severity of the message.
  * @param fmt   printf-style format string.
  */
-void klog(klog_level_t level, const char *fmt, ...);
+void klog(klog_level_t level, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
 // level macros: expand to a klog() call only when the level is enabled,
 // otherwise to a no-op that discards the arguments at compile time.

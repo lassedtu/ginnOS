@@ -1,9 +1,12 @@
 #include "pit.h"
 
+#include "arch/arch.h"
 #include "arch/x86/cpu/io.h"
 #include "kernel/irq/irq.h"
 #include "kernel/device/device.h"
 #include "kernel/scheduler/scheduler.h"
+#include "kernel/time/timer.h"
+#include "kernel/process/process.h"
 #include "common/string.h"
 
 enum
@@ -30,9 +33,10 @@ static volatile uint64_t ticks = 0; // number of PIT interrupts since initializa
 static void pit_irq_handler(uint32_t irq, trap_frame_t *frame)
 {
     (void)irq;
-    (void)frame;
 
     ticks++;
+    process_account_tick(arch_frame_is_user(frame));
+    timer_tick(ticks);
     scheduler_tick();
 }
 
@@ -81,5 +85,10 @@ void pit_initialize(uint32_t frequency)
  */
 uint64_t pit_get_ticks(void)
 {
-    return ticks;
+    // a 64-bit load is two 32-bit loads on i686; a tick landing between them
+    // would tear the value (low half wrapped, high half not yet bumped).
+    uint32_t flags = arch_irq_save();
+    uint64_t now = ticks;
+    arch_irq_restore(flags);
+    return now;
 }

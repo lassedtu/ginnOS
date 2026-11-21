@@ -4,6 +4,16 @@
 #include "arch/arch_context.h"
 #include "arch/x86/cpu/gdt.h"
 #include "common/memory.h"
+#include "kernel/assert.h"
+
+/*
+ * locking: the ready queue, ticks_remaining and the current process are
+ * shared with the timer interrupt, which calls schedule(). every change to
+ * them happens with interrupts masked. schedule() itself must be entered
+ * with interrupts masked; each caller that switches away (scheduler_yield,
+ * wait_queue_block, the timer's iret) restores its own interrupt state when
+ * it is switched back, because the context switch does not carry EFLAGS.
+ */
 
 // doubly-linked intrusive ready queue (head and tail).
 static process_t *queue_head;
@@ -31,6 +41,14 @@ static void idle_entry(void)
     {
         arch_enable_interrupts();
         arch_halt();
+
+        // an interrupt handler (the keyboard, say) may have woken a process:
+        // run it now instead of idling until the next timer tick. reading
+        // queue_head unmasked is only a hint; schedule() re-checks it masked.
+        if (queue_head)
+        {
+            scheduler_yield();
+        }
     }
 }
 
@@ -133,8 +151,9 @@ void scheduler_init(void)
     memset(&idle_proc, 0, sizeof(idle_proc));
     idle_proc.pid = 0;
     idle_proc.state = PROC_STATE_READY;
-    idle_proc.kernel_stack = (uint32_t)idle_stack;
-    idle_proc.kernel_esp = (uint32_t)idle_stack + KERNEL_STACK_SIZE;
+    idle_proc.kernel_stack = (uintptr_t)idle_stack;
+    idle_proc.kernel_esp = (uintptr_t)idle_stack + KERNEL_STACK_SIZE;
+    arch_fpu_clean(idle_proc.fpu_state);
 
     // prime the idle stack so the first switch into it runs idle_entry.
     arch_setup_initial_stack(&idle_proc, idle_entry);
@@ -147,6 +166,8 @@ void scheduler_ready(process_t *proc)
         return;
     }
 
+    uint32_t flags = arch_irq_save();
+
     proc->state = PROC_STATE_READY;
     queue_push(proc);
 
@@ -154,16 +175,23 @@ void scheduler_ready(process_t *proc)
     {
         scheduler_active = 1;
     }
+
+    arch_irq_restore(flags);
 }
 
 void scheduler_remove(process_t *proc)
 {
-    if (!proc || !queue_contains(proc))
+    if (!proc)
     {
         return;
     }
 
-    queue_remove(proc);
+    uint32_t flags = arch_irq_save();
+    if (queue_contains(proc))
+    {
+        queue_remove(proc);
+    }
+    arch_irq_restore(flags);
 }
 
 /**
@@ -171,6 +199,8 @@ void scheduler_remove(process_t *proc)
  */
 static void schedule(void)
 {
+    KASSERT(!arch_irqs_enabled(), "schedule() with interrupts enabled");
+
     process_t *current = process_current();
     process_t *next = queue_pop();
 
@@ -209,26 +239,43 @@ static void schedule(void)
     // update TSS kernel stack to the new process's kernel stack top
     tss_set_kernel_stack(next->kernel_stack + KERNEL_STACK_SIZE);
 
-    // switch to the new process's address space
-    if (next->page_directory)
-    {
-        arch_switch_address_space(next->page_directory);
-    }
+    // switch to the new process's address space. the idle process and an
+    // exiting process that already released its own have none: use the
+    // kernel's, never a space some other process may free meanwhile.
+    arch_switch_address_space(next->page_directory ? next->page_directory
+                                                   : arch_kernel_address_space());
 
     // reset time slice
     ticks_remaining = SCHED_TIME_SLICE;
+
+    // the FPU/SSE registers follow the process: the kernel does not use
+    // them, so the outgoing program's are still in the CPU here
+    if (current)
+    {
+        arch_fpu_save(current->fpu_state);
+    }
+    arch_fpu_restore(next->fpu_state);
 
     // perform the context switch
     if (current)
     {
         arch_context_switch(&current->kernel_esp, next->kernel_esp);
+
+        // back on some process's stack: an orphan that just exited is off
+        // its own stack now, so it can be freed
+        process_reap_orphans();
     }
     else
     {
         // no previous context to save (first schedule call)
-        uint32_t dummy_esp;
+        uintptr_t dummy_esp;
         arch_context_switch(&dummy_esp, next->kernel_esp);
     }
+}
+
+bool scheduler_is_active(void)
+{
+    return scheduler_active != 0;
 }
 
 void scheduler_tick(void)
@@ -256,6 +303,8 @@ void scheduler_yield(void)
         return;
     }
 
+    uint32_t flags = arch_irq_save();
     ticks_remaining = 0;
     schedule();
+    arch_irq_restore(flags);
 }

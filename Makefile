@@ -22,7 +22,10 @@ AS      := nasm
 CC      := $(CROSS)gcc
 LD      := $(CROSS)ld
 OBJCOPY := $(CROSS)objcopy
+NM      := $(CROSS)nm
 PYTHON  ?= python3
+GDB     ?= gdb
+GDB_PORT ?= 1234
 
 BUILD_DIR := build
 
@@ -30,23 +33,31 @@ BUILD_DIR := build
 BASE_WARNINGS := -Wall -Wextra
 BASE_CFLAGS   := -std=gnu11 -ffreestanding -m32 -I src -MMD -MP
 
-# per-subsystem compiler flags
-KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 -DNDEBUG \
-                 -fno-pie -fno-jump-tables
+# the kernel keeps a full frame-pointer chain (in release too) so panics can
+# walk the stack and print a backtrace: no omitted frames, not even in leaf
+# functions, and no sibling calls (a tail-call jmp would drop the caller).
+KERNEL_FRAME_FLAGS := -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer \
+                      -fno-optimize-sibling-calls
+
+# per-subsystem compiler flags. -g only adds debug info to the ELF files (for
+# make gdb); the flat binaries made with objcopy are unchanged by it.
+KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 -g -DNDEBUG \
+                 -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS)
 
 DRIVER_CFLAGS := $(KERNEL_CFLAGS)
 
-COMMON_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Os \
+COMMON_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Os -g \
                  -fno-pic -fno-stack-protector \
                  -fno-unwind-tables -fno-asynchronous-unwind-tables \
                  -ffunction-sections -fdata-sections -fomit-frame-pointer
 
 STAGE2_CFLAGS := $(COMMON_CFLAGS) -DEXT2_STATIC_BUFFERS
 
-# debug build overrides (make debug)
+# debug build overrides (make debug). switching modes rebuilds the kernel
+# objects, because they depend on $(KERNEL_FLAGS_FILE) (see below).
 ifeq ($(BUILD_MODE),debug)
   KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -Og -g -DDEBUG \
-                   -fno-pie -fno-jump-tables
+                   -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS)
   DRIVER_CFLAGS := $(KERNEL_CFLAGS)
 endif
 
@@ -87,6 +98,18 @@ ROOTFS_IMAGE := $(BUILD_DIR)/images/rootfs.ext2
 STAGE2_SECTORS   := 62
 SECTOR_SIZE      := 512
 STAGE2_MAX_BYTES := $(shell echo $$(( $(STAGE2_SECTORS) * $(SECTOR_SIZE) )))
+
+# lay out a bootable disk image: stage1 in the MBR, stage2 in sectors 1-62,
+# the ext2 root filesystem from sector 63. used by the normal and test images.
+# $(1) = output image, $(2) = ext2 filesystem image.
+define assemble_disk
+	@EXT2_BYTES=$$(wc -c < $(2)); \
+	TOTAL_BYTES=$$(echo $$(( 63 * 512 + $$EXT2_BYTES ))); \
+	truncate -s $$TOTAL_BYTES $(1)
+	dd if=$(STAGE1_BIN) of=$(1) bs=512 seek=0 conv=notrunc status=none
+	dd if=$(STAGE2_PAD) of=$(1) bs=512 seek=1 conv=notrunc status=none
+	dd if=$(2) of=$(1) bs=512 seek=63 conv=notrunc status=none
+endef
 
 # path mapping helpers
 src_c_to_obj      = $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(1))
@@ -145,29 +168,94 @@ USER_PROG_NAMES := $(notdir $(USER_PROG_DIRS))
 USER_PROGRAMS := $(addprefix $(BUILD_DIR)/user/bin/,$(USER_PROG_NAMES))
 
 # dependency files (C compilations only)
-DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d)
+DEP_FILES := $(KERNEL_C_OBJS:.o=.d) $(COMMON_OBJS:.o=.d) $(STAGE2_C_OBJS:.o=.d) \
+             $(LIBC_C_OBJS:.o=.d)
+
+# in-kernel test build (make test). the whole kernel is recompiled into a
+# separate object tree with -DKERNEL_TEST plus the tests under src/test/, so
+# the normal kernel never contains test code. asm and common objects carry no
+# test-specific code and are shared with the normal build.
+TEST_BUILD_DIR      := $(BUILD_DIR)/test
+TEST_C_SRCS         := $(call find_c_sources,src/test)
+TEST_KERNEL_CFLAGS   = $(KERNEL_CFLAGS) -DKERNEL_TEST
+TEST_KERNEL_C_OBJS  := $(patsubst src/%.c,$(TEST_BUILD_DIR)/obj/%.o,$(KERNEL_C_SRCS) $(TEST_C_SRCS))
+TEST_KERNEL_LINK_OBJS := $(KERNEL_ENTRY_OBJ) \
+                         $(filter-out $(KERNEL_ENTRY_OBJ),$(sort $(KERNEL_ASM_OBJS) $(TEST_KERNEL_C_OBJS))) \
+                         $(COMMON_OBJS)
+TEST_KERNEL_ELF     := $(TEST_BUILD_DIR)/kernel.elf
+TEST_KERNEL_BIN     := $(TEST_BUILD_DIR)/kernel.bin
+TEST_ROOTFS_DIR     := $(TEST_BUILD_DIR)/rootfs
+TEST_ROOTFS_IMAGE   := $(TEST_BUILD_DIR)/rootfs.ext2
+TEST_DISK_IMAGE     := $(TEST_BUILD_DIR)/ginnos-test.img
+TEST_TIMEOUT        ?= 120
+
+DEP_FILES += $(TEST_KERNEL_C_OBJS:.o=.d)
+
+# files recording each kernel's link object list. rewritten only when the list
+# changes, so adding or deleting a source file relinks the kernel (a link rule
+# otherwise only notices objects that are newer than the binary, not ones that
+# disappeared).
+KERNEL_OBJS_LIST      := $(BUILD_DIR)/kernel.objs
+TEST_KERNEL_OBJS_LIST := $(TEST_BUILD_DIR)/kernel.objs
+
+# two-pass kernel link with an embedded symbol table (src/kernel/debug/ksyms.h).
+# pass 1 links an empty table to learn the function addresses, pass 2 links the
+# real table. .ksyms sits after .text, so function addresses are the same in
+# both passes; the final --check fails the build if that ever stops holding.
+#   $(1) output elf, $(2) link objects, $(3) scratch dir, $(4) C flags
+KSYMS_TOOL := tools/gen_ksyms.py
+
+define link_with_ksyms
+	@mkdir -p $(3)
+	$(PYTHON) $(KSYMS_TOOL) -o $(3)/ksyms_empty.c < /dev/null
+	$(CC) $(4) -c $(3)/ksyms_empty.c -o $(3)/ksyms_empty.o
+	$(LD) $(LDFLAGS) -o $(1).pass1 $(2) $(3)/ksyms_empty.o
+	$(NM) -n $(1).pass1 | $(PYTHON) $(KSYMS_TOOL) -o $(3)/ksyms.c
+	$(CC) $(4) -c $(3)/ksyms.c -o $(3)/ksyms.o
+	$(LD) $(LDFLAGS) -o $(1) $(2) $(3)/ksyms.o
+	$(NM) -n $(1) | $(PYTHON) $(KSYMS_TOOL) --check $(3)/ksyms.c
+	@rm -f $(1).pass1
+endef
+
+# file recording the kernel C flags, rewritten only when they change, so
+# kernel objects rebuild when the flags do (e.g. make debug after make all).
+KERNEL_FLAGS_FILE := $(BUILD_DIR)/kernel.flags
+
+# write $(2) into file $(1), touching it only if the content changed.
+define update_if_changed
+	@mkdir -p $(dir $(1))
+	@echo '$(2)' > $(1).tmp; \
+	if cmp -s $(1).tmp $(1); then rm -f $(1).tmp; else mv $(1).tmp $(1); fi
+endef
 
 # all source files for lint/format targets
 ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
-              $(STAGE2_C_SRCS) $(LIBC_C_SRCS)
+              $(STAGE2_C_SRCS) $(LIBC_C_SRCS) $(TEST_C_SRCS)
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run rootfs-image clean check-tools debug lint format compile_commands iso
+.PHONY: all run rootfs-image clean check-tools debug gdb lint check64 format compile_commands iso test test-image FORCE
 
 all: check-tools $(DISK_IMAGE)
 
-# debug build: compile with -Og -g -DDEBUG and launch qemu with gdb stub
+# debug the kernel: boot QEMU halted at the first instruction with a gdb stub
+# on GDB_PORT, attach gdb with build/kernel.elf and tools/gdb/ginnos.gdb
+# (breakpoints on panics), and stop QEMU when gdb exits. type `c` to boot.
+gdb: check-tools $(DISK_IMAGE)
+	@command -v $(GDB) >/dev/null 2>&1 || { echo "missing tool: $(GDB) (set GDB=...)"; exit 1; }
+	@PYTHON="$(PYTHON)" ./tools/gdb/run_gdb.sh "$(QEMU)" "$(DISK_IMAGE)" "$(KERNEL_ELF)" \
+		"$(GDB)" "$(GDB_PORT)" $(QEMU_FLAGS) -- $(GDB_ARGS)
+
+# same as make gdb, but with the kernel built -Og -DDEBUG (easier stepping,
+# fewer optimised-out variables, debug-level klog).
 debug:
-	$(MAKE) BUILD_MODE=debug all
-	$(QEMU) -s -S -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE) &
-	@echo "qemu started with gdb stub on localhost:1234"
-	@echo "connect with: gdb build/kernel.elf -ex 'target remote :1234'"
+	$(MAKE) BUILD_MODE=debug gdb
 
 check-tools:
 	@command -v $(CC) >/dev/null 2>&1 || { echo "missing tool: $(CC)"; exit 1; }
 	@command -v $(LD) >/dev/null 2>&1 || { echo "missing tool: $(LD)"; exit 1; }
 	@command -v $(OBJCOPY) >/dev/null 2>&1 || { echo "missing tool: $(OBJCOPY)"; exit 1; }
+	@command -v $(NM) >/dev/null 2>&1 || { echo "missing tool: $(NM)"; exit 1; }
 	@command -v $(AS) >/dev/null 2>&1 || { echo "missing tool: $(AS)"; exit 1; }
 	@command -v $(QEMU) >/dev/null 2>&1 || { echo "missing tool: $(QEMU)"; exit 1; }
 	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "missing tool: $(PYTHON)"; exit 1; }
@@ -176,6 +264,23 @@ check-tools:
 lint:
 	@command -v clang-tidy >/dev/null 2>&1 || { echo "install clang-tidy to use make lint"; exit 1; }
 	clang-tidy $(filter %.c,$(ALL_C_SRCS)) $(ALL_H_SRCS) -- $(KERNEL_CFLAGS)
+
+# x86_64 readiness check: a syntax-only x86_64 compile (host clang) of the
+# kernel, drivers, fs, common code and tests. any pointer/integer cast,
+# 64-to-32-bit narrowing or printf format mismatch is an error, so code that
+# only works because pointers are 32 bits is caught before the x86_64 port.
+CLANG ?= clang
+CHECK64_FLAGS := --target=x86_64-elf -ffreestanding -fsyntax-only -std=gnu11 -I src \
+                 -DKERNEL_TEST -Wno-everything -Werror -Wpointer-to-int-cast \
+                 -Wint-to-pointer-cast -Wvoid-pointer-to-int-cast -Wshorten-64-to-32 \
+                 -Wformat
+
+check64:
+	@command -v $(CLANG) >/dev/null 2>&1 || { echo "install clang to use make check64"; exit 1; }
+	@for f in $(KERNEL_C_SRCS) $(COMMON_C_SRCS) $(TEST_C_SRCS); do \
+		$(CLANG) $(CHECK64_FLAGS) "$$f" || exit 1; \
+	done
+	@echo "check64: no 64-bit portability warnings"
 
 # auto-format via clang-format (uses .clang-format config)
 format:
@@ -236,7 +341,7 @@ $(BUILD_DIR)/%.o: src/%.c
 
 $(BUILD_DIR)/%.o: src/%.asm
 	@mkdir -p $(dir $@)
-	$(AS) -f $(ASM_FORMAT) -I $(dir $<) $< -o $@
+	$(AS) -f $(ASM_FORMAT) -g -F dwarf -I $(dir $<) $< -o $@
 
 # isr.asm %includes the generated stub table
 $(BUILD_DIR)/arch/x86/asm/isr.o: $(ISR_GEN_INC)
@@ -264,9 +369,18 @@ $(STAGE2_PAD): $(STAGE2_BIN)
 	cp $(STAGE2_BIN) $@
 	truncate -s $(STAGE2_MAX_BYTES) $@
 
+# kernel objects rebuild when the kernel C flags change.
+$(KERNEL_FLAGS_FILE): FORCE
+	$(call update_if_changed,$@,$(KERNEL_CFLAGS))
+
+$(KERNEL_C_OBJS) $(TEST_KERNEL_C_OBJS): $(KERNEL_FLAGS_FILE)
+
 # kernel link
-$(KERNEL_ELF): $(KERNEL_LINK_OBJS) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC)
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_LINK_OBJS)
+$(KERNEL_OBJS_LIST): FORCE
+	$(call update_if_changed,$@,$(KERNEL_LINK_OBJS))
+
+$(KERNEL_ELF): $(KERNEL_LINK_OBJS) $(KERNEL_OBJS_LIST) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC) $(KSYMS_TOOL)
+	$(call link_with_ksyms,$@,$(KERNEL_LINK_OBJS),$(BUILD_DIR)/ksyms,$(KERNEL_CFLAGS))
 
 $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
@@ -309,15 +423,43 @@ rootfs-image: $(KERNEL_BIN) user-programs
 		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
 
 $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) rootfs-image
-	@EXT2_BYTES=$$(wc -c < $(ROOTFS_IMAGE)); \
-	TOTAL_BYTES=$$(echo $$(( 63 * 512 + $$EXT2_BYTES ))); \
-	truncate -s $$TOTAL_BYTES $@
-	dd if=$(STAGE1_BIN) of=$@ bs=512 seek=0 conv=notrunc status=none
-	dd if=$(STAGE2_PAD) of=$@ bs=512 seek=1 conv=notrunc status=none
-	dd if=$(ROOTFS_IMAGE) of=$@ bs=512 seek=63 conv=notrunc status=none
+	$(call assemble_disk,$@,$(ROOTFS_IMAGE))
 
 run: check-tools $(DISK_IMAGE)
 	$(QEMU) $(QEMU_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+
+# in-kernel tests: build the test kernel into its own disk image (a copy of the
+# normal rootfs, so tests that write to the filesystem never touch
+# build/ginnos.img), boot it headless, and turn QEMU's isa-debug-exit status
+# into the make exit code. override the watchdog with TEST_TIMEOUT=<seconds>.
+test: check-tools test-image
+	./tools/run_tests.sh "$(QEMU)" "$(TEST_DISK_IMAGE)" "$(TEST_TIMEOUT)" $(QEMU_FLAGS)
+
+$(TEST_BUILD_DIR)/obj/%.o: src/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(TEST_KERNEL_CFLAGS) -c $< -o $@
+
+$(TEST_KERNEL_OBJS_LIST): FORCE
+	$(call update_if_changed,$@,$(TEST_KERNEL_LINK_OBJS))
+
+$(TEST_KERNEL_ELF): $(TEST_KERNEL_LINK_OBJS) $(TEST_KERNEL_OBJS_LIST) $(LINKER_DIR)/kernel.ld $(ISR_GEN_C) $(ISR_GEN_INC) $(KSYMS_TOOL)
+	@mkdir -p $(dir $@)
+	$(call link_with_ksyms,$@,$(TEST_KERNEL_LINK_OBJS),$(TEST_BUILD_DIR)/ksyms,$(TEST_KERNEL_CFLAGS))
+
+$(TEST_KERNEL_BIN): $(TEST_KERNEL_ELF)
+	$(OBJCOPY) -O binary $(TEST_KERNEL_ELF) $@
+
+test-image: $(STAGE1_BIN) $(STAGE2_PAD) $(TEST_KERNEL_BIN) rootfs-image
+	rm -rf $(TEST_ROOTFS_DIR)
+	@mkdir -p $(TEST_ROOTFS_DIR)
+	cp -R $(EXT2_SOURCE_DIR)/. $(TEST_ROOTFS_DIR)/
+	cp $(TEST_KERNEL_BIN) $(TEST_ROOTFS_DIR)/boot/kernel.bin
+	$(PYTHON) $(EXT2_IMAGE_TOOL) \
+		--source "$(TEST_ROOTFS_DIR)" \
+		--output "$(TEST_ROOTFS_IMAGE)" \
+		--min-size-mb $(EXT2_MIN_SIZE_MB) \
+		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
+	$(call assemble_disk,$(TEST_DISK_IMAGE),$(TEST_ROOTFS_IMAGE))
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -325,6 +467,9 @@ clean:
 	rm -rf $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 	rm -f compile_commands.json
+
+# always-run prerequisite for the kernel object-list files.
+FORCE:
 
 # automatic header dependencies
 -include $(DEP_FILES)

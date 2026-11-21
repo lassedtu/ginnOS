@@ -1,4 +1,5 @@
 #include "vfs.h"
+#include "kernel/errno.h"
 
 #include "common/string.h"
 
@@ -220,29 +221,96 @@ int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg)
 {
     if (!file || !file->mount)
     {
-        return -9; /* EBADF */
+        return -EBADF;
     }
 
     return fs_ioctl(&file->file, request, arg);
 }
 
-int32_t vfs_mmap(vfs_file_t *file, uint32_t page_directory, uint32_t virt,
-                 uint32_t length, int prot, uint32_t offset)
+int32_t vfs_mmap(vfs_file_t *file, addr_space_t as, uintptr_t virt,
+                 size_t length, int prot, uint32_t offset)
 {
     if (!file || !file->mount)
     {
-        return -9; /* EBADF */
+        return -EBADF;
     }
 
-    return fs_mmap(&file->file, page_directory, virt, length, prot, offset);
+    return fs_mmap(&file->file, as, virt, length, prot, offset);
 }
 
-int32_t vfs_seek(vfs_file_t *file, int32_t offset, int whence)
+int32_t vfs_lseek(vfs_file_t *file, int32_t offset, int whence)
 {
     if (!file || !file->mount)
     {
-        return -9; /* EBADF */
+        return -EBADF;
     }
 
-    return fs_seek(&file->file, offset, whence);
+    // a filesystem with its own seek (devfs) moves its own cursor
+    int32_t moved = fs_seek(&file->file, offset, whence);
+    if (moved != -ENOSYS)
+    {
+        return moved;
+    }
+
+    // ext2: move the ext2 file cursor
+    ext2_file_t *ext2 = &file->file.ext2_file;
+    int32_t base;
+    switch (whence)
+    {
+    case VFS_SEEK_SET:
+        base = 0;
+        break;
+    case VFS_SEEK_CUR:
+        base = (int32_t)ext2->cursor;
+        break;
+    case VFS_SEEK_END:
+        base = (int32_t)ext2->size;
+        break;
+    default:
+        return -EINVAL;
+    }
+
+    int32_t position = base + offset;
+    if (position < 0)
+    {
+        return -EINVAL;
+    }
+    ext2->cursor = (uint32_t)position;
+    return position;
+}
+
+void vfs_seek_end(vfs_file_t *file)
+{
+    vfs_lseek(file, 0, VFS_SEEK_END);
+}
+
+kerr_t vfs_fstat(vfs_file_t *file, vfs_stat_t *stat_out)
+{
+    if (!file || !file->mount)
+    {
+        return KERR_INVAL;
+    }
+    return fs_fstat(&file->file, stat_out);
+}
+
+kerr_t vfs_setattr(const char *path, const fs_attr_t *attr)
+{
+    vfs_file_t file;
+    kerr_t err = vfs_open(path, &file);
+    if (kerr_failed(err))
+    {
+        return err;
+    }
+    err = fs_setattr(&file.file, attr);
+    vfs_close(&file);
+    return err;
+}
+
+kerr_t vfs_fsetattr(vfs_file_t *file, const fs_attr_t *attr)
+{
+    if (!file || !file->mount)
+    {
+        return KERR_INVAL;
+    }
+    return fs_setattr(&file->file, attr);
 }

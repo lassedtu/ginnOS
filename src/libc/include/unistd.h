@@ -1,5 +1,8 @@
 #pragma once
 
+#include <fcntl.h>
+#include <sys/wait.h>
+
 /**
  * @file unistd.h
  * @brief This file contains the declarations of POSIX-like system call wrappers.
@@ -30,14 +33,6 @@ ssize_t write(int fd, const void *buf, size_t count);
 ssize_t read(int fd, void *buf, size_t count);
 
 /**
- * open a file by path.
- * @param path file path.
- * @param flags open flags (unused for now).
- * @return file descriptor on success, -1 on failure.
- */
-int open(const char *path, int flags);
-
-/**
  * close a file descriptor.
  * @param fd file descriptor to close.
  * @return 0 on success, -1 on failure.
@@ -53,17 +48,130 @@ int close(int fd);
 pid_t exec(const char *path, const char **argv);
 
 /**
- * wait for a child process to exit.
- * @param pid child PID to wait for.
- * @return child's exit code, or -1 on error.
+ * create a child process that is a copy of the caller. the two share
+ * nothing after the call: memory is copied (lazily, on the first write),
+ * and the child gets its own copy of every fd.
+ * @return the child's PID in the parent, 0 in the child, -1 on failure
+ *         (errno set).
  */
-int waitpid(pid_t pid);
+pid_t fork(void);
+
+/**
+ * replace the calling process's program. the pid, cwd and open fds stay.
+ * @param path path to the ELF executable.
+ * @param argv NULL-terminated argument strings.
+ * @param envp NULL-terminated "KEY=VALUE" environment strings.
+ * @return only on failure: -1 (errno set).
+ */
+int execve(const char *path, char *const argv[], char *const envp[]);
 
 /**
  * terminate the current process.
  * @param status exit code.
  */
 void _exit(int status) __attribute__((noreturn));
+
+/**
+ * duplicate a descriptor to the lowest free one; both share the open file.
+ * @return the new descriptor, or -1 (errno set).
+ */
+int dup(int fd);
+
+// access() modes
+#define F_OK 0 // the file exists
+#define X_OK 1
+#define W_OK 2
+#define R_OK 4
+
+/**
+ * check that a file exists and may be accessed. there are no users yet,
+ * so every existing file allows every access.
+ * @param path the file.
+ * @param mode F_OK, or R_OK | W_OK | X_OK.
+ * @return 0, or -1 (errno set).
+ */
+int access(const char *path, int mode);
+
+/**
+ * read or write at an offset, without moving the file offset.
+ * @return bytes transferred, or -1 (errno set; ESPIPE for a pipe).
+ */
+ssize_t pread(int fd, void *buf, size_t count, int offset);
+ssize_t pwrite(int fd, const void *buf, size_t count, int offset);
+
+/**
+ * write an open file's data to disk.
+ * @return 0, or -1 (errno set).
+ */
+int fsync(int fd);
+
+/**
+ * send SIGALRM to the calling process after a number of seconds.
+ * @param seconds 0 cancels the alarm.
+ * @return the seconds left of the previous alarm, or 0.
+ */
+unsigned int alarm(unsigned int seconds);
+
+/**
+ * sleep until a signal is caught. always returns -1 with EINTR.
+ */
+int pause(void);
+
+/**
+ * sleep for a number of seconds (or microseconds).
+ * @return sleep: the seconds left if a signal ended it early, else 0.
+ *         usleep: 0, or -1 (errno set).
+ */
+unsigned int sleep(unsigned int seconds);
+int usleep(unsigned int microseconds);
+
+/**
+ * process groups and sessions (job control).
+ * setpgid(pid, pgid): pid 0 is the caller, pgid 0 makes a new group led
+ * by pid. getpgrp() is getpgid(0). setsid() starts a session and returns
+ * its id.
+ * @return as named, or -1 (errno set).
+ */
+int setpgid(pid_t pid, pid_t pgid);
+pid_t getpgid(pid_t pid);
+pid_t getpgrp(void);
+pid_t setsid(void);
+pid_t getsid(pid_t pid);
+
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
+
+/**
+ * user and group ids: real (who started the process) and effective (what
+ * it may do). setuid/setgid as root set all ids; otherwise only to the
+ * real or saved id. set the group before giving up root.
+ */
+uid_t getuid(void);
+uid_t geteuid(void);
+gid_t getgid(void);
+gid_t getegid(void);
+int setuid(uid_t uid);
+int setgid(gid_t gid);
+int seteuid(uid_t uid);
+int setegid(gid_t gid);
+
+/**
+ * change the owner of a file. root may give a file to anyone; an owner may
+ * only change its group to its own. (uid_t)-1 or (gid_t)-1 keeps one.
+ */
+int chown(const char *path, uid_t uid, gid_t gid);
+
+/**
+ * get the parent's process ID.
+ * @return the parent's PID, or 0 if the parent has exited.
+ */
+pid_t getppid(void);
+
+/**
+ * let other ready processes run before this one continues.
+ * @return 0.
+ */
+int sched_yield(void);
 
 /**
  * get the current process ID.
@@ -94,30 +202,6 @@ int getcwd(char *buf, size_t size);
 int chdir(const char *path);
 
 /**
- * directory entry structure (matches kernel fs_dirent_t).
- */
-typedef struct dirent
-{
-    unsigned int inode;
-    unsigned char file_type;
-    unsigned int size;
-    char name[256];
-} dirent_t;
-
-/* file type constants */
-#define FT_UNKNOWN 0
-#define FT_FILE    1
-#define FT_DIR     2
-
-/**
- * read the next directory entry from an open directory fd.
- * @param fd file descriptor for an open directory.
- * @param entry pointer to dirent structure to fill.
- * @return 0 on success, -1 on end-of-directory or error.
- */
-int readdir(int fd, dirent_t *entry);
-
-/**
  * remove (unlink) a file.
  * @param path path to the file to remove.
  * @return 0 on success, -1 on failure.
@@ -132,29 +216,30 @@ int unlink(const char *path);
 int rmdir(const char *path);
 
 /**
- * create an empty file.
+ * create a file, or truncate it if it exists (the file is not left open).
  * @param path path to the file to create.
  * @return 0 on success, -1 on failure.
  */
 int create(const char *path);
-
-/**
- * create a directory.
- * @param path path to the directory to create.
- * @return 0 on success, -1 on failure.
- */
-int mkdir(const char *path);
 
 /* terminal mode constants */
 #define TTY_COOKED 0
 #define TTY_RAW    1
 
 /**
- * switch terminal mode for the calling process.
- * @param mode TTY_COOKED (0) for line-buffered or TTY_RAW (1) for event-based.
+ * switch the terminal on fd 0 between two modes (a wrapper over termios):
+ * TTY_COOKED is line input with echo and signal keys; TTY_RAW gives one
+ * key_event_t per read (read_event), with no echo and Ctrl+C as a key.
+ * the mode belongs to the terminal, so it stays after the program exits.
+ * @param mode TTY_COOKED or TTY_RAW.
  * @return the previous mode, or -1 on error.
  */
 int ttyctl(int mode);
+
+/**
+ * true if fd refers to a terminal.
+ */
+int isatty(int fd);
 
 /**
  * issue a device-control request on an open file descriptor.

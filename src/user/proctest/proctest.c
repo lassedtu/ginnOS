@@ -1,0 +1,616 @@
+/**
+ * @file proctest.c
+ * @brief Exercise the kernel's process model.
+ *
+ * usage: proctest <mode>
+ *   fork   fork, write to a global, the heap, the stack and an mmap in the
+ *          child, and check that the parent still sees its own values
+ *          (copy-on-write)
+ *   pipe   fork with a pipe between parent and child
+ *   atomic two children write 4 KiB blocks into one pipe at the same time;
+ *          every block must arrive in one piece (PIPE_BUF)
+ *   many   fork until the process table is full, then reap every child
+ *   flags  open flags: O_EXCL, O_TRUNC, O_APPEND, O_DIRECTORY, access modes,
+ *          and O_CLOEXEC across execve
+ *   offset dup2 and fork share the file offset of an open file
+ *   wait   waitpid with WNOHANG and pid -1, ECHILD, the status of a child
+ *          killed by SIGSEGV, and getppid
+ *   fpu    three children run long floating-point loops at the same time;
+ *          the timer switches between them, and each result must match one
+ *          computed alone (the FPU registers are saved on each switch)
+ *   exec   execve a missing program (must fail and return), then fork and
+ *          execve this program in the child with its own argv and
+ *          environment (the child checks them in mode "execed")
+ *
+ * each mode prints "proctest <mode>: ok" when it passes.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <errno.h>
+#include <unistd.h>
+
+#define MANY_MAX 100
+#define BLOCK_SIZE 4096
+#define BLOCKS_PER_WRITER 16
+
+static int global_value = 1;
+
+static int test_fork(void)
+{
+    int stack_value = 2;
+    int *heap_value = malloc(sizeof(int));
+    int *mmap_value = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_ANONYMOUS, -1, 0);
+    if (!heap_value || mmap_value == MAP_FAILED)
+    {
+        printf("proctest fork: allocation failed\n");
+        return 1;
+    }
+    *heap_value = 3;
+    *mmap_value = 4;
+
+    pid_t child = fork();
+    if (child < 0)
+    {
+        printf("proctest fork: fork failed\n");
+        return 1;
+    }
+
+    if (child == 0)
+    {
+        // the child sees the parent's values, then changes its own copies
+        int seen = global_value == 1 && stack_value == 2 && *heap_value == 3 && *mmap_value == 4;
+        global_value = 10;
+        stack_value = 20;
+        *heap_value = 30;
+        *mmap_value = 40;
+        int changed =
+            global_value == 10 && stack_value == 20 && *heap_value == 30 && *mmap_value == 40;
+        _exit(seen && changed ? 7 : 1);
+    }
+
+    int status;
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status) || WEXITSTATUS(status) != 7)
+    {
+        printf("proctest fork: child failed (status 0x%x)\n", status);
+        return 1;
+    }
+    if (global_value != 1 || stack_value != 2 || *heap_value != 3 || *mmap_value != 4)
+    {
+        printf("proctest fork: the child's writes reached the parent\n");
+        return 1;
+    }
+
+    // the parent can still write to its pages (no longer shared)
+    global_value = 5;
+    *heap_value = 6;
+    if (global_value != 5 || *heap_value != 6)
+    {
+        printf("proctest fork: parent write lost\n");
+        return 1;
+    }
+
+    printf("proctest fork: ok\n");
+    return 0;
+}
+
+static int test_pipe(void)
+{
+    int fds[2];
+    if (pipe(fds) != 0)
+    {
+        printf("proctest pipe: pipe failed\n");
+        return 1;
+    }
+
+    pid_t child = fork();
+    if (child < 0)
+    {
+        printf("proctest pipe: fork failed\n");
+        return 1;
+    }
+
+    if (child == 0)
+    {
+        close(fds[0]);
+        const char *message = "hello from the child";
+        write(fds[1], message, strlen(message));
+        close(fds[1]);
+        _exit(0);
+    }
+
+    close(fds[1]);
+    char buffer[64];
+    int total = 0;
+    int n;
+    while ((n = read(fds[0], buffer + total, sizeof(buffer) - 1 - total)) > 0)
+    {
+        total += n;
+    }
+    buffer[total] = '\0';
+    close(fds[0]);
+    waitpid(child, NULL, 0);
+
+    if (strcmp(buffer, "hello from the child") != 0)
+    {
+        printf("proctest pipe: read \"%s\"\n", buffer);
+        return 1;
+    }
+
+    printf("proctest pipe: ok\n");
+    return 0;
+}
+
+/**
+ * in a child: write BLOCKS_PER_WRITER blocks filled with value, then exit.
+ */
+static void write_blocks(int fd, char value)
+{
+    static char block[BLOCK_SIZE];
+    memset(block, value, BLOCK_SIZE);
+    for (int i = 0; i < BLOCKS_PER_WRITER; i++)
+    {
+        if (write(fd, block, BLOCK_SIZE) != BLOCK_SIZE)
+            _exit(1);
+    }
+    _exit(0);
+}
+
+static int test_atomic(void)
+{
+    int fds[2];
+    if (pipe(fds) != 0)
+    {
+        printf("proctest atomic: pipe failed\n");
+        return 1;
+    }
+
+    pid_t writers[2];
+    for (int w = 0; w < 2; w++)
+    {
+        writers[w] = fork();
+        if (writers[w] == 0)
+        {
+            close(fds[0]);
+            write_blocks(fds[1], (char)('A' + w));
+        }
+    }
+    close(fds[1]);
+
+    // read the whole stream; every BLOCK_SIZE run must hold one value
+    static char block[BLOCK_SIZE];
+    int blocks[2] = {0, 0};
+    int filled = 0;
+    int n;
+    while ((n = read(fds[0], block + filled, BLOCK_SIZE - filled)) > 0)
+    {
+        filled += n;
+        if (filled < BLOCK_SIZE)
+            continue;
+        filled = 0;
+        for (int i = 1; i < BLOCK_SIZE; i++)
+        {
+            if (block[i] != block[0])
+            {
+                printf("proctest atomic: block mixes '%c' and '%c'\n", block[0], block[i]);
+                return 1;
+            }
+        }
+        if (block[0] == 'A' || block[0] == 'B')
+            blocks[block[0] - 'A']++;
+    }
+    close(fds[0]);
+
+    for (int w = 0; w < 2; w++)
+        waitpid(writers[w], NULL, 0);
+
+    if (filled != 0 || blocks[0] != BLOCKS_PER_WRITER || blocks[1] != BLOCKS_PER_WRITER)
+    {
+        printf("proctest atomic: got %d and %d blocks\n", blocks[0], blocks[1]);
+        return 1;
+    }
+
+    printf("proctest atomic: ok\n");
+    return 0;
+}
+
+static int test_many(void)
+{
+    pid_t children[MANY_MAX];
+    int count = 0;
+    int fds[2];
+
+    // the children wait on a pipe, so they all exist at the same time
+    if (pipe(fds) != 0)
+    {
+        printf("proctest many: pipe failed\n");
+        return 1;
+    }
+
+    while (count < MANY_MAX)
+    {
+        pid_t child = fork();
+        if (child < 0)
+        {
+            break; // the process table is full
+        }
+        if (child == 0)
+        {
+            char byte;
+            close(fds[1]);
+            read(fds[0], &byte, 1); // returns at EOF, when the parent closes
+            _exit(0);
+        }
+        children[count++] = child;
+    }
+
+    close(fds[0]);
+    close(fds[1]);
+
+    int failed = 0;
+    for (int i = 0; i < count; i++)
+    {
+        int status;
+        if (waitpid(children[i], &status, 0) != children[i] || status != 0)
+        {
+            failed++;
+        }
+    }
+
+    if (count == MANY_MAX || count == 0 || failed != 0)
+    {
+        printf("proctest many: %d children, %d failed\n", count, failed);
+        return 1;
+    }
+
+    printf("proctest many: %d children, ok\n", count);
+    return 0;
+}
+
+/**
+ * report a failed check of test_flags and return 1.
+ */
+static int flag_failed(const char *what)
+{
+    printf("proctest flags: %s (errno %d)\n", what, errno);
+    return 1;
+}
+
+static int test_flags(void)
+{
+    const char *path = "/proctest.flags";
+    char buf[16] = {0};
+
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    if (fd < 0)
+        return flag_failed("O_CREAT | O_EXCL on a new file");
+    write(fd, "12345", 5);
+    close(fd);
+
+    if (open(path, O_WRONLY | O_CREAT | O_EXCL, 0644) != -1 || errno != EEXIST)
+        return flag_failed("O_EXCL on an existing file");
+
+    // a read-only descriptor cannot write, a write-only one cannot read
+    fd = open(path, O_RDONLY);
+    if (write(fd, "x", 1) != -1 || errno != EBADF)
+        return flag_failed("write to O_RDONLY");
+    close(fd);
+    fd = open(path, O_WRONLY);
+    if (read(fd, buf, 1) != -1 || errno != EBADF)
+        return flag_failed("read from O_WRONLY");
+    close(fd);
+
+    // O_APPEND writes at the end even after a seek to the start
+    fd = open(path, O_WRONLY | O_APPEND);
+    lseek(fd, 0, SEEK_SET);
+    write(fd, "67", 2);
+    close(fd);
+    fd = open(path, O_RDONLY);
+    read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (strcmp(buf, "1234567") != 0)
+        return flag_failed("O_APPEND");
+
+    // O_TRUNC empties it
+    fd = open(path, O_RDWR | O_TRUNC);
+    if (fd < 0 || read(fd, buf, sizeof(buf)) != 0)
+        return flag_failed("O_TRUNC");
+    close(fd);
+
+    if (open(path, O_RDONLY | O_DIRECTORY) != -1 || errno != ENOTDIR)
+        return flag_failed("O_DIRECTORY on a file");
+    if (open("/bin", O_WRONLY) != -1 || errno != EISDIR)
+        return flag_failed("a directory opened for writing");
+    fd = open("/bin", O_RDONLY | O_DIRECTORY);
+    if (fd < 0)
+        return flag_failed("O_DIRECTORY on a directory");
+    close(fd);
+
+    // an O_CLOEXEC descriptor is closed in the program execve starts
+    fd = open(path, O_RDONLY | O_CLOEXEC);
+    pid_t child = fork();
+    if (child == 0)
+    {
+        char fd_text[4] = {(char)('0' + fd / 10), (char)('0' + fd % 10), 0};
+        char *child_argv[] = {"proctest", "cloexec", fd_text, NULL};
+        execve("/bin/proctest", child_argv, environ);
+        _exit(99);
+    }
+    int status;
+    waitpid(child, &status, 0);
+    close(fd);
+    unlink(path);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        return flag_failed("O_CLOEXEC descriptor still open after execve");
+
+    printf("proctest flags: ok\n");
+    return 0;
+}
+
+/**
+ * run by test_flags after execve: the descriptor in argv[2] must be closed.
+ */
+static int test_cloexec(int argc, char **argv)
+{
+    char byte;
+    if (argc < 3)
+        return 1;
+    return read(atoi(argv[2]), &byte, 1) == -1 && errno == EBADF ? 0 : 1;
+}
+
+static int test_offset(void)
+{
+    const char *path = "/proctest.tmp";
+    int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0 || write(fd, "abcdef", 6) != 6 || lseek(fd, 0, SEEK_SET) != 0)
+    {
+        printf("proctest offset: cannot set up %s\n", path);
+        return 1;
+    }
+
+    // a dup'ed descriptor moves the same offset
+    char got[7] = {0};
+    int copy = dup2(fd, 10);
+    read(fd, got, 2);
+    read(copy, got + 2, 2);
+
+    // so does the same descriptor in a child
+    pid_t child = fork();
+    if (child == 0)
+    {
+        _exit(read(fd, got + 4, 1) == 1 && got[4] == 'e' ? 0 : 1);
+    }
+    int status;
+    waitpid(child, &status, 0);
+    read(fd, got + 5, 1);
+
+    close(copy);
+    close(fd);
+    unlink(path);
+
+    if (strcmp(got, "abcd") != 0 || got[5] != 'f' || status != 0)
+    {
+        printf("proctest offset: read \"%s\" + '%c', child status 0x%x\n", got, got[5],
+               status);
+        return 1;
+    }
+
+    printf("proctest offset: ok\n");
+    return 0;
+}
+
+static int test_wait(void)
+{
+    pid_t self = getpid();
+    int fds[2];
+    pipe(fds);
+
+    // a child that waits for the parent's signal (a byte on the pipe), then
+    // checks getppid
+    pid_t slow = fork();
+    if (slow == 0)
+    {
+        char byte;
+        close(fds[1]);
+        read(fds[0], &byte, 1);
+        _exit(getppid() == self ? 3 : 1);
+    }
+    close(fds[0]);
+
+    // a child killed by a bad memory access
+    pid_t crash = fork();
+    if (crash == 0)
+    {
+        volatile int *null = NULL;
+        _exit(*null);
+    }
+
+    int status;
+    if (waitpid(slow, &status, WNOHANG) != 0)
+    {
+        printf("proctest wait: WNOHANG did not return 0\n");
+        return 1;
+    }
+
+    // the first child to exit is the crashing one: the other is waiting
+    pid_t first = waitpid(-1, &status, 0);
+    if (first != crash || !WIFSIGNALED(status) || WTERMSIG(status) != 11)
+    {
+        printf("proctest wait: got pid %d status 0x%x\n", first, status);
+        return 1;
+    }
+
+    write(fds[1], "x", 1);
+    close(fds[1]);
+    if (wait(&status) != slow || !WIFEXITED(status) || WEXITSTATUS(status) != 3)
+    {
+        printf("proctest wait: slow child status 0x%x\n", status);
+        return 1;
+    }
+
+    if (wait(&status) != -1 || errno != ECHILD)
+    {
+        printf("proctest wait: no ECHILD without children\n");
+        return 1;
+    }
+
+    printf("proctest wait: ok\n");
+    return 0;
+}
+
+#define FPU_STEPS 3000000
+
+/**
+ * a floating-point loop with no calls: its values stay in FPU registers
+ * while the timer switches processes.
+ */
+__attribute__((noinline)) static unsigned int fpu_work(double seed)
+{
+    double a = seed;
+    double b = 1.0 / (seed + 3.0);
+    for (int i = 0; i < FPU_STEPS; i++)
+    {
+        a = a * 0.999999 + b;
+        b = b * 1.000001 - 0.0000001 * a;
+    }
+    // the bits of the result, folded into one word
+    union
+    {
+        double value;
+        unsigned int words[2];
+    } bits = {a + b};
+    return bits.words[0] ^ bits.words[1];
+}
+
+static int test_fpu(void)
+{
+    const double seeds[3] = {1.5, 2.25, 7.125};
+    unsigned int expected[3];
+    for (int i = 0; i < 3; i++)
+        expected[i] = fpu_work(seeds[i]);
+
+    int fds[2];
+    pipe(fds);
+    pid_t children[3];
+    for (int i = 0; i < 3; i++)
+    {
+        children[i] = fork();
+        if (children[i] == 0)
+        {
+            unsigned int result = fpu_work(seeds[i]);
+            write(fds[1], &result, sizeof(result));
+            _exit(0);
+        }
+    }
+    close(fds[1]);
+
+    int mismatches = 0;
+    for (int i = 0; i < 3; i++)
+    {
+        waitpid(children[i], NULL, 0);
+    }
+    // results arrive in any order: each must be one of the expected ones
+    unsigned int result;
+    int count = 0;
+    while (read(fds[0], &result, sizeof(result)) == sizeof(result))
+    {
+        count++;
+        if (result != expected[0] && result != expected[1] && result != expected[2])
+            mismatches++;
+    }
+    close(fds[0]);
+
+    if (count != 3 || mismatches != 0)
+    {
+        printf("proctest fpu: %d results, %d wrong\n", count, mismatches);
+        return 1;
+    }
+    printf("proctest fpu: ok\n");
+    return 0;
+}
+
+static int test_exec(void)
+{
+    char *missing_argv[] = {"missing", NULL};
+    if (execve("/bin/no-such-program", missing_argv, environ) != -1)
+    {
+        printf("proctest exec: execve of a missing program did not fail\n");
+        return 1;
+    }
+
+    pid_t child = fork();
+    if (child < 0)
+    {
+        printf("proctest exec: fork failed\n");
+        return 1;
+    }
+    if (child == 0)
+    {
+        char *child_argv[] = {"proctest", "execed", "second argument", NULL};
+        char *child_envp[] = {"PROCTEST=42", "OTHER=x", NULL};
+        execve("/bin/proctest", child_argv, child_envp);
+        _exit(99); // execve failed
+    }
+
+    int status;
+    waitpid(child, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 42)
+    {
+        printf("proctest exec: child status 0x%x\n", status);
+        return 1;
+    }
+
+    printf("proctest exec: ok\n");
+    return 0;
+}
+
+/**
+ * the program execve'd by test_exec: check argv and the environment.
+ */
+static int test_execed(int argc, char **argv)
+{
+    const char *value = getenv("PROCTEST");
+    if (argc != 3 || strcmp(argv[2], "second argument") != 0 || !value ||
+        strcmp(value, "42") != 0 || getenv("MISSING") != NULL)
+    {
+        return 1;
+    }
+    return atoi(value);
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        printf("usage: proctest fork|pipe|atomic|many|flags|offset|wait|exec|fpu\n");
+        return 1;
+    }
+
+    if (strcmp(argv[1], "fork") == 0)
+        return test_fork();
+    if (strcmp(argv[1], "pipe") == 0)
+        return test_pipe();
+    if (strcmp(argv[1], "atomic") == 0)
+        return test_atomic();
+    if (strcmp(argv[1], "many") == 0)
+        return test_many();
+    if (strcmp(argv[1], "flags") == 0)
+        return test_flags();
+    if (strcmp(argv[1], "cloexec") == 0)
+        return test_cloexec(argc, argv);
+    if (strcmp(argv[1], "offset") == 0)
+        return test_offset();
+    if (strcmp(argv[1], "wait") == 0)
+        return test_wait();
+    if (strcmp(argv[1], "exec") == 0)
+        return test_exec();
+    if (strcmp(argv[1], "fpu") == 0)
+        return test_fpu();
+    if (strcmp(argv[1], "execed") == 0)
+        return test_execed(argc, argv);
+
+    printf("proctest: unknown mode %s\n", argv[1]);
+    return 1;
+}

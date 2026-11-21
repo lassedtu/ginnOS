@@ -301,6 +301,7 @@ void tty_init(tty_t *tty, const tty_backend_t *backend)
     tty->fg = TTY_COLOR_DEFAULT_FG;
     tty->bg = TTY_COLOR_DEFAULT_BG;
     tty->bold = false;
+    tty->batch_depth = 0;
     csi_reset(tty);
     apply_colors(tty);
 
@@ -390,25 +391,34 @@ static void tty_process(tty_t *tty, char c)
     tty_output_char(tty, c);
 }
 
-void tty_putchar(tty_t *tty, char c)
+void tty_begin_batch(tty_t *tty)
 {
     const tty_backend_t *be = tty->backend;
-    uint8_t row, col;
 
-    // erase the caret at the current position so it isn't baked into a cell
-    // we're about to draw, process the byte, then redraw the caret wherever the
-    // cursor ended up. backends with no software caret (draw_cursor == NULL,
+    // hide the caret once at the start, so it isn't baked into a cell we're
+    // about to draw. backends with no software caret (draw_cursor == NULL,
     // e.g. the VGA hardware cursor) skip the overlay entirely.
-    if (be->draw_cursor)
+    if (tty->batch_depth++ == 0 && be->draw_cursor)
     {
+        uint8_t row, col;
         be->get_cursor(&row, &col);
         be->draw_cursor(row, col, false);
     }
+}
 
-    tty_process(tty, c);
+void tty_end_batch(tty_t *tty)
+{
+    const tty_backend_t *be = tty->backend;
 
+    if (tty->batch_depth == 0 || --tty->batch_depth > 0)
+    {
+        return; // unbalanced, or still inside an outer batch
+    }
+
+    // redraw the caret wherever the cursor ended up, then show everything.
     if (be->draw_cursor)
     {
+        uint8_t row, col;
         be->get_cursor(&row, &col);
         be->draw_cursor(row, col, true);
     }
@@ -419,12 +429,22 @@ void tty_putchar(tty_t *tty, char c)
     }
 }
 
+void tty_putchar(tty_t *tty, char c)
+{
+    // a lone byte is a batch of one; inside a batch it just draws.
+    tty_begin_batch(tty);
+    tty_process(tty, c);
+    tty_end_batch(tty);
+}
+
 void tty_write(tty_t *tty, const char *str)
 {
+    tty_begin_batch(tty);
     while (*str)
     {
-        tty_putchar(tty, *str++);
+        tty_process(tty, *str++);
     }
+    tty_end_batch(tty);
 }
 
 uint8_t tty_set_mode(tty_t *tty, uint8_t mode)

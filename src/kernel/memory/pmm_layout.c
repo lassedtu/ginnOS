@@ -1,19 +1,21 @@
 #include "pmm_layout.h"
 
 #include "kernel_layout.h"
+#include "memory_layout.h"
 #include "kernel/panic.h"
 
-static uint32_t bitmap_start;
-static uint32_t bitmap_end;
-static uint32_t bitmap_bytes;
+static phys_addr_t bitmap_start;
+static phys_addr_t bitmap_end;
+static size_t bitmap_bytes;
+static phys_addr_t refcount_start;
 static uint32_t total_pages;
 
 /**
  * round an address up to the next page boundary.
  */
-static uint32_t page_align_up(uint32_t addr)
+static uintptr_t page_align_up(uintptr_t addr)
 {
-    return (addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    return PAGE_ALIGN_UP(addr);
 }
 
 void pmm_layout_init(boot_info_t *boot)
@@ -57,28 +59,50 @@ void pmm_layout_init(boot_info_t *boot)
         kernel_panic("pmm_layout_init: no usable memory found");
     }
 
+    /* the kernel reaches RAM through the direct map, which covers at most
+     * PHYS_MAP_SIZE bytes on 32-bit: RAM above that is left unused */
+    if (highest_address > PHYS_MAP_SIZE)
+    {
+        highest_address = PHYS_MAP_SIZE;
+    }
+
     /* total page frames the bitmap must track */
     total_pages = highest_address / PAGE_SIZE;
 
     /* bitmap size: 1 bit per page, rounded up to whole bytes */
     bitmap_bytes = (total_pages + 7) / 8;
 
-    /* place bitmap right after kernel_end, page-aligned */
-    bitmap_start = page_align_up(kernel_end_address());
-    bitmap_end = bitmap_start + bitmap_bytes;
+    /* place the bitmap after the kernel and above the legacy area. the heap
+     * comes next (heap_init), so neither can reach VGA memory. the usable
+     * pages between the kernel and LOW_MEMORY_END go to the PMM. */
+    bitmap_start = page_align_up(virt_to_phys((void *)kernel_end_address()));
+    if (bitmap_start < LOW_MEMORY_END)
+    {
+        bitmap_start = LOW_MEMORY_END;
+    }
+
+    /* the reference counts (one uint16_t per page) follow the bitmap. the
+     * reserved range covers both. */
+    refcount_start = (bitmap_start + bitmap_bytes + 3u) & ~(phys_addr_t)3u;
+    bitmap_end = refcount_start + (phys_addr_t)total_pages * sizeof(uint16_t);
 }
 
-uint32_t pmm_bitmap_start(void)
+phys_addr_t pmm_bitmap_start(void)
 {
     return bitmap_start;
 }
 
-uint32_t pmm_bitmap_end(void)
+phys_addr_t pmm_bitmap_end(void)
 {
     return bitmap_end;
 }
 
-uint32_t pmm_bitmap_size(void)
+phys_addr_t pmm_refcount_start(void)
+{
+    return refcount_start;
+}
+
+size_t pmm_bitmap_size(void)
 {
     return bitmap_bytes;
 }

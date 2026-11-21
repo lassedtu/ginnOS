@@ -7,6 +7,19 @@
 
 #define LINE_MAX 256
 
+// room for the full prompt: "skl:" + a cwd of up to 255 chars + " $ " + NUL.
+#define PROMPT_MAX 264
+
+/**
+ * format the shell prompt ("skl:<cwd> $ ") into a buffer. implemented by the
+ * shell (main.c); the line editor uses it to redraw the prompt in the same
+ * write as the rest of the line.
+ * @param buf destination buffer.
+ * @param size size of the buffer.
+ * @return number of characters written (excluding the null terminator).
+ */
+int format_prompt(char *buf, int size);
+
 /**
  * initialize the line editor.
  * switches terminal to raw mode.

@@ -1,72 +1,156 @@
 #pragma once
 
 #include "arch/x86/cpu/isr.h"
+#include "kernel/errno.h"
 #include "common/stdint.h"
 #include "common/error.h"
 #include "kernel/memory/memory_layout.h"
+#include "kernel/usermode/uaccess.h"
+
+/**
+ * one syscall argument or return value: pointer-width, so a user address
+ * passes through unchanged. handlers cast arguments to what they mean.
+ */
+typedef uintptr_t syscall_arg_t;
+
+/**
+ * read syscall argument n (0-based). the only place that knows the register
+ * convention: int 0x80 on i686 passes EBX, ECX, EDX, ESI, EDI.
+ * @param regs the trap frame of the syscall.
+ * @param n argument index, 0 to 4.
+ * @return the argument.
+ */
+static inline syscall_arg_t syscall_arg(const struct registers *regs, int n)
+{
+    switch (n)
+    {
+    case 0:
+        return regs->ebx;
+    case 1:
+        return regs->ecx;
+    case 2:
+        return regs->edx;
+    case 3:
+        return regs->esi;
+    default:
+        return regs->edi;
+    }
+}
 
 /**
  * syscall function pointer type. takes a pointer to the CPU registers struct and returns an int32_t.
  * the registers struct contains the syscall number in EAX and arguments in EBX, ECX, EDX, ESI, EDI.
  * the return value is placed in EAX.
  */
-typedef int32_t (*syscall_fn_t)(struct registers *regs);
+typedef intptr_t syscall_ret_t;
+typedef syscall_ret_t (*syscall_fn_t)(struct registers *regs);
 
-/* map a kerr_t error to a negative errno value for userspace */
-static inline int32_t kerr_to_errno(kerr_t err)
-{
-    switch (err)
-    {
-    case KERR_OK:       return 0;
-    case KERR_NOMEM:    return -4;  /* ENOMEM */
-    case KERR_IO:       return -14; /* EIO */
-    case KERR_NOTFOUND: return -5;  /* ENOENT */
-    case KERR_PERM:     return -6;  /* EACCES */
-    case KERR_INVAL:    return -3;  /* EINVAL */
-    case KERR_BUSY:     return -16; /* EBUSY */
-    case KERR_NOSPC:    return -15; /* ENOSPC */
-    case KERR_RANGE:    return -17; /* ERANGE */
-    case KERR_EXIST:    return -9;  /* EEXIST */
-    case KERR_ISDIR:    return -10; /* EISDIR */
-    case KERR_NOTDIR:   return -11; /* ENOTDIR */
-    case KERR_PIPE:     return -7;  /* EPIPE */
-    case KERR_NOENT:    return -5;  /* ENOENT */
-    case KERR_FAULT:    return -18; /* EFAULT */
-    }
-    return -3; /* EINVAL as fallback */
-}
+
+/**
+ * copy a path string in from user memory and resolve it against the current
+ * process's cwd.
+ * @param user_path the user's path pointer.
+ * @param resolved receives the absolute path.
+ * @param size size of resolved.
+ * @return 0, or a negative errno (EFAULT for a bad pointer, EINVAL for a
+ *         path too long or unresolvable).
+ */
+int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size);
+
+/**
+ * give a file the caller has just created its mode (taken through the
+ * umask) and the caller's effective user and group as owner.
+ * @param path the new file's absolute path.
+ * @param mode the permission bits asked for.
+ * @return 0, or a negative errno.
+ */
+int32_t set_new_owner(const char *path, uint32_t mode);
 
 /* sys_io.c */
-int32_t sys_write(struct registers *regs);
-int32_t sys_read(struct registers *regs);
-int32_t sys_open(struct registers *regs);
-int32_t sys_close(struct registers *regs);
-int32_t sys_lseek(struct registers *regs);
-int32_t sys_ftruncate(struct registers *regs);
-int32_t sys_dup2(struct registers *regs);
-int32_t sys_pipe(struct registers *regs);
+syscall_ret_t sys_write(struct registers *regs);
+syscall_ret_t sys_read(struct registers *regs);
+syscall_ret_t sys_open(struct registers *regs);
+syscall_ret_t sys_close(struct registers *regs);
+syscall_ret_t sys_lseek(struct registers *regs);
+syscall_ret_t sys_ftruncate(struct registers *regs);
+syscall_ret_t sys_dup2(struct registers *regs);
+syscall_ret_t sys_pipe(struct registers *regs);
 
 /* sys_fs.c */
-int32_t sys_stat(struct registers *regs);
-int32_t sys_create(struct registers *regs);
-int32_t sys_mkdir(struct registers *regs);
-int32_t sys_unlink(struct registers *regs);
-int32_t sys_rmdir(struct registers *regs);
-int32_t sys_readdir(struct registers *regs);
+syscall_ret_t sys_stat(struct registers *regs);
+syscall_ret_t sys_mkdir(struct registers *regs);
+syscall_ret_t sys_unlink(struct registers *regs);
+syscall_ret_t sys_rmdir(struct registers *regs);
+syscall_ret_t sys_getdents(struct registers *regs);
+syscall_ret_t sys_poll(struct registers *regs);
+
+/* sys_cred.c */
+syscall_ret_t sys_getuid(struct registers *regs);
+syscall_ret_t sys_geteuid(struct registers *regs);
+syscall_ret_t sys_getgid(struct registers *regs);
+syscall_ret_t sys_getegid(struct registers *regs);
+syscall_ret_t sys_setuid(struct registers *regs);
+syscall_ret_t sys_setgid(struct registers *regs);
+syscall_ret_t sys_seteuid(struct registers *regs);
+syscall_ret_t sys_setegid(struct registers *regs);
+syscall_ret_t sys_chmod(struct registers *regs);
+syscall_ret_t sys_fchmod(struct registers *regs);
+syscall_ret_t sys_chown(struct registers *regs);
+syscall_ret_t sys_umask(struct registers *regs);
+
+/* kernel/time/clock.c */
+syscall_ret_t sys_clock_gettime(struct registers *regs);
+syscall_ret_t sys_nanosleep(struct registers *regs);
+syscall_ret_t sys_times(struct registers *regs);
+
+/* kernel/signal/signal.c */
+syscall_ret_t sys_kill(struct registers *regs);
+syscall_ret_t sys_sigaction(struct registers *regs);
+syscall_ret_t sys_sigprocmask(struct registers *regs);
+syscall_ret_t sys_sigreturn(struct registers *regs);
+syscall_ret_t sys_sigpending(struct registers *regs);
+syscall_ret_t sys_sigsuspend(struct registers *regs);
+syscall_ret_t sys_alarm(struct registers *regs);
 
 /* sys_proc.c */
-int32_t sys_exit(struct registers *regs);
-int32_t sys_exec(struct registers *regs);
-int32_t sys_getpid(struct registers *regs);
-int32_t sys_waitpid(struct registers *regs);
-int32_t sys_sbrk(struct registers *regs);
-int32_t sys_mmap(struct registers *regs);
+syscall_ret_t sys_exit(struct registers *regs);
+syscall_ret_t sys_exec(struct registers *regs);
+syscall_ret_t sys_getpid(struct registers *regs);
+syscall_ret_t sys_waitpid(struct registers *regs);
+syscall_ret_t sys_sbrk(struct registers *regs);
+syscall_ret_t sys_mmap(struct registers *regs);
+syscall_ret_t sys_munmap(struct registers *regs);
+syscall_ret_t sys_mprotect(struct registers *regs);
+
+/**
+ * SYS_fork: create a child process that is a copy of the caller.
+ * returns the child's PID in the parent and 0 in the child, or a negative
+ * errno.
+ */
+syscall_ret_t sys_fork(struct registers *regs);
+
+/**
+ * SYS_execve: replace the calling process's program with a new one.
+ */
+syscall_ret_t sys_execve(struct registers *regs);
+syscall_ret_t sys_getppid(struct registers *regs);
+syscall_ret_t sys_sched_yield(struct registers *regs);
+syscall_ret_t sys_setpgid(struct registers *regs);
+syscall_ret_t sys_getpgid(struct registers *regs);
+syscall_ret_t sys_setsid(struct registers *regs);
+syscall_ret_t sys_getsid(struct registers *regs);
+syscall_ret_t sys_fcntl(struct registers *regs);
+syscall_ret_t sys_fstat(struct registers *regs);
+syscall_ret_t sys_rename(struct registers *regs);
+syscall_ret_t sys_access(struct registers *regs);
+syscall_ret_t sys_pread(struct registers *regs);
+syscall_ret_t sys_pwrite(struct registers *regs);
+syscall_ret_t sys_fsync(struct registers *regs);
 
 /* sys_misc.c */
-int32_t sys_getcwd(struct registers *regs);
-int32_t sys_chdir(struct registers *regs);
-int32_t sys_ttyctl(struct registers *regs);
-int32_t sys_ioctl(struct registers *regs);
+syscall_ret_t sys_getcwd(struct registers *regs);
+syscall_ret_t sys_chdir(struct registers *regs);
+syscall_ret_t sys_ioctl(struct registers *regs);
 
 /* sys_fb.c */
-int32_t sys_pollkey(struct registers *regs);
+syscall_ret_t sys_pollkey(struct registers *regs);

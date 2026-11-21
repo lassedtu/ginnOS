@@ -13,14 +13,12 @@ static int cat_fd(int fd)
     while ((n = read(fd, buf, BUF_SIZE)) > 0)
         write(1, buf, n);
 
-    write(1, "\n", 1);
-
     return 0;
 }
 
 static int cat_file(const char *path)
 {
-    int fd = open(path, 0);
+    int fd = open(path, O_RDONLY);
     if (fd < 0)
     {
         printf("cat: %s: no such file\n", path);

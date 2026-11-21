@@ -12,7 +12,7 @@
 #define SYS_OPEN 3
 #define SYS_CLOSE 4
 #define SYS_STAT 5
-#define SYS_CREATE 6
+#define SYS_CREATE 6 // retired: create() is open(O_CREAT | O_WRONLY | O_TRUNC)
 #define SYS_MKDIR 7
 #define SYS_EXEC 8
 #define SYS_GETPID 9
@@ -20,10 +20,10 @@
 #define SYS_SBRK 11
 #define SYS_GETCWD 12
 #define SYS_CHDIR 13
-#define SYS_READDIR 14
+#define SYS_READDIR 14 // retired: use SYS_GETDENTS
 #define SYS_UNLINK 15
 #define SYS_RMDIR 16
-#define SYS_TTYCTL 17
+#define SYS_TTYCTL 17 // retired: ttyctl() is a libc wrapper over termios
 #define SYS_PIPE 18
 #define SYS_DUP2 19
 #define SYS_FTRUNCATE 20
@@ -31,9 +31,50 @@
 #define SYS_POLLKEY 22
 #define SYS_IOCTL 23
 #define SYS_MMAP 24
+#define SYS_MUNMAP 25
+#define SYS_MPROTECT 26
+#define SYS_FORK 27
+#define SYS_EXECVE 28
+#define SYS_GETPPID 29
+#define SYS_SCHED_YIELD 30
+#define SYS_FCNTL 31
+#define SYS_FSTAT 32
+#define SYS_RENAME 33
+#define SYS_ACCESS 34
+#define SYS_PREAD 35
+#define SYS_PWRITE 36
+#define SYS_FSYNC 37
+#define SYS_GETDENTS 38
+#define SYS_POLL 39
+#define SYS_KILL 40
+#define SYS_SIGACTION 41
+#define SYS_SIGPROCMASK 42
+#define SYS_SIGRETURN 43
+#define SYS_SIGPENDING 44
+#define SYS_SIGSUSPEND 45
+#define SYS_ALARM 46
+#define SYS_SETPGID 47
+#define SYS_GETPGID 48
+#define SYS_SETSID 49
+#define SYS_GETSID 50
+#define SYS_CLOCK_GETTIME 51
+#define SYS_NANOSLEEP 52
+#define SYS_TIMES 53
+#define SYS_GETUID 54
+#define SYS_GETEUID 55
+#define SYS_GETGID 56
+#define SYS_GETEGID 57
+#define SYS_SETUID 58
+#define SYS_SETGID 59
+#define SYS_SETEUID 60
+#define SYS_SETEGID 61
+#define SYS_CHMOD 62
+#define SYS_FCHMOD 63
+#define SYS_CHOWN 64
+#define SYS_UMASK 65
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 25
+#define SYSCALL_COUNT 66
 
 /**
  * initialize the system call interface.

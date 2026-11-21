@@ -18,7 +18,7 @@
 
 int fb_open(void)
 {
-    return open("/dev/fb0", 0);
+    return open("/dev/fb0", O_RDWR);
 }
 
 int fbinfo(fb_info_t *info)

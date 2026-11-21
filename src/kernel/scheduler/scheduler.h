@@ -36,3 +36,11 @@ void scheduler_tick(void);
  * can be called from kernel code (e.g. when a process blocks).
  */
 void scheduler_yield(void);
+
+/**
+ * check whether the scheduler has started switching processes. it starts
+ * with the first scheduler_ready(); until then (the first /bin/sh runs on
+ * the boot stack) scheduler_yield() returns at once, so nothing can block.
+ * @return true once processes can be switched.
+ */
+bool scheduler_is_active(void);

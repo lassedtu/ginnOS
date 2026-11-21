@@ -8,6 +8,7 @@
 #include "builtin.h"
 #include "history.h"
 #include "env.h"
+#include "jobs.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -220,7 +221,7 @@ static int builtin_which(token_list_t *tokens)
             full_path[len + cmd_len] = '\0';
 
             // try to open the file to check if it exists
-            int fd = open(full_path, 0);
+            int fd = open(full_path, O_RDONLY);
             if (fd >= 0)
             {
                 close(fd);
@@ -237,8 +238,32 @@ static int builtin_which(token_list_t *tokens)
     return 1;
 }
 
+static int builtin_jobs(token_list_t *tokens)
+{
+    return jobs_builtin_jobs(tokens->count, tokens->tokens);
+}
+
+static int builtin_fg(token_list_t *tokens)
+{
+    return jobs_builtin_fg(tokens->count, tokens->tokens);
+}
+
+static int builtin_bg(token_list_t *tokens)
+{
+    return jobs_builtin_bg(tokens->count, tokens->tokens);
+}
+
+static int builtin_kill(token_list_t *tokens)
+{
+    return jobs_builtin_kill(tokens->count, tokens->tokens);
+}
+
 // table of built-in commands
 static builtin_entry_t builtins[] = {
+    {"jobs", builtin_jobs},
+    {"fg", builtin_fg},
+    {"bg", builtin_bg},
+    {"kill", builtin_kill},
     {"cd", builtin_cd},
     {"exit", builtin_exit},
     {"history", builtin_history},

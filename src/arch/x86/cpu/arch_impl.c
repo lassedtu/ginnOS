@@ -1,5 +1,4 @@
 #include "arch/arch.h"
-#include "arch/arch.h"
 #include "arch/x86/cpu/io.h"
 #include "arch/x86/cpu/gdt.h"
 #include "arch/x86/cpu/paging.h"
@@ -40,6 +39,15 @@ void arch_irq_restore(uint32_t flags)
                      : "memory", "cc");
 }
 
+bool arch_irqs_enabled(void)
+{
+    uint32_t flags;
+    __asm__ volatile("pushf\n"
+                     "pop %0\n"
+                     : "=r"(flags));
+    return (flags & 0x200u) != 0; // EFLAGS.IF
+}
+
 void arch_halt(void)
 {
     __asm__ __volatile__("hlt");
@@ -53,11 +61,56 @@ void arch_halt_forever(void)
     }
 }
 
-uint32_t arch_get_stack_pointer(void)
+uintptr_t arch_get_stack_pointer(void)
 {
-    uint32_t esp;
+    uintptr_t esp;
     __asm__ volatile("mov %%esp, %0" : "=r"(esp));
     return esp;
+}
+
+// a frame word can be read without faulting. before paging is on every
+// physical address is readable; after, the page must be mapped.
+static bool frame_word_readable(uintptr_t addr)
+{
+    if (!paging_is_enabled())
+    {
+        return true;
+    }
+    return paging_get_physical(PAGE_ALIGN_DOWN(addr)) != 0;
+}
+
+int arch_stack_walk(uintptr_t frame, uintptr_t *pcs, int max)
+{
+    int depth = 0;
+
+    // with frame pointers each frame is [saved ebp][return address]. the
+    // entry code and new kernel threads start with ebp = 0, ending the chain.
+    while (depth < max && frame != 0)
+    {
+        if ((frame & 3u) != 0 || !frame_word_readable(frame) ||
+            !frame_word_readable(frame + 4))
+        {
+            break;
+        }
+
+        const uintptr_t *words = (const uintptr_t *)frame;
+        uintptr_t next = words[0];
+        uintptr_t ret = words[1];
+        if (ret == 0)
+        {
+            break;
+        }
+        pcs[depth++] = ret;
+
+        // the stack grows down, so a caller's frame is always higher.
+        if (next <= frame)
+        {
+            break;
+        }
+        frame = next;
+    }
+
+    return depth;
 }
 
 void arch_switch_address_space(addr_space_t as)
@@ -75,6 +128,11 @@ addr_space_t arch_create_address_space(void)
 {
     // paging_clone_directory returns 0 on failure, which is ADDR_SPACE_NONE.
     return paging_clone_directory();
+}
+
+bool arch_copy_user_space(addr_space_t dst, addr_space_t src)
+{
+    return paging_copy_user(dst, src);
 }
 
 void arch_destroy_address_space(addr_space_t as)
@@ -101,7 +159,7 @@ static uint32_t pte_flags_from_mmu(uint32_t mmu_flags)
     return pte;
 }
 
-int arch_map_page(addr_space_t as, uint32_t virt, uint32_t phys, uint32_t flags)
+int arch_map_page(addr_space_t as, uintptr_t virt, phys_addr_t phys, uint32_t flags)
 {
     if (!paging_map_in(as, virt, phys, pte_flags_from_mmu(flags)))
     {
@@ -110,12 +168,42 @@ int arch_map_page(addr_space_t as, uint32_t virt, uint32_t phys, uint32_t flags)
     return 0;
 }
 
-uint32_t arch_translate_in(addr_space_t as, uint32_t virt)
+void arch_reserve_kernel_range(uintptr_t start, uintptr_t end)
+{
+    paging_reserve_tables(start, end);
+}
+
+void arch_map_kernel_page(uintptr_t virt, phys_addr_t phys)
+{
+    paging_map(virt, phys, PTE_KERNEL_RW);
+}
+
+void arch_unmap_kernel_page(uintptr_t virt)
+{
+    paging_unmap(virt);
+}
+
+bool arch_user_access_ok(addr_space_t as, uintptr_t addr, size_t len, bool write)
+{
+    return paging_user_range_ok(as, addr, len, write);
+}
+
+phys_addr_t arch_unmap_page(addr_space_t as, uintptr_t virt)
+{
+    return paging_unmap_in(as, virt);
+}
+
+bool arch_protect_page(addr_space_t as, uintptr_t virt, uint32_t flags)
+{
+    return paging_protect_in(as, virt, pte_flags_from_mmu(flags));
+}
+
+phys_addr_t arch_translate_in(addr_space_t as, uintptr_t virt)
 {
     return paging_get_physical_in(as, virt);
 }
 
-void arch_jump_to_usermode(uint32_t entry, uint32_t user_esp)
+void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp)
 {
     __asm__ volatile(
         "cli\n"

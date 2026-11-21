@@ -87,6 +87,51 @@ def recommend_size_mb(source_dir: Path, min_size_mb: int) -> int:
     return max(min_size_mb, estimated_mb)
 
 
+def find_debugfs(mke2fs_bin: str) -> str:
+    """debugfs comes with mke2fs in e2fsprogs: look next to it first."""
+    beside = Path(mke2fs_bin).with_name("debugfs")
+    if beside.exists():
+        return str(beside)
+    found = shutil.which("debugfs")
+    if found:
+        return found
+    raise FileNotFoundError("debugfs not found (it comes with e2fsprogs)")
+
+
+def set_root_owner(mke2fs_bin: str, source_dir: Path, image: Path) -> int:
+    """set uid and gid 0 on every file and directory of the image."""
+    paths = ["/"]
+    for entry in sorted(source_dir.rglob("*")):
+        paths.append("/" + entry.relative_to(source_dir).as_posix())
+
+    commands = []
+    for path in paths:
+        commands.append(f'set_inode_field "{path}" uid 0')
+        commands.append(f'set_inode_field "{path}" gid 0')
+
+    try:
+        debugfs_bin = find_debugfs(mke2fs_bin)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    with tempfile.NamedTemporaryFile("w", suffix=".cmds", delete=False) as script:
+        script.write("\n".join(commands) + "\n")
+        script_path = script.name
+    try:
+        result = subprocess.run(
+            [debugfs_bin, "-w", "-f", script_path, str(image)],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        Path(script_path).unlink()
+
+    if result.returncode != 0:
+        print(result.stderr, file=sys.stderr)
+    return result.returncode
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create an ext2 image from a source folder."
@@ -177,6 +222,12 @@ def main() -> int:
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
             return result.returncode
+
+        # mke2fs -d copies the build user's uid and gid; on ginnOS the
+        # system files belong to root, so set every inode to 0:0
+        status = set_root_owner(mke2fs_bin, filtered_source, output_image)
+        if status != 0:
+            return status
 
     print(f"Created ext2 image: {output_image}")
     print(f"Source directory: {source_dir}")

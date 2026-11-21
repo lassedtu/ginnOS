@@ -116,7 +116,7 @@ int main(int argc, char **argv)
 {
     // talk to the framebuffer the fbdev way: open the device node, query its
     // geometry/format with ioctls, and mmap its pixels for direct drawing.
-    int fd = open("/dev/fb0", 0);
+    int fd = open("/dev/fb0", O_RDWR);
     if (fd < 0)
     {
         printf("metaballs: cannot open /dev/fb0\n");

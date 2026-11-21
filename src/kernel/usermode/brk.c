@@ -2,7 +2,7 @@
 
 #include "kernel/process/process.h"
 
-uint32_t usermode_get_brk(void)
+uintptr_t usermode_get_brk(void)
 {
     process_t *proc = process_current();
     if (!proc)
@@ -12,7 +12,7 @@ uint32_t usermode_get_brk(void)
     return proc->brk;
 }
 
-void usermode_set_brk(uint32_t brk)
+void usermode_set_brk(uintptr_t brk)
 {
     process_t *proc = process_current();
     if (proc)

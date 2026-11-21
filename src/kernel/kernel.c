@@ -6,6 +6,11 @@
 #include "common/error.h"
 #include "fs/fs.h"
 #include "fs/devfs.h"
+#include "fs/tmpfs.h"
+#include "fs/procfs.h"
+#include "fs/block_cache.h"
+#include "console/termios.h"
+#include "time/clock.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
@@ -27,20 +32,27 @@
 #include "memory/region.h"
 #include "memory/reservations.h"
 #include "memory/heap.h"
+#include "memory/kstack.h"
+#include "memory/mmio.h"
 #include "arch/x86/cpu/paging.h"
 #include "syscall/syscall.h"
 #include "process/process.h"
 #include "scheduler/scheduler.h"
 #include "usermode/usermode.h"
 
-void cstart(boot_info_t *boot)
+#ifdef KERNEL_TEST
+#include "test/ktest.h"
+#endif
+
+void cstart(phys_addr_t boot_phys)
 {
-    if (!boot)
+    if (!boot_phys)
     {
         kernel_panic("missing boot_info_t");
     }
 
-    kernel_main(boot);
+    // stage2 passes the physical address of its boot_info_t
+    kernel_main((boot_info_t *)phys_to_virt(boot_phys));
 }
 
 void kernel_main(boot_info_t *boot)
@@ -77,6 +89,13 @@ void kernel_main(boot_info_t *boot)
 
     paging_init();
 
+    // reserve the kernel stack region before any address space is cloned,
+    // so its page table is shared by every process.
+    kstack_init();
+
+    // likewise the MMIO window (the framebuffer is mapped into it next)
+    mmio_init();
+
     // bring up the linear framebuffer (if the bootloader set a graphics mode).
     // must follow paging_init: the LFB lives above identity-mapped RAM.
     fb_init(boot);
@@ -90,10 +109,18 @@ void kernel_main(boot_info_t *boot)
 
     syscall_initialize();
 
+    // the FPU and SSE for user programs (their registers are saved on
+    // every process switch); before the first process gets its clean state
+    arch_fpu_init();
+
     process_init();
 
     scheduler_init();
     KLOG_INFO("kernel: subsystems up (pmm, heap, paging, syscalls, scheduler)");
+
+    // the wall-clock time from the CMOS clock; ext2 stamps inodes with it
+    clock_init();
+    ext2_clock = clock_realtime_seconds;
 
     // enable hardware interrupts (STI).
     // hal_initialize() has fully installed all exception handlers (vectors 0–31),
@@ -130,7 +157,20 @@ void kernel_main(boot_info_t *boot)
     part_device.driver_data = &part.block;
     device_register(&part_device);
 
-    if (!fs_mount(&mount, &part.block))
+    // the root filesystem reads through a sector cache (write-through)
+    static block_cache_t root_cache;
+    block_device_t *root_device = &part.block;
+    if (kerr_ok(block_cache_init(&root_cache, &part.block)))
+    {
+        root_device = &root_cache.block;
+        block_cache_root = &root_cache;
+    }
+    else
+    {
+        KLOG_WARN("kernel: no memory for the block cache; reading the disk directly");
+    }
+
+    if (!fs_mount(&mount, root_device))
     {
         kernel_panic("EXT2 mount failed");
     }
@@ -148,19 +188,50 @@ void kernel_main(boot_info_t *boot)
         KLOG_WARN("kernel: devfs mount failed; /dev unavailable");
     }
 
-    KLOG_INFO("kernel: root filesystem mounted, launching /bin/sh");
-
-    // launch the userspace shell as the first process
-    const char *argv[] = {"sh", NULL};
-    int ret = exec_program("/bin/sh", argv);
-    if (ret < 0)
+    // a filesystem in memory at /tmp
+    static fs_mount_t tmpfs;
+    if (kerr_failed(tmpfs_mount(&tmpfs)) || kerr_failed(vfs_mount("/tmp", &tmpfs)))
     {
-        kernel_panic("failed to launch /bin/sh");
+        KLOG_WARN("kernel: tmpfs mount failed; /tmp unavailable");
     }
 
-    // shell exited. halt
-    KLOG_WARN("kernel: shell exited with code %d, system halted", ret);
-    printf("Shell exited with code %d. System halted.\r\n", ret);
-    for (;;)
-        ;
+    // kernel state as text at /proc
+    static fs_mount_t procfs;
+    if (kerr_failed(procfs_mount(&procfs)) || kerr_failed(vfs_mount("/proc", &procfs)))
+    {
+        KLOG_WARN("kernel: procfs mount failed; /proc unavailable");
+    }
+
+#ifdef KERNEL_TEST
+    // test kernel (make test): run the in-kernel tests instead of the shell.
+    // ktest_run_all exits QEMU with the result and never returns.
+    KLOG_INFO("kernel: root filesystem mounted, running tests");
+    ktest_run_all();
+#endif
+
+    // the console is the controlling terminal of init's session
+    console_terminal_init(PID_INIT);
+
+    // start init as PID 1 through the normal scheduler path. it has no
+    // parent; if it ever exits, usermode_exit halts the system. without
+    // /bin/init, the shell is PID 1 itself.
+    const char *init_argv[] = {"init", NULL};
+    const char *shell_argv[] = {"sh", NULL};
+    if (exec_program("/bin/init", init_argv) >= 0)
+    {
+        KLOG_INFO("kernel: root filesystem mounted, launching /bin/init");
+    }
+    else if (exec_program("/bin/sh", shell_argv) >= 0)
+    {
+        KLOG_WARN("kernel: no /bin/init; launching /bin/sh as PID 1");
+    }
+    else
+    {
+        kernel_panic("failed to launch /bin/init or /bin/sh");
+    }
+
+    // hand the CPU to PID 1. the boot context is never resumed: from here on
+    // the scheduler runs processes, or the idle process when none is ready.
+    scheduler_yield();
+    kernel_panic("kernel_main: the boot context was scheduled again");
 }

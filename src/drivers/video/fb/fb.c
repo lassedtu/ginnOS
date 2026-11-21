@@ -1,10 +1,13 @@
 #include "fb.h"
+#include "kernel/errno.h"
+#include "kernel/usermode/uaccess.h"
 
 #include "arch/x86/cpu/paging.h"
 #include "arch/arch.h"
 #include "kernel/device/device.h"
 #include "kernel/memory/heap.h"
 #include "kernel/memory/mman.h"
+#include "kernel/memory/mmio.h"
 #include "common/fb/fb_ioctl.h"
 #include "common/memory.h"
 #include "common/string.h"
@@ -65,37 +68,20 @@ static void mark_dirty(uint32_t y, uint32_t h)
 }
 
 /**
- * map the framebuffer's physical range into the kernel address space.
- * the LFB sits above identity-mapped RAM, so its pages are not present yet;
- * paging_map allocates page tables as needed. virtual == physical keeps the
- * driver's addressing trivial.
- */
-static void map_framebuffer(uint32_t phys_base, uint32_t bytes)
-{
-    uint32_t start = phys_base & ~(PAGE_SIZE - 1);
-    uint32_t end = (phys_base + bytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-
-    for (uint32_t addr = start; addr < end; addr += PAGE_SIZE)
-    {
-        paging_map(addr, addr, PTE_KERNEL_RW);
-    }
-}
-
-/**
  * device mmap op: map the linear framebuffer into a process at the address the
  * mmap syscall reserved. this is the FB6 path that replaces the interim
  * SYS_fbmap: the LFB's physical frames are shared with the kernel mapping, so
  * this just adds a user alias in the process page directory. eager, no demand
  * paging; the frames are device memory (outside PMM) so teardown skips them.
  */
-static int32_t fb_dev_mmap(device_t *dev, uint32_t page_directory, uint32_t virt,
-                           uint32_t length, int prot, uint32_t offset)
+static int32_t fb_dev_mmap(device_t *dev, addr_space_t as, uintptr_t virt,
+                           size_t length, int prot, uint32_t offset)
 {
     (void)dev;
 
     if (!fb_ready)
     {
-        return -19; /* ENODEV */
+        return -ENODEV;
     }
 
     uint32_t fb_bytes = fb.height * fb.pitch;
@@ -103,7 +89,7 @@ static int32_t fb_dev_mmap(device_t *dev, uint32_t page_directory, uint32_t virt
     // clamp the request to the framebuffer; reject an offset past the end.
     if (offset >= fb_bytes)
     {
-        return -22; /* EINVAL */
+        return -EINVAL;
     }
     if (length > fb_bytes - offset)
     {
@@ -113,16 +99,16 @@ static int32_t fb_dev_mmap(device_t *dev, uint32_t page_directory, uint32_t virt
     // writable unless the caller asked for a read-only mapping.
     uint32_t flags = (prot & PROT_WRITE) ? MMU_USER_RW : MMU_FLAG_PRESENT | MMU_FLAG_USER;
 
-    uint32_t phys = (uint32_t)fb.addr + offset; // identity-mapped: virt == phys
-    uint32_t phys_start = phys & ~(PAGE_SIZE - 1);
-    uint32_t phys_end = (phys + length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    phys_addr_t phys = fb.phys + offset;
+    phys_addr_t phys_start = PAGE_ALIGN_DOWN(phys);
+    phys_addr_t phys_end = PAGE_ALIGN_UP(phys + length);
 
-    uint32_t v = virt;
-    for (uint32_t p = phys_start; p < phys_end; p += PAGE_SIZE)
+    uintptr_t v = virt;
+    for (phys_addr_t p = phys_start; p < phys_end; p += PAGE_SIZE)
     {
-        if (arch_map_page(page_directory, v, p, flags) != 0)
+        if (arch_map_page(as, v, p, flags) != 0)
         {
-            return -12; /* ENOMEM */
+            return -ENOMEM;
         }
         v += PAGE_SIZE;
     }
@@ -215,55 +201,59 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
 
     if (!fb_ready)
     {
-        return -19; /* ENODEV */
+        return -ENODEV;
     }
 
     switch (request)
     {
     case FBIOGET_FSCREENINFO:
     {
-        fb_fix_screeninfo_t *fix = (fb_fix_screeninfo_t *)arg;
-        memset(fix, 0, sizeof(*fix));
-        strncpy(fix->id, "ginnfb", sizeof(fix->id) - 1);
-        fix->smem_start = (uint32_t)fb.addr;
-        fix->smem_len = fb.height * fb.pitch;
-        fix->type = FB_TYPE_PACKED_PIXELS;
-        fix->visual = FB_VISUAL_TRUECOLOR;
-        fix->line_length = fb.pitch;
-        return 0;
+        // filled in kernel memory, then copied out: arg is a user pointer
+        fb_fix_screeninfo_t fix;
+        memset(&fix, 0, sizeof(fix));
+        strncpy(fix.id, "ginnfb", sizeof(fix.id) - 1);
+        fix.smem_start = (uint32_t)fb.phys;
+        fix.smem_len = fb.height * fb.pitch;
+        fix.type = FB_TYPE_PACKED_PIXELS;
+        fix.visual = FB_VISUAL_TRUECOLOR;
+        fix.line_length = fb.pitch;
+        return kerr_failed(copy_to_user(arg, &fix, sizeof(fix))) ? -EFAULT : 0;
     }
 
     case FBIOGET_VSCREENINFO:
     {
-        fb_var_screeninfo_t *var = (fb_var_screeninfo_t *)arg;
-        memset(var, 0, sizeof(*var));
-        var->xres = fb.width;
-        var->yres = fb.height;
-        var->xres_virtual = fb.width;
-        var->yres_virtual = fb.height;
-        var->bits_per_pixel = fb.bpp;
-        fb_fill_bitfield(&var->red, fb.red_size, fb.red_shift);
-        fb_fill_bitfield(&var->green, fb.green_size, fb.green_shift);
-        fb_fill_bitfield(&var->blue, fb.blue_size, fb.blue_shift);
-        fb_fill_bitfield(&var->transp, 0, 0); // no alpha
-        return 0;
+        fb_var_screeninfo_t var;
+        memset(&var, 0, sizeof(var));
+        var.xres = fb.width;
+        var.yres = fb.height;
+        var.xres_virtual = fb.width;
+        var.yres_virtual = fb.height;
+        var.bits_per_pixel = fb.bpp;
+        fb_fill_bitfield(&var.red, fb.red_size, fb.red_shift);
+        fb_fill_bitfield(&var.green, fb.green_size, fb.green_shift);
+        fb_fill_bitfield(&var.blue, fb.blue_size, fb.blue_shift);
+        fb_fill_bitfield(&var.transp, 0, 0); // no alpha
+        return kerr_failed(copy_to_user(arg, &var, sizeof(var))) ? -EFAULT : 0;
     }
 
     case FBIOPUT_VSCREENINFO:
     {
         // mode-setting is not supported: accept only a request matching the
         // current mode, reject anything else. the seam is here for later.
-        const fb_var_screeninfo_t *var = (const fb_var_screeninfo_t *)arg;
-        if (var->xres == fb.width && var->yres == fb.height &&
-            var->bits_per_pixel == fb.bpp)
+        fb_var_screeninfo_t var;
+        if (kerr_failed(copy_from_user(&var, arg, sizeof(var))))
+        {
+            return -EFAULT;
+        }
+        if (var.xres == fb.width && var.yres == fb.height && var.bits_per_pixel == fb.bpp)
         {
             return 0;
         }
-        return -22; /* EINVAL */
+        return -EINVAL;
     }
 
     default:
-        return -25; /* ENOTTY: unknown request */
+        return -ENOTTY; // unknown request
     }
 }
 
@@ -285,7 +275,7 @@ bool fb_init(const boot_info_t *boot)
         return false;
     }
 
-    fb.addr = (uint8_t *)boot->framebuffer_addr;
+    fb.phys = boot->framebuffer_addr;
     fb.width = boot->framebuffer_width;
     fb.height = boot->framebuffer_height;
     fb.pitch = boot->framebuffer_pitch;
@@ -305,7 +295,14 @@ bool fb_init(const boot_info_t *boot)
         return false;
     }
 
-    map_framebuffer(boot->framebuffer_addr, fb.height * fb.pitch);
+    // the LFB lies outside RAM, so it is not in the direct map: map it into
+    // the kernel's MMIO window
+    fb.addr = (uint8_t *)ioremap(fb.phys, fb.height * fb.pitch);
+    if (!fb.addr)
+    {
+        fb_ready = false;
+        return false;
+    }
 
     // try to allocate a RAM back buffer for double buffering. on failure we
     // simply draw straight to the LFB (draw_target == fb.addr).

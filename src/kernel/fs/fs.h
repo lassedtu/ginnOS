@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/stdint.h"
+#include "arch/arch.h"
 #include "common/error.h"
 #include "drivers/disk/block_device.h"
 #include "fs/ext2/ext2.h"
@@ -31,6 +32,21 @@ typedef struct fs_file fs_file_t;
 typedef struct fs_dirent fs_dirent_t;
 typedef struct fs_stat fs_stat_t;
 
+// which fields of an fs_attr_t to set
+#define FS_ATTR_MODE  0x1 // the permission bits (07777)
+#define FS_ATTR_OWNER 0x2 // uid and gid
+
+/**
+ * a change of a file's permissions or owner (setattr).
+ */
+typedef struct
+{
+    uint32_t what; // FS_ATTR_* bits
+    uint32_t mode; // permission bits; the file type is kept
+    uint32_t uid;
+    uint32_t gid;
+} fs_attr_t;
+
 typedef struct
 {
     kerr_t (*open)(fs_mount_t *mount, const char *path, fs_file_t *file);
@@ -45,6 +61,12 @@ typedef struct
     uint32_t (*write)(fs_file_t *file, uint32_t byte_count, const void *data_in);
     kerr_t (*truncate)(fs_file_t *file);
     kerr_t (*read_entry)(fs_file_t *file, fs_dirent_t *entry_out);
+    kerr_t (*fstat)(fs_file_t *file, fs_stat_t *stat_out);
+    /**
+     * change the permission bits and/or owner of an open file (optional;
+     * NULL means the filesystem keeps no owners: KERR_PERM).
+     */
+    kerr_t (*setattr)(fs_file_t *file, const fs_attr_t *attr);
     void (*close)(fs_file_t *file);
 
     /**
@@ -60,8 +82,8 @@ typedef struct
      * the file is not mappable, i.e. -ENODEV). devfs forwards this to the
      * backing device; disk filesystems leave it NULL. returns 0 or -errno.
      */
-    int32_t (*mmap)(fs_file_t *file, uint32_t page_directory, uint32_t virt,
-                    uint32_t length, int prot, uint32_t offset);
+    int32_t (*mmap)(fs_file_t *file, addr_space_t as, uintptr_t virt,
+                    size_t length, int prot, uint32_t offset);
 
     /**
      * reposition an open file's cursor (optional). devfs implements this over
@@ -108,6 +130,8 @@ struct fs_stat
     uint32_t atime;
     uint32_t mtime;
     uint32_t ctime;
+    uint16_t uid;
+    uint16_t gid;
 };
 
 /**
@@ -216,6 +240,22 @@ uint32_t fs_write(fs_file_t *file, uint32_t byteCount, const void *dataIn);
 kerr_t fs_truncate(fs_file_t *file);
 
 /**
+ * stat an open file or directory.
+ * @param file open file handle.
+ * @param stat_out output stat structure.
+ * @return KERR_OK, or KERR_INVAL if the filesystem cannot stat open files.
+ */
+kerr_t fs_fstat(fs_file_t *file, fs_stat_t *stat_out);
+
+/**
+ * change an open file's permission bits and/or owner.
+ * @param file open file handle.
+ * @param attr what to change.
+ * @return KERR_OK, or KERR_PERM if the filesystem keeps no owners.
+ */
+kerr_t fs_setattr(fs_file_t *file, const fs_attr_t *attr);
+
+/**
  * read a directory entry from an open directory file.
  * @param file open directory file handle.
  * @param entryOut output directory entry.
@@ -260,8 +300,8 @@ int32_t fs_ioctl(fs_file_t *file, uint32_t request, void *arg);
  * @param offset page-aligned byte offset into the mapped object.
  * @return 0 on success, or a negative errno on failure.
  */
-int32_t fs_mmap(fs_file_t *file, uint32_t page_directory, uint32_t virt,
-                uint32_t length, int prot, uint32_t offset);
+int32_t fs_mmap(fs_file_t *file, addr_space_t as, uintptr_t virt,
+                size_t length, int prot, uint32_t offset);
 
 /**
  * reposition an open file's cursor via the filesystem's seek op.

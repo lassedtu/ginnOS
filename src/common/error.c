@@ -19,6 +19,7 @@ const char *status_to_str(kerr_t err)
     case KERR_PIPE:     return "broken pipe";
     case KERR_NOENT:    return "no such entry";
     case KERR_FAULT:    return "bad address";
+    case KERR_NOTEMPTY: return "directory not empty";
     }
     return "unknown error";
 }

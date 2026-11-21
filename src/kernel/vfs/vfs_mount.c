@@ -1,6 +1,7 @@
 #include "vfs.h"
 
 #include "common/string.h"
+#include "kernel/sync/spinlock.h"
 
 /**
  * @file vfs_mount.c
@@ -23,8 +24,14 @@ typedef struct
 
 static vfs_mount_entry_t mount_table[VFS_MOUNT_MAX];
 
+// guards mount_table. every path lookup reads it, so mounting must not race
+// a resolve. a resolved fs_mount_t stays valid only until its umount; the
+// kernel never unmounts while running, revisit when umount gets a caller.
+static spinlock_t mount_lock;
+
 /**
- * find the slot holding an exact prefix match, or NULL if none.
+ * find the slot holding an exact prefix match, or NULL if none. caller
+ * holds mount_lock.
  */
 static vfs_mount_entry_t *find_exact(const char *prefix)
 {
@@ -71,6 +78,8 @@ kerr_t vfs_mount(const char *prefix, fs_mount_t *mount)
         return KERR_INVAL;
     }
 
+    uint32_t flags = spin_lock_irqsave(&mount_lock);
+
     // replacing an existing mount at the same prefix is allowed.
     vfs_mount_entry_t *slot = find_exact(prefix);
     if (!slot)
@@ -85,15 +94,15 @@ kerr_t vfs_mount(const char *prefix, fs_mount_t *mount)
         }
     }
 
-    if (!slot)
+    if (slot)
     {
-        return KERR_NOSPC;
+        strncpy(slot->prefix, prefix, VFS_PATH_MAX - 1);
+        slot->prefix[VFS_PATH_MAX - 1] = '\0';
+        slot->mount = mount;
     }
 
-    strncpy(slot->prefix, prefix, VFS_PATH_MAX - 1);
-    slot->prefix[VFS_PATH_MAX - 1] = '\0';
-    slot->mount = mount;
-    return KERR_OK;
+    spin_unlock_irqrestore(&mount_lock, flags);
+    return slot ? KERR_OK : KERR_NOSPC;
 }
 
 kerr_t vfs_umount(const char *prefix)
@@ -103,15 +112,17 @@ kerr_t vfs_umount(const char *prefix)
         return KERR_INVAL;
     }
 
+    uint32_t flags = spin_lock_irqsave(&mount_lock);
+
     vfs_mount_entry_t *slot = find_exact(prefix);
-    if (!slot)
+    if (slot)
     {
-        return KERR_NOENT;
+        slot->mount = NULL;
+        slot->prefix[0] = '\0';
     }
 
-    slot->mount = NULL;
-    slot->prefix[0] = '\0';
-    return KERR_OK;
+    spin_unlock_irqrestore(&mount_lock, flags);
+    return slot ? KERR_OK : KERR_NOENT;
 }
 
 fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out)
@@ -127,6 +138,7 @@ fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out)
     fs_mount_t *best = NULL;
     uint32_t best_len = 0;
 
+    uint32_t flags = spin_lock_irqsave(&mount_lock);
     for (int i = 0; i < VFS_MOUNT_MAX; i++)
     {
         if (!mount_table[i].mount || !prefix_covers(mount_table[i].prefix, path))
@@ -141,6 +153,7 @@ fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out)
             best_len = plen;
         }
     }
+    spin_unlock_irqrestore(&mount_lock, flags);
 
     if (!best)
     {

@@ -6,6 +6,11 @@
 // maximum length of an absolute path (including the null terminator).
 #define VFS_PATH_MAX 256
 
+// whence values for vfs_lseek (ABI: SEEK_SET, SEEK_CUR, SEEK_END)
+#define VFS_SEEK_SET 0
+#define VFS_SEEK_CUR 1
+#define VFS_SEEK_END 2
+
 typedef fs_stat_t vfs_stat_t;
 
 /**
@@ -126,7 +131,7 @@ bool vfs_resolve_path(
     const char *cwd,
     const char *input,
     char *output,
-    uint32_t size);
+    size_t size);
 
 /**
  * join two path components into an output buffer.
@@ -141,7 +146,7 @@ bool vfs_join_path(
     const char *base,
     const char *name,
     char *out,
-    uint32_t size);
+    size_t size);
 
 /**
  * read data from an open file in the virtual file system.
@@ -223,12 +228,39 @@ int32_t vfs_ioctl(vfs_file_t *file, uint32_t request, void *arg);
  * @param offset page-aligned byte offset into the mapped object.
  * @return 0 on success, or a negative errno on failure.
  */
-int32_t vfs_mmap(vfs_file_t *file, uint32_t page_directory, uint32_t virt,
-                 uint32_t length, int prot, uint32_t offset);
+int32_t vfs_mmap(vfs_file_t *file, addr_space_t as, uintptr_t virt,
+                 size_t length, int prot, uint32_t offset);
 
 /**
- * reposition an open file's cursor through the backing filesystem's seek op.
- * @return the new absolute position, or -ENOSYS if the filesystem has no seek
- *         op (the caller handles seeking itself), or another negative errno.
+ * move an open file's offset, as lseek does: through the filesystem's own
+ * seek op if it has one (devfs), else the ext2 file cursor.
+ * @param file the open file.
+ * @param offset bytes relative to whence.
+ * @param whence VFS_SEEK_SET, VFS_SEEK_CUR or VFS_SEEK_END.
+ * @return the new offset, or a negative errno (EINVAL for a bad whence or a
+ *         negative result).
  */
-int32_t vfs_seek(vfs_file_t *file, int32_t offset, int whence);
+int32_t vfs_lseek(vfs_file_t *file, int32_t offset, int whence);
+
+/**
+ * move an open file's offset to its end (O_APPEND writes).
+ * @param file the open file.
+ */
+void vfs_seek_end(vfs_file_t *file);
+
+/**
+ * stat an open file or directory.
+ * @param file the open file.
+ * @param stat_out receives its metadata.
+ * @return KERR_OK, or an error code.
+ */
+kerr_t vfs_fstat(vfs_file_t *file, vfs_stat_t *stat_out);
+
+/**
+ * change the permission bits and/or owner of a file by path, or of an
+ * open file.
+ * @return KERR_OK, KERR_PERM if the filesystem keeps no owners, or the
+ *         error of opening the path.
+ */
+kerr_t vfs_setattr(const char *path, const fs_attr_t *attr);
+kerr_t vfs_fsetattr(vfs_file_t *file, const fs_attr_t *attr);

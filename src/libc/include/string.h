@@ -120,3 +120,22 @@ int memcmp(const void *s1, const void *s2, size_t n);
  * @returns a pointer to the destination memory area dst.
  */
 void *memmove(void *dst, const void *src, size_t n);
+
+/*
+ * more of <string.h>
+ */
+size_t strnlen(const char *s, size_t max);
+char *strncat(char *dst, const char *src, size_t n);
+char *strdup(const char *s);
+char *strndup(const char *s, size_t n);
+char *strstr(const char *haystack, const char *needle);
+char *strpbrk(const char *s, const char *accept);
+size_t strspn(const char *s, const char *accept);
+size_t strcspn(const char *s, const char *reject);
+char *strtok_r(char *str, const char *delim, char **saveptr);
+int strcasecmp(const char *a, const char *b);
+int strncasecmp(const char *a, const char *b, size_t n);
+int strcoll(const char *a, const char *b);
+void *memchr(const void *s, int c, size_t n);
+const char *strerror(int errnum);
+

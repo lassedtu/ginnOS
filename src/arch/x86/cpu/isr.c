@@ -1,4 +1,5 @@
 #include "isr.h"
+#include "kernel/signal/signal.h"
 
 #include "idt.h"
 #include "common/stdint.h"
@@ -54,6 +55,12 @@ void __attribute__((cdecl)) isr_handler(struct registers *regs)
     if (handlers[regs->interrupt])
     {
         handlers[regs->interrupt](regs);
+
+        // back to user mode: pending signals are acted on first
+        if ((regs->cs & 3u) == 3u)
+        {
+            signal_deliver(regs);
+        }
     }
     else
     {

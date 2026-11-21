@@ -3,8 +3,8 @@
  * @brief List directory contents.
  */
 
+#include <dirent.h>
 #include <stdio.h>
-#include <unistd.h>
 
 int main(int argc, char **argv)
 {
@@ -13,29 +13,28 @@ int main(int argc, char **argv)
     if (argc >= 2)
         path = argv[1];
 
-    int fd = open(path, 0);
-    if (fd < 0)
+    DIR *dir = opendir(path);
+    if (!dir)
     {
         printf("ls: cannot open '%s'\n", path);
         return 1;
     }
 
-    dirent_t entry;
-
-    while (readdir(fd, &entry) == 0)
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL)
     {
         // skip . and ..
-        if (entry.name[0] == '.' &&
-            (entry.name[1] == '\0' ||
-             (entry.name[1] == '.' && entry.name[2] == '\0')))
+        if (entry->d_name[0] == '.' &&
+            (entry->d_name[1] == '\0' ||
+             (entry->d_name[1] == '.' && entry->d_name[2] == '\0')))
             continue;
 
-        if (entry.file_type == FT_DIR)
-            printf("%s/\n", entry.name);
+        if (entry->d_type == DT_DIR)
+            printf("%s/\n", entry->d_name);
         else
-            printf("%s\n", entry.name);
+            printf("%s\n", entry->d_name);
     }
 
-    close(fd);
+    closedir(dir);
     return 0;
 }

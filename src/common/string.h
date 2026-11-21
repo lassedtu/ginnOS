@@ -7,7 +7,7 @@
  * @param str null terminated string.
  * @return length of the string excluding the null terminator.
  */
-uint32_t strlen(const char *str);
+size_t strlen(const char *str);
 
 /**
  * compare two null terminated strings.
@@ -24,7 +24,7 @@ int strcmp(const char *lhs, const char *rhs);
  * @param count maximum number of characters to compare.
  * @return negative if lhs < rhs, 0 if lhs == rhs, positive if lhs > rhs.
  */
-int strncmp(const char *lhs, const char *rhs, uint32_t count);
+int strncmp(const char *lhs, const char *rhs, size_t count);
 
 /**
  * copy a null terminated string to a destination buffer.
@@ -41,7 +41,7 @@ char *strcpy(char *dest, const char *src);
  * @param count maximum number of characters to copy.
  * @return pointer to the destination buffer.
  */
-char *strncpy(char *dest, const char *src, uint32_t count);
+char *strncpy(char *dest, const char *src, size_t count);
 
 /**
  * convert a null terminated string to lowercase in place.

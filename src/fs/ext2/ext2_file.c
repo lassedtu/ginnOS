@@ -361,8 +361,8 @@ kerr_t ext2_create_file(ext2_volume_t *volume, const char *path)
         return KERR_NOSPC;
     }
 
-    parent_inode.i_mtime = 0;
-    parent_inode.i_ctime = 0;
+    parent_inode.i_mtime = ext2_now();
+    parent_inode.i_ctime = parent_inode.i_mtime;
     write_inode(volume, parent_inode_number, &parent_inode);
     return KERR_OK;
 }
@@ -443,8 +443,8 @@ kerr_t ext2_create_dir(ext2_volume_t *volume, const char *path)
     }
 
     parent_inode.i_links_count++;
-    parent_inode.i_mtime = 0;
-    parent_inode.i_ctime = 0;
+    parent_inode.i_mtime = ext2_now();
+    parent_inode.i_ctime = parent_inode.i_mtime;
     if (!write_inode(volume, parent_inode_number, &parent_inode))
     {
         return KERR_IO;
@@ -543,8 +543,8 @@ kerr_t ext2_remove_dir(ext2_volume_t *volume, const char *path)
     if (parent_inode.i_links_count > 0)
     {
         parent_inode.i_links_count--;
-        parent_inode.i_mtime = 0;
-        parent_inode.i_ctime = 0;
+        parent_inode.i_mtime = ext2_now();
+        parent_inode.i_ctime = parent_inode.i_mtime;
         write_inode(volume, parent_inode_number, &parent_inode);
     }
 
@@ -654,50 +654,137 @@ kerr_t ext2_rename(ext2_volume_t *volume, const char *old_path, const char *new_
 }
 
 /**
- * assign a physical block to a logical block index in an inode.
- * if the logical block is not yet allocated (i_block entry is 0), a new
- * block is allocated. only supports direct blocks (indices 0-11).
- *
- * @param volume ext2 volume.
- * @param inode pointer to the inode (modified in place).
- * @param logical_block_index the logical block index.
- * @param physical_block_out receives the physical block number.
- * @return true on success, false on failure.
+ * allocate a block, zero it on disk and count it in the inode.
+ * uses volume->buf_block, so a pointer table must be in another buffer.
+ */
+static bool alloc_zeroed_block(ext2_volume_t *volume, ext2_inode_t *inode, uint32_t *block_out)
+{
+    if (!alloc_block(volume, block_out))
+    {
+        return false;
+    }
+
+    memset(volume->buf_block, 0, volume->block_size);
+    if (!write_block(volume, *block_out, volume->buf_block))
+    {
+        return false;
+    }
+
+    inode->i_blocks += volume->block_size / EXT2_SECTOR_SIZE;
+    return true;
+}
+
+/**
+ * the block that entry index of a pointer table points to, allocated (and
+ * stored in the table) if it is not there yet.
+ * @param table_block the pointer table.
+ * @param index the entry.
+ * @param buf a block buffer for the table (not volume->buf_block).
+ */
+static bool assign_in_table(ext2_volume_t *volume, ext2_inode_t *inode, uint32_t table_block,
+                            uint32_t index, uint8_t *buf, uint32_t *block_out)
+{
+    if (!read_block(volume, table_block, buf))
+    {
+        return false;
+    }
+
+    uint32_t *entries = (uint32_t *)buf;
+    if (entries[index] == 0)
+    {
+        uint32_t new_block;
+        if (!alloc_zeroed_block(volume, inode, &new_block))
+        {
+            return false;
+        }
+        entries[index] = new_block;
+        if (!write_block(volume, table_block, buf))
+        {
+            return false;
+        }
+    }
+
+    *block_out = entries[index];
+    return true;
+}
+
+/**
+ * make sure the inode has its single (slot 12) or double (slot 13)
+ * indirect table.
+ */
+static bool ensure_table(ext2_volume_t *volume, ext2_inode_t *inode, uint32_t slot)
+{
+    if (inode->i_block[slot] != 0)
+    {
+        return true;
+    }
+    uint32_t block;
+    if (!alloc_zeroed_block(volume, inode, &block))
+    {
+        return false;
+    }
+    inode->i_block[slot] = block;
+    return true;
+}
+
+/**
+ * the physical block of a file's logical block, allocated if needed:
+ * through the 12 direct pointers, the single-indirect table and the
+ * double-indirect tables (files up to 64 MiB with 1 KiB blocks). the
+ * caller writes the inode back afterwards.
+ * @return false if the volume is full, the file would need the
+ *         triple-indirect tables, or I/O failed.
  */
 static bool assign_data_block(ext2_volume_t *volume, ext2_inode_t *inode, uint32_t logical_block_index, uint32_t *physical_block_out)
 {
-    /* only direct blocks for now */
-    if (logical_block_index >= EXT2_NDIR_BLOCKS)
-    {
-        return false;
-    }
+    uint32_t pointers = volume->block_size / sizeof(uint32_t);
+    uint32_t index = logical_block_index;
 
-    if (inode->i_block[logical_block_index] != 0)
+    if (index < EXT2_NDIR_BLOCKS)
     {
-        /* already allocated */
-        *physical_block_out = inode->i_block[logical_block_index];
+        if (inode->i_block[index] == 0)
+        {
+            // the inode is packed: allocate into a local, then store
+            uint32_t block;
+            if (!alloc_zeroed_block(volume, inode, &block))
+            {
+                return false;
+            }
+            inode->i_block[index] = block;
+        }
+        *physical_block_out = inode->i_block[index];
         return true;
     }
 
-    /* allocate a new block */
-    uint32_t new_block;
-    if (!alloc_block(volume, &new_block))
+    index -= EXT2_NDIR_BLOCKS;
+    if (index < pointers)
     {
-        return false;
+        if (!ensure_table(volume, inode, 12))
+        {
+            return false;
+        }
+        return assign_in_table(volume, inode, inode->i_block[12], index, volume->buf_block2,
+                               physical_block_out);
     }
 
-    /* zero the new block on disk */
-    memset(volume->buf_block, 0, volume->block_size);
-    if (!write_block(volume, new_block, volume->buf_block))
+    index -= pointers;
+    if (index < pointers * pointers)
     {
-        return false;
+        if (!ensure_table(volume, inode, 13))
+        {
+            return false;
+        }
+        uint32_t table;
+        if (!assign_in_table(volume, inode, inode->i_block[13], index / pointers,
+                             volume->buf_block3, &table))
+        {
+            return false;
+        }
+        return assign_in_table(volume, inode, table, index % pointers, volume->buf_block2,
+                               physical_block_out);
     }
 
-    inode->i_block[logical_block_index] = new_block;
-    inode->i_blocks += volume->block_size / EXT2_SECTOR_SIZE;
-
-    *physical_block_out = new_block;
-    return true;
+    return false; // would need the triple-indirect tables
 }
 
 kerr_t ext2_write_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer)
@@ -762,6 +849,8 @@ kerr_t ext2_write_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t of
     {
         inode.i_size = new_end;
     }
+    inode.i_mtime = ext2_now();
+    inode.i_ctime = inode.i_mtime;
 
     /* write back the updated inode */
     if (!write_inode(volume, inode_number, &inode))
@@ -782,8 +871,13 @@ kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number)
     if (kerr_failed(ext2_read_inode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
         return KERR_IO;
 
-    /* just set size to 0  blocks remain allocated (simple approach) */
+    // give every data block and pointer table back to the volume
+    if (!free_inode_block_chain(volume, &inode))
+        return KERR_IO;
     inode.i_size = 0;
+    inode.i_blocks = 0;
+    inode.i_mtime = ext2_now();
+    inode.i_ctime = inode.i_mtime;
 
     if (!write_inode(volume, inode_number, &inode))
         return KERR_IO;

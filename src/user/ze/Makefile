@@ -55,10 +55,11 @@ $(OBJDIR)/core/%.o: $(ZE_SRC)/src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Platform: compile from zen-editor/platforms/ginnos/
-$(OBJDIR)/plat/%.o: $(ZE_SRC)/platforms/ginnos/%.c
+# Platform: compile from zen-editor/platforms/ginnos/. compat/ze_compat.h
+# adapts its open() calls to access-mode checks (see that file).
+$(OBJDIR)/plat/%.o: $(ZE_SRC)/platforms/ginnos/%.c compat/ze_compat.h
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -include compat/ze_compat.h -c $< -o $@
 
 $(TARGET): $(OBJS) $(CRT0) $(LIBC)
 	@mkdir -p $(dir $@)

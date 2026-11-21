@@ -1,0 +1,103 @@
+#include "uaccess.h"
+
+#include "arch/arch.h"
+#include "common/memory.h"
+#include "kernel/memory/memory_layout.h"
+#include "kernel/memory/page.h"
+#include "kernel/memory/fault.h"
+#include "kernel/process/process.h"
+
+bool user_access_ok(const void *ptr, size_t len, bool write)
+{
+    if (len == 0)
+    {
+        return true;
+    }
+
+    // cheap bounds first: user space only, no wrap-around
+    if (!is_user_ptr(ptr, len))
+    {
+        return false;
+    }
+
+    process_t *proc = process_current();
+    if (!proc || !proc->page_directory)
+    {
+        return false;
+    }
+
+    // pages of the heap, the stack or an anonymous mmap may not be backed
+    // yet: back them now (as a user access would), page by page
+    uintptr_t start = (uintptr_t)ptr;
+    uintptr_t last = start + len - 1;
+    for (uintptr_t page = PAGE_ALIGN_DOWN(start);; page += PAGE_SIZE)
+    {
+        uintptr_t first = page < start ? start : page;
+        if (!arch_user_access_ok(proc->page_directory, first, 1, write) &&
+            (!mm_fault_in(proc, first, write) ||
+             !arch_user_access_ok(proc->page_directory, first, 1, write)))
+        {
+            return false;
+        }
+        if (page >= PAGE_ALIGN_DOWN(last))
+        {
+            return true;
+        }
+    }
+}
+
+kerr_t copy_from_user(void *dst, const void *user_src, size_t len)
+{
+    if (!user_access_ok(user_src, len, false))
+    {
+        return KERR_FAULT;
+    }
+
+    memcpy(dst, user_src, len);
+    return KERR_OK;
+}
+
+kerr_t copy_to_user(void *user_dst, const void *src, size_t len)
+{
+    if (!user_access_ok(user_dst, len, true))
+    {
+        return KERR_FAULT;
+    }
+
+    memcpy(user_dst, src, len);
+    return KERR_OK;
+}
+
+int32_t strncpy_from_user(char *dst, const char *user_src, size_t size)
+{
+    if (size == 0)
+    {
+        return KERR_RANGE;
+    }
+
+    uintptr_t addr = (uintptr_t)user_src;
+    uintptr_t checked_end = addr; // bytes before this address are known readable
+
+    for (size_t i = 0; i < size; i++)
+    {
+        if (addr + i >= checked_end)
+        {
+            // check the rest of this page before reading any of it
+            uintptr_t page_end = PAGE_ALIGN_DOWN(addr + i) + PAGE_SIZE;
+            if (!user_access_ok((const void *)(addr + i), page_end - (addr + i), false))
+            {
+                return KERR_FAULT;
+            }
+            checked_end = page_end;
+        }
+
+        dst[i] = user_src[i];
+        if (dst[i] == '\0')
+        {
+            return (int32_t)i;
+        }
+    }
+
+    dst[size - 1] = '\0';
+    return KERR_RANGE;
+}

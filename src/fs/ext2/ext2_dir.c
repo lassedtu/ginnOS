@@ -1,5 +1,17 @@
 #include "ext2_internal.h"
 
+// the time used when no clock is set (2023-11-14), in seconds since 1970
+#define EXT2_FALLBACK_TIME 1700000000u
+
+uint32_t (*ext2_clock)(void);
+
+uint32_t ext2_now(void)
+{
+    uint32_t now = ext2_clock ? ext2_clock() : 0;
+    // a deletion time must be a real one (see free_inode_and_blocks)
+    return now > EXT2_FALLBACK_TIME ? now : EXT2_FALLBACK_TIME;
+}
+
 /**
  * splits a given path into its parent directory and the name of the final component (file or directory).
  * @param path the input path string to be split (must start with '/').
@@ -468,6 +480,7 @@ bool setup_new_file_inode(ext2_inode_t *inode)
     memset(inode, 0, (uint32_t)sizeof(ext2_inode_t));
     inode->i_mode = EXT2_S_IFREG | 0644u;
     inode->i_links_count = 1u;
+    inode->i_atime = inode->i_ctime = inode->i_mtime = ext2_now();
     return true;
 }
 
@@ -487,6 +500,7 @@ bool setup_new_dir_inode(ext2_inode_t *inode, ext2_volume_t *volume)
     memset(inode, 0, (uint32_t)sizeof(ext2_inode_t));
     inode->i_mode = EXT2_S_IFDIR | 0755u;
     inode->i_links_count = 2u;
+    inode->i_atime = inode->i_ctime = inode->i_mtime = ext2_now();
     inode->i_size = volume->block_size;
     inode->i_blocks = volume->sectors_per_block;
     return true;
@@ -630,6 +644,20 @@ bool free_inode_and_blocks(ext2_volume_t *volume, uint32_t inode_number, ext2_in
     }
 
     if (!free_inode_block_chain(volume, &cache))
+    {
+        return false;
+    }
+
+    // mark the inode itself deleted: no links and a deletion time. a clear
+    // bitmap bit alone leaves an inode that fsck still counts as in use.
+    // the time must be a real one: fsck reads a value below the inode count
+    // as a link in the list of orphan inodes.
+    cache.i_links_count = 0;
+    cache.i_dtime = ext2_now();
+    cache.i_size = 0;
+    cache.i_blocks = 0;
+    memset(cache.i_block, 0, sizeof(cache.i_block));
+    if (!write_inode(volume, inode_number, &cache))
     {
         return false;
     }
