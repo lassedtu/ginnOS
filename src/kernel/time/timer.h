@@ -64,6 +64,18 @@ void timed_queue_wake_all(timed_queue_t *queue);
  */
 void timer_tick(uint64_t now);
 
+#define TIMER_POLL_HOOKS 4
+
+/** a function the timer interrupt calls on every tick (now: the tick count). */
+typedef void (*timer_poll_fn)(uint64_t now);
+
+/**
+ * call fn on every tick, in the timer interrupt (interrupts off). for
+ * drivers that poll their device, such as the USB keyboard. there is room
+ * for TIMER_POLL_HOOKS functions; more are ignored.
+ */
+void timer_add_poll_hook(timer_poll_fn fn);
+
 /**
  * the current tick.
  */

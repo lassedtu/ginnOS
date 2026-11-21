@@ -45,9 +45,28 @@ void timed_queue_wake_all(timed_queue_t *queue)
     wait_queue_wake_all(&queue->waiters);
 }
 
+static timer_poll_fn poll_hooks[TIMER_POLL_HOOKS];
+
+void timer_add_poll_hook(timer_poll_fn fn)
+{
+    for (int i = 0; i < TIMER_POLL_HOOKS; i++)
+    {
+        if (!poll_hooks[i])
+        {
+            poll_hooks[i] = fn;
+            return;
+        }
+    }
+}
+
 void timer_tick(uint64_t now)
 {
     signal_alarm_tick(now);
+
+    for (int i = 0; i < TIMER_POLL_HOOKS && poll_hooks[i]; i++)
+    {
+        poll_hooks[i](now);
+    }
 
     for (timed_queue_t *queue = queues; queue; queue = queue->next)
     {

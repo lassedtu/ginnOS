@@ -62,6 +62,15 @@ typedef struct
 void keyboard_initialize(void);
 
 /**
+ * decode one byte of PS/2 scan code set 1 (0xE0 starts a two-byte code,
+ * bit 7 marks a release). the PS/2 interrupt calls it, and the USB
+ * keyboard driver calls it with codes made from its reports. call with
+ * interrupts off.
+ * @param scancode the byte.
+ */
+void keyboard_handle_scancode(uint8_t scancode);
+
+/**
  * check if at least one event is available in the event buffer. only a
  * hint: another reader may take the event first, so callers that then
  * read must use a read function that copes with an empty buffer.

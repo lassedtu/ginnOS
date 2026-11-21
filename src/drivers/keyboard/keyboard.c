@@ -137,14 +137,17 @@ static bool buffer_pop_locked(keyboard_event_t *event_out)
 }
 
 /**
- * keyboard IRQ handler.
+ * keyboard IRQ handler: one byte from the PS/2 controller.
  */
 static void keyboard_irq_handler(uint32_t irq, trap_frame_t *frame)
 {
     (void)irq;
     (void)frame;
+    keyboard_handle_scancode(io_inb(0x60));
+}
 
-    uint8_t scancode = io_inb(0x60);
+void keyboard_handle_scancode(uint8_t scancode)
+{
     const keyboard_layout_t *layout = keyboard_get_layout();
 
     // F12 (scancode 0x58 press) toggles debug mode
