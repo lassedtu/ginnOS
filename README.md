@@ -32,6 +32,11 @@ today.
 - Symbolised backtraces on panics and CPU exceptions (frame-pointer walk +
   a symbol table embedded at build time), on screen and over serial
 - E820 memory-map detection and boot-time region reservation
+- CMOS real-time clock for the wall-clock time; `clock_gettime`
+  (`CLOCK_REALTIME`, `CLOCK_MONOTONIC`, process CPU time), `nanosleep` and
+  `times` with per-process user and system time
+- The FPU and SSE registers of each process are saved on every process
+  switch and in signal frames
 - Serial (COM1 16550 UART) driver + leveled kernel logging (`klog`) for
   headless debugging
 
@@ -61,8 +66,13 @@ today.
 ### Processes and multitasking
 
 - Process table with per-process page directory, kernel stack, fd table, cwd
-- `/bin/sh` starts as PID 1 through the normal scheduler path; if it exits,
-  the system halts
+- `/bin/init` is PID 1: it runs the shell in its own session, starts a new
+  one when the shell exits, and reaps orphans (the kernel gives orphans to
+  init)
+- Users and groups: real, effective and saved ids, `setuid`/`setgid`,
+  set-uid and set-gid programs, a umask, and file permission checks on
+  open, create, remove, rename, chdir and exec (with sticky `/tmp`);
+  `/etc/passwd` and `/etc/group`
 - ELF32 loader (`PT_LOAD` mapping) with `argc`/`argv`/`envp` passing
 - `fork` with copy-on-write: parent and child share their pages read-only
   (each frame has a reference count) until one of them writes
@@ -127,7 +137,7 @@ today.
 
 ### System calls
 
-- 48 syscalls via `int 0x80` with `-errno` returns; the kernel and libc share
+- 63 syscalls via `int 0x80` with `-errno` returns; the kernel and libc share
   one errno table
 - User pointers are checked against the page tables (`copy_from_user`,
   `copy_to_user`, `strncpy_from_user`): a bad pointer returns `-EFAULT`
@@ -135,12 +145,15 @@ today.
 - Processes: `exit`, `exec` (spawn), `fork`, `execve`, `getpid`, `getppid`,
   `waitpid`, `sched_yield`, `sbrk`, `setpgid`, `getpgid`, `setsid`,
   `getsid`
+- Users and time: `getuid`, `geteuid`, `getgid`, `getegid`, `setuid`,
+  `setgid`, `seteuid`, `setegid`, `umask`, `clock_gettime`, `nanosleep`,
+  `times`
 - Signals: `kill`, `sigaction`, `sigprocmask`, `sigreturn`, `sigpending`,
   `sigsuspend`, `alarm`
 - Files: `open`, `close`, `read`, `write`, `pread`, `pwrite`, `lseek`,
   `ftruncate`, `fsync`, `fcntl`, `dup2`, `pipe`, `poll`, `stat`, `fstat`,
   `access`, `rename`, `unlink`, `mkdir`, `rmdir`, `getdents`, `getcwd`,
-  `chdir`
+  `chdir`, `chmod`, `fchmod`, `chown`
 - Device/terminal/graphics: `ioctl` (device control, termios and job
   control on the console), `mmap`, `munmap`, `mprotect`, `pollkey`
 
@@ -167,10 +180,17 @@ today.
 
 ### C standard library (libc.a)
 
-- `<string.h>`: `strlen`, `strcpy`/`strncpy`, `strcat`, `strcmp`/`strncmp`,
-  `strchr`/`strrchr`, `strstr`, `strtok`, `memcpy`/`memmove`/`memset`/`memcmp`
-- `<stdio.h>`: `printf`/`fprintf` (`%s %d %u %x %c %%`), `puts`, `putchar`
-- `<stdlib.h>`: `atoi`, `malloc`/`free`, `exit`/`atexit`, `getenv`/`environ`
+- `<stdio.h>`: buffered `FILE` streams (`fopen`, `fgets`, `fread`,
+  `fwrite`, `fseek`, `setvbuf`, ...), a full `printf` family (flags, width,
+  precision, `hh`/`h`/`l`/`ll`/`z`, `%f %e %g`), `sscanf`
+- `<string.h>`: the usual functions, also `strdup`, `strndup`, `strtok_r`,
+  `strspn`, `strcasecmp`, `memchr`
+- `<stdlib.h>`: `malloc` (large blocks from `mmap`), `strtol` family, `qsort`,
+  `bsearch`, `rand`, `setenv`/`getenv`, `atexit`, `abort`
+- `<time.h>` (`time`, `clock_gettime`, `nanosleep`, `gmtime`, `mktime`,
+  `strftime`), `<sys/time.h>`, `<sys/times.h>`, `<ctype.h>`, `<setjmp.h>`,
+  `<assert.h>`, `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>`, `<stddef.h>`,
+  `<pwd.h>`, `<grp.h>`
 - `<unistd.h>`: the syscall surface (`read`/`write`/`close`/`fork`/`execve`/
   `pipe`/`dup`/`dup2`/`lseek`/`pread`/`access`/`fsync`/… and `read_event`)
 - `<fcntl.h>` (`open`, `creat`, `fcntl`), `<sys/stat.h>` (`stat`, `fstat`,
@@ -201,15 +221,17 @@ today.
 
 ### Bundled userspace programs
 
-- `cat`, `clear`, `echo`, `ls`, `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `sleep`,
-  `touch`, `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
+- `cat`, `chmod`, `chown`, `clear`, `date`, `echo`, `id`, `init`, `ls`,
+  `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `sleep`, `su`, `touch`, `uptime`,
+  `whoami`, `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
   tests the kernel's handling of user memory (heap, stack growth, `mmap`,
   `munmap`, `mprotect`, and faults that must kill only the process), and
   `proctest`, which tests the process model (`fork`, copy-on-write, pipes,
   atomic pipe writes, open flags, shared offsets, `waitpid`, `execve`), and
   `fstest`, which tests the file syscalls (`stat`, `fcntl`, `rename`,
   `pread`, `getdents`, `poll`/`select`, tmpfs, large ext2 files), and
-  `sigtest`, which tests signals, process groups and the terminal
+  `sigtest`, which tests signals, process groups and the terminal, and
+  `libctest`, which tests the C library
 
 ### Portability and tooling
 
