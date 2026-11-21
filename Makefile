@@ -341,7 +341,7 @@ ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run run-uefi rootfs-image clean distclean check-tools debug gdb lint check64 format compile_commands test test-image FORCE
+.PHONY: all run run-uefi rootfs-image clean distclean check-tools debug gdb lint check64 format compile_commands test test-image FORCE user-libs host-test
 
 all: check-tools $(DISK_IMAGE)
 
@@ -505,10 +505,29 @@ $(USER_CRT0): $(USER_CRT0_SRC)
 	@mkdir -p $(dir $@)
 	$(AS) -f $(ASM_FORMAT) $< -o $@
 
+# user libraries (src/lib/<name>/, see src/lib/lib.mk), built before the
+# programs that use them
+USER_LIB_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/Makefile)))
+
+user-libs: $(LIBC_A)
+	@for d in $(USER_LIB_DIRS); do \
+		$(MAKE) --no-print-directory -C $$d $(USER_MAKE_VARS) || exit 1; \
+	done
+
 # delegate to per-program Makefiles
-user-programs: $(USER_CRT0) $(LIBC_A)
+user-programs: $(USER_CRT0) $(LIBC_A) user-libs
 	@for d in $(USER_PROG_DIRS); do \
 		$(MAKE) --no-print-directory -C $$d $(USER_MAKE_VARS) || exit 1; \
+	done
+
+# library tests on the host, with the host compiler (src/lib/host-test.mk).
+# GOLDEN=update writes the golden images again.
+HOST_TEST_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/test/Makefile)))
+
+host-test:
+	@for d in $(HOST_TEST_DIRS); do \
+		$(MAKE) --no-print-directory -C $$d GOLDEN=$(GOLDEN) \
+			$(if $(SANITIZE),SANITIZE=$(SANITIZE)) || exit 1; \
 	done
 
 # root filesystem and disk image
