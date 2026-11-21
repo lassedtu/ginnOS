@@ -16,7 +16,6 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_OPEN] = sys_open,
     [SYS_CLOSE] = sys_close,
     [SYS_STAT] = sys_stat,
-    [SYS_CREATE] = sys_create,
     [SYS_MKDIR] = sys_mkdir,
     [SYS_EXEC] = sys_exec,
     [SYS_GETPID] = sys_getpid,

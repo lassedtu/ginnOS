@@ -12,7 +12,7 @@
 #define SYS_OPEN 3
 #define SYS_CLOSE 4
 #define SYS_STAT 5
-#define SYS_CREATE 6
+#define SYS_CREATE 6 // retired: create() is open(O_CREAT | O_WRONLY | O_TRUNC)
 #define SYS_MKDIR 7
 #define SYS_EXEC 8
 #define SYS_GETPID 9

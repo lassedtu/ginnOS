@@ -1,6 +1,7 @@
 #include "pipe.h"
 
 #include "common/memory.h"
+#include "kernel/errno.h"
 #include "kernel/memory/heap.h"
 #include "kernel/assert.h"
 
@@ -127,7 +128,7 @@ void pipe_unref(pipe_buf_t *pipe, pipe_dir_t dir)
     }
 }
 
-uint32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count)
+int32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count, bool nonblock)
 {
     uint32_t flags = spin_lock_irqsave(&pipe->lock);
 
@@ -139,6 +140,11 @@ uint32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count)
             spin_unlock_irqrestore(&pipe->lock, flags);
             return 0;
         }
+        if (nonblock)
+        {
+            spin_unlock_irqrestore(&pipe->lock, flags);
+            return -EAGAIN;
+        }
         wait_queue_block_locked(&pipe->readers, &pipe->lock);
     }
 
@@ -149,12 +155,13 @@ uint32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count)
     wait_queue_wake_all(&pipe->writers);
 
     spin_unlock_irqrestore(&pipe->lock, flags);
-    return to_read;
+    return (int32_t)to_read;
 }
 
-uint32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count)
+int32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count, bool nonblock)
 {
     uint32_t written = 0;
+    int32_t result = 0;
 
     uint32_t flags = spin_lock_irqsave(&pipe->lock);
 
@@ -163,6 +170,7 @@ uint32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count)
         if (pipe->read_refs == 0)
         {
             // no reader will ever drain the buffer: broken pipe
+            result = -EPIPE;
             break;
         }
 
@@ -172,6 +180,11 @@ uint32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count)
         uint32_t needed = count <= PIPE_BUF ? count : 1;
         if (space < needed)
         {
+            if (nonblock)
+            {
+                result = -EAGAIN;
+                break;
+            }
             wait_queue_block_locked(&pipe->writers, &pipe->lock);
             continue;
         }
@@ -185,5 +198,7 @@ uint32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count)
     }
 
     spin_unlock_irqrestore(&pipe->lock, flags);
-    return written;
+
+    // bytes that went in count, even if the rest could not
+    return written > 0 ? (int32_t)written : result;
 }

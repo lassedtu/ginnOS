@@ -13,7 +13,7 @@ int main(int argc, char **argv)
     if (argc >= 2)
         path = argv[1];
 
-    int fd = open(path, 0);
+    int fd = open(path, O_RDONLY);
     if (fd < 0)
     {
         printf("ls: cannot open '%s'\n", path);

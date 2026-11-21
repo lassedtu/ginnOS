@@ -74,7 +74,7 @@ static int resolve_path(const char *cmd, char *out_path, int out_size)
         out_path[len + cmd_len] = '\0';
 
         // try to open to check existence
-        int fd = open(out_path, 0);
+        int fd = open(out_path, O_RDONLY);
         if (fd >= 0)
         {
             close(fd);
@@ -94,7 +94,7 @@ static int apply_redirections(redir_t *redir_in, redir_t *redir_out)
 {
     if (redir_in->type == REDIR_IN)
     {
-        int fd = open(redir_in->filename, 0);
+        int fd = open(redir_in->filename, O_RDONLY);
         if (fd < 0)
         {
             printf("skl: cannot open '%s' for input\n", redir_in->filename);
@@ -106,26 +106,15 @@ static int apply_redirections(redir_t *redir_in, redir_t *redir_out)
 
     if (redir_out->type == REDIR_OUT || redir_out->type == REDIR_APPEND)
     {
-        // create the file if it doesn't exist
-        create(redir_out->filename);
+        // > truncates, >> appends; both create the file if needed
+        int flags = O_WRONLY | O_CREAT;
+        flags |= redir_out->type == REDIR_OUT ? O_TRUNC : O_APPEND;
 
-        int fd = open(redir_out->filename, 0);
+        int fd = open(redir_out->filename, flags, 0644);
         if (fd < 0)
         {
             printf("skl: cannot open '%s' for output\n", redir_out->filename);
             return -1;
-        }
-
-        // for > (truncate mode), truncate the file first
-        if (redir_out->type == REDIR_OUT)
-        {
-            ftruncate(fd);
-        }
-
-        // for >> (append mode), seek to end of file
-        if (redir_out->type == REDIR_APPEND)
-        {
-            lseek(fd, 0, SEEK_END);
         }
 
         dup2(fd, 1); // redirect stdout

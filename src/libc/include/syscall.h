@@ -12,7 +12,7 @@
 #define SYS_OPEN 3     // open a file
 #define SYS_CLOSE 4    // close a file descriptor
 #define SYS_STAT 5     // get file status
-#define SYS_CREATE 6   // create a new file
+#define SYS_CREATE 6   // retired: create() is open(O_CREAT | O_WRONLY | O_TRUNC)
 #define SYS_MKDIR 7    // create a new directory
 #define SYS_EXEC 8     // execute a program
 #define SYS_GETPID 9   // get the current process ID

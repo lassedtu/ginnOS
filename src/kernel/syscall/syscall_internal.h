@@ -69,7 +69,6 @@ syscall_ret_t sys_pipe(struct registers *regs);
 
 /* sys_fs.c */
 syscall_ret_t sys_stat(struct registers *regs);
-syscall_ret_t sys_create(struct registers *regs);
 syscall_ret_t sys_mkdir(struct registers *regs);
 syscall_ret_t sys_unlink(struct registers *regs);
 syscall_ret_t sys_rmdir(struct registers *regs);

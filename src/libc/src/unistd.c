@@ -1,4 +1,5 @@
 #include "unistd.h"
+#include <stdarg.h>
 #include "errno.h"
 
 /**
@@ -28,9 +29,15 @@ ssize_t read(int fd, void *buf, size_t count)
     return (ssize_t)ret;
 }
 
-int open(const char *path, int flags)
+int open(const char *path, int flags, ...)
 {
-    int ret = _syscall(SYS_OPEN, (int)path, flags, 0, 0, 0);
+    // the mode is only there with O_CREAT; read it as the next argument
+    va_list args;
+    va_start(args, flags);
+    mode_t mode = (flags & O_CREAT) ? va_arg(args, mode_t) : 0;
+    va_end(args);
+
+    int ret = _syscall(SYS_OPEN, (int)path, flags, (int)mode, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
@@ -176,15 +183,20 @@ int rmdir(const char *path)
     return ret;
 }
 
+int creat(const char *path, mode_t mode)
+{
+    return open(path, O_WRONLY | O_CREAT | O_TRUNC, mode);
+}
+
 int create(const char *path)
 {
-    int ret = _syscall(SYS_CREATE, (int)path, 0, 0, 0, 0);
-    if (ret < 0)
+    int fd = creat(path, 0644);
+    if (fd < 0)
     {
-        errno = -ret;
         return -1;
     }
-    return ret;
+    close(fd);
+    return 0;
 }
 
 int mkdir(const char *path)

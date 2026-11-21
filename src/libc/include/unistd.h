@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fcntl.h>
 #include <sys/wait.h>
 
 /**
@@ -30,14 +31,6 @@ ssize_t write(int fd, const void *buf, size_t count);
  * @return number of bytes read, or -1 on error.
  */
 ssize_t read(int fd, void *buf, size_t count);
-
-/**
- * open a file by path.
- * @param path file path.
- * @param flags open flags (unused for now).
- * @return file descriptor on success, -1 on failure.
- */
-int open(const char *path, int flags);
 
 /**
  * close a file descriptor.
@@ -157,7 +150,7 @@ int unlink(const char *path);
 int rmdir(const char *path);
 
 /**
- * create an empty file.
+ * create a file, or truncate it if it exists (the file is not left open).
  * @param path path to the file to create.
  * @return 0 on success, -1 on failure.
  */

@@ -18,7 +18,7 @@ static int cat_fd(int fd)
 
 static int cat_file(const char *path)
 {
-    int fd = open(path, 0);
+    int fd = open(path, O_RDONLY);
     if (fd < 0)
     {
         printf("cat: %s: no such file\n", path);

@@ -3,6 +3,7 @@
 #include "common/memory.h"
 #include "kernel/syscall/pipe.h"
 #include "kernel/memory/heap.h"
+#include "kernel/errno.h"
 
 // tests run on the boot stack with no current process, so they only take
 // paths that never block: reads with data buffered or at EOF, and writes
@@ -28,13 +29,13 @@ KTEST(pipe_write_then_read)
     if (!pipe)
         return;
 
-    KEXPECT_EQ(pipe_write(pipe, "hello", 5), 5);
+    KEXPECT_EQ(pipe_write(pipe, "hello", 5, false), 5);
     KEXPECT_EQ(pipe->count, 5);
 
     // a short read leaves the rest buffered, in order
-    KEXPECT_EQ(pipe_read(pipe, read_buf, 2), 2);
+    KEXPECT_EQ(pipe_read(pipe, read_buf, 2, false), 2);
     KEXPECT(memcmp(read_buf, "he", 2) == 0);
-    KEXPECT_EQ(pipe_read(pipe, read_buf, sizeof(read_buf)), 3);
+    KEXPECT_EQ(pipe_read(pipe, read_buf, sizeof(read_buf), false), 3);
     KEXPECT(memcmp(read_buf, "llo", 3) == 0);
     KEXPECT_EQ(pipe->count, 0);
 
@@ -53,14 +54,14 @@ KTEST(pipe_wraps_around)
 
     // move the ring positions near the end, then fill it completely so the
     // next write and read both cross the end of the buffer
-    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_CAPACITY - 10), PIPE_CAPACITY - 10);
-    KEXPECT_EQ(pipe_read(pipe, read_buf, PIPE_CAPACITY), PIPE_CAPACITY - 10);
+    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_CAPACITY - 10, false), PIPE_CAPACITY - 10);
+    KEXPECT_EQ(pipe_read(pipe, read_buf, PIPE_CAPACITY, false), PIPE_CAPACITY - 10);
 
-    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_CAPACITY), PIPE_CAPACITY);
+    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_CAPACITY, false), PIPE_CAPACITY);
     KEXPECT_EQ(pipe->count, PIPE_CAPACITY);
 
     memset(read_buf, 0, sizeof(read_buf));
-    KEXPECT_EQ(pipe_read(pipe, read_buf, PIPE_CAPACITY), PIPE_CAPACITY);
+    KEXPECT_EQ(pipe_read(pipe, read_buf, PIPE_CAPACITY, false), PIPE_CAPACITY);
     KEXPECT(memcmp(read_buf, write_buf, PIPE_CAPACITY) == 0);
 
     close_pipe(pipe);
@@ -75,13 +76,13 @@ KTEST(pipe_eof_after_last_writer_closes)
 
     // a second write end (dup2 or an inherited fd) keeps the pipe open
     pipe_ref(pipe, PIPE_WRITE);
-    KEXPECT_EQ(pipe_write(pipe, "ab", 2), 2);
+    KEXPECT_EQ(pipe_write(pipe, "ab", 2, false), 2);
     pipe_unref(pipe, PIPE_WRITE);
     pipe_unref(pipe, PIPE_WRITE);
 
     // buffered data is still delivered, then EOF
-    KEXPECT_EQ(pipe_read(pipe, read_buf, sizeof(read_buf)), 2);
-    KEXPECT_EQ(pipe_read(pipe, read_buf, sizeof(read_buf)), 0);
+    KEXPECT_EQ(pipe_read(pipe, read_buf, sizeof(read_buf), false), 2);
+    KEXPECT_EQ(pipe_read(pipe, read_buf, sizeof(read_buf), false), 0);
 
     pipe_unref(pipe, PIPE_READ);
 }
@@ -94,9 +95,27 @@ KTEST(pipe_broken_after_last_reader_closes)
         return;
 
     pipe_unref(pipe, PIPE_READ);
-    KEXPECT_EQ(pipe_write(pipe, "x", 1), 0);
+    KEXPECT_EQ(pipe_write(pipe, "x", 1, false), -EPIPE);
 
     pipe_unref(pipe, PIPE_WRITE);
+}
+
+KTEST(pipe_nonblocking_returns_eagain)
+{
+    pipe_buf_t *pipe = pipe_alloc();
+    KEXPECT(pipe != NULL);
+    if (!pipe)
+        return;
+
+    // empty, but a writer is open: no EOF, nothing to read yet
+    KEXPECT_EQ(pipe_read(pipe, read_buf, 1, true), -EAGAIN);
+
+    // full: nothing fits; a partly fitting write takes what fits
+    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_CAPACITY - 1, true), PIPE_CAPACITY - 1);
+    KEXPECT_EQ(pipe_write(pipe, write_buf, PIPE_BUF + 1, true), 1);
+    KEXPECT_EQ(pipe_write(pipe, write_buf, 1, true), -EAGAIN);
+
+    close_pipe(pipe);
 }
 
 KTEST(pipes_are_not_limited_to_a_pool)

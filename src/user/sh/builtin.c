@@ -220,7 +220,7 @@ static int builtin_which(token_list_t *tokens)
             full_path[len + cmd_len] = '\0';
 
             // try to open the file to check if it exists
-            int fd = open(full_path, 0);
+            int fd = open(full_path, O_RDONLY);
             if (fd >= 0)
             {
                 close(fd);

@@ -10,6 +10,8 @@
  *   atomic two children write 4 KiB blocks into one pipe at the same time;
  *          every block must arrive in one piece (PIPE_BUF)
  *   many   fork until the process table is full, then reap every child
+ *   flags  open flags: O_EXCL, O_TRUNC, O_APPEND, O_DIRECTORY, access modes,
+ *          and O_CLOEXEC across execve
  *   offset dup2 and fork share the file offset of an open file
  *   wait   waitpid with WNOHANG and pid -1, ECHILD, the status of a child
  *          killed by SIGSEGV, and getppid
@@ -264,11 +266,101 @@ static int test_many(void)
     return 0;
 }
 
+/**
+ * report a failed check of test_flags and return 1.
+ */
+static int flag_failed(const char *what)
+{
+    printf("proctest flags: %s (errno %d)\n", what, errno);
+    return 1;
+}
+
+static int test_flags(void)
+{
+    const char *path = "/proctest.flags";
+    char buf[16] = {0};
+
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    if (fd < 0)
+        return flag_failed("O_CREAT | O_EXCL on a new file");
+    write(fd, "12345", 5);
+    close(fd);
+
+    if (open(path, O_WRONLY | O_CREAT | O_EXCL, 0644) != -1 || errno != EEXIST)
+        return flag_failed("O_EXCL on an existing file");
+
+    // a read-only descriptor cannot write, a write-only one cannot read
+    fd = open(path, O_RDONLY);
+    if (write(fd, "x", 1) != -1 || errno != EBADF)
+        return flag_failed("write to O_RDONLY");
+    close(fd);
+    fd = open(path, O_WRONLY);
+    if (read(fd, buf, 1) != -1 || errno != EBADF)
+        return flag_failed("read from O_WRONLY");
+    close(fd);
+
+    // O_APPEND writes at the end even after a seek to the start
+    fd = open(path, O_WRONLY | O_APPEND);
+    lseek(fd, 0, SEEK_SET);
+    write(fd, "67", 2);
+    close(fd);
+    fd = open(path, O_RDONLY);
+    read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (strcmp(buf, "1234567") != 0)
+        return flag_failed("O_APPEND");
+
+    // O_TRUNC empties it
+    fd = open(path, O_RDWR | O_TRUNC);
+    if (fd < 0 || read(fd, buf, sizeof(buf)) != 0)
+        return flag_failed("O_TRUNC");
+    close(fd);
+
+    if (open(path, O_RDONLY | O_DIRECTORY) != -1 || errno != ENOTDIR)
+        return flag_failed("O_DIRECTORY on a file");
+    if (open("/bin", O_WRONLY) != -1 || errno != EISDIR)
+        return flag_failed("a directory opened for writing");
+    fd = open("/bin", O_RDONLY | O_DIRECTORY);
+    if (fd < 0)
+        return flag_failed("O_DIRECTORY on a directory");
+    close(fd);
+
+    // an O_CLOEXEC descriptor is closed in the program execve starts
+    fd = open(path, O_RDONLY | O_CLOEXEC);
+    pid_t child = fork();
+    if (child == 0)
+    {
+        char fd_text[4] = {(char)('0' + fd / 10), (char)('0' + fd % 10), 0};
+        char *child_argv[] = {"proctest", "cloexec", fd_text, NULL};
+        execve("/bin/proctest", child_argv, environ);
+        _exit(99);
+    }
+    int status;
+    waitpid(child, &status, 0);
+    close(fd);
+    unlink(path);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        return flag_failed("O_CLOEXEC descriptor still open after execve");
+
+    printf("proctest flags: ok\n");
+    return 0;
+}
+
+/**
+ * run by test_flags after execve: the descriptor in argv[2] must be closed.
+ */
+static int test_cloexec(int argc, char **argv)
+{
+    char byte;
+    if (argc < 3)
+        return 1;
+    return read(atoi(argv[2]), &byte, 1) == -1 && errno == EBADF ? 0 : 1;
+}
+
 static int test_offset(void)
 {
     const char *path = "/proctest.tmp";
-    create(path);
-    int fd = open(path, 0);
+    int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
     if (fd < 0 || write(fd, "abcdef", 6) != 6 || lseek(fd, 0, SEEK_SET) != 0)
     {
         printf("proctest offset: cannot set up %s\n", path);
@@ -418,7 +510,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        printf("usage: proctest fork|pipe|atomic|many|offset|wait|exec\n");
+        printf("usage: proctest fork|pipe|atomic|many|flags|offset|wait|exec\n");
         return 1;
     }
 
@@ -430,6 +522,10 @@ int main(int argc, char **argv)
         return test_atomic();
     if (strcmp(argv[1], "many") == 0)
         return test_many();
+    if (strcmp(argv[1], "flags") == 0)
+        return test_flags();
+    if (strcmp(argv[1], "cloexec") == 0)
+        return test_cloexec(argc, argv);
     if (strcmp(argv[1], "offset") == 0)
         return test_offset();
     if (strcmp(argv[1], "wait") == 0)

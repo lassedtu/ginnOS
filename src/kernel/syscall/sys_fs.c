@@ -53,30 +53,6 @@ syscall_ret_t sys_stat(struct registers *regs)
 }
 
 /**
- * SYS_create: create a regular file.
- * args: EBX = path string pointer.
- * returns 0 on success, negative errno on failure.
- */
-syscall_ret_t sys_create(struct registers *regs)
-{
-    const char *path = (const char *)syscall_arg(regs, 0);
-
-    /* copy the path in from user memory, resolved against the cwd */
-    char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
-
-    kerr_t err = vfs_create(resolved);
-    if (kerr_failed(err))
-    {
-        return kerr_to_errno(err);
-    }
-
-    return 0;
-}
-
-/**
  * SYS_mkdir: create a directory.
  * args: EBX = path string pointer.
  * returns 0 on success, negative errno on failure.

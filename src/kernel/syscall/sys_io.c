@@ -55,29 +55,77 @@ syscall_ret_t sys_read(struct registers *regs)
     return file_read(entry->file, buf, count);
 }
 
+// the flags an open-file description keeps (the rest only steer open)
+#define OPEN_STATUS_FLAGS (O_ACCMODE | O_APPEND | O_NONBLOCK)
+
+/**
+ * create a file for O_CREAT, unless it exists (and O_EXCL is not set).
+ * @return 0, or a negative errno.
+ */
+static int32_t open_create(const char *path, uint32_t flags)
+{
+    kerr_t err = vfs_create(path);
+    if (err == KERR_EXIST)
+    {
+        return (flags & O_EXCL) ? -EEXIST : 0;
+    }
+    return kerr_to_errno(err);
+}
+
 /**
  * SYS_open: open a file by path.
- * args: EBX = path string pointer, ECX = flags (not used yet: every file is
- *       opened for reading and writing).
- * returns the lowest free fd, or negative errno on failure.
+ * args: EBX = path string pointer, ECX = flags (O_*), EDX = mode for a
+ *       created file (not stored yet: files have no owner or permission
+ *       checks until users exist).
+ * returns the lowest free fd, or negative errno on failure:
+ *   EEXIST  O_CREAT | O_EXCL and the file exists
+ *   ENOTDIR O_DIRECTORY and it is not a directory
+ *   EISDIR  a directory opened for writing
+ *   EINVAL  an access mode other than O_RDONLY, O_WRONLY or O_RDWR
  */
 syscall_ret_t sys_open(struct registers *regs)
 {
     const char *path = (const char *)syscall_arg(regs, 0);
+    uint32_t flags = (uint32_t)syscall_arg(regs, 1);
     process_t *proc = process_current();
+
+    uint32_t access = flags & O_ACCMODE;
+    if (access == O_ACCMODE)
+        return -EINVAL;
 
     // copy the path in from user memory, resolved against the cwd
     char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
+    int32_t ret = resolve_user_path(path, resolved, sizeof(resolved));
+    if (ret < 0)
+        return ret;
+
+    if (flags & O_CREAT)
+    {
+        ret = open_create(resolved, flags);
+        if (ret < 0)
+            return ret;
+    }
 
     file_t *file;
-    kerr_t err = file_open(resolved, O_RDWR, &file);
+    kerr_t err = file_open(resolved, flags & OPEN_STATUS_FLAGS, &file);
     if (kerr_failed(err))
         return kerr_to_errno(err);
 
-    int fd = fd_install(proc, file, 0, 0);
+    uint8_t type = vfs_file_type(&file->vfs);
+    if ((flags & O_DIRECTORY) && type != FS_TYPE_DIR)
+        ret = -ENOTDIR;
+    else if (type == FS_TYPE_DIR && access != O_RDONLY)
+        ret = -EISDIR;
+    else if ((flags & O_TRUNC) && access != O_RDONLY && type == FS_TYPE_FILE)
+        ret = file_truncate(file);
+
+    if (ret < 0)
+    {
+        file_unref(file);
+        return ret;
+    }
+
+    int fd = fd_install(proc, file, (flags & O_CLOEXEC) ? FD_CLOEXEC : 0, 0);
     if (fd < 0)
         file_unref(file);
     return fd;

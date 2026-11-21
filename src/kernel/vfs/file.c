@@ -198,14 +198,12 @@ kerr_t file_open(const char *path, uint32_t flags, file_t **out)
 
 static int32_t pipe_kind_read(file_t *file, void *buf, uint32_t count)
 {
-    return (int32_t)pipe_read(file->pipe.buf, buf, count);
+    return pipe_read(file->pipe.buf, buf, count, (file->flags & O_NONBLOCK) != 0);
 }
 
 static int32_t pipe_kind_write(file_t *file, const void *buf, uint32_t count)
 {
-    // a short count means every read end closed partway through
-    uint32_t written = pipe_write(file->pipe.buf, buf, count);
-    return written > 0 ? (int32_t)written : -EPIPE;
+    return pipe_write(file->pipe.buf, buf, count, (file->flags & O_NONBLOCK) != 0);
 }
 
 static void pipe_kind_release(file_t *file)

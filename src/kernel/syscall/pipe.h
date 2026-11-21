@@ -81,16 +81,21 @@ void pipe_unref(pipe_buf_t *pipe, pipe_dir_t dir);
  * @param pipe the pipe.
  * @param buf destination buffer.
  * @param count maximum number of bytes to read (> 0).
- * @return bytes read; 0 only at EOF (empty and no write end open).
+ * @param nonblock return -EAGAIN instead of sleeping.
+ * @return bytes read; 0 only at EOF (empty and no write end open); or
+ *         -EAGAIN.
  */
-uint32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count);
+int32_t pipe_read(pipe_buf_t *pipe, char *buf, uint32_t count, bool nonblock);
 
 /**
  * write every byte to a pipe, sleeping whenever it is full. a write of at
  * most PIPE_BUF bytes goes in as one piece.
  * @param pipe the pipe.
  * @param buf source buffer.
- * @param count number of bytes to write.
- * @return bytes written; less than count only if every read end closed.
+ * @param count number of bytes to write (> 0).
+ * @param nonblock stop instead of sleeping when the pipe is full.
+ * @return bytes written (less than count if every read end closed, or the
+ *         pipe filled up in nonblocking mode); -EPIPE if no read end is
+ *         open; -EAGAIN if nonblocking and nothing fitted.
  */
-uint32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count);
+int32_t pipe_write(pipe_buf_t *pipe, const char *buf, uint32_t count, bool nonblock);
