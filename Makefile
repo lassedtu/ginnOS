@@ -152,6 +152,14 @@ DOOM_WAD_DIR ?= .hidden
 FREEDOOM_FETCH := tools/freedoom/fetch.sh
 FREEDOOM_CACHE := build/freedoom
 
+# the TrueType fonts for bragi (Inter and JetBrains Mono, SIL OFL 1.1) go
+# into /usr/share/fonts. tools/fonts/fetch.sh downloads the pinned
+# releases once into build/fonts (kept by make clean, like Freedoom).
+# FONTS=0 leaves them out.
+FONTS ?= 1
+FONTS_FETCH := tools/fonts/fetch.sh
+FONTS_CACHE := build/fonts
+
 LIMINE_DIR       := build/limine
 LIMINE_FETCH     := tools/limine/fetch.sh
 LIMINE_DISK_TOOL := tools/limine/make_disk.py
@@ -547,6 +555,7 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs
 	done
 	$(PYTHON) tools/sounds/make_sounds.py $(ROOTFS_STAGING)/usr/share/sounds
 	$(if $(filter 1,$(FREEDOOM)),./$(FREEDOOM_FETCH) $(FREEDOOM_CACHE) $(ROOTFS_STAGING)/usr/share/doom)
+	$(if $(filter 1,$(FONTS)),./$(FONTS_FETCH) $(FONTS_CACHE) $(ROOTFS_STAGING)/usr/share/fonts)
 	@if [ "$(DOOM)" = 1 ] && [ -d "$(DOOM_WAD_DIR)" ]; then \
 		for wad in "$(DOOM_WAD_DIR)"/*.[wW][aA][dD]; do \
 			[ -f "$$wad" ] || continue; \
@@ -643,7 +652,7 @@ endif
 # build/freedoom); distclean removes them
 clean:
 	@if [ -d $(BUILD_DIR) ]; then \
-		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine ! -name freedoom -exec rm -rf {} +; \
+		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine ! -name freedoom ! -name fonts -exec rm -rf {} +; \
 	fi
 	rm -rf $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
