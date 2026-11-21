@@ -1,6 +1,11 @@
 /**
- * a small xHCI driver for USB keyboards (eXtensible Host Controller
- * Interface 1.2; USB HID 1.11 boot protocol).
+ * a small xHCI driver for USB keyboards and pointing devices (eXtensible
+ * Host Controller Interface 1.2; USB HID 1.11).
+ *
+ * keyboards and mice use the HID boot protocol (fixed reports). other
+ * pointing devices (QEMU's tablet, for example) send the report their
+ * report descriptor describes (hid.c). keys go to the keyboard driver as
+ * PS/2 scan codes; buttons, motion and the wheel go to /dev/input.
  *
  * the controller works with rings of 16-byte TRBs in RAM. the driver puts
  * commands on the command ring, transfers on each endpoint's transfer ring,
@@ -11,8 +16,9 @@
  * during boot (interrupts off) the driver polls the event ring. after boot
  * the controller interrupts (MSI-X, MSI or INTx) for each event; a
  * controller without an interrupt is polled from the timer interrupt. the
- * timer also repeats a held key. each controller has one page for each ring, the device
- * context array, and one page per device for its contexts and its data.
+ * timer also repeats a held key. each controller has one page for each
+ * ring, the device context array, and one page per device for its
+ * contexts and its data.
  */
 
 #include "xhci.h"
@@ -22,6 +28,8 @@
 #include "drivers/keyboard/keyboard.h"
 #include "drivers/pci/pci.h"
 #include "drivers/pci/pci_irq.h"
+#include "drivers/usb/hid.h"
+#include "kernel/input/input.h"
 #include "kernel/klog/klog.h"
 #include "kernel/memory/mmio.h"
 #include "kernel/memory/page.h"
@@ -29,7 +37,7 @@
 #include "kernel/time/timer.h"
 
 #define MAX_CONTROLLERS 2
-#define MAX_KEYBOARDS   4
+#define MAX_HID_DEVICES   4
 #define RING_TRBS       256 // one page of TRBs; the last one is the link TRB
 #define SPIN_LIMIT      50000000u
 
@@ -131,9 +139,20 @@ typedef struct
 
 typedef struct xhci xhci_t;
 
+typedef enum
+{
+    HID_KEYBOARD, // boot protocol keyboard
+    HID_MOUSE,    // boot protocol mouse
+    HID_POINTER,  // a pointing device with a report descriptor (a tablet)
+} hid_kind_t;
+
 typedef struct
 {
     xhci_t *hc;
+    hid_kind_t kind;
+    uint16_t report_length; // the bytes asked for in each interrupt transfer
+    hid_pointer_t pointer;  // HID_POINTER: where the fields are
+    uint8_t buttons;        // the mouse buttons that are down
     uint8_t slot;
     uint8_t dci;          // the device context index of the interrupt IN endpoint
     uint8_t *page;        // the contexts and the data of this device
@@ -143,7 +162,7 @@ typedef struct
     uint8_t report[8];    // the last boot report
     uint8_t held_usage;   // the key that repeats, 0 if none
     uint64_t held_since;
-} keyboard_t;
+} hid_device_t;
 
 struct xhci
 {
@@ -165,8 +184,8 @@ struct xhci
 
 static xhci_t controllers[MAX_CONTROLLERS];
 static uint32_t controller_count;
-static keyboard_t keyboards[MAX_KEYBOARDS];
-static uint32_t keyboard_count;
+static hid_device_t hid_devices[MAX_HID_DEVICES];
+static uint32_t hid_count;
 
 /* ---- registers and memory ---------------------------------------------- */
 
@@ -336,15 +355,15 @@ static uint32_t run_command(xhci_t *hc, uint64_t param, uint32_t control, uint8_
 #define PAGE_DATA    0xC00
 #define DATA_MAX     0x400
 
-static uint32_t *input_ctx(keyboard_t *kb, uint32_t index)
+static uint32_t *input_ctx(hid_device_t *hid, uint32_t index)
 {
     // index 0 is the input control context, 1 the slot, 2 endpoint 0, ...
-    return (uint32_t *)(kb->page + PAGE_INPUT + index * kb->hc->context_size);
+    return (uint32_t *)(hid->page + PAGE_INPUT + index * hid->hc->context_size);
 }
 
-static void clear_input(keyboard_t *kb)
+static void clear_input(hid_device_t *hid)
 {
-    memset(kb->page + PAGE_INPUT, 0, PAGE_OUTPUT - PAGE_INPUT);
+    memset(hid->page + PAGE_INPUT, 0, PAGE_OUTPUT - PAGE_INPUT);
 }
 
 static uint32_t ep0_packet_size(uint32_t speed)
@@ -368,7 +387,7 @@ static uint32_t ep0_packet_size(uint32_t speed)
  * area of the device page.
  * @return true on success (a short read is a success).
  */
-static bool control(keyboard_t *kb, uint8_t request_type, uint8_t request, uint16_t value,
+static bool control(hid_device_t *hid, uint8_t request_type, uint8_t request, uint16_t value,
                     uint16_t index, uint16_t length)
 {
     bool in = (request_type & 0x80) != 0;
@@ -377,19 +396,19 @@ static bool control(keyboard_t *kb, uint8_t request_type, uint8_t request, uint1
                      ((uint64_t)length << 48);
     uint32_t transfer_type = length == 0 ? 0 : (in ? 3u : 2u);
 
-    ring_push(&kb->ep0, setup, 8, TRB_TYPE(TRB_SETUP) | TRB_IDT | (transfer_type << 16));
+    ring_push(&hid->ep0, setup, 8, TRB_TYPE(TRB_SETUP) | TRB_IDT | (transfer_type << 16));
     if (length > 0)
     {
-        ring_push(&kb->ep0, kb->page_phys + PAGE_DATA, length,
+        ring_push(&hid->ep0, hid->page_phys + PAGE_DATA, length,
                   TRB_TYPE(TRB_DATA) | (in ? TRB_DIR_IN : 0));
     }
     // the status stage goes the other way (IN when there is no data)
-    phys_addr_t status = ring_push(&kb->ep0, 0, 0,
+    phys_addr_t status = ring_push(&hid->ep0, 0, 0,
                                    TRB_TYPE(TRB_STATUS) | TRB_IOC |
                                        ((in && length > 0) ? 0 : TRB_DIR_IN));
-    mmio_write32(&kb->hc->doorbells[kb->slot], 1); // endpoint 0
+    mmio_write32(&hid->hc->doorbells[hid->slot], 1); // endpoint 0
 
-    uint32_t code = wait_for(kb->hc, TRB_TRANSFER_EVT, status, NULL);
+    uint32_t code = wait_for(hid->hc, TRB_TRANSFER_EVT, status, NULL);
     return code == COMPLETION_SUCCESS || code == COMPLETION_SHORT;
 }
 
@@ -457,14 +476,14 @@ static bool report_has(const uint8_t *report, uint8_t usage)
  * compare a new boot report with the last one: send a release for each key
  * that is gone and a press for each new key.
  */
-static void handle_report(keyboard_t *kb, const uint8_t *report)
+static void handle_report(hid_device_t *hid, const uint8_t *report)
 {
     if (report[2] == 1) // ErrorRollOver: too many keys; keep the last state
     {
         return;
     }
 
-    uint8_t changed = report[0] ^ kb->report[0];
+    uint8_t changed = report[0] ^ hid->report[0];
     for (int bit = 0; bit < 8; bit++)
     {
         if (changed & (1u << bit))
@@ -475,37 +494,166 @@ static void handle_report(keyboard_t *kb, const uint8_t *report)
 
     for (int i = 2; i < 8; i++)
     {
-        uint8_t usage = kb->report[i];
+        uint8_t usage = hid->report[i];
         if (usage > 3 && !report_has(report, usage))
         {
             send_scancode(scancode_of(usage), true);
-            if (usage == kb->held_usage)
+            if (usage == hid->held_usage)
             {
-                kb->held_usage = 0;
+                hid->held_usage = 0;
             }
         }
     }
     for (int i = 2; i < 8; i++)
     {
         uint8_t usage = report[i];
-        if (usage > 3 && !report_has(kb->report, usage))
+        if (usage > 3 && !report_has(hid->report, usage))
         {
             send_scancode(scancode_of(usage), false);
-            kb->held_usage = usage; // the newest key repeats
-            kb->held_since = timer_now();
+            hid->held_usage = usage; // the newest key repeats
+            hid->held_since = timer_now();
         }
     }
 
-    memcpy(kb->report, report, sizeof(kb->report));
+    memcpy(hid->report, report, sizeof(hid->report));
 }
 
 /**
  * queue a transfer for the next report on the interrupt endpoint.
  */
-static void queue_report(keyboard_t *kb)
+static void queue_report(hid_device_t *hid)
 {
-    ring_push(&kb->interrupt, kb->page_phys + PAGE_DATA, 8, TRB_TYPE(TRB_NORMAL) | TRB_IOC);
-    mmio_write32(&kb->hc->doorbells[kb->slot], kb->dci);
+    ring_push(&hid->interrupt, hid->page_phys + PAGE_DATA, hid->report_length,
+              TRB_TYPE(TRB_NORMAL) | TRB_IOC);
+    mmio_write32(&hid->hc->doorbells[hid->slot], hid->dci);
+}
+
+/* ---- pointer reports ----------------------------------------------------- */
+
+static const uint16_t button_codes[3] = {BTN_LEFT, BTN_RIGHT, BTN_MIDDLE};
+
+static void report_buttons(hid_device_t *hid, uint8_t now)
+{
+    uint8_t changed = (uint8_t)(now ^ hid->buttons);
+    for (uint32_t i = 0; i < 3; i++)
+    {
+        if (changed & (1u << i))
+        {
+            input_report(EV_KEY, button_codes[i], (now >> i) & 1u);
+        }
+    }
+    hid->buttons = now;
+}
+
+/**
+ * an absolute position scaled to 0 .. INPUT_ABS_MAX.
+ */
+static int32_t scale_abs(const hid_field_t *field, int32_t value)
+{
+    if (field->max <= field->min)
+    {
+        return 0;
+    }
+    if (value < field->min)
+    {
+        value = field->min;
+    }
+    if (value > field->max)
+    {
+        value = field->max;
+    }
+    // 32-bit math (the i686 kernel has no 64-bit division): a range above
+    // 16 bits is halved first, so the product fits
+    uint32_t offset = (uint32_t)(value - field->min);
+    uint32_t range = (uint32_t)(field->max - field->min);
+    while (range > 0xFFFFu)
+    {
+        offset >>= 1;
+        range >>= 1;
+    }
+    return (int32_t)(offset * INPUT_ABS_MAX / range);
+}
+
+/**
+ * a mouse or pointer report: buttons, motion (or a position) and the wheel
+ * to /dev/input.
+ * @param length the bytes the device sent.
+ */
+static void handle_pointer(hid_device_t *hid, const uint8_t *report, uint32_t length)
+{
+    if (hid->kind == HID_MOUSE)
+    {
+        // the boot report: buttons, x, y, and often the wheel
+        if (length < 3)
+        {
+            return;
+        }
+        report_buttons(hid, report[0] & 7u);
+        if ((int8_t)report[1])
+        {
+            input_report(EV_REL, REL_X, (int8_t)report[1]);
+        }
+        if ((int8_t)report[2])
+        {
+            input_report(EV_REL, REL_Y, (int8_t)report[2]);
+        }
+        if (length >= 4 && (int8_t)report[3])
+        {
+            input_report(EV_REL, REL_WHEEL, (int8_t)report[3]);
+        }
+        input_sync();
+        return;
+    }
+
+    const hid_pointer_t *p = &hid->pointer;
+    if (p->report_id)
+    {
+        if (length < 1 || report[0] != p->report_id)
+        {
+            return; // another report of the device
+        }
+        report++;
+        length--;
+    }
+
+    uint8_t buttons = 0;
+    for (uint32_t i = 0; i < p->buttons && i < 3; i++)
+    {
+        uint32_t bit = p->buttons_offset + i;
+        if (bit / 8 < length && (report[bit / 8] & (1u << (bit % 8))))
+        {
+            buttons |= (uint8_t)(1u << i);
+        }
+    }
+    report_buttons(hid, buttons);
+
+    int32_t x = hid_field_value(&p->x, report, length);
+    int32_t y = hid_field_value(&p->y, report, length);
+    if (p->absolute)
+    {
+        input_report(EV_ABS, ABS_X, scale_abs(&p->x, x));
+        input_report(EV_ABS, ABS_Y, scale_abs(&p->y, y));
+    }
+    else
+    {
+        if (x)
+        {
+            input_report(EV_REL, REL_X, x);
+        }
+        if (y)
+        {
+            input_report(EV_REL, REL_Y, y);
+        }
+    }
+    if (p->wheel.present)
+    {
+        int32_t wheel = hid_field_value(&p->wheel, report, length);
+        if (wheel)
+        {
+            input_report(EV_REL, REL_WHEEL, wheel);
+        }
+    }
+    input_sync();
 }
 
 static void handle_transfer_event(xhci_t *hc, const trb_t *event)
@@ -514,18 +662,28 @@ static void handle_transfer_event(xhci_t *hc, const trb_t *event)
     uint8_t endpoint = (uint8_t)((event->words[3] >> 16) & 0x1F);
     uint32_t code = event_code(event);
 
-    for (uint32_t i = 0; i < keyboard_count; i++)
+    for (uint32_t i = 0; i < hid_count; i++)
     {
-        keyboard_t *kb = &keyboards[i];
-        if (kb->hc != hc || kb->slot != slot || kb->dci != endpoint)
+        hid_device_t *hid = &hid_devices[i];
+        if (hid->hc != hc || hid->slot != slot || hid->dci != endpoint)
         {
             continue;
         }
         if (code == COMPLETION_SUCCESS || code == COMPLETION_SHORT)
         {
-            handle_report(kb, kb->page + PAGE_DATA);
+            // the event gives the bytes that were not transferred
+            uint32_t residue = event->words[2] & 0xFFFFFFu;
+            uint32_t length = residue < hid->report_length ? hid->report_length - residue : 0;
+            if (hid->kind == HID_KEYBOARD)
+            {
+                handle_report(hid, hid->page + PAGE_DATA);
+            }
+            else
+            {
+                handle_pointer(hid, hid->page + PAGE_DATA, length);
+            }
         }
-        queue_report(kb);
+        queue_report(hid);
         return;
     }
 }
@@ -603,28 +761,39 @@ static void xhci_poll(uint64_t now)
         }
     }
 
-    for (uint32_t i = 0; i < keyboard_count; i++)
+    for (uint32_t i = 0; i < hid_count; i++)
     {
-        keyboard_t *kb = &keyboards[i];
-        if (kb->held_usage && now - kb->held_since >= REPEAT_DELAY &&
-            (now - kb->held_since - REPEAT_DELAY) % REPEAT_RATE == 0)
+        hid_device_t *hid = &hid_devices[i];
+        if (hid->held_usage && now - hid->held_since >= REPEAT_DELAY &&
+            (now - hid->held_since - REPEAT_DELAY) % REPEAT_RATE == 0)
         {
-            send_scancode(scancode_of(kb->held_usage), false);
+            send_scancode(scancode_of(hid->held_usage), false);
         }
     }
 }
 
 /* ---- device setup -------------------------------------------------------- */
 
-/**
- * find the interrupt IN endpoint of a boot keyboard interface in a
- * configuration descriptor.
- * @return true if found (*endpoint, *packet, *interval and *interface set).
- */
-static bool find_keyboard(const uint8_t *config, uint32_t length, uint8_t *interface,
-                          uint8_t *endpoint, uint16_t *packet, uint8_t *interval)
+typedef struct
 {
-    bool in_keyboard = false;
+    hid_kind_t kind;
+    uint8_t interface;
+    uint8_t endpoint;          // the interrupt IN endpoint number
+    uint16_t packet;           // its max packet size
+    uint8_t interval;          // its bInterval
+    uint16_t report_desc_size; // HID_POINTER: the report descriptor's length
+} hid_interface_t;
+
+/**
+ * find the first HID interface the driver can use in a configuration
+ * descriptor: a boot keyboard (subclass 1, protocol 1), a boot mouse
+ * (subclass 1, protocol 2), or another HID device (a pointer, if its
+ * report descriptor has x and y), with its interrupt IN endpoint.
+ * @return true if one was found (*found set).
+ */
+static bool find_hid(const uint8_t *config, uint32_t length, hid_interface_t *found)
+{
+    bool in_hid = false;
     for (uint32_t off = 0; off + 2 <= length;)
     {
         uint8_t size = config[off];
@@ -634,23 +803,45 @@ static bool find_keyboard(const uint8_t *config, uint32_t length, uint8_t *inter
             break;
         }
 
-        if (type == 4 && size >= 9) // interface: class 3 (HID), subclass 1, protocol 1
+        if (type == 4 && size >= 9) // an interface
         {
-            in_keyboard = config[off + 5] == 3 && config[off + 6] == 1 && config[off + 7] == 1;
-            if (in_keyboard)
+            in_hid = config[off + 5] == 3; // class 3: HID
+            if (in_hid)
             {
-                *interface = config[off + 2];
+                uint8_t subclass = config[off + 6];
+                uint8_t protocol = config[off + 7];
+                found->interface = config[off + 2];
+                found->report_desc_size = 0;
+                if (subclass == 1 && protocol == 1)
+                {
+                    found->kind = HID_KEYBOARD;
+                }
+                else if (subclass == 1 && protocol == 2)
+                {
+                    found->kind = HID_MOUSE;
+                }
+                else
+                {
+                    found->kind = HID_POINTER;
+                }
             }
         }
-        else if (type == 5 && size >= 7 && in_keyboard)
+        else if (type == 0x21 && size >= 9 && in_hid) // the HID descriptor
+        {
+            if (config[off + 6] == 0x22) // its first class descriptor: the report
+            {
+                found->report_desc_size = (uint16_t)(config[off + 7] | (config[off + 8] << 8));
+            }
+        }
+        else if (type == 5 && size >= 7 && in_hid)
         {
             uint8_t address = config[off + 2];
             uint8_t attributes = config[off + 3];
             if ((address & 0x80) && (attributes & 3) == 3) // IN, interrupt
             {
-                *endpoint = address & 0x0F;
-                *packet = (uint16_t)(config[off + 4] | (config[off + 5] << 8));
-                *interval = config[off + 6];
+                found->endpoint = address & 0x0F;
+                found->packet = (uint16_t)(config[off + 4] | (config[off + 5] << 8));
+                found->interval = config[off + 6];
                 return true;
             }
         }
@@ -680,41 +871,41 @@ static uint32_t xhci_interval(uint32_t speed, uint8_t interval)
 
 static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
 {
-    if (keyboard_count >= MAX_KEYBOARDS)
+    if (hid_count >= MAX_HID_DEVICES)
     {
         return false;
     }
-    keyboard_t *kb = &keyboards[keyboard_count];
-    memset(kb, 0, sizeof(*kb));
-    kb->hc = hc;
+    hid_device_t *hid = &hid_devices[hid_count];
+    memset(hid, 0, sizeof(*hid));
+    hid->hc = hc;
 
-    if (run_command(hc, 0, TRB_TYPE(TRB_ENABLE_SLOT), &kb->slot) != COMPLETION_SUCCESS ||
-        kb->slot == 0)
+    if (run_command(hc, 0, TRB_TYPE(TRB_ENABLE_SLOT), &hid->slot) != COMPLETION_SUCCESS ||
+        hid->slot == 0)
     {
         return false;
     }
 
-    kb->page = dma_page(&kb->page_phys);
-    if (!kb->page || !ring_init(&kb->ep0))
+    hid->page = dma_page(&hid->page_phys);
+    if (!hid->page || !ring_init(&hid->ep0))
     {
         return false;
     }
-    hc->dcbaa[kb->slot] = kb->page_phys + PAGE_OUTPUT;
+    hc->dcbaa[hid->slot] = hid->page_phys + PAGE_OUTPUT;
 
     // address the device: the slot and endpoint 0
-    clear_input(kb);
-    input_ctx(kb, 0)[1] = 0x3; // add the slot and endpoint 0
-    uint32_t *slot_ctx = input_ctx(kb, 1);
+    clear_input(hid);
+    input_ctx(hid, 0)[1] = 0x3; // add the slot and endpoint 0
+    uint32_t *slot_ctx = input_ctx(hid, 1);
     slot_ctx[0] = (speed << 20) | (1u << 27); // one context entry
     slot_ctx[1] = (port + 1) << 16;           // the root hub port (1-based)
-    uint32_t *ep0 = input_ctx(kb, 2);
+    uint32_t *ep0 = input_ctx(hid, 2);
     ep0[1] = (3u << 1) | (EP_TYPE_CONTROL << 3) | (ep0_packet_size(speed) << 16);
-    ep0[2] = (uint32_t)kb->ep0.phys | 1u; // dequeue pointer, cycle state 1
-    ep0[3] = (uint32_t)((uint64_t)kb->ep0.phys >> 32);
+    ep0[2] = (uint32_t)hid->ep0.phys | 1u; // dequeue pointer, cycle state 1
+    ep0[3] = (uint32_t)((uint64_t)hid->ep0.phys >> 32);
     ep0[4] = 8; // average TRB length
 
-    if (run_command(hc, kb->page_phys + PAGE_INPUT,
-                    TRB_TYPE(TRB_ADDRESS_DEV) | ((uint32_t)kb->slot << 24),
+    if (run_command(hc, hid->page_phys + PAGE_INPUT,
+                    TRB_TYPE(TRB_ADDRESS_DEV) | ((uint32_t)hid->slot << 24),
                     NULL) != COMPLETION_SUCCESS)
     {
         return false;
@@ -722,23 +913,23 @@ static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
 
     // the first 8 bytes of the device descriptor give the real endpoint 0
     // packet size (full speed devices can have 8 to 64)
-    uint8_t *data = kb->page + PAGE_DATA;
-    if (!control(kb, 0x80, 6, 0x0100, 0, 8))
+    uint8_t *data = hid->page + PAGE_DATA;
+    if (!control(hid, 0x80, 6, 0x0100, 0, 8))
     {
         return false;
     }
     uint32_t packet = data[7];
     if (speed == SPEED_FULL && packet != ep0_packet_size(speed) && packet >= 8)
     {
-        clear_input(kb);
-        input_ctx(kb, 0)[1] = 0x2; // evaluate endpoint 0
-        input_ctx(kb, 2)[1] = (3u << 1) | (EP_TYPE_CONTROL << 3) | (packet << 16);
-        run_command(hc, kb->page_phys + PAGE_INPUT,
-                    TRB_TYPE(TRB_EVALUATE_CTX) | ((uint32_t)kb->slot << 24), NULL);
+        clear_input(hid);
+        input_ctx(hid, 0)[1] = 0x2; // evaluate endpoint 0
+        input_ctx(hid, 2)[1] = (3u << 1) | (EP_TYPE_CONTROL << 3) | (packet << 16);
+        run_command(hc, hid->page_phys + PAGE_INPUT,
+                    TRB_TYPE(TRB_EVALUATE_CTX) | ((uint32_t)hid->slot << 24), NULL);
     }
 
     // the configuration descriptor: first its length, then all of it
-    if (!control(kb, 0x80, 6, 0x0200, 0, 9))
+    if (!control(hid, 0x80, 6, 0x0200, 0, 9))
     {
         return false;
     }
@@ -748,56 +939,80 @@ static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
     {
         total = DATA_MAX;
     }
-    if (!control(kb, 0x80, 6, 0x0200, 0, total))
+    if (!control(hid, 0x80, 6, 0x0200, 0, total))
     {
         return false;
     }
 
-    uint8_t interface = 0;
-    uint8_t endpoint = 0;
-    uint16_t max_packet = 8;
-    uint8_t interval = 10;
-    if (!find_keyboard(data, total, &interface, &endpoint, &max_packet, &interval))
+    hid_interface_t found;
+    if (!find_hid(data, total, &found))
     {
-        return false; // not a keyboard: leave the slot as it is
+        return false; // no HID interface: leave the slot as it is
     }
+    uint8_t interface = found.interface;
+    uint8_t endpoint = found.endpoint;
+    uint16_t max_packet = found.packet;
+    uint8_t interval = found.interval;
+    hid->kind = found.kind;
 
-    // SET_CONFIGURATION, then the boot protocol and no idle reports
-    if (!control(kb, 0x00, 9, config_value, 0, 0) ||
-        !control(kb, 0x21, 0x0B, 0, interface, 0) || // SET_PROTOCOL(boot)
-        !control(kb, 0x21, 0x0A, 0, interface, 0))   // SET_IDLE(0)
+    if (!control(hid, 0x00, 9, config_value, 0, 0)) // SET_CONFIGURATION
     {
         return false;
+    }
+
+    if (hid->kind == HID_POINTER)
+    {
+        // the report protocol (the default): read the report descriptor
+        uint16_t size = found.report_desc_size;
+        if (size == 0 || size > DATA_MAX ||
+            !control(hid, 0x81, 6, 0x2200, interface, size) ||
+            !hid_parse_pointer(data, size, &hid->pointer))
+        {
+            return false; // not a pointing device the driver understands
+        }
+    }
+    else if (!control(hid, 0x21, 0x0B, 0, interface, 0)) // SET_PROTOCOL(boot)
+    {
+        return false;
+    }
+    control(hid, 0x21, 0x0A, 0, interface, 0); // SET_IDLE(0): no repeated reports
+
+    // a keyboard boot report is 8 bytes; a pointer's is up to its packet
+    hid->report_length = hid->kind == HID_KEYBOARD ? 8 : max_packet;
+    if (hid->report_length == 0 || hid->report_length > DATA_MAX)
+    {
+        hid->report_length = 8;
     }
 
     // configure the interrupt IN endpoint
-    if (!ring_init(&kb->interrupt))
+    if (!ring_init(&hid->interrupt))
     {
         return false;
     }
-    kb->dci = (uint8_t)(endpoint * 2 + 1);
-    clear_input(kb);
-    input_ctx(kb, 0)[1] = 1u | (1u << kb->dci); // the slot and the endpoint
-    slot_ctx = input_ctx(kb, 1);
-    slot_ctx[0] = (speed << 20) | ((uint32_t)kb->dci << 27);
+    hid->dci = (uint8_t)(endpoint * 2 + 1);
+    clear_input(hid);
+    input_ctx(hid, 0)[1] = 1u | (1u << hid->dci); // the slot and the endpoint
+    slot_ctx = input_ctx(hid, 1);
+    slot_ctx[0] = (speed << 20) | ((uint32_t)hid->dci << 27);
     slot_ctx[1] = (port + 1) << 16;
-    uint32_t *ep = input_ctx(kb, (uint32_t)kb->dci + 1);
+    uint32_t *ep = input_ctx(hid, (uint32_t)hid->dci + 1);
     ep[0] = xhci_interval(speed, interval) << 16;
     ep[1] = (3u << 1) | (EP_TYPE_INT_IN << 3) | ((uint32_t)max_packet << 16);
-    ep[2] = (uint32_t)kb->interrupt.phys | 1u;
-    ep[3] = (uint32_t)((uint64_t)kb->interrupt.phys >> 32);
+    ep[2] = (uint32_t)hid->interrupt.phys | 1u;
+    ep[3] = (uint32_t)((uint64_t)hid->interrupt.phys >> 32);
     ep[4] = 8u | ((uint32_t)max_packet << 16); // average TRB length, max payload
 
-    if (run_command(hc, kb->page_phys + PAGE_INPUT,
-                    TRB_TYPE(TRB_CONFIGURE_EP) | ((uint32_t)kb->slot << 24),
+    if (run_command(hc, hid->page_phys + PAGE_INPUT,
+                    TRB_TYPE(TRB_CONFIGURE_EP) | ((uint32_t)hid->slot << 24),
                     NULL) != COMPLETION_SUCCESS)
     {
         return false;
     }
 
-    keyboard_count++;
-    queue_report(kb);
-    KLOG_INFO("xhci: keyboard on port %u (slot %u)", port + 1, kb->slot);
+    hid_count++;
+    queue_report(hid);
+    static const char *const kind_names[] = {"keyboard", "mouse", "pointer"};
+    KLOG_INFO("xhci: %s on port %u (slot %u)", kind_names[hid->kind], port + 1, hid->slot);
     return true;
 }
 
@@ -1018,6 +1233,6 @@ uint32_t xhci_init(void)
     {
         timer_add_poll_hook(xhci_poll);
     }
-    KLOG_INFO("xhci: %u controller(s), %u keyboard(s)", controller_count, keyboard_count);
-    return keyboard_count;
+    KLOG_INFO("xhci: %u controller(s), %u input device(s)", controller_count, hid_count);
+    return hid_count;
 }
