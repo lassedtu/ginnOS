@@ -84,24 +84,24 @@ static struct
 
 static uint32_t lapic_read(uint32_t reg)
 {
-    return lapic[reg / 4];
+    return mmio_read32(&lapic[reg / 4]);
 }
 
 static void lapic_write(uint32_t reg, uint32_t value)
 {
-    lapic[reg / 4] = value;
+    mmio_write32(&lapic[reg / 4], value);
 }
 
 static uint32_t ioapic_read(const ioapic_t *ioapic, uint32_t reg)
 {
-    ioapic->regs[IOAPIC_REGSEL / 4] = reg;
-    return ioapic->regs[IOAPIC_WIN / 4];
+    mmio_write32(&ioapic->regs[IOAPIC_REGSEL / 4], reg);
+    return mmio_read32(&ioapic->regs[IOAPIC_WIN / 4]);
 }
 
 static void ioapic_write(const ioapic_t *ioapic, uint32_t reg, uint32_t value)
 {
-    ioapic->regs[IOAPIC_REGSEL / 4] = reg;
-    ioapic->regs[IOAPIC_WIN / 4] = value;
+    mmio_write32(&ioapic->regs[IOAPIC_REGSEL / 4], reg);
+    mmio_write32(&ioapic->regs[IOAPIC_WIN / 4], value);
 }
 
 static uint64_t read_msr(uint32_t msr)

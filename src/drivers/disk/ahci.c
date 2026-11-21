@@ -93,22 +93,22 @@ static uint32_t disk_count;
 
 static uint32_t hba_read(uint32_t reg)
 {
-    return *(volatile uint32_t *)(abar + reg);
+    return mmio_read32(abar + reg);
 }
 
 static void hba_write(uint32_t reg, uint32_t value)
 {
-    *(volatile uint32_t *)(abar + reg) = value;
+    mmio_write32(abar + reg, value);
 }
 
 static uint32_t port_read(const ahci_disk_t *disk, uint32_t reg)
 {
-    return disk->port[reg / 4];
+    return mmio_read32(&disk->port[reg / 4]);
 }
 
 static void port_write(const ahci_disk_t *disk, uint32_t reg, uint32_t value)
 {
-    disk->port[reg / 4] = value;
+    mmio_write32(&disk->port[reg / 4], value);
 }
 
 /**

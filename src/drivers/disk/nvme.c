@@ -72,12 +72,12 @@ static nvme_disk_t disk;
 
 static uint32_t reg_read32(uint32_t reg)
 {
-    return *(volatile uint32_t *)(regs + reg);
+    return mmio_read32(regs + reg);
 }
 
 static void reg_write32(uint32_t reg, uint32_t value)
 {
-    *(volatile uint32_t *)(regs + reg) = value;
+    mmio_write32(regs + reg, value);
 }
 
 static uint64_t reg_read64(uint32_t reg)
