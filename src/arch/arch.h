@@ -153,6 +153,14 @@ void arch_map_kernel_page(uintptr_t virt, phys_addr_t phys);
 void arch_map_device_page(uintptr_t virt, phys_addr_t phys);
 
 /**
+ * like arch_map_kernel_page(), but write-combining if the CPU can do it
+ * (uncached otherwise): for a framebuffer.
+ * @param virt page-aligned virtual address inside a reserved range.
+ * @param phys page-aligned physical address of the memory.
+ */
+void arch_map_wc_page(uintptr_t virt, phys_addr_t phys);
+
+/**
  * remove a page mapped with arch_map_kernel_page(). the frame is not freed.
  * @param virt page-aligned virtual address.
  */

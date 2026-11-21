@@ -2,6 +2,7 @@
 #include "arch/x86/cpu/io.h"
 #include "arch/x86/cpu/gdt.h"
 #include "arch/x86/cpu/paging.h"
+#include "arch/x86/cpu/pat.h"
 
 void arch_disable_interrupts(void)
 {
@@ -187,6 +188,14 @@ void arch_map_kernel_page(uintptr_t virt, phys_addr_t phys)
 void arch_map_device_page(uintptr_t virt, phys_addr_t phys)
 {
     paging_map(virt, phys, PTE_KERNEL_RW | PTE_CACHE_DISABLE | PTE_WRITE_THROUGH);
+}
+
+void arch_map_wc_page(uintptr_t virt, phys_addr_t phys)
+{
+    // PWT alone selects PAT entry 1, write-combining after pat_init
+    uint32_t flags = pat_has_write_combining() ? PTE_WRITE_THROUGH
+                                               : (PTE_CACHE_DISABLE | PTE_WRITE_THROUGH);
+    paging_map(virt, phys, PTE_KERNEL_RW | flags);
 }
 
 void arch_unmap_kernel_page(uintptr_t virt)

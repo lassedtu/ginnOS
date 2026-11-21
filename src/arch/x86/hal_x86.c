@@ -1,6 +1,7 @@
 #include "kernel/hal/hal.h"
 
 #include "arch/x86/cpu/gdt.h"
+#include "arch/x86/cpu/pat.h"
 #include "arch/x86/cpu/idt.h"
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/exception.h"
@@ -66,6 +67,7 @@ void hal_initialize(void)
      * place before the CPU can deliver the first interrupt.
      */
     gdt_initialize();
+    pat_init();
     idt_initialize();
     isr_initialize();
     exception_initialize();

@@ -16,10 +16,14 @@ void mmio_init(void)
     arch_reserve_kernel_range(MMIO_REGION_BASE, MMIO_REGION_END);
 }
 
+#define MAP_CACHED          0
+#define MAP_UNCACHED        1
+#define MAP_WRITE_COMBINING 2
+
 /**
- * map [phys, phys + size) into the MMIO window, cached or not.
+ * map [phys, phys + size) into the MMIO window with one of the MAP_ kinds.
  */
-static void *map_range(phys_addr_t phys, size_t size, bool cached)
+static void *map_range(phys_addr_t phys, size_t size, int kind)
 {
     phys_addr_t first = PAGE_ALIGN_DOWN(phys);
     size_t bytes = PAGE_ALIGN_UP(phys + size) - first;
@@ -41,9 +45,13 @@ static void *map_range(phys_addr_t phys, size_t size, bool cached)
 
     for (size_t offset = 0; offset < bytes; offset += PAGE_SIZE)
     {
-        if (cached)
+        if (kind == MAP_CACHED)
         {
             arch_map_kernel_page(virt + offset, first + offset);
+        }
+        else if (kind == MAP_WRITE_COMBINING)
+        {
+            arch_map_wc_page(virt + offset, first + offset);
         }
         else
         {
@@ -56,10 +64,15 @@ static void *map_range(phys_addr_t phys, size_t size, bool cached)
 
 void *ioremap(phys_addr_t phys, size_t size)
 {
-    return map_range(phys, size, true);
+    return map_range(phys, size, MAP_CACHED);
 }
 
 void *ioremap_nocache(phys_addr_t phys, size_t size)
 {
-    return map_range(phys, size, false);
+    return map_range(phys, size, MAP_UNCACHED);
+}
+
+void *ioremap_wc(phys_addr_t phys, size_t size)
+{
+    return map_range(phys, size, MAP_WRITE_COMBINING);
 }

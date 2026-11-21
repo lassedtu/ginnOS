@@ -37,6 +37,15 @@ void *ioremap(phys_addr_t phys, size_t size);
 void *ioremap_nocache(phys_addr_t phys, size_t size);
 
 /**
+ * map memory such as a framebuffer write-combining (uncached if the CPU
+ * has no PAT): writes are combined into bursts, reads are slow.
+ * @param phys physical address (need not be aligned).
+ * @param size number of bytes.
+ * @return kernel pointer to phys, or NULL if the window is exhausted.
+ */
+void *ioremap_wc(phys_addr_t phys, size_t size);
+
+/**
  * read a 32-bit device register with one 32-bit access. a plain volatile
  * read can become a narrower access (gcc can turn "*reg & 1" into a byte
  * read), and many devices (the local APIC, xHCI) ignore narrow accesses.
