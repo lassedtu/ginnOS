@@ -40,6 +40,13 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_EXECVE] = sys_execve,
     [SYS_GETPPID] = sys_getppid,
     [SYS_SCHED_YIELD] = sys_sched_yield,
+    [SYS_FCNTL] = sys_fcntl,
+    [SYS_FSTAT] = sys_fstat,
+    [SYS_RENAME] = sys_rename,
+    [SYS_ACCESS] = sys_access,
+    [SYS_PREAD] = sys_pread,
+    [SYS_PWRITE] = sys_pwrite,
+    [SYS_FSYNC] = sys_fsync,
 };
 
 /**

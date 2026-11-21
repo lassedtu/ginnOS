@@ -247,3 +247,11 @@ int32_t vfs_lseek(vfs_file_t *file, int32_t offset, int whence);
  * @param file the open file.
  */
 void vfs_seek_end(vfs_file_t *file);
+
+/**
+ * stat an open file or directory.
+ * @param file the open file.
+ * @param stat_out receives its metadata.
+ * @return KERR_OK, or an error code.
+ */
+kerr_t vfs_fstat(vfs_file_t *file, vfs_stat_t *stat_out);

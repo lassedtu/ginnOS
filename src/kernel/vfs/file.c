@@ -4,6 +4,7 @@
 #include "kernel/memory/heap.h"
 #include "kernel/sync/spinlock.h"
 #include "kernel/assert.h"
+#include "common/memory.h"
 
 // guards file_t::refcount of every description
 static spinlock_t file_lock;
@@ -109,6 +110,56 @@ int32_t file_truncate(file_t *file)
     return file->ops->truncate(file);
 }
 
+int32_t file_stat(file_t *file, struct kstat *st)
+{
+    return file->ops->stat ? file->ops->stat(file, st) : -EINVAL;
+}
+
+/**
+ * move to offset, run a read or write, and move back.
+ */
+static int32_t at_offset(file_t *file, void *buf, uint32_t count, int32_t offset, bool write)
+{
+    if (!file->ops->seek)
+    {
+        return -ESPIPE;
+    }
+    if (offset < 0)
+    {
+        return -EINVAL;
+    }
+
+    int32_t saved = file->ops->seek(file, 0, VFS_SEEK_CUR);
+    if (saved < 0)
+    {
+        return saved;
+    }
+    int32_t moved = file->ops->seek(file, offset, VFS_SEEK_SET);
+    if (moved < 0)
+    {
+        return moved;
+    }
+
+    int32_t result = write ? file_write(file, buf, count) : file_read(file, buf, count);
+    file->ops->seek(file, saved, VFS_SEEK_SET);
+    return result;
+}
+
+int32_t file_pread(file_t *file, void *buf, uint32_t count, int32_t offset)
+{
+    return at_offset(file, buf, count, offset, false);
+}
+
+int32_t file_pwrite(file_t *file, const void *buf, uint32_t count, int32_t offset)
+{
+    // O_APPEND would move the write to the end
+    if (file->flags & O_APPEND)
+    {
+        return -EINVAL;
+    }
+    return at_offset(file, (void *)buf, count, offset, true);
+}
+
 /*
  * filesystem files: a vfs_file_t, which holds the offset (the ext2 cursor
  * or the generic fs_pos), so sharing the description shares the offset.
@@ -155,6 +206,18 @@ static int32_t vfs_kind_truncate(file_t *file)
     return kerr_to_errno(vfs_truncate(&file->vfs));
 }
 
+static int32_t vfs_kind_stat(file_t *file, struct kstat *st)
+{
+    fs_stat_t fs_stat;
+    kerr_t err = vfs_fstat(&file->vfs, &fs_stat);
+    if (kerr_failed(err))
+    {
+        return kerr_to_errno(err);
+    }
+    stat_from_fs(&fs_stat, st);
+    return 0;
+}
+
 static void vfs_kind_release(file_t *file)
 {
     vfs_close(&file->vfs);
@@ -169,6 +232,7 @@ static const file_ops_t vfs_file_ops = {
     .mmap = vfs_kind_mmap,
     .read_entry = vfs_kind_read_entry,
     .truncate = vfs_kind_truncate,
+    .stat = vfs_kind_stat,
     .release = vfs_kind_release,
 };
 
@@ -206,6 +270,16 @@ static int32_t pipe_kind_write(file_t *file, const void *buf, uint32_t count)
     return pipe_write(file->pipe.buf, buf, count, (file->flags & O_NONBLOCK) != 0);
 }
 
+static int32_t pipe_kind_stat(file_t *file, struct kstat *st)
+{
+    (void)file;
+    memset(st, 0, sizeof(*st));
+    st->st_mode = S_IFIFO | 0600;
+    st->st_nlink = 1;
+    st->st_blksize = PIPE_BUF;
+    return 0;
+}
+
 static void pipe_kind_release(file_t *file)
 {
     pipe_unref(file->pipe.buf, file->pipe.dir);
@@ -215,6 +289,7 @@ static void pipe_kind_release(file_t *file)
 static const file_ops_t pipe_file_ops = {
     .read = pipe_kind_read,
     .write = pipe_kind_write,
+    .stat = pipe_kind_stat,
     .release = pipe_kind_release,
 };
 

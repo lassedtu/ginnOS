@@ -60,3 +60,9 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
  * @return number of characters that would have been written (excluding null).
  */
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap);
+
+/**
+ * rename a file or directory (on the same filesystem).
+ * @return 0, or -1 (errno set; EXDEV across filesystems).
+ */
+int rename(const char *old_path, const char *new_path);

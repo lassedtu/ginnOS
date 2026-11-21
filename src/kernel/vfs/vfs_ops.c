@@ -283,3 +283,12 @@ void vfs_seek_end(vfs_file_t *file)
 {
     vfs_lseek(file, 0, VFS_SEEK_END);
 }
+
+kerr_t vfs_fstat(vfs_file_t *file, vfs_stat_t *stat_out)
+{
+    if (!file || !file->mount)
+    {
+        return KERR_INVAL;
+    }
+    return fs_fstat(&file->file, stat_out);
+}

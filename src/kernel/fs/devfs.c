@@ -3,6 +3,8 @@
 
 #include "common/string.h"
 #include "kernel/device/device.h"
+#include "kernel/vfs/stat.h"
+#include "common/memory.h"
 
 /**
  * @file devfs.c
@@ -60,34 +62,46 @@ static kerr_t devfs_open(fs_mount_t *mount, const char *path, fs_file_t *file)
     return KERR_OK;
 }
 
+/**
+ * the stat of the devfs root (dev == NULL) or of a device node. devfs has
+ * no inodes, sizes or times.
+ */
+static void devfs_fill_stat(const device_t *dev, fs_stat_t *stat_out)
+{
+    memset(stat_out, 0, sizeof(*stat_out));
+    stat_out->links_count = 1;
+    if (!dev)
+    {
+        stat_out->file_type = FS_TYPE_DIR;
+        stat_out->mode = S_IFDIR | 0755;
+        return;
+    }
+    stat_out->file_type = FS_TYPE_FILE;
+    stat_out->mode = (dev->type == DEVICE_TYPE_BLOCK ? S_IFBLK : S_IFCHR) | 0666;
+}
+
 static kerr_t devfs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
 {
     (void)mount;
-
     const char *name = devfs_leaf(path);
 
-    // zero the stat first; devfs has no real inodes, sizes, or timestamps.
-    stat_out->inode = 0;
-    stat_out->mode = 0;
-    stat_out->links_count = 1;
-    stat_out->size = 0;
-    stat_out->blocks = 0;
-    stat_out->atime = 0;
-    stat_out->mtime = 0;
-    stat_out->ctime = 0;
-
-    if (name[0] == '\0')
+    device_t *dev = NULL;
+    if (name[0] != '\0')
     {
-        stat_out->file_type = FS_TYPE_DIR;
-        return KERR_OK;
+        dev = device_find(name);
+        if (!dev)
+        {
+            return KERR_NOENT;
+        }
     }
 
-    if (!device_find(name))
-    {
-        return KERR_NOENT;
-    }
+    devfs_fill_stat(dev, stat_out);
+    return KERR_OK;
+}
 
-    stat_out->file_type = FS_TYPE_FILE;
+static kerr_t devfs_fstat(fs_file_t *file, fs_stat_t *stat_out)
+{
+    devfs_fill_stat((const device_t *)file->fs_data, stat_out);
     return KERR_OK;
 }
 
@@ -260,6 +274,7 @@ static const fs_ops_t devfs_ops = {
     .rmdir = devfs_rmdir,
     .rename = devfs_rename,
     .stat = devfs_stat,
+    .fstat = devfs_fstat,
     .read = devfs_read,
     .write = devfs_write,
     .truncate = devfs_truncate,

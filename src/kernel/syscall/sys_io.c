@@ -234,3 +234,131 @@ syscall_ret_t sys_pipe(struct registers *regs)
 
     return kerr_to_errno(copy_to_user(user_fds, fds, sizeof(fds)));
 }
+
+/**
+ * SYS_fstat: get the metadata of an open file.
+ * args: EBX = fd, ECX = struct stat pointer.
+ * returns 0 on success, negative errno on failure.
+ */
+syscall_ret_t sys_fstat(struct registers *regs)
+{
+    struct kstat *user_stat = (struct kstat *)syscall_arg(regs, 1);
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
+    if (!entry)
+        return -EBADF;
+
+    struct kstat st;
+    int32_t err = file_stat(entry->file, &st);
+    if (err < 0)
+        return err;
+    return kerr_to_errno(copy_to_user(user_stat, &st, sizeof(st)));
+}
+
+// fcntl commands
+#define F_DUPFD 0
+#define F_GETFD 1
+#define F_SETFD 2
+#define F_GETFL 3
+#define F_SETFL 4
+#define F_DUPFD_CLOEXEC 1030
+
+// the status flags F_SETFL may change
+#define SETFL_FLAGS (O_APPEND | O_NONBLOCK)
+
+/**
+ * SYS_fcntl: control an open file descriptor.
+ * args: EBX = fd, ECX = command, EDX = argument.
+ *   F_DUPFD / F_DUPFD_CLOEXEC: duplicate to the lowest free fd >= argument
+ *   F_GETFD / F_SETFD: the descriptor flags (FD_CLOEXEC)
+ *   F_GETFL / F_SETFL: the description's status flags; only O_APPEND and
+ *                      O_NONBLOCK can be changed
+ * returns the command's result, or a negative errno.
+ */
+syscall_ret_t sys_fcntl(struct registers *regs)
+{
+    int fd = (int)syscall_arg(regs, 0);
+    int command = (int)syscall_arg(regs, 1);
+    uint32_t arg = (uint32_t)syscall_arg(regs, 2);
+    process_t *proc = process_current();
+
+    fd_entry_t *entry = fd_get(fd);
+    if (!entry)
+        return -EBADF;
+
+    switch (command)
+    {
+    case F_DUPFD:
+    case F_DUPFD_CLOEXEC:
+    {
+        if ((int32_t)arg < 0 || (int32_t)arg >= FD_MAX)
+            return -EINVAL;
+        file_ref(entry->file);
+        int new_fd = fd_install(proc, entry->file,
+                                command == F_DUPFD_CLOEXEC ? FD_CLOEXEC : 0, (int)arg);
+        if (new_fd < 0)
+            file_unref(entry->file);
+        return new_fd;
+    }
+    case F_GETFD:
+        return (int32_t)entry->flags;
+    case F_SETFD:
+        entry->flags = arg & FD_CLOEXEC;
+        return 0;
+    case F_GETFL:
+        return (int32_t)entry->file->flags;
+    case F_SETFL:
+        entry->file->flags = (entry->file->flags & ~(uint32_t)SETFL_FLAGS) | (arg & SETFL_FLAGS);
+        return 0;
+    default:
+        return -EINVAL;
+    }
+}
+
+/**
+ * SYS_pread: read at an offset without moving the file offset.
+ * args: EBX = fd, ECX = buffer, EDX = count, ESI = offset.
+ * returns bytes read, or negative errno (ESPIPE for a pipe or the console).
+ */
+syscall_ret_t sys_pread(struct registers *regs)
+{
+    char *buf = (char *)syscall_arg(regs, 1);
+    uint32_t count = (uint32_t)syscall_arg(regs, 2);
+
+    if (!user_access_ok(buf, count, true))
+        return -EFAULT;
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
+    if (!entry)
+        return -EBADF;
+
+    return file_pread(entry->file, buf, count, (int32_t)syscall_arg(regs, 3));
+}
+
+/**
+ * SYS_pwrite: write at an offset without moving the file offset.
+ * args: EBX = fd, ECX = buffer, EDX = count, ESI = offset.
+ * returns bytes written, or negative errno (EINVAL with O_APPEND).
+ */
+syscall_ret_t sys_pwrite(struct registers *regs)
+{
+    const char *buf = (const char *)syscall_arg(regs, 1);
+    uint32_t count = (uint32_t)syscall_arg(regs, 2);
+
+    if (!user_access_ok(buf, count, false))
+        return -EFAULT;
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
+    if (!entry)
+        return -EBADF;
+
+    return file_pwrite(entry->file, buf, count, (int32_t)syscall_arg(regs, 3));
+}
+
+/**
+ * SYS_fsync: write an open file's data to disk.
+ * args: EBX = fd.
+ * ext2 writes through to the disk at once (there is no cache), so this
+ * only checks the descriptor. returns 0 or -EBADF.
+ */
+syscall_ret_t sys_fsync(struct registers *regs)
+{
+    return fd_get((int)syscall_arg(regs, 0)) ? 0 : -EBADF;
+}

@@ -19,6 +19,7 @@
 #include "common/error.h"
 #include "arch/arch.h"
 #include "kernel/vfs/vfs.h"
+#include "kernel/vfs/stat.h"
 #include "kernel/syscall/pipe.h"
 
 // access modes and status flags (the low bits are ABI, as in libc fcntl.h)
@@ -51,6 +52,7 @@ typedef struct
                     uint32_t offset);
     int32_t (*read_entry)(file_t *file, fs_dirent_t *entry);
     int32_t (*truncate)(file_t *file);
+    int32_t (*stat)(file_t *file, struct kstat *st);
     void (*release)(file_t *file); // the last reference is gone
 } file_ops_t;
 
@@ -130,3 +132,12 @@ int32_t file_mmap(file_t *file, addr_space_t as, uintptr_t virt, size_t length, 
                   uint32_t offset);
 int32_t file_read_entry(file_t *file, fs_dirent_t *entry);
 int32_t file_truncate(file_t *file);
+int32_t file_stat(file_t *file, struct kstat *st);
+
+/**
+ * read or write at an offset without moving the description's offset
+ * (pread, pwrite). only for files that can seek (ESPIPE otherwise). not
+ * atomic against another process using the same description.
+ */
+int32_t file_pread(file_t *file, void *buf, uint32_t count, int32_t offset);
+int32_t file_pwrite(file_t *file, const void *buf, uint32_t count, int32_t offset);

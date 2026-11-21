@@ -37,6 +37,13 @@
 #define SYS_EXECVE 28   // replace the calling process's program
 #define SYS_GETPPID 29  // get the parent's process ID
 #define SYS_SCHED_YIELD 30 // let other processes run first
+#define SYS_FCNTL 31    // control an open file descriptor
+#define SYS_FSTAT 32    // metadata of an open file
+#define SYS_RENAME 33   // rename a file
+#define SYS_ACCESS 34   // check that a file can be accessed
+#define SYS_PREAD 35    // read at an offset
+#define SYS_PWRITE 36   // write at an offset
+#define SYS_FSYNC 37    // write a file's data to disk
 
 /* raw syscall interface  implemented in syscall.asm */
 int _syscall(int num, int arg1, int arg2, int arg3, int arg4, int arg5);

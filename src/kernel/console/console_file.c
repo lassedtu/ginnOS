@@ -83,9 +83,20 @@ static int32_t console_file_write(file_t *file, const void *buf, uint32_t count)
     return (int32_t)count;
 }
 
+static int32_t console_file_stat(file_t *file, struct kstat *st)
+{
+    (void)file;
+    memset(st, 0, sizeof(*st));
+    st->st_mode = S_IFCHR | 0620;
+    st->st_nlink = 1;
+    st->st_blksize = 1024;
+    return 0;
+}
+
 static const file_ops_t console_file_ops = {
     .read = console_file_read,
     .write = console_file_write,
+    .stat = console_file_stat,
 };
 
 // the reference it starts with is never dropped, so it is never released

@@ -87,6 +87,24 @@ static kerr_t ext2_ops_rename(fs_mount_t *mount, const char *old_path, const cha
     return ext2_rename(&mount->ext2, old_path, new_path);
 }
 
+/**
+ * fill a stat from an inode.
+ */
+static void fill_stat(uint32_t inode_number, const ext2_inode_t *inode, fs_stat_t *stat_out)
+{
+    stat_out->inode = inode_number;
+    stat_out->file_type = map_inode_type(inode->i_mode);
+    stat_out->mode = inode->i_mode;
+    stat_out->links_count = inode->i_links_count;
+    stat_out->size = inode->i_size;
+    stat_out->blocks = inode->i_blocks;
+    stat_out->atime = inode->i_atime;
+    stat_out->mtime = inode->i_mtime;
+    stat_out->ctime = inode->i_ctime;
+    stat_out->uid = inode->i_uid;
+    stat_out->gid = inode->i_gid;
+}
+
 static kerr_t ext2_ops_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
 {
     uint32_t inode_number;
@@ -105,15 +123,22 @@ static kerr_t ext2_ops_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat
         return err;
     }
 
-    stat_out->inode = inode_number;
-    stat_out->file_type = map_inode_type(inode.i_mode);
-    stat_out->mode = inode.i_mode;
-    stat_out->links_count = inode.i_links_count;
-    stat_out->size = inode.i_size;
-    stat_out->blocks = inode.i_blocks;
-    stat_out->atime = inode.i_atime;
-    stat_out->mtime = inode.i_mtime;
-    stat_out->ctime = inode.i_ctime;
+    fill_stat(inode_number, &inode, stat_out);
+    return KERR_OK;
+}
+
+static kerr_t ext2_ops_fstat(fs_file_t *file, fs_stat_t *stat_out)
+{
+    ext2_file_t *ext2 = &file->ext2_file;
+    ext2_inode_t inode;
+
+    kerr_t err = ext2_read_inode(ext2->volume, ext2->inode, &inode);
+    if (kerr_failed(err))
+    {
+        return err;
+    }
+
+    fill_stat(ext2->inode, &inode, stat_out);
     return KERR_OK;
 }
 
@@ -252,6 +277,14 @@ static kerr_t locked_read_entry(fs_file_t *file, fs_dirent_t *entry_out)
     return err;
 }
 
+static kerr_t locked_fstat(fs_file_t *file, fs_stat_t *stat_out)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_ops_fstat(file, stat_out);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
 static void locked_close(fs_file_t *file)
 {
     mutex_lock(&ext2_lock);
@@ -272,6 +305,7 @@ static const fs_ops_t ext2_ops = {
     .write = locked_write,
     .truncate = locked_truncate,
     .read_entry = locked_read_entry,
+    .fstat = locked_fstat,
     .close = locked_close,
 };
 

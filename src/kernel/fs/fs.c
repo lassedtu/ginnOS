@@ -223,3 +223,12 @@ int32_t fs_seek(fs_file_t *file, int32_t offset, int whence)
 
     return file->ops->seek(file, offset, whence);
 }
+
+kerr_t fs_fstat(fs_file_t *file, fs_stat_t *stat_out)
+{
+    if (!file || !file->is_open || !file->ops->fstat)
+    {
+        return KERR_INVAL;
+    }
+    return file->ops->fstat(file, stat_out);
+}

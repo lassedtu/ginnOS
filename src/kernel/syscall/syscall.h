@@ -37,9 +37,16 @@
 #define SYS_EXECVE 28
 #define SYS_GETPPID 29
 #define SYS_SCHED_YIELD 30
+#define SYS_FCNTL 31
+#define SYS_FSTAT 32
+#define SYS_RENAME 33
+#define SYS_ACCESS 34
+#define SYS_PREAD 35
+#define SYS_PWRITE 36
+#define SYS_FSYNC 37
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 31
+#define SYSCALL_COUNT 38
 
 /**
  * initialize the system call interface.

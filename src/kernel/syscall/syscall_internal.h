@@ -97,6 +97,13 @@ syscall_ret_t sys_fork(struct registers *regs);
 syscall_ret_t sys_execve(struct registers *regs);
 syscall_ret_t sys_getppid(struct registers *regs);
 syscall_ret_t sys_sched_yield(struct registers *regs);
+syscall_ret_t sys_fcntl(struct registers *regs);
+syscall_ret_t sys_fstat(struct registers *regs);
+syscall_ret_t sys_rename(struct registers *regs);
+syscall_ret_t sys_access(struct registers *regs);
+syscall_ret_t sys_pread(struct registers *regs);
+syscall_ret_t sys_pwrite(struct registers *regs);
+syscall_ret_t sys_fsync(struct registers *regs);
 
 /* sys_misc.c */
 syscall_ret_t sys_getcwd(struct registers *regs);

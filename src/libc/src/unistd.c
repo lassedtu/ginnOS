@@ -1,6 +1,8 @@
 #include "unistd.h"
 #include <stdarg.h>
 #include "errno.h"
+#include <sys/stat.h>
+#include <stdio.h>
 
 /**
  * @file unistd.c
@@ -282,4 +284,66 @@ int lseek(int fd, int offset, int whence)
         return -1;
     }
     return ret;
+}
+
+/**
+ * the usual syscall wrapper tail: a negative result sets errno.
+ */
+static int check(int ret)
+{
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
+}
+
+int fcntl(int fd, int cmd, ...)
+{
+    va_list args;
+    va_start(args, cmd);
+    int arg = va_arg(args, int);
+    va_end(args);
+    return check(_syscall(SYS_FCNTL, fd, cmd, arg, 0, 0));
+}
+
+int dup(int fd)
+{
+    return fcntl(fd, F_DUPFD, 0);
+}
+
+int stat(const char *path, struct stat *st)
+{
+    return check(_syscall(SYS_STAT, (int)path, (int)st, 0, 0, 0));
+}
+
+int fstat(int fd, struct stat *st)
+{
+    return check(_syscall(SYS_FSTAT, fd, (int)st, 0, 0, 0));
+}
+
+int access(const char *path, int mode)
+{
+    return check(_syscall(SYS_ACCESS, (int)path, mode, 0, 0, 0));
+}
+
+int rename(const char *old_path, const char *new_path)
+{
+    return check(_syscall(SYS_RENAME, (int)old_path, (int)new_path, 0, 0, 0));
+}
+
+ssize_t pread(int fd, void *buf, size_t count, int offset)
+{
+    return check(_syscall(SYS_PREAD, fd, (int)buf, (int)count, offset, 0));
+}
+
+ssize_t pwrite(int fd, const void *buf, size_t count, int offset)
+{
+    return check(_syscall(SYS_PWRITE, fd, (int)buf, (int)count, offset, 0));
+}
+
+int fsync(int fd)
+{
+    return check(_syscall(SYS_FSYNC, fd, 0, 0, 0, 0));
 }

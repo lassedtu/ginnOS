@@ -46,6 +46,7 @@ typedef struct
     uint32_t (*write)(fs_file_t *file, uint32_t byte_count, const void *data_in);
     kerr_t (*truncate)(fs_file_t *file);
     kerr_t (*read_entry)(fs_file_t *file, fs_dirent_t *entry_out);
+    kerr_t (*fstat)(fs_file_t *file, fs_stat_t *stat_out);
     void (*close)(fs_file_t *file);
 
     /**
@@ -109,6 +110,8 @@ struct fs_stat
     uint32_t atime;
     uint32_t mtime;
     uint32_t ctime;
+    uint16_t uid;
+    uint16_t gid;
 };
 
 /**
@@ -215,6 +218,14 @@ uint32_t fs_write(fs_file_t *file, uint32_t byteCount, const void *dataIn);
  * @return KERR_OK on success, or an error code on failure.
  */
 kerr_t fs_truncate(fs_file_t *file);
+
+/**
+ * stat an open file or directory.
+ * @param file open file handle.
+ * @param stat_out output stat structure.
+ * @return KERR_OK, or KERR_INVAL if the filesystem cannot stat open files.
+ */
+kerr_t fs_fstat(fs_file_t *file, fs_stat_t *stat_out);
 
 /**
  * read a directory entry from an open directory file.

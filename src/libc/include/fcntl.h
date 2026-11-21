@@ -25,6 +25,26 @@ typedef unsigned int mode_t;
 #define O_DIRECTORY 0x10000 // fail with ENOTDIR unless it is a directory
 #define O_CLOEXEC   0x80000 // close the descriptor on execve
 
+// fcntl commands
+#define F_DUPFD 0          // duplicate to the lowest free fd >= arg
+#define F_GETFD 1          // get the descriptor flags
+#define F_SETFD 2          // set the descriptor flags
+#define F_GETFL 3          // get the status flags and access mode
+#define F_SETFL 4          // set O_APPEND and O_NONBLOCK
+#define F_DUPFD_CLOEXEC 1030 // F_DUPFD with FD_CLOEXEC set
+
+// descriptor flags
+#define FD_CLOEXEC 1
+
+/**
+ * control an open file descriptor.
+ * @param fd the descriptor.
+ * @param cmd an F_ command.
+ * @param ... the command's int argument, if it takes one.
+ * @return the command's result, or -1 (errno set).
+ */
+int fcntl(int fd, int cmd, ...);
+
 /**
  * open a file.
  * @param path the file's path.

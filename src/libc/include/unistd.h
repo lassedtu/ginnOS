@@ -72,6 +72,40 @@ int execve(const char *path, char *const argv[], char *const envp[]);
 void _exit(int status) __attribute__((noreturn));
 
 /**
+ * duplicate a descriptor to the lowest free one; both share the open file.
+ * @return the new descriptor, or -1 (errno set).
+ */
+int dup(int fd);
+
+// access() modes
+#define F_OK 0 // the file exists
+#define X_OK 1
+#define W_OK 2
+#define R_OK 4
+
+/**
+ * check that a file exists and may be accessed. there are no users yet,
+ * so every existing file allows every access.
+ * @param path the file.
+ * @param mode F_OK, or R_OK | W_OK | X_OK.
+ * @return 0, or -1 (errno set).
+ */
+int access(const char *path, int mode);
+
+/**
+ * read or write at an offset, without moving the file offset.
+ * @return bytes transferred, or -1 (errno set; ESPIPE for a pipe).
+ */
+ssize_t pread(int fd, void *buf, size_t count, int offset);
+ssize_t pwrite(int fd, const void *buf, size_t count, int offset);
+
+/**
+ * write an open file's data to disk.
+ * @return 0, or -1 (errno set).
+ */
+int fsync(int fd);
+
+/**
  * get the parent's process ID.
  * @return the parent's PID, or 0 if the parent has exited.
  */
