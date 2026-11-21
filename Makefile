@@ -95,6 +95,28 @@ KERNEL_BIN   := $(BUILD_DIR)/kernel.bin
 DISK_IMAGE   := $(BUILD_DIR)/ginnos.img
 ROOTFS_IMAGE := $(BUILD_DIR)/images/rootfs.ext2
 
+# the bootloader of the disk image:
+#   limine (default): limine on BIOS and UEFI. a FAT boot partition has
+#     limine, the kernel ELF (multiboot 2) and the root image as a module; the
+#     ext2 root is partition 2. needs git (once, to fetch limine) and mtools.
+#   custom: the old BIOS-only stage1 and stage2 (src/bootloader), which load
+#     kernel.bin from the ext2 root.
+BOOTLOADER ?= limine
+
+LIMINE_DIR       := $(BUILD_DIR)/limine
+LIMINE_FETCH     := tools/limine/fetch.sh
+LIMINE_DISK_TOOL := tools/limine/make_disk.py
+LIMINE_CONF      := tools/limine/limine.conf
+
+# UEFI firmware for make run-uefi (OVMF; homebrew and nix qemu include it)
+QEMU_UEFI ?= qemu-system-x86_64
+OVMF_CODE ?= $(firstword $(wildcard \
+	/opt/homebrew/share/qemu/edk2-x86_64-code.fd \
+	/usr/local/share/qemu/edk2-x86_64-code.fd \
+	/usr/share/qemu/edk2-x86_64-code.fd \
+	/usr/share/OVMF/OVMF_CODE.fd \
+	/usr/share/edk2/x64/OVMF_CODE.fd))
+
 STAGE2_SECTORS   := 62
 SECTOR_SIZE      := 512
 STAGE2_MAX_BYTES := $(shell echo $$(( $(STAGE2_SECTORS) * $(SECTOR_SIZE) )))
@@ -110,6 +132,29 @@ define assemble_disk
 	dd if=$(STAGE2_PAD) of=$(1) bs=512 seek=1 conv=notrunc status=none
 	dd if=$(2) of=$(1) bs=512 seek=63 conv=notrunc status=none
 endef
+
+# lay out a limine disk image (tools/limine/make_disk.py). the FAT gets a
+# copy of the kernel ELF without debug information.
+# $(1) = output image, $(2) = kernel ELF, $(3) = ext2 filesystem image,
+# $(4) = scratch directory.
+define limine_disk
+	./$(LIMINE_FETCH) $(LIMINE_DIR)
+	@mkdir -p $(4)
+	$(OBJCOPY) --strip-debug $(2) $(4)/kernel.elf
+	$(PYTHON) $(LIMINE_DISK_TOOL) --output $(1) --ext2 $(3) --limine-dir $(LIMINE_DIR) \
+		--file $(LIMINE_CONF):/boot/limine/limine.conf \
+		--file $(LIMINE_DIR)/limine-bios.sys:/boot/limine/limine-bios.sys \
+		--file $(LIMINE_DIR)/BOOTX64.EFI:/EFI/BOOT/BOOTX64.EFI \
+		--file $(LIMINE_DIR)/BOOTIA32.EFI:/EFI/BOOT/BOOTIA32.EFI \
+		--file $(4)/kernel.elf:/boot/kernel.elf \
+		--file $(3):/boot/rootfs.ext2
+endef
+
+ifneq ($(BOOTLOADER),limine)
+  ifneq ($(BOOTLOADER),custom)
+    $(error unsupported BOOTLOADER=$(BOOTLOADER): use limine or custom)
+  endif
+endif
 
 # path mapping helpers
 src_c_to_obj      = $(patsubst src/%.c,$(BUILD_DIR)/%.o,$(1))
@@ -234,7 +279,7 @@ ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run rootfs-image clean check-tools debug gdb lint check64 format compile_commands iso test test-image FORCE
+.PHONY: all run run-uefi rootfs-image clean distclean check-tools debug gdb lint check64 format compile_commands test test-image FORCE
 
 all: check-tools $(DISK_IMAGE)
 
@@ -259,6 +304,10 @@ check-tools:
 	@command -v $(AS) >/dev/null 2>&1 || { echo "missing tool: $(AS)"; exit 1; }
 	@command -v $(QEMU) >/dev/null 2>&1 || { echo "missing tool: $(QEMU)"; exit 1; }
 	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "missing tool: $(PYTHON)"; exit 1; }
+ifeq ($(BOOTLOADER),limine)
+	@command -v mformat >/dev/null 2>&1 || { echo "missing tool: mformat (install mtools)"; exit 1; }
+	@command -v git >/dev/null 2>&1 || { echo "missing tool: git (to fetch limine)"; exit 1; }
+endif
 
 # static analysis via clang-tidy (uses .clang-tidy config)
 lint:
@@ -308,15 +357,6 @@ for line in sys.stdin: \
 json.dump(entries, open('compile_commands.json','w'), indent=2)"; \
 		echo "generated compile_commands.json"; \
 	}
-
-# grub-bootable iso image (requires grub-mkrescue and xorriso)
-iso: check-tools $(KERNEL_ELF)
-	@command -v grub-mkrescue >/dev/null 2>&1 || { echo "install grub-mkrescue to use make iso"; exit 1; }
-	@mkdir -p $(BUILD_DIR)/isodir/boot/grub
-	cp $(KERNEL_ELF) $(BUILD_DIR)/isodir/boot/kernel.elf
-	echo 'menuentry "ginnOS" { multiboot /boot/kernel.elf }' > $(BUILD_DIR)/isodir/boot/grub/grub.cfg
-	grub-mkrescue -o $(BUILD_DIR)/ginnos.iso $(BUILD_DIR)/isodir
-	@echo "iso created: $(BUILD_DIR)/ginnos.iso"
 
 # isr generation
 $(ISR_GEN_C) $(ISR_GEN_INC): $(ISR_GEN_SCRIPT)
@@ -422,11 +462,24 @@ rootfs-image: $(KERNEL_BIN) user-programs
 		--min-size-mb $(EXT2_MIN_SIZE_MB) \
 		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
 
+ifeq ($(BOOTLOADER),limine)
+$(DISK_IMAGE): $(KERNEL_ELF) rootfs-image
+	$(call limine_disk,$@,$(KERNEL_ELF),$(ROOTFS_IMAGE),$(BUILD_DIR)/boot/limine)
+else
 $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_PAD) rootfs-image
 	$(call assemble_disk,$@,$(ROOTFS_IMAGE))
+endif
 
 run: check-tools $(DISK_IMAGE)
 	$(QEMU) $(QEMU_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+
+# boot the disk image with UEFI firmware (limine only: stage1 is BIOS-only).
+# the i686 kernel runs on an x86_64 CPU, so this uses the x86_64 firmware.
+run-uefi: check-tools $(DISK_IMAGE)
+	@test "$(BOOTLOADER)" = limine || { echo "make run-uefi needs BOOTLOADER=limine"; exit 1; }
+	@test -n "$(OVMF_CODE)" || { echo "no OVMF firmware found: set OVMF_CODE=<path to OVMF_CODE.fd>"; exit 1; }
+	$(QEMU_UEFI) $(QEMU_FLAGS) -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+		-drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 # in-kernel tests: build the test kernel into its own disk image (a copy of the
 # normal rootfs, so tests that write to the filesystem never touch
@@ -449,7 +502,8 @@ $(TEST_KERNEL_ELF): $(TEST_KERNEL_LINK_OBJS) $(TEST_KERNEL_OBJS_LIST) $(LINKER_D
 $(TEST_KERNEL_BIN): $(TEST_KERNEL_ELF)
 	$(OBJCOPY) -O binary $(TEST_KERNEL_ELF) $@
 
-test-image: $(STAGE1_BIN) $(STAGE2_PAD) $(TEST_KERNEL_BIN) rootfs-image
+test-image: $(if $(filter limine,$(BOOTLOADER)),$(TEST_KERNEL_ELF),$(STAGE1_BIN) $(STAGE2_PAD)) \
+            $(TEST_KERNEL_BIN) rootfs-image
 	rm -rf $(TEST_ROOTFS_DIR)
 	@mkdir -p $(TEST_ROOTFS_DIR)
 	cp -R $(EXT2_SOURCE_DIR)/. $(TEST_ROOTFS_DIR)/
@@ -459,14 +513,24 @@ test-image: $(STAGE1_BIN) $(STAGE2_PAD) $(TEST_KERNEL_BIN) rootfs-image
 		--output "$(TEST_ROOTFS_IMAGE)" \
 		--min-size-mb $(EXT2_MIN_SIZE_MB) \
 		$(if $(EXT2_SIZE_MB),--size-mb $(EXT2_SIZE_MB),)
+ifeq ($(BOOTLOADER),limine)
+	$(call limine_disk,$(TEST_DISK_IMAGE),$(TEST_KERNEL_ELF),$(TEST_ROOTFS_IMAGE),$(TEST_BUILD_DIR)/limine)
+else
 	$(call assemble_disk,$(TEST_DISK_IMAGE),$(TEST_ROOTFS_IMAGE))
+endif
 
+# clean keeps the fetched limine release (build/limine); distclean removes it
 clean:
-	rm -rf $(BUILD_DIR)
+	@if [ -d $(BUILD_DIR) ]; then \
+		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine -exec rm -rf {} +; \
+	fi
 	rm -f $(EXT2_SOURCE_DIR)/boot/kernel.bin
 	rm -rf $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)
 	rm -f compile_commands.json
+
+distclean: clean
+	rm -rf $(BUILD_DIR)
 
 # always-run prerequisite for the kernel object-list files.
 FORCE:

@@ -24,7 +24,14 @@ today.
 
 ### Boot and kernel core
 
-- Custom two-stage bootloader (stage1 MBR + stage2), real mode → protected mode
+- Boots with [Limine](https://codeberg.org/Limine/Limine) on BIOS and UEFI
+  machines through Multiboot 2 (framebuffer, memory map, ACPI RSDP, command
+  line and a boot module are read from the Multiboot 2 tags)
+- The root filesystem is an ext2 partition on the ATA disk, or, if the disk
+  has no ginnOS root, the root image that Limine loads into RAM (for a boot
+  from a USB stick; changes are lost at reboot)
+- The older custom two-stage BIOS bootloader (stage1 MBR + stage2) is still
+  available with `make BOOTLOADER=custom`
 - x86 protected-mode kernel with GDT (ring 0/3 segments + TSS)
 - IDT, 8259 PIC, IRQ handling and a 256-vector ISR framework
 - Shared-IRQ registration layer (`irq_request`/`irq_free`, per-handler enable)
@@ -243,7 +250,8 @@ today.
   compiler-checked printf formats
 - Multi-arch-ready build system (`ARCH` switch), `make lint` (clang-tidy),
   `make check64` (x86_64 portability check), `make format` (clang-format),
-  `make gdb`/`make debug` (QEMU + gdb attached), `make iso` (GRUB-bootable), and `compile_commands.json`
+  `make gdb`/`make debug` (QEMU + gdb attached), `make run-uefi` (QEMU with
+  UEFI firmware), and `compile_commands.json`
   generation for LSP
 - Consistent `snake_case` conventions documented in `STYLE.md`; ext2 image and
   bitmap-font helper tools under `tools/`
@@ -262,7 +270,7 @@ cd ginnOS
 Only install what this two-stage build needs:
 
 ```bash
-brew install gmp mpfr libmpc texinfo nasm qemu
+brew install gmp mpfr libmpc texinfo nasm qemu mtools e2fsprogs
 brew install gdb   # optional, for make gdb / make debug
 ```
 
@@ -352,6 +360,37 @@ make
 make run
 ```
 
+The first build fetches a pinned Limine release with git into `build/limine`
+(`make clean` keeps it, `make distclean` removes it). The disk image
+`build/ginnos.img` has a FAT boot partition (Limine, `limine.conf`, the
+kernel and a copy of the root image) and the ext2 root filesystem.
+
+Boot the same image with UEFI firmware (QEMU's OVMF build; set `OVMF_CODE=`
+if it is not found):
+
+```bash
+make run-uefi
+```
+
+Use the older custom BIOS bootloader instead of Limine:
+
+```bash
+make BOOTLOADER=custom
+make run BOOTLOADER=custom
+```
+
+To boot a real machine, write the image to a USB stick (this erases the
+stick; check the device name first):
+
+```bash
+sudo dd if=build/ginnos.img of=/dev/<usb-stick> bs=4M conv=fsync
+```
+
+The kernel cannot read USB storage, so on a real machine the root
+filesystem is the copy in RAM. The kernel uses an ATA disk only if its ext2
+partition has the ginnOS label (`GINNOS_EXT2`), so it does not write to the
+disk of another operating system.
+
 Run the in-kernel test suite (boots a separate test kernel headless and exits
 with the result):
 
@@ -376,7 +415,7 @@ Only install what this two-stage build needs:
 sudo apt update
 sudo apt install build-essential curl nasm qemu-system-x86 \
   libgmp-dev libmpfr-dev libmpc-dev texinfo bison flex \
-  python3 e2fsprogs
+  python3 e2fsprogs mtools git ovmf
 sudo apt install gdb   # optional, for make gdb / make debug
 ```
 
