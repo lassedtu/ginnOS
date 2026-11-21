@@ -164,6 +164,7 @@ syscall_ret_t sys_pwrite(struct registers *regs);
 syscall_ret_t sys_fsync(struct registers *regs);
 
 /* sys_misc.c */
+syscall_ret_t sys_reboot(struct registers *regs);
 syscall_ret_t sys_getcwd(struct registers *regs);
 syscall_ret_t sys_chdir(struct registers *regs);
 syscall_ret_t sys_ioctl(struct registers *regs);

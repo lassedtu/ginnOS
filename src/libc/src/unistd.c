@@ -410,3 +410,8 @@ mode_t umask(mode_t mask)
 {
     return (mode_t)_syscall(SYS_UMASK, (long)mask, 0, 0, 0, 0);
 }
+
+int reboot(void)
+{
+    return check(_syscall(SYS_REBOOT, 0, 0, 0, 0, 0));
+}

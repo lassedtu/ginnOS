@@ -72,6 +72,7 @@
 #define SYS_FCHMOD 63 // change an open file's mode
 #define SYS_CHOWN 64 // change a file's owner
 #define SYS_UMASK 65 // set the file creation mask
+#define SYS_REBOOT 66 // restart the machine (root only)
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

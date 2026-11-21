@@ -77,6 +77,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_FCHMOD] = sys_fchmod,
     [SYS_CHOWN] = sys_chown,
     [SYS_UMASK] = sys_umask,
+    [SYS_REBOOT] = sys_reboot,
 };
 
 /**

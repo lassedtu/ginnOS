@@ -72,9 +72,10 @@
 #define SYS_FCHMOD 63
 #define SYS_CHOWN 64
 #define SYS_UMASK 65
+#define SYS_REBOOT 66 // restart the machine (root only)
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 66
+#define SYSCALL_COUNT 67
 
 /**
  * initialize the system call interface.

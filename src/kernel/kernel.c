@@ -21,6 +21,7 @@
 #include "drivers/disk/partition.h"
 #include "drivers/disk/ramdisk.h"
 #include "drivers/pci/pci.h"
+#include "acpi/acpi.h"
 #include "drivers/keyboard/keyboard.h"
 
 #include "console/console.h"
@@ -204,6 +205,9 @@ void kernel_main(boot_info_t *boot)
     // the PCI devices, for the drivers of controllers that are not legacy
     // ISA devices (AHCI, NVMe)
     pci_init();
+
+    // the ACPI tables: the interrupt controllers, the reset register
+    acpi_init(boot);
 
     // bring up the linear framebuffer (if the bootloader set a graphics mode).
     // must follow paging_init: the LFB lives above identity-mapped RAM.
