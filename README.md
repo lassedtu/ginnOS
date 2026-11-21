@@ -40,6 +40,8 @@ Everything below is implemented and working today.
 - ACPI tables (RSDP, RSDT/XSDT, MADT, FADT, HPET, MCFG) and `reboot`
   through the FADT reset register (no AML interpreter, so no power-off)
 - PCI enumeration with BAR sizes and MSI/MSI-X capabilities (`/proc/pci`)
+- Device interrupts: MSI-X, MSI, or the shared INTx line for each PCI
+  device, with counts in `/proc/interrupts`
 - Shared-IRQ registration layer (`irq_request`/`irq_free`, per-handler enable)
 - Kernel panic + assertion infrastructure, unified `kerr_t` error type
 - Symbolised backtraces on panics and CPU exceptions (frame-pointer walk +
@@ -144,8 +146,10 @@ Everything below is implemented and working today.
   `<pid>/status` and `self`
 - `poll` and `select` over pipes, the console and files
 - Block-device abstraction with drivers for IDE (ATA PIO), SATA (AHCI, DMA)
-  and NVMe disks, a RAM disk, and MBR and GPT partition tables
-- USB keyboards through xHCI (HID boot protocol), next to PS/2 keyboards
+  and NVMe disks, a RAM disk, and MBR and GPT partition tables; a process
+  that waits for a SATA or NVMe disk sleeps until its interrupt
+- USB keyboards through xHCI (HID boot protocol, events by interrupt),
+  next to PS/2 keyboards
 - Pipes (16 KiB ring buffers on the kernel heap, no fixed limit) with
   blocking, EOF/EPIPE, reference-counted endpoints, and atomic writes of up
   to `PIPE_BUF` (4 KiB)
@@ -192,6 +196,22 @@ Everything below is implemented and working today.
   `read`/`write`/`lseek`/`ioctl`/`mmap`, exposing `fb_fix_screeninfo` /
   `fb_var_screeninfo` (per-channel bitfields), the stable userspace graphics
   interface. A `metaballs` demo draws to it via `open` + `ioctl` + `mmap`.
+
+### Sound
+
+- Intel HDA (the sound hardware of almost every PC since 2004) and AC'97
+  drivers. HDA finds the codec's line out, speaker and headphone outputs
+  and plays on all of them.
+- `/dev/dsp` with the OSS interface (`<sys/soundcard.h>`): 8-bit or
+  16-bit, mono or stereo, 8 to 48 kHz as the device allows, blocking or
+  `O_NONBLOCK` writes, `poll`. One program at a time. `/dev/mixer` sets the
+  volume.
+- `/proc/audio` shows the device, what is queued and played, and the
+  underruns.
+- `play file.wav` plays PCM WAV files (and converts the rate when the
+  device lacks it), `beep [hz] [ms]` plays a tone, and `audiotest` plays
+  test tones and checks the interface. `/usr/share/sounds` has two sample
+  sounds.
 
 ### C standard library (libc.a)
 
@@ -252,9 +272,17 @@ Everything below is implemented and working today.
   [Freedoom](https://freedoom.github.io/) game data in `/usr/share/doom`.
   It draws on the framebuffer and reads raw key events. Keys: arrows to
   move, Ctrl to fire, Space to open doors, Shift to run, Alt to strafe,
-  Escape for the menu. No sound yet. Doom is not built by default; build
-  it with `make DOOM=1` (add `FREEDOOM=0` to leave out the 28 MiB game
-  data).
+  Escape for the menu. Sound effects and music play on `/dev/dsp`; the
+  music is the OPL3 emulation and MUS player of
+  [Chocolate Doom](https://github.com/chocolate-doom/chocolate-doom) 2.3.0
+  (also a submodule, not changed). Doom is not built by default; build it
+  with `make DOOM=1` (add `FREEDOOM=0` to leave out the 28 MiB game data).
+  To play with your own WAD files (for example the shareware `doom1.wad`),
+  put them in `.hidden/` (git ignores it); `make DOOM=1` copies them into
+  `/usr/share/doom`, and `doom` uses the Doom WAD before Freedoom
+  (`doom -iwad <file>` picks one).
+- `play`, `beep` and `audiotest`: play WAV files, a tone, and test tones
+  (see Sound below)
 - `reboot` (root only)
 
 ### Portability and tooling
@@ -424,6 +452,11 @@ on the IDE (ATA) disk and on SATA disks (AHCI, MBR or GPT), but it uses a
 partition only if its ext2 volume label is `GINNOS_EXT2`. It only reads the
 partition tables and superblocks of other disks, so it does not write to
 the disk of another operating system.
+
+`make run` and `make run-uefi` give QEMU an Intel HDA sound card that plays
+through the host (coreaudio on macOS, pa on Linux). `AUDIO=ac97` gives an
+AC'97 card instead, `AUDIO=0` none, and `QEMU_AUDIODEV=<backend>` picks
+another QEMU audio backend.
 
 Run the in-kernel test suite (boots a separate test kernel headless and exits
 with the result):

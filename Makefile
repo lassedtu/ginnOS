@@ -143,6 +143,12 @@ GPT ?=
 # leaves both out. DOOM=1 FREEDOOM=0 builds the program without the data.
 DOOM     ?= 0
 FREEDOOM ?= $(DOOM)
+# with DOOM=1, every .wad file in DOOM_WAD_DIR (your own game data, for
+# example the Doom shareware doom1.wad; git ignores .hidden) goes into
+# /usr/share/doom too, with a lowercase name. doom picks the first one of
+# doom2.wad, plutonia.wad, tnt.wad, doom.wad, doom1.wad, freedoom2.wad and
+# freedoom1.wad it finds; doom -iwad <file> picks another.
+DOOM_WAD_DIR ?= .hidden
 FREEDOOM_FETCH := tools/freedoom/fetch.sh
 FREEDOOM_CACHE := build/freedoom
 
@@ -522,6 +528,15 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs
 	done
 	$(PYTHON) tools/sounds/make_sounds.py $(ROOTFS_STAGING)/usr/share/sounds
 	$(if $(filter 1,$(FREEDOOM)),./$(FREEDOOM_FETCH) $(FREEDOOM_CACHE) $(ROOTFS_STAGING)/usr/share/doom)
+	@if [ "$(DOOM)" = 1 ] && [ -d "$(DOOM_WAD_DIR)" ]; then \
+		for wad in "$(DOOM_WAD_DIR)"/*.[wW][aA][dD]; do \
+			[ -f "$$wad" ] || continue; \
+			mkdir -p $(ROOTFS_STAGING)/usr/share/doom; \
+			name=$$(basename "$$wad" | tr 'A-Z' 'a-z'); \
+			echo "doom: $$wad -> /usr/share/doom/$$name"; \
+			cp "$$wad" "$(ROOTFS_STAGING)/usr/share/doom/$$name"; \
+		done; \
+	fi
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(ROOTFS_STAGING)" \
 		--output "$(ROOTFS_IMAGE)" \
