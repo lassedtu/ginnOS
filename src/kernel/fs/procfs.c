@@ -4,6 +4,7 @@
 #include "common/stdio.h"
 #include "common/string.h"
 #include "kernel/errno.h"
+#include "kernel/fs/block_cache.h"
 #include "kernel/memory/heap.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/process/process.h"
@@ -113,6 +114,11 @@ static bool make_text(procfs_node_t *node, const char *name, uint32_t pid)
         FORMAT("MemTotal:\t%u kB\nMemFree:\t%u kB\nHeapUsed:\t%lu kB\nHeapPeak:\t%lu kB\n",
                pmm_total_count() * 4, pmm_free_count() * 4,
                (unsigned long)(heap.current_usage / 1024), (unsigned long)(heap.peak_usage / 1024));
+        if (block_cache_root)
+        {
+            FORMAT("CacheHits:\t%u sectors\nCacheMisses:\t%u sectors\n", block_cache_root->hits,
+                   block_cache_root->misses);
+        }
     }
     else
     {

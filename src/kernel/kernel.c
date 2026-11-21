@@ -8,6 +8,7 @@
 #include "fs/devfs.h"
 #include "fs/tmpfs.h"
 #include "fs/procfs.h"
+#include "fs/block_cache.h"
 #include "hal/hal.h"
 #include "vfs/vfs.h"
 
@@ -146,7 +147,20 @@ void kernel_main(boot_info_t *boot)
     part_device.driver_data = &part.block;
     device_register(&part_device);
 
-    if (!fs_mount(&mount, &part.block))
+    // the root filesystem reads through a sector cache (write-through)
+    static block_cache_t root_cache;
+    block_device_t *root_device = &part.block;
+    if (kerr_ok(block_cache_init(&root_cache, &part.block)))
+    {
+        root_device = &root_cache.block;
+        block_cache_root = &root_cache;
+    }
+    else
+    {
+        KLOG_WARN("kernel: no memory for the block cache; reading the disk directly");
+    }
+
+    if (!fs_mount(&mount, root_device))
     {
         kernel_panic("EXT2 mount failed");
     }
