@@ -41,3 +41,13 @@ bool partition_detect_ext2(partition_device_t *part, block_device_t *parent);
  * @return true if the superblock has the ext2 magic and GINNOS_ROOT_LABEL.
  */
 bool partition_is_ginnos_root(block_device_t *device);
+
+/**
+ * find the partition with the ginnOS root label on a disk: the primary MBR
+ * partitions, or the GPT partitions if the MBR is a protective one (type
+ * 0xEE). a disk without a partition table is checked as a whole.
+ * @param part the partition device to set up.
+ * @param parent the disk.
+ * @return true if a ginnOS root was found (part is set up).
+ */
+bool partition_find_ginnos_root(partition_device_t *part, block_device_t *parent);

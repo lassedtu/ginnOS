@@ -383,6 +383,9 @@ make BOOTLOADER=custom
 make run BOOTLOADER=custom
 ```
 
+`make GPT=1` makes a GPT disk instead of an MBR disk (it boots with BIOS
+and UEFI too).
+
 To boot a real machine, write the image to a USB stick (this erases the
 stick; check the device name first):
 
@@ -390,10 +393,12 @@ stick; check the device name first):
 sudo dd if=build/ginnos.img of=/dev/<usb-stick> bs=4M conv=fsync
 ```
 
-The kernel cannot read USB storage, so on a real machine the root
-filesystem is the copy in RAM. The kernel uses an ATA disk only if its ext2
-partition has the ginnOS label (`GINNOS_EXT2`), so it does not write to the
-disk of another operating system.
+The kernel cannot read USB storage, so on a real machine booted from a USB
+stick the root filesystem is the copy in RAM. The kernel looks for its root
+on the IDE (ATA) disk and on SATA disks (AHCI, MBR or GPT), but it uses a
+partition only if its ext2 volume label is `GINNOS_EXT2`. It only reads the
+partition tables and superblocks of other disks, so it does not write to
+the disk of another operating system.
 
 Run the in-kernel test suite (boots a separate test kernel headless and exits
 with the result):

@@ -20,6 +20,7 @@
 #include "drivers/disk/ata.h"
 #include "drivers/disk/partition.h"
 #include "drivers/disk/ramdisk.h"
+#include "drivers/disk/ahci.h"
 #include "drivers/pci/pci.h"
 #include "acpi/acpi.h"
 #include "arch/x86/cpu/apic.h"
@@ -105,14 +106,33 @@ static void register_block_device(device_t *device, const char *name, block_devi
 }
 
 /**
+ * use a partition as the root: read it through a sector cache (the cache
+ * is optional; without memory for it the disk is read directly).
+ */
+static block_device_t *use_disk_root(partition_device_t *part, const char *disk_name)
+{
+    static block_cache_t root_cache;
+
+    KLOG_INFO("kernel: root filesystem on %s", disk_name);
+    if (kerr_failed(block_cache_init(&root_cache, &part->block)))
+    {
+        KLOG_WARN("kernel: no memory for the block cache; reading the disk directly");
+        return &part->block;
+    }
+    block_cache_root = &root_cache;
+    return &root_cache.block;
+}
+
+/**
  * find the block device with the root filesystem:
- *   1. an ext2 partition on the primary ATA disk with the ginnOS root label.
- *      other disks are not used, so the kernel does not write to a disk of
- *      another operating system on real hardware.
- *   2. a root image that the bootloader loaded as a module (a boot from a
- *      USB stick: the kernel has no USB storage driver). the changes are
- *      lost at the next boot.
- * a disk root is read through a sector cache.
+ *   1. a partition with the ginnOS root label on the primary ATA disk,
+ *   2. or on a SATA disk of the AHCI controller (MBR or GPT),
+ *   3. else a root image that the bootloader loaded as a module (a boot
+ *      from a USB stick: the kernel has no USB storage driver). the changes
+ *      are lost at the next boot.
+ * the kernel only reads the partition tables and superblocks of the other
+ * disks and partitions: it never writes to a disk of another operating
+ * system on real hardware.
  * @return the root device, or NULL if there is none.
  */
 static block_device_t *find_root_device(const boot_info_t *boot)
@@ -121,31 +141,32 @@ static block_device_t *find_root_device(const boot_info_t *boot)
     static ata_device_t ata;
     static partition_device_t part;
     static ramdisk_t ramdisk;
-    static block_cache_t root_cache;
     static device_t disk_device;
     static device_t part_device;
+    static device_t sata_devices[AHCI_MAX_DISKS];
     static device_t ram_device;
+    static const char *const sata_names[AHCI_MAX_DISKS] = {"sda", "sdb", "sdc", "sdd"};
 
     if (ata_initialize(&ata, ATA_CHANNEL_PRIMARY, ATA_DRIVE_MASTER))
     {
         register_block_device(&disk_device, "hda", &ata.block);
-
-        if (partition_detect_ext2(&part, &ata.block))
+        if (partition_find_ginnos_root(&part, &ata.block))
         {
             register_block_device(&part_device, "hda1", &part.block);
+            return use_disk_root(&part, "the ATA disk");
+        }
+        KLOG_WARN("kernel: the ATA disk has no ginnOS root partition; not used");
+    }
 
-            if (partition_is_ginnos_root(&part.block))
-            {
-                KLOG_INFO("kernel: root filesystem on the ATA disk");
-                if (kerr_failed(block_cache_init(&root_cache, &part.block)))
-                {
-                    KLOG_WARN("kernel: no memory for the block cache; reading the disk directly");
-                    return &part.block;
-                }
-                block_cache_root = &root_cache;
-                return &root_cache.block;
-            }
-            KLOG_WARN("kernel: the ATA disk has no ginnOS root label; not used");
+    uint32_t sata_count = ahci_init();
+    for (uint32_t i = 0; i < sata_count; i++)
+    {
+        ahci_disk_t *disk = ahci_disk(i);
+        register_block_device(&sata_devices[i], sata_names[i], &disk->block);
+        if (partition_find_ginnos_root(&part, &disk->block))
+        {
+            register_block_device(&part_device, "root", &part.block);
+            return use_disk_root(&part, sata_names[i]);
         }
     }
 

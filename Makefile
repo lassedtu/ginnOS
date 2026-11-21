@@ -127,6 +127,10 @@ ROOTFS_IMAGE := $(BUILD_DIR)/images/rootfs.ext2
 #     kernel.bin from the ext2 root.
 BOOTLOADER ?= limine
 
+# GPT=1 makes a GPT disk (with a BIOS boot partition for limine's BIOS
+# stage) instead of an MBR disk; limine only
+GPT ?=
+
 LIMINE_DIR       := build/limine
 LIMINE_FETCH     := tools/limine/fetch.sh
 LIMINE_DISK_TOOL := tools/limine/make_disk.py
@@ -165,7 +169,7 @@ define limine_disk
 	./$(LIMINE_FETCH) $(LIMINE_DIR)
 	@mkdir -p $(4)
 	$(OBJCOPY) --strip-debug $(2) $(4)/kernel.elf
-	$(PYTHON) $(LIMINE_DISK_TOOL) --output $(1) --ext2 $(3) --limine-dir $(LIMINE_DIR) \
+	$(PYTHON) $(LIMINE_DISK_TOOL) --output $(1) --ext2 $(3) --limine-dir $(LIMINE_DIR) $(if $(filter 1,$(GPT)),--gpt) \
 		--file $(LIMINE_CONF):/boot/limine/limine.conf \
 		--file $(LIMINE_DIR)/limine-bios.sys:/boot/limine/limine-bios.sys \
 		--file $(LIMINE_DIR)/BOOTX64.EFI:/EFI/BOOT/BOOTX64.EFI \
