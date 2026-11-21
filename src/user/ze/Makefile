@@ -12,6 +12,7 @@ ROOT     := ../../..
 BUILD_ROOT     ?= $(ROOT)/build
 ARCH_CFLAGS    ?= -m32
 USER_LD_SCRIPT ?= $(ROOT)/linker/user.ld
+TOOLCHAIN_FLAGS ?=
 
 BUILD    := $(BUILD_ROOT)/user
 LIBC_INC := $(ROOT)/src/libc/include
@@ -22,7 +23,7 @@ CROSS   ?= i686-elf-
 CC      := $(CROSS)gcc
 LD      := $(CROSS)ld
 
-CFLAGS  := -std=c99 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) \
+CFLAGS  := -std=c99 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
            -fno-pie -fno-stack-protector -nostdlib \
            -I$(ZE_SRC)/include -I$(LIBC_INC) -MMD -MP
 
@@ -30,6 +31,8 @@ LDFLAGS := -T $(USER_LD_SCRIPT) -nostdlib
 
 CRT0    := $(BUILD)/lib/crt0.o
 LIBC    := $(BUILD_ROOT)/libc/libc.a
+# gcc's helper functions (64-bit division on i686, for example)
+LIBGCC  := $(shell $(CC) $(ARCH_CFLAGS) -print-libgcc-file-name)
 
 OBJDIR  := $(BUILD)/$(PROG)
 TARGET  := $(BUILD)/bin/$(PROG)
@@ -67,6 +70,6 @@ $(OBJDIR)/plat/%.o: $(ZE_SRC)/platforms/ginnos/%.c
 
 $(TARGET): $(OBJS) $(CRT0) $(LIBC)
 	@mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIBC)
+	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIBC) $(LIBGCC)
 
 -include $(DEP_FILES)

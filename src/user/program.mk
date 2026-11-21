@@ -12,6 +12,7 @@ ROOT     := ../../..
 BUILD_ROOT     ?= $(ROOT)/build
 ARCH_CFLAGS    ?= -m32
 USER_LD_SCRIPT ?= $(ROOT)/linker/user.ld
+TOOLCHAIN_FLAGS ?=
 
 BUILD    := $(BUILD_ROOT)/user
 LIBC_INC := $(ROOT)/src/libc/include
@@ -21,13 +22,15 @@ CC      := $(CROSS)gcc
 LD      := $(CROSS)ld
 AS      := nasm
 
-CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) \
+CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
            -fno-pie -fno-stack-protector -nostdlib \
            -I$(LIBC_INC) -I. -MMD -MP $(EXTRA_CFLAGS)
 LDFLAGS := -T $(USER_LD_SCRIPT) -nostdlib
 
 CRT0    := $(BUILD)/lib/crt0.o
 LIBC    := $(BUILD_ROOT)/libc/libc.a
+# gcc's helper functions (64-bit division on i686, for example)
+LIBGCC  := $(shell $(CC) $(ARCH_CFLAGS) -print-libgcc-file-name)
 
 OBJDIR  := $(BUILD)/$(PROG)
 OBJS    := $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS))
@@ -44,6 +47,6 @@ $(OBJDIR)/%.o: %.c
 
 $(TARGET): $(OBJS) $(CRT0) $(LIBC)
 	@mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIBC)
+	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIBC) $(LIBGCC)
 
 -include $(DEP_FILES)
