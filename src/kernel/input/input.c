@@ -1,7 +1,7 @@
 /**
  * the input core (see input.h).
  *
- * each open of /dev/input is a reader with a ring of events. a report
+ * each open of /dev/input is a reader (from the heap) with a ring of events. a report
  * goes into every reader's ring; a full ring drops its oldest event and
  * marks the reader, so its next read starts with SYN_DROPPED.
  *
@@ -31,7 +31,6 @@
 
 typedef struct
 {
-    bool in_use;
     bool dropped;       // events were lost: the next read starts with SYN_DROPPED
     bool grab;          // this reader holds the keyboard
     uint32_t head;      // the next event to read
@@ -40,7 +39,7 @@ typedef struct
     wait_queue_t waiters;
 } reader_t;
 
-static reader_t readers[MAX_READERS];
+static reader_t *readers[MAX_READERS]; // NULL: a free slot
 static spinlock_t lock;
 static volatile uint32_t grabs; // readers that hold the keyboard
 static device_t input_device;
@@ -69,12 +68,12 @@ static void report(uint16_t type, uint16_t code, int32_t value)
     uint32_t flags = spin_lock_irqsave(&lock);
     for (uint32_t i = 0; i < MAX_READERS; i++)
     {
-        if (readers[i].in_use)
+        if (readers[i])
         {
-            push(&readers[i], &event);
+            push(readers[i], &event);
             if (type == EV_SYN)
             {
-                wait_queue_wake_all(&readers[i].waiters);
+                wait_queue_wake_all(&readers[i]->waiters);
             }
             any = true;
         }
@@ -206,9 +205,15 @@ static void input_release(file_t *file)
     {
         grabs--;
     }
-    reader->in_use = false;
-    reader->grab = false;
+    for (uint32_t i = 0; i < MAX_READERS; i++)
+    {
+        if (readers[i] == reader)
+        {
+            readers[i] = NULL;
+        }
+    }
     spin_unlock_irqrestore(&lock, flags);
+    kfree(reader);
     kfree(file);
 }
 
@@ -229,31 +234,32 @@ static kerr_t input_open(device_t *dev, uint32_t flags, file_t **out)
     }
 
     file_t *file = file_new(&input_file_ops, flags);
-    if (!file)
+    reader_t *reader = kmalloc(sizeof(*reader));
+    if (!file || !reader)
     {
+        kfree(file);
+        kfree(reader);
         return KERR_NOMEM;
     }
+    memset(reader, 0, sizeof(*reader));
+    wait_queue_init(&reader->waiters);
 
+    bool added = false;
     uint32_t irq_flags = spin_lock_irqsave(&lock);
-    reader_t *reader = NULL;
     for (uint32_t i = 0; i < MAX_READERS; i++)
     {
-        if (!readers[i].in_use)
+        if (!readers[i])
         {
-            reader = &readers[i];
-            reader->in_use = true;
-            reader->dropped = false;
-            reader->grab = false;
-            reader->head = 0;
-            reader->count = 0;
-            wait_queue_init(&reader->waiters);
+            readers[i] = reader;
+            added = true;
             break;
         }
     }
     spin_unlock_irqrestore(&lock, irq_flags);
 
-    if (!reader)
+    if (!added)
     {
+        kfree(reader);
         kfree(file);
         return KERR_BUSY;
     }

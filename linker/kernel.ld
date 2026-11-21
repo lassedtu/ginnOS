@@ -85,4 +85,8 @@ SECTIONS
     } :data
 
     kernel_end = .;
+
+    /* the image is loaded low and must end below the legacy video memory at
+     * 640 KiB. past it, a multiboot 2 loader finds no place to load it */
+    ASSERT(kernel_end - KERNEL_VIRT_BASE <= 0xA0000, "the kernel image ends past 640 KiB")
 }
