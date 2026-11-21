@@ -2,28 +2,37 @@
  * @file line.c
  * @brief Line editing for shell input.
  *
- * This file implements a simple line editor for the shell, providing basic editing capabilities similar to readline. It supports cursor movement, character insertion and deletion, and line submission.
+ * the terminal is in raw mode (no echo, no line editing, no signal keys)
+ * while a line is edited. the editor reads bytes and decodes the escape
+ * sequences a VT terminal sends for the special keys, so it works the
+ * same on the console and on a pseudo-terminal.
+ *
+ * keys:
+ * - Left/Right arrow: move cursor
+ * - Up/Down arrow: history
+ * - Home/End, Ctrl+A/Ctrl+E: jump to start/end
+ * - Backspace: delete char before cursor
+ * - Delete: delete char at cursor
+ * - Ctrl+K: kill to end of line
+ * - Ctrl+U: kill to start of line
+ * - Ctrl+W: kill previous word
+ * - Ctrl+L: clear screen, reprint prompt+line
+ * - Ctrl+C: drop the line, new prompt
+ * - Ctrl+D: EOF (if line is empty)
+ * - Enter: submit line
+ *
+ * when the input is not a terminal (a script on a pipe), lines are read
+ * as they are, without editing.
  */
-
-// Provides a readline-like editing experience:
-// - Left/Right arrow: move cursor
-// - Home/End: jump to start/end
-// - Backspace: delete char before cursor
-// - Delete: delete char at cursor
-// - Ctrl+A: home
-// - Ctrl+E: end
-// - Ctrl+K: kill to end of line
-// - Ctrl+U: kill to start of line
-// - Ctrl+W: kill previous word
-// - Ctrl+L: clear screen, reprint prompt+line
-// - Ctrl+D: EOF (if line is empty)
-// - Enter: submit line
 
 #include "line.h"
 #include "history.h"
 
+#include <poll.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 
 // forward declarations
@@ -202,21 +211,158 @@ void line_init(void)
     // nothing to set up: line_read switches the terminal mode itself
 }
 
+// the special keys, as read_key returns them (above the byte values)
+enum
+{
+    KEY_NONE = 256, // a sequence the editor does not use
+    KEY_UP,
+    KEY_DOWN,
+    KEY_LEFT,
+    KEY_RIGHT,
+    KEY_HOME,
+    KEY_END,
+    KEY_DELETE,
+};
+
+#define ESC 27
+#define CTRL(c) ((c) & 0x1f)
+
+// how long to wait for the rest of an escape sequence after ESC
+#define ESC_TIMEOUT_MS 50
+
 /**
- * read and edit one line, with the terminal in raw (key event) mode.
+ * read one byte from stdin.
+ * @param timeout_ms -1 to wait, else the longest wait.
+ * @return the byte, or -1 at end of input, on an error or at the timeout.
+ */
+static int read_byte(int timeout_ms)
+{
+    if (timeout_ms >= 0)
+    {
+        struct pollfd pfd = {0, POLLIN, 0};
+        if (poll(&pfd, 1, timeout_ms) != 1)
+            return -1;
+    }
+    unsigned char c;
+    return read(0, &c, 1) == 1 ? c : -1;
+}
+
+/**
+ * the key of a CSI sequence ("ESC [" params final), from its final byte
+ * and first parameter.
+ */
+static int csi_key(int final, int param)
+{
+    switch (final)
+    {
+    case 'A':
+        return KEY_UP;
+    case 'B':
+        return KEY_DOWN;
+    case 'C':
+        return KEY_RIGHT;
+    case 'D':
+        return KEY_LEFT;
+    case 'H':
+        return KEY_HOME;
+    case 'F':
+        return KEY_END;
+    case '~':
+        switch (param)
+        {
+        case 1:
+        case 7:
+            return KEY_HOME;
+        case 4:
+        case 8:
+            return KEY_END;
+        case 3:
+            return KEY_DELETE;
+        default:
+            return KEY_NONE;
+        }
+    default:
+        return KEY_NONE;
+    }
+}
+
+/**
+ * read one key: a byte (0 to 255) or a KEY_ value for an escape sequence.
+ * @return the key, or -1 at end of input or on an error.
+ */
+static int read_key(void)
+{
+    int c = read_byte(-1);
+    if (c != ESC)
+        return c;
+
+    // ESC alone (the Escape key) is not followed by more bytes at once
+    int kind = read_byte(ESC_TIMEOUT_MS);
+    if (kind != '[' && kind != 'O')
+        return KEY_NONE;
+
+    // the parameters (digits and ';'), then the final byte
+    int param = 0;
+    bool first = true;
+    for (;;)
+    {
+        int b = read_byte(ESC_TIMEOUT_MS);
+        if (b < 0)
+            return KEY_NONE;
+        if (b >= '0' && b <= '9')
+        {
+            if (first)
+                param = param * 10 + (b - '0');
+            continue;
+        }
+        if (b == ';')
+        {
+            first = false;
+            continue;
+        }
+        // "ESC O" has no parameters: its byte is the final one
+        return csi_key(b, param);
+    }
+}
+
+/**
+ * delete the character before the cursor.
+ */
+static void delete_before(int prompt_len)
+{
+    if (line_pos == 0)
+        return;
+    for (int i = line_pos - 1; i < line_len - 1; i++)
+        line_buf[i] = line_buf[i + 1];
+    line_pos--;
+    line_len--;
+    line_buf[line_len] = '\0';
+    refresh_line(prompt_len);
+}
+
+/**
+ * delete the character at the cursor.
+ */
+static void delete_at(int prompt_len)
+{
+    if (line_pos >= line_len)
+        return;
+    for (int i = line_pos; i < line_len - 1; i++)
+        line_buf[i] = line_buf[i + 1];
+    line_len--;
+    line_buf[line_len] = '\0';
+    refresh_line(prompt_len);
+}
+
+/**
+ * read and edit one line, with the terminal in raw mode.
+ * @return the length, or -1 at Ctrl+D on an empty line or at end of input.
  */
 static int read_line_raw(char *buf, int size)
 {
-    key_event_t event;
-
     line_len = 0;
     line_pos = 0;
     line_buf[0] = '\0';
-
-    // calculate prompt length by reading cursor column
-    // the prompt has already been printed, so current column = prompt length
-    // we'll approximate based on the shell's prompt format "skl:<cwd> $ "
-    // actually, we'll get it from the caller via a global
     int prompt_len = current_prompt_len;
 
     while (1)
@@ -224,214 +370,195 @@ static int read_line_raw(char *buf, int size)
         // show everything drawn for the previous key before blocking.
         flush_output();
 
-        if (read_event(&event) < 0)
-            continue;
+        int key = read_key();
+        if (key < 0)
+            return -1; // end of input: the terminal is gone
 
-        if (event.type == CONSOLE_KEY_EVENT_CHAR)
+        switch (key)
         {
-            char c = event.character;
+        case '\r':
+        case '\n':
+        {
+            emit_char('\r');
+            emit_char('\n');
+            flush_output();
+            history_reset_nav();
+            int len = line_len < size - 1 ? line_len : size - 1;
+            memcpy(buf, line_buf, len);
+            buf[len] = '\0';
+            return len;
+        }
 
-            if (c == '\n')
+        case CTRL('c'):
+            // drop the line; the shell prints a new prompt
+            emit("^C\r\n", 4);
+            flush_output();
+            history_reset_nav();
+            buf[0] = '\0';
+            return 0;
+
+        case CTRL('d'):
+            if (line_len == 0)
             {
-                // submit line
-                emit_char('\r');
-                emit_char('\n');
                 flush_output();
-                history_reset_nav();
-                int len = line_len < size - 1 ? line_len : size - 1;
-                memcpy(buf, line_buf, len);
-                buf[len] = '\0';
-                return len;
+                return -1; // EOF
             }
+            delete_at(prompt_len);
+            break;
 
-            if (c == 4) // Ctrl+D
-            {
-                if (line_len == 0)
-                {
-                    flush_output();
-                    return -1; // EOF
-                }
-                // with content, Ctrl+D does nothing (or delete-at-cursor in some shells)
-                continue;
-            }
+        case CTRL('a'):
+        case KEY_HOME:
+            line_pos = 0;
+            move_cursor_to(prompt_len, line_pos);
+            break;
 
-            if (c == 1) // Ctrl+A: home
-            {
-                line_pos = 0;
-                move_cursor_to(prompt_len, line_pos);
-                continue;
-            }
+        case CTRL('e'):
+        case KEY_END:
+            line_pos = line_len;
+            move_cursor_to(prompt_len, line_pos);
+            break;
 
-            if (c == 5) // Ctrl+E: end
-            {
-                line_pos = line_len;
-                move_cursor_to(prompt_len, line_pos);
-                continue;
-            }
+        case CTRL('k'):
+            line_len = line_pos;
+            line_buf[line_len] = '\0';
+            emit_erase_eol();
+            break;
 
-            if (c == 11) // Ctrl+K: kill to end
-            {
-                line_len = line_pos;
-                line_buf[line_len] = '\0';
-                emit_erase_eol(); // erase to end of line
-                continue;
-            }
-
-            if (c == 21) // Ctrl+U: kill to start
+        case CTRL('u'):
+            if (line_pos > 0)
             {
                 int removed = line_pos;
-                if (removed > 0)
-                {
-                    // shift buffer left
-                    for (int i = 0; i < line_len - line_pos; i++)
-                        line_buf[i] = line_buf[line_pos + i];
-                    line_len -= removed;
-                    line_pos = 0;
-                    line_buf[line_len] = '\0';
-                    redraw_full(prompt_len);
-                }
-                continue;
-            }
-
-            if (c == 23) // Ctrl+W: kill previous word
-            {
-                if (line_pos > 0)
-                {
-                    int old_pos = line_pos;
-                    // skip trailing spaces
-                    while (line_pos > 0 && line_buf[line_pos - 1] == ' ')
-                        line_pos--;
-                    // skip word characters
-                    while (line_pos > 0 && line_buf[line_pos - 1] != ' ')
-                        line_pos--;
-
-                    int removed = old_pos - line_pos;
-                    // shift buffer
-                    for (int i = line_pos; i < line_len - removed; i++)
-                        line_buf[i] = line_buf[i + removed];
-                    line_len -= removed;
-                    line_buf[line_len] = '\0';
-                    redraw_full(prompt_len);
-                }
-                continue;
-            }
-
-            if (c == 12) // Ctrl+L: clear screen and redraw
-            {
-                emit_clear_home();
-                // reprint prompt (we can't call print_prompt from here,
-                // so we'll emit it manually)
-                // the shell will set current_prompt_len before calling us
-                // for now, just print a generic prompt indicator
-                // actually, let's get the prompt from main... we'll use a callback later
-                // for now: just redraw from current state
-                // move to row 1, col 1 and reprint prompt + line
-                extern void print_prompt(void);
-                print_prompt();
+                for (int i = 0; i < line_len - line_pos; i++)
+                    line_buf[i] = line_buf[line_pos + i];
+                line_len -= removed;
+                line_pos = 0;
+                line_buf[line_len] = '\0';
                 redraw_full(prompt_len);
-                continue;
             }
+            break;
 
-            if (c == '\b') // Backspace: delete character before cursor
+        case CTRL('w'):
+            if (line_pos > 0)
             {
-                if (line_pos > 0)
-                {
-                    // shift characters left
-                    for (int i = line_pos - 1; i < line_len - 1; i++)
-                        line_buf[i] = line_buf[i + 1];
+                int old_pos = line_pos;
+                // skip trailing spaces, then the word
+                while (line_pos > 0 && line_buf[line_pos - 1] == ' ')
                     line_pos--;
-                    line_len--;
-                    line_buf[line_len] = '\0';
-                    refresh_line(prompt_len);
-                }
-                continue;
-            }
+                while (line_pos > 0 && line_buf[line_pos - 1] != ' ')
+                    line_pos--;
 
-            // regular printable character  insert at cursor
-            if (c >= 32 && line_len < LINE_MAX - 1)
+                int removed = old_pos - line_pos;
+                for (int i = line_pos; i < line_len - removed; i++)
+                    line_buf[i] = line_buf[i + removed];
+                line_len -= removed;
+                line_buf[line_len] = '\0';
+                redraw_full(prompt_len);
+            }
+            break;
+
+        case CTRL('l'):
+            // clear the screen; refresh_line draws the prompt and the line
+            emit_clear_home();
+            redraw_full(prompt_len);
+            break;
+
+        case '\b':
+        case 0x7f:
+            delete_before(prompt_len);
+            break;
+
+        case KEY_DELETE:
+            delete_at(prompt_len);
+            break;
+
+        case KEY_LEFT:
+            if (line_pos > 0)
             {
-                // shift characters right
+                line_pos--;
+                move_cursor_to(prompt_len, line_pos);
+            }
+            break;
+
+        case KEY_RIGHT:
+            if (line_pos < line_len)
+            {
+                line_pos++;
+                move_cursor_to(prompt_len, line_pos);
+            }
+            break;
+
+        case KEY_UP:
+        {
+            const char *entry = history_prev(line_buf);
+            if (entry)
+                line_replace(entry, prompt_len);
+            break;
+        }
+
+        case KEY_DOWN:
+        {
+            const char *entry = history_next();
+            if (entry)
+                line_replace(entry, prompt_len);
+            break;
+        }
+
+        default:
+            // a printable character: insert at the cursor
+            if (key >= 32 && key < 256 && key != 0x7f && line_len < LINE_MAX - 1)
+            {
                 for (int i = line_len; i > line_pos; i--)
                     line_buf[i] = line_buf[i - 1];
-                line_buf[line_pos] = c;
+                line_buf[line_pos] = (char)key;
                 line_pos++;
                 line_len++;
                 line_buf[line_len] = '\0';
-
                 refresh_line(prompt_len);
             }
-        }
-        else if (event.type == CONSOLE_KEY_EVENT_SPECIAL)
-        {
-            switch (event.special)
-            {
-            case CONSOLE_KEY_LEFT:
-                if (line_pos > 0)
-                {
-                    line_pos--;
-                    move_cursor_to(prompt_len, line_pos);
-                }
-                break;
-
-            case CONSOLE_KEY_RIGHT:
-                if (line_pos < line_len)
-                {
-                    line_pos++;
-                    move_cursor_to(prompt_len, line_pos);
-                }
-                break;
-
-            case CONSOLE_KEY_HOME:
-                line_pos = 0;
-                move_cursor_to(prompt_len, line_pos);
-                break;
-
-            case CONSOLE_KEY_END:
-                line_pos = line_len;
-                move_cursor_to(prompt_len, line_pos);
-                break;
-
-            case CONSOLE_KEY_DELETE:
-                if (line_pos < line_len)
-                {
-                    for (int i = line_pos; i < line_len - 1; i++)
-                        line_buf[i] = line_buf[i + 1];
-                    line_len--;
-                    line_buf[line_len] = '\0';
-                    refresh_line(prompt_len);
-                }
-                break;
-
-            case CONSOLE_KEY_UP:
-            {
-                const char *entry = history_prev(line_buf);
-                if (entry)
-                    line_replace(entry, prompt_len);
-                break;
-            }
-
-            case CONSOLE_KEY_DOWN:
-            {
-                const char *entry = history_next();
-                if (entry)
-                    line_replace(entry, prompt_len);
-                break;
-            }
-
-            default:
-                break;
-            }
+            break;
         }
     }
 }
 
+/**
+ * read a line from input that is not a terminal: the bytes up to a
+ * newline, without editing.
+ * @return the length, or -1 at the end of input with nothing read.
+ */
+static int read_line_plain(char *buf, int size)
+{
+    int len = 0;
+    for (;;)
+    {
+        int c = read_byte(-1);
+        if (c < 0)
+            return len > 0 ? len : -1;
+        if (c == '\n')
+            break;
+        if (len < size - 1)
+            buf[len++] = (char)c;
+    }
+    buf[len] = '\0';
+    return len;
+}
+
 int line_read(char *buf, int size)
 {
-    // the terminal is raw only while a line is edited: the commands the
-    // shell runs get it in cooked mode (line input, echo, Ctrl+C)
-    ttyctl(TTY_RAW);
+    struct termios saved;
+    if (tcgetattr(0, &saved) != 0)
+        return read_line_plain(buf, size);
+
+    // raw only while a line is edited: the commands the shell runs get the
+    // terminal as it was (line input, echo, Ctrl+C)
+    struct termios raw = saved;
+    raw.c_iflag &= ~(tcflag_t)(ICRNL | INLCR | IGNCR);
+    raw.c_lflag &= ~(tcflag_t)(ICANON | ECHO | ISIG | IEXTEN | XKEYEVENTS | XKEYRAW);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(0, TCSANOW, &raw);
+
     int len = read_line_raw(buf, size);
-    ttyctl(TTY_COOKED);
+    tcsetattr(0, TCSANOW, &saved);
     return len;
 }
 
