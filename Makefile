@@ -520,6 +520,7 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs
 	@for prog in $(USER_PROGRAMS); do \
 		cp $$prog $(ROOTFS_STAGING)/bin/$$(basename $$prog); \
 	done
+	$(PYTHON) tools/sounds/make_sounds.py $(ROOTFS_STAGING)/usr/share/sounds
 	$(if $(filter 1,$(FREEDOOM)),./$(FREEDOOM_FETCH) $(FREEDOOM_CACHE) $(ROOTFS_STAGING)/usr/share/doom)
 	$(PYTHON) $(EXT2_IMAGE_TOOL) \
 		--source "$(ROOTFS_STAGING)" \
