@@ -1,3 +1,6 @@
 [submodule "src/user/ze/zen-editor"]
 	path = src/user/ze/zen-editor
 	url = https://github.com/lassedtu/zen-editor.git
+[submodule "src/user/doom/doomgeneric"]
+	path = src/user/doom/doomgeneric
+	url = https://github.com/ozkl/doomgeneric.git
