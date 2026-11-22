@@ -31,13 +31,16 @@ void hosttest_golden(const char *name, const uint8_t *rgb, int width, int height
 /**
  * compare an image with a reference image that is allowed to differ a
  * little (the idunn reference cells, which Chrome draws). prints the
- * largest and the mean difference of a colour channel, and fails when the
- * largest is over limit. writes <name>.ppm, <name>-ref.ppm and
+ * largest and the mean difference of a colour channel, and fails when
+ * either is over its limit. writes <name>.ppm, <name>-ref.ppm and
  * <name>-diff.ppm (the difference, 8 times brighter) to look at.
  * @param ref the reference pixels, the same size and format as rgb.
+ * @param limit the largest difference allowed (edge pixels can differ much).
+ * @param mean_limit the mean difference allowed (a wrong place or colour
+ *        moves the mean).
  */
 void hosttest_compare(const char *name, const uint8_t *rgb, const uint8_t *ref, int width,
-                      int height, int limit);
+                      int height, int limit, double mean_limit);
 
 /**
  * print the result.

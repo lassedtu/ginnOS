@@ -129,7 +129,7 @@ void hosttest_golden(const char *name, const uint8_t *rgb, int width, int height
 }
 
 void hosttest_compare(const char *name, const uint8_t *rgb, const uint8_t *ref, int width,
-                      int height, int limit)
+                      int height, int limit, double mean_limit)
 {
     size_t size = (size_t)width * (size_t)height * 3;
     uint8_t *diff = malloc(size);
@@ -157,12 +157,13 @@ void hosttest_compare(const char *name, const uint8_t *rgb, const uint8_t *ref, 
     }
 
     double mean = size ? (double)total / (double)size : 0;
-    printf("  compare %-10s largest %3d (limit %3d), mean %.2f\n", name, largest, limit, mean);
+    printf("  compare %-10s largest %3d (limit %3d), mean %.2f (limit %.2f)\n", name, largest,
+           limit, mean, mean_limit);
     checks++;
-    if (largest > limit)
+    if (largest > limit || mean > mean_limit)
     {
         failures++;
-        printf("  FAIL compare %s: differs by %d, more than %d\n", name, largest, limit);
+        printf("  FAIL compare %s: over the limit\n", name);
     }
 }
 

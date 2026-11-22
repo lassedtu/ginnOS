@@ -246,7 +246,7 @@ static void reference(const char *name, const gfx_buffer_t *buf, int limit)
     {
         uint8_t *got = rgb_of(buf);
         uint8_t *want = rgb_of(ref);
-        hosttest_compare(name, got, want, buf->width, buf->height, limit);
+        hosttest_compare(name, got, want, buf->width, buf->height, limit, 1.0);
         free(got);
         free(want);
     }
