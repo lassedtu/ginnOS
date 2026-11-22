@@ -34,7 +34,14 @@ void idunn_window_add_damage(idunn_window_t *win, gfx_rect_t r);
  * lay out and draw what changed, part by part.
  * @return how many parts were drawn (in parts).
  */
-int idunn_window_draw_parts(idunn_window_t *win, gfx_rect_t parts[IDUNN_DAMAGE_MAX]);
+int idunn_window_draw_parts(idunn_window_t *win, gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1]);
+
+/**
+ * move the pixels of a rect of the window up (dy < 0) or down, as when its
+ * content scrolls: what stays in it is not drawn again, only the strip
+ * that comes into view. w is the widget the rect belongs to (its clip).
+ */
+void idunn_window_move_pixels(idunn_widget_t *w, gfx_rect_t area, int32_t dy);
 
 typedef enum
 {
@@ -99,6 +106,11 @@ typedef struct
      * part (a scroll bar, a list row) is then not drawn again whole.
      */
     gfx_rect_t (*hover_area)(idunn_widget_t *w);
+    /**
+     * before each frame is drawn (optional): move things that glide (a
+     * scroll view), when the pixels in the buffer can still be moved
+     */
+    void (*frame)(idunn_widget_t *w);
     /** free w->data */
     void (*free)(idunn_widget_t *w);
 } idunn_class_t;
@@ -155,6 +167,7 @@ struct idunn_window
     gfx_rect_t damage;       // what must be drawn again: all of it
     gfx_rect_t damage_list[IDUNN_DAMAGE_MAX]; // and in parts (far apart ones stay apart)
     int damage_count;
+    gfx_rect_t moved; // pixels moved in the buffer: not drawn again, but sent
     uint32_t now;            // ms, for transitions
     uint32_t cursor;         // the pointer shape now
 

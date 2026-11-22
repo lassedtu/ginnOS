@@ -230,7 +230,7 @@ static void present(idunn_window_t *win, uint32_t now)
     if (heim_window_busy(heim))
         return;
     // each part apart, so two far apart changes do not send all between
-    gfx_rect_t parts[IDUNN_DAMAGE_MAX];
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1];
     int count = idunn_window_draw_parts(win, parts);
     for (int i = 0; i < count; i++)
         heim_window_commit(heim, parts[i]);

@@ -203,18 +203,84 @@ static void layout(idunn_window_t *win)
     idunn_window_invalidate(win);
 }
 
-int idunn_window_draw_parts(idunn_window_t *win, gfx_rect_t parts[IDUNN_DAMAGE_MAX])
+static void frame_tree(idunn_widget_t *w)
+{
+    if (w->state & IDUNN_HIDDEN)
+        return;
+    if (w->cls->frame)
+        w->cls->frame(w);
+    for (int i = 0; i < w->child_count; i++)
+        frame_tree(w->children[i]);
+}
+
+void idunn_window_move_pixels(idunn_widget_t *w, gfx_rect_t area, int32_t dy)
+{
+    idunn_window_t *win = w->window;
+    gfx_buffer_t *buf = win ? win->buffer : NULL;
+    if (!buf || dy == 0)
+        return;
+    // only what can be seen of it
+    for (const idunn_widget_t *p = w->parent; p; p = p->parent)
+    {
+        if (p->flags & IDUNN_CLIPS)
+            area = gfx_rect_intersect(area, p->rect);
+    }
+    area = gfx_rect_intersect(area, gfx_rect(0, 0, buf->width, buf->height));
+    if (gfx_rect_empty(area))
+        return;
+    int32_t shift = dy < 0 ? -dy : dy;
+    if (shift >= area.h)
+    {
+        idunn_window_add_damage(win, area);
+        return;
+    }
+
+    // the rows that stay, moved in place (row by row, in the order that
+    // does not overwrite a row before it is moved)
+    int32_t rows = area.h - shift;
+    size_t bytes = (size_t)area.w * 4;
+    for (int32_t i = 0; i < rows; i++)
+    {
+        int32_t n = dy < 0 ? i : rows - 1 - i;
+        int32_t from = dy < 0 ? area.y + shift + n : area.y + n;
+        memmove(gfx_pixel_at(buf, area.x, from + dy), gfx_pixel_at(buf, area.x, from), bytes);
+    }
+
+    // parts not drawn yet move with their pixels
+    int count = win->damage_count;
+    for (int i = 0; i < count; i++)
+    {
+        gfx_rect_t d = gfx_rect_intersect(win->damage_list[i], area);
+        if (!gfx_rect_empty(d))
+            idunn_window_add_damage(win, gfx_rect_intersect(
+                                             gfx_rect(d.x, d.y + dy, d.w, d.h), area));
+    }
+    // the strip that comes into view
+    if (dy < 0)
+        idunn_window_add_damage(win, gfx_rect(area.x, area.y + rows, area.w, shift));
+    else
+        idunn_window_add_damage(win, gfx_rect(area.x, area.y, area.w, shift));
+    win->moved = gfx_rect_empty(win->moved) ? area : gfx_rect_union(win->moved, area);
+    win->damage = gfx_rect_empty(win->damage) ? area : gfx_rect_union(win->damage, area);
+}
+
+int idunn_window_draw_parts(idunn_window_t *win, gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1])
 {
     gfx_buffer_t *buf = win->buffer;
     if (!buf)
         return 0;
     layout(win);
+    // gliding things move first, while the buffer holds the last frame
+    if (win->root)
+        frame_tree(win->root);
     // drawing can ask for the next frame (a transition), so start anew
     gfx_rect_t list[IDUNN_DAMAGE_MAX];
     int count = win->damage_count;
     memcpy(list, win->damage_list, sizeof(list));
+    gfx_rect_t moved = win->moved;
     win->damage = gfx_rect(0, 0, 0, 0);
     win->damage_count = 0;
+    win->moved = gfx_rect(0, 0, 0, 0);
     win->animating = false;
 
     const idunn_theme_t *t = &win->ctx->theme;
@@ -237,12 +303,16 @@ int idunn_window_draw_parts(idunn_window_t *win, gfx_rect_t parts[IDUNN_DAMAGE_M
         parts[drawn++] = clip;
     }
     gfx_reset_clip(buf);
+    // moved pixels are sent too (the drawn parts in them twice is fine)
+    moved = gfx_rect_intersect(moved, gfx_rect(0, 0, buf->width, buf->height));
+    if (!gfx_rect_empty(moved))
+        parts[drawn++] = moved;
     return drawn;
 }
 
 gfx_rect_t idunn_window_draw(idunn_window_t *win)
 {
-    gfx_rect_t parts[IDUNN_DAMAGE_MAX];
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1];
     int count = idunn_window_draw_parts(win, parts);
     gfx_rect_t all = gfx_rect(0, 0, 0, 0);
     for (int i = 0; i < count; i++)
