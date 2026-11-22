@@ -106,6 +106,45 @@ static void test_measure(void)
     bragi_face_free(m);
 }
 
+static void test_caret(void)
+{
+    bragi_face_t *face = bragi_face_new(inter, 13);
+    const char *text = "Tab \xc3\xa6x"; // "Tab æx": æ is 2 bytes
+
+    // the caret at each character is where the text before it ends
+    CHECK_EQ(bragi_caret_x(face, text, -1, 0), 0);
+    int32_t prev = 0;
+    for (int32_t offset = 1; offset <= 7; offset++)
+    {
+        if (offset == 5)
+            continue; // the middle of æ
+        int32_t x = bragi_caret_x(face, text, -1, offset);
+        CHECK(x > prev);
+        CHECK(x - bragi_measure(face, text, offset) <= 0);
+        CHECK(bragi_measure(face, text, offset) - x <= 1);
+        prev = x;
+    }
+    CHECK_EQ(bragi_caret_x(face, text, -1, 99), bragi_caret_x(face, text, -1, 7));
+
+    // a click goes to the nearest caret place, never into a character
+    CHECK_EQ(bragi_offset_at(face, text, -1, -5), 0);
+    CHECK_EQ(bragi_offset_at(face, text, -1, 1), 0);
+    CHECK_EQ(bragi_offset_at(face, text, -1, 999), 7);
+    for (int32_t offset = 0; offset <= 7; offset++)
+    {
+        if (offset == 5)
+            continue;
+        CHECK_EQ(bragi_offset_at(face, text, -1, bragi_caret_x(face, text, -1, offset)), offset);
+    }
+
+    // letter spacing moves the caret too
+    int32_t plain = bragi_caret_x(face, text, -1, 3);
+    bragi_face_set_tracking(face, 0.1f);
+    CHECK(bragi_caret_x(face, text, -1, 3) >= plain + 3);
+    CHECK(bragi_measure(face, text, 3) >= plain + 3);
+    bragi_face_free(face);
+}
+
 static void test_wrap(void)
 {
     bragi_face_t *face = bragi_face_new(inter, 16.0f);
@@ -337,6 +376,7 @@ int main(void)
     test_utf8();
     test_fonts();
     test_measure();
+    test_caret();
     test_wrap();
     test_cache();
     test_fallback();

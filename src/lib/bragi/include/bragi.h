@@ -113,6 +113,21 @@ int32_t bragi_measure(bragi_face_t *face, const char *text, int32_t length);
 int32_t bragi_draw(gfx_buffer_t *buf, bragi_face_t *face, int32_t x, int32_t baseline,
                    const char *text, int32_t length, gfx_color_t color);
 
+/**
+ * where a caret before the byte at offset goes, in pixels from the start
+ * of the line (rounded to the nearest pixel).
+ * @param offset a byte offset at the start of a character; it is cut to
+ *        the text.
+ */
+int32_t bragi_caret_x(bragi_face_t *face, const char *text, int32_t length, int32_t offset);
+
+/**
+ * the caret place nearest to x (pixels from the start of the line), for
+ * a click in a text field.
+ * @return a byte offset at the start of a character, or the length.
+ */
+int32_t bragi_offset_at(bragi_face_t *face, const char *text, int32_t length, int32_t x);
+
 typedef enum
 {
     BRAGI_ALIGN_LEFT,
