@@ -48,7 +48,8 @@ typedef struct
     uint16_t index;          // the queue's number
     uint16_t size;           // entries
     uint8_t *ring;           // descriptors, then the available ring, then the used ring
-    uint8_t *buffer;         // a page for requests and responses
+    uint8_t *buffer;         // a page for requests and responses (virtq_call)
+    uint8_t *slots;          // a page for requests on the way (virtq_post)
     volatile uint16_t *note; // where to write to tell the device
     uint16_t used_seen;      // the used ring index the driver has seen
     uint16_t avail_next;     // the available ring index of the next request
@@ -90,3 +91,12 @@ void virtio_use_config_vector(virtio_device_t *dev);
  */
 bool virtq_call(virtq_t *q, const void *request, uint32_t request_size, void *response,
                 uint32_t response_size);
+
+/**
+ * send a request and do not wait: its response is not read. for a device
+ * that does its requests in order (virtio-gpu 2D). a virtq_call after it
+ * waits until it is done. with many on the way this waits for room.
+ * @param request up to 96 bytes the device reads.
+ * @return false if the device did not make room in time.
+ */
+bool virtq_post(virtq_t *q, const void *request, uint32_t request_size);

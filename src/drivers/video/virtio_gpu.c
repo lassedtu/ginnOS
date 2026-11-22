@@ -209,9 +209,20 @@ static bool transfer(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 
 static void gpu_flush(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
-    if (resource)
+    if (!resource)
     {
-        transfer(x, y, w, h);
+        return;
+    }
+    // on the way without waiting: the device does them in order, and the
+    // next command that needs an answer (a mode change) waits for them
+    transfer_t t = {.hdr.type = CMD_TRANSFER_TO_HOST_2D,
+                    .r = {x, y, w, h},
+                    .offset = (uint64_t)y * width * 4 + x * 4,
+                    .resource_id = resource};
+    flush_t f = {.hdr.type = CMD_RESOURCE_FLUSH, .r = {x, y, w, h}, .resource_id = resource};
+    if (virtq_post(&control, &t, sizeof(t)))
+    {
+        virtq_post(&control, &f, sizeof(f));
     }
 }
 
@@ -370,7 +381,11 @@ static void gpu_cursor_move(uint32_t x, uint32_t y)
     // a move with resource 0 would hide the pointer
     if (cursor_visible)
     {
-        cursor_command(CMD_MOVE_CURSOR, cursor_resource, x, y);
+        cursor_command_t c = {.hdr.type = CMD_MOVE_CURSOR,
+                              .x = x,
+                              .y = y,
+                              .resource_id = cursor_resource};
+        virtq_post(&cursor_queue, &c, sizeof(c)); // no wait: only the last place counts
     }
 }
 
