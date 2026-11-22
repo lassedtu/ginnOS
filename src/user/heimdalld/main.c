@@ -9,7 +9,8 @@
  * once the socket is ready. Ctrl+Alt+Backspace stops the server; the text
  * console comes back as it was.
  *
- *   -w image   the wallpaper (PNG, JPEG or BMP), scaled to cover the screen
+ *   -w image   the wallpaper (PNG, JPEG or BMP), scaled to cover the screen;
+ *              without it, /usr/share/wallpapers/default.png if it is there
  */
 
 #include "heimdalld.h"
@@ -30,6 +31,7 @@
 
 #define FONTS "/usr/share/fonts/"
 #define POLL_MAX 64
+#define DEFAULT_WALLPAPER "/usr/share/wallpapers/default.png"
 
 server_t S;
 
@@ -133,7 +135,7 @@ static void loop(void)
 
 int main(int argc, char **argv)
 {
-    const char *wallpaper = NULL;
+    const char *wallpaper = access(DEFAULT_WALLPAPER, R_OK) == 0 ? DEFAULT_WALLPAPER : NULL;
     int arg = 1;
     if (arg + 1 < argc && strcmp(argv[arg], "-w") == 0)
     {

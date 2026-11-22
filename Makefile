@@ -169,6 +169,13 @@ ICONS_CACHE := build/icons
 ICONS_OUT   := $(ICONS_CACHE)/out
 ICONS_PACKS := $(ICONS_OUT)/lucide.pack $(ICONS_OUT)/tela.pack
 
+# the default wallpaper (/usr/share/wallpapers/default.png), made by
+# tools/wallpaper/make.py from your own image (git ignores .hidden): put on
+# black and given black sides to 16:10. needs Pillow; without the image or
+# Pillow, heimdalld draws its gradient. WALLPAPER= leaves it out.
+WALLPAPER     ?= .hidden/orbitals/6_3_1.png
+WALLPAPER_OUT := build/wallpaper/default.png
+
 LIMINE_DIR       := build/limine
 LIMINE_FETCH     := tools/limine/fetch.sh
 LIMINE_DISK_TOOL := tools/limine/make_disk.py
@@ -567,7 +574,11 @@ $(ICONS_OUT)/lucide.pack: tools/icons/build.py tools/icons/fetch.sh tools/icons/
 
 icons: $(ICONS_PACKS)
 
-rootfs-image: $(ROOTFS_KERNEL) user-programs $(if $(filter 1,$(ICONS)),$(ICONS_PACKS))
+$(WALLPAPER_OUT): $(wildcard $(WALLPAPER)) tools/wallpaper/make.py
+	$(PYTHON) tools/wallpaper/make.py "$(WALLPAPER)" $@
+
+rootfs-image: $(ROOTFS_KERNEL) user-programs $(if $(filter 1,$(ICONS)),$(ICONS_PACKS)) \
+              $(if $(WALLPAPER),$(WALLPAPER_OUT))
 	rm -rf $(ROOTFS_STAGING)
 	@mkdir -p $(ROOTFS_STAGING) $(dir $(ROOTFS_IMAGE))
 	cp -R $(EXT2_SOURCE_DIR)/. $(ROOTFS_STAGING)/
@@ -582,6 +593,10 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs $(if $(filter 1,$(ICONS)),$(ICONS_P
 	$(if $(filter 1,$(ICONS)),mkdir -p $(ROOTFS_STAGING)/usr/share/icons && \
 		cp $(ICONS_PACKS) $(ICONS_OUT)/LICENSE-lucide.txt $(ICONS_OUT)/COPYING-tela.txt \
 		$(ROOTFS_STAGING)/usr/share/icons/)
+	@if [ -n "$(WALLPAPER)" ] && [ -f $(WALLPAPER_OUT) ]; then \
+		mkdir -p $(ROOTFS_STAGING)/usr/share/wallpapers; \
+		cp $(WALLPAPER_OUT) $(ROOTFS_STAGING)/usr/share/wallpapers/default.png; \
+	fi
 	@if [ "$(DOOM)" = 1 ] && [ -d "$(DOOM_WAD_DIR)" ]; then \
 		for wad in "$(DOOM_WAD_DIR)"/*.[wW][aA][dD]; do \
 			[ -f "$$wad" ] || continue; \
