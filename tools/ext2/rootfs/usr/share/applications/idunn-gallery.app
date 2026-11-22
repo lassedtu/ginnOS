@@ -3,5 +3,5 @@
 name = Gallery
 comment = The idunn widgets, and how they look and work
 exec = idunn-gallery
-icon = preferences-system
+icon = applications-development
 category = Development
