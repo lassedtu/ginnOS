@@ -25,8 +25,11 @@
 #include "idunn_theme.h"
 
 #include <gfx.h>
+#include <heimdall_proto.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+typedef struct heim_conn heim_conn_t; // as in heimdall.h
 
 typedef struct idunn_app idunn_app_t;
 typedef struct idunn_context idunn_context_t;
@@ -67,9 +70,31 @@ typedef void (*idunn_callback_t)(idunn_widget_t *widget, void *data);
 
 /**
  * connect to the window server and read the theme.
+ * @param name the program's id, the name of its .app file
+ *        ("idunn-gallery"): the shell shows its icon with its windows.
  * @return the app, or NULL (no server, or no fonts).
  */
 idunn_app_t *idunn_app_new(const char *name);
+
+/**
+ * the connection to the window server, for calls idunn does not wrap
+ * (the shell's heim_shell_start, for example).
+ */
+heim_conn_t *idunn_app_conn(const idunn_app_t *app);
+
+/**
+ * get the events that are about no window of the app (the shell's
+ * HEIM_EV_WINDOW, HEIM_EV_WINDOW_APP, HEIM_EV_WINDOW_GONE).
+ */
+void idunn_app_on_event(idunn_app_t *app,
+                        void (*on_event)(idunn_app_t *app, const heim_msg_t *msg, void *data),
+                        void *data);
+
+/**
+ * call every(data) each period ms while the app runs (a clock). one per
+ * app; a new call replaces it, period 0 stops it.
+ */
+void idunn_app_every(idunn_app_t *app, uint32_t period, void (*every)(void *data), void *data);
 
 /**
  * run until the last window is closed or idunn_app_quit.
@@ -96,6 +121,13 @@ const idunn_theme_t *idunn_app_theme(const idunn_app_t *app);
  */
 idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t width,
                                  int32_t height);
+
+/**
+ * a panel of the desktop shell: no title bar, at the bottom of the screen,
+ * as wide as the screen, above the windows (HEIM_WINDOW_PANEL).
+ * @param height in design pixels.
+ */
+idunn_window_t *idunn_panel_new(idunn_app_t *app, int32_t height);
 
 /**
  * the widget that fills the window (a row or a column, usually). the

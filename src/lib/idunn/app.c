@@ -10,6 +10,7 @@
 #include "idunn_internal.h"
 
 #include <heimdall.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/input.h>
@@ -24,6 +25,14 @@ struct idunn_app
     idunn_window_t *windows;
     idunn_window_t *paste_window; // it asked for the clipboard's text
     bool quit;
+    char name[HEIM_APP_ID_MAX]; // the program's id, for the shell
+
+    void (*on_event)(idunn_app_t *app, const heim_msg_t *msg, void *data);
+    void *on_event_data;
+    void (*every)(void *data);
+    void *every_data;
+    uint32_t every_period; // ms (0: off)
+    uint32_t every_next;   // when it is called next
 };
 
 static uint32_t now_ms(void)
@@ -47,10 +56,10 @@ static bool fit(idunn_app_t *app, idunn_theme_t *theme)
 
 idunn_app_t *idunn_app_new(const char *name)
 {
-    (void)name;
     idunn_app_t *app = calloc(1, sizeof(*app));
     if (!app)
         return NULL;
+    snprintf(app->name, sizeof(app->name), "%s", name ? name : "");
     idunn_theme_t theme;
     idunn_theme_load(&theme);
     app->ctx = idunn_context_new(&theme, FONT_DIR, ICON_DIR "lucide.pack");
@@ -70,6 +79,27 @@ idunn_app_t *idunn_app_new(const char *name)
 void idunn_app_quit(idunn_app_t *app)
 {
     app->quit = true;
+}
+
+heim_conn_t *idunn_app_conn(const idunn_app_t *app)
+{
+    return app->conn;
+}
+
+void idunn_app_on_event(idunn_app_t *app,
+                        void (*on_event)(idunn_app_t *app, const heim_msg_t *msg, void *data),
+                        void *data)
+{
+    app->on_event = on_event;
+    app->on_event_data = data;
+}
+
+void idunn_app_every(idunn_app_t *app, uint32_t period, void (*every)(void *data), void *data)
+{
+    app->every = every;
+    app->every_data = data;
+    app->every_period = every ? period : 0;
+    app->every_next = now_ms() + period;
 }
 
 const idunn_theme_t *idunn_app_theme(const idunn_app_t *app)
@@ -179,6 +209,20 @@ idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t wi
     const idunn_theme_t *t = &app->ctx->theme;
     heim_window_t *heim = heim_window_new(app->conn, idunn_px(t, width), idunn_px(t, height),
                                           title, HEIM_WINDOW_RESIZABLE);
+    if (heim && app->name[0])
+        heim_window_set_app(heim, app->name);
+    return heim ? wrap(app, heim) : NULL;
+}
+
+idunn_window_t *idunn_panel_new(idunn_app_t *app, int32_t height)
+{
+    // the server makes it as wide as the screen
+    int32_t width;
+    int32_t screen_height;
+    heim_screen_size(app->conn, &width, &screen_height);
+    const idunn_theme_t *t = &app->ctx->theme;
+    heim_window_t *heim = heim_window_new(app->conn, width, idunn_px(t, height), "",
+                                          HEIM_WINDOW_PANEL);
     return heim ? wrap(app, heim) : NULL;
 }
 
@@ -299,6 +343,21 @@ int idunn_app_run(idunn_app_t *app)
             if (!win->dead && work && !heim_window_busy(win->heim))
                 timeout = 0;
         }
+        // the app's own timer (a clock)
+        if (app->every_period)
+        {
+            int32_t left = (int32_t)(app->every_next - now);
+            if (left <= 0)
+            {
+                app->every_next = now + app->every_period;
+                app->every(app->every_data);
+                timeout = 0; // draw what it changed
+            }
+            else if (timeout < 0 || left < timeout)
+            {
+                timeout = left;
+            }
+        }
         int got = heim_next_event(app->conn, &ev, timeout);
         if (got < 0)
             break;
@@ -356,6 +415,8 @@ int idunn_app_run(idunn_app_t *app)
             }
             break;
         default:
+            if (!win && app->on_event)
+                app->on_event(app, &ev.msg, app->on_event_data);
             break;
         }
     }
