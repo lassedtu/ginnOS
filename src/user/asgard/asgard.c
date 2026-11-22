@@ -13,6 +13,7 @@
  */
 
 #include <apps.h>
+#include <conf.h>
 #include <fcntl.h>
 #include <heimdall.h>
 #include <idunn.h>
@@ -237,6 +238,14 @@ static void layout_chosen(idunn_widget_t *owner, void *data)
         idunn_button_set_text(A.layout, text);
         for (int i = 0; i < A.layout_count; i++)
             idunn_menu_set_checked(A.layout_menu, i, (uint32_t)i == index);
+        // kept for the next session (heimdalld makes it active at the start)
+        conf_t *conf = conf_open("keyboard");
+        if (conf)
+        {
+            conf_set(conf, "keyboard", "layout", A.layout_names[index]);
+            conf_save(conf);
+            conf_free(conf);
+        }
         heim_settings_changed(A.conn, "keyboard"); // heimdalld reads it again
     }
     close(kbd);

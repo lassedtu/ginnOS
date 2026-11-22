@@ -496,6 +496,9 @@ int idunn_app_run(idunn_app_t *app)
                 fit(app, &theme);
                 idunn_app_set_theme(app, &theme);
             }
+            // the program's own settings (and the theme, if it cares)
+            if (app->on_event)
+                app->on_event(app, &ev.msg, app->on_event_data);
             break;
         default:
             if (!win && app->on_event)

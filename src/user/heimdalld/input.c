@@ -15,6 +15,7 @@
 
 #include "heimdalld.h"
 
+#include <conf.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
@@ -32,6 +33,33 @@ static bool pending_abs;
 static int32_t abs_x = -1;
 static int32_t abs_y = -1;
 
+/**
+ * make the layout of the "keyboard" settings ([keyboard] layout, by its
+ * name) the active one, so a session starts with the user's layout.
+ */
+static void saved_layout(void)
+{
+    conf_t *conf = conf_open("keyboard");
+    const char *want = conf ? conf_get(conf, "keyboard", "layout", NULL) : NULL;
+    int kbd = want ? open("/dev/kbd", O_RDONLY | O_CLOEXEC) : -1;
+    uint32_t count = 0;
+    if (kbd >= 0 && ioctl(kbd, KBD_IOC_LAYOUT_COUNT, &count) == 0)
+    {
+        for (uint32_t i = 0; i < count; i++)
+        {
+            struct kbd_layout_name name = {.index = i};
+            if (ioctl(kbd, KBD_IOC_LAYOUT_NAME, &name) == 0 && strcmp(name.name, want) == 0)
+            {
+                ioctl(kbd, KBD_IOC_SET_LAYOUT, &i);
+                break;
+            }
+        }
+    }
+    if (kbd >= 0)
+        close(kbd);
+    conf_free(conf);
+}
+
 bool input_init(void)
 {
     S.input_fd = open("/dev/input", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
@@ -39,6 +67,7 @@ bool input_init(void)
         return false;
     int on = 1;
     ioctl(S.input_fd, INPUT_IOC_GRAB, &on);
+    saved_layout();
     input_keymap();
     return true;
 }

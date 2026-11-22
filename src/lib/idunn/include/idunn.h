@@ -84,7 +84,8 @@ heim_conn_t *idunn_app_conn(const idunn_app_t *app);
 
 /**
  * get the events that are about no window of the app (the shell's
- * HEIM_EV_WINDOW, HEIM_EV_WINDOW_APP, HEIM_EV_WINDOW_GONE).
+ * HEIM_EV_WINDOW, HEIM_EV_WINDOW_APP, HEIM_EV_WINDOW_GONE), and
+ * HEIM_EV_SETTINGS (after idunn applied a new theme).
  */
 void idunn_app_on_event(idunn_app_t *app,
                         void (*on_event)(idunn_app_t *app, const heim_msg_t *msg, void *data),

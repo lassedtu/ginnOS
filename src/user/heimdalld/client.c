@@ -399,9 +399,12 @@ static void settings_changed(client_t *c, heim_msg_t *msg)
         if (S.theme.scale != scale)
             window_screen_changed(); // the title bars have another height
     }
-    // another keyboard layout (the shell's keyboard menu)
+    // another keyboard layout (the shell's keyboard menu, settings)
     if (strcmp(name, "keyboard") == 0)
         input_keymap();
+    // another wallpaper (settings)
+    if (strcmp(name, "desktop") == 0)
+        screen_set_wallpaper(screen_wallpaper_setting(S.wallpaper_path));
     heim_msg_t event = {0};
     event.type = HEIM_EV_SETTINGS;
     memcpy(event.settings.name, name, sizeof(event.settings.name));
