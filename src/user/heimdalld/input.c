@@ -39,7 +39,12 @@ bool input_init(void)
         return false;
     int on = 1;
     ioctl(S.input_fd, INPUT_IOC_GRAB, &on);
+    input_keymap();
+    return true;
+}
 
+void input_keymap(void)
+{
     int kbd = open("/dev/kbd", O_RDONLY | O_CLOEXEC);
     if (kbd >= 0)
     {
@@ -50,7 +55,6 @@ bool input_init(void)
             keytext_init(name.name);
         close(kbd);
     }
-    return true;
 }
 
 static void send_pointer(window_t *w, uint16_t kind, uint16_t button, int32_t value)
@@ -218,8 +222,12 @@ static void button_press(uint16_t code, uint32_t time_ms)
         return;
     if (!w)
         return;
-    window_raise(w);
-    window_focus(w);
+    // a click on a panel leaves the keyboard where it is
+    if (!window_is_panel(w))
+    {
+        window_raise(w);
+        window_focus(w);
+    }
 
     switch (part)
     {

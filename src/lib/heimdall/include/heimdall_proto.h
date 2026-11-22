@@ -34,6 +34,20 @@
  * parent and gets the keyboard (a tooltip, HEIM_WINDOW_TOOLTIP, gets no
  * input at all). a press outside the open popups closes them: each gets
  * HEIM_EV_CLOSE, and the press goes nowhere else.
+ *
+ * a panel (HEIM_WINDOW_PANEL) is a bar of the desktop shell: the server
+ * puts it at the bottom of the screen, the full width (it sends
+ * HEIM_EV_CONFIGURE for the width), above the windows. its height is not
+ * part of the work area: maximized and new windows stay above it. a click
+ * on it does not take the keyboard from the window that has it.
+ *
+ * the shell: one client can ask to be the shell (HEIM_REQ_SHELL, the
+ * first that asks). it then gets HEIM_EV_WINDOW for each normal window
+ * when the window shows or changes (title, state), HEIM_EV_WINDOW_APP
+ * with the program of the window, and HEIM_EV_WINDOW_GONE; the window
+ * field is 0 and info.id is the server's number for the window. the shell
+ * can activate, minimize and close any window (HEIM_REQ_ACT) and end the
+ * session (HEIM_REQ_QUIT).
  */
 
 #include <stdint.h>
@@ -45,6 +59,7 @@
 // the longest settings name (libconf: /etc/ginnos/<name>.conf), with the 0
 #define HEIM_SETTINGS_MAX 48
 #define HEIM_SIZE_MAX 8192
+#define HEIM_APP_ID_MAX 48 // the program of a window: "idunn-gallery"
 #define HEIM_CLIPBOARD_MAX (1024 * 1024)
 
 #define HEIM_REQ_HELLO    1 // hello: the protocol version
@@ -58,6 +73,10 @@
 #define HEIM_REQ_CLIP_GET 9 // answered with HEIM_EV_CLIPBOARD
 #define HEIM_REQ_SETTINGS 10 // settings: a settings file changed; all clients are told
 #define HEIM_REQ_PLACE    11 // place: where a popup goes
+#define HEIM_REQ_APP_ID   12 // app: the program of the window (for the shell)
+#define HEIM_REQ_SHELL    13 // be the shell (answered with HEIM_EV_WINDOW for each window)
+#define HEIM_REQ_ACT      14 // act: the shell does something to a window
+#define HEIM_REQ_QUIT     15 // the shell ends the session
 
 #define HEIM_EV_WELCOME   64 // size: the screen
 #define HEIM_EV_CONFIGURE 65 // configure: the size the window should get
@@ -69,6 +88,9 @@
 #define HEIM_EV_CLIPBOARD 71 // clip: the length; with an fd of the text when not 0
 #define HEIM_EV_SETTINGS  72 // settings: the settings file that changed (read it again)
 #define HEIM_EV_SCREEN    73 // size: the screen has a new size
+#define HEIM_EV_WINDOW    74 // info: a window showed or changed (to the shell)
+#define HEIM_EV_WINDOW_APP 75 // app: the program of a window (to the shell)
+#define HEIM_EV_WINDOW_GONE 76 // info (id only): a window went (to the shell)
 
 // create flags
 #define HEIM_WINDOW_RESIZABLE   0x01 // the user can resize it
@@ -76,6 +98,7 @@
 #define HEIM_WINDOW_UNDECORATED 0x04 // no title bar and no shadow
 #define HEIM_WINDOW_POPUP       0x08 // a popup of create.parent (see above)
 #define HEIM_WINDOW_TOOLTIP     0x10 // with POPUP: no keyboard, no pointer
+#define HEIM_WINDOW_PANEL       0x20 // a bar of the shell (see above)
 
 // the side of a rect a popup goes to (place.side)
 #define HEIM_SIDE_BELOW 0 // under it, from its left edge (or above it)
@@ -84,6 +107,13 @@
 
 // configure state
 #define HEIM_STATE_MAXIMIZED 0x01
+#define HEIM_STATE_MINIMIZED 0x02 // HEIM_EV_WINDOW only
+#define HEIM_STATE_FOCUSED   0x04 // HEIM_EV_WINDOW only: it, or one of its popups
+
+// HEIM_REQ_ACT
+#define HEIM_ACT_ACTIVATE 1 // show it if minimized, raise it, give it the keyboard
+#define HEIM_ACT_MINIMIZE 2
+#define HEIM_ACT_CLOSE    3 // as the close button: the window gets HEIM_EV_CLOSE
 
 // pointer shapes
 #define HEIM_CURSOR_ARROW 0
@@ -188,6 +218,22 @@ typedef struct
         {
             uint32_t focused;
         } focus;
+        struct
+        {
+            uint32_t id;    // the server's number for the window
+            uint32_t state; // HEIM_STATE_
+            char title[HEIM_TITLE_MAX];
+        } info;
+        struct
+        {
+            uint32_t id; // HEIM_EV_WINDOW_APP: the window; HEIM_REQ_APP_ID: 0
+            char app[HEIM_APP_ID_MAX];
+        } app;
+        struct
+        {
+            uint32_t id;     // the server's number for the window
+            uint32_t action; // HEIM_ACT_
+        } act;
         struct
         {
             uint16_t code;  // the Linux key code (KEY_ in sys/input.h)

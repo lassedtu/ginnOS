@@ -141,3 +141,30 @@ void heim_clipboard_request(heim_conn_t *conn);
  * @param name the libconf name, "theme".
  */
 void heim_settings_changed(heim_conn_t *conn, const char *name);
+
+/**
+ * name the program of a window, so the shell can show its icon (the id of
+ * its .app file: "idunn-gallery").
+ */
+void heim_window_set_app(heim_window_t *win, const char *app);
+
+/**
+ * be the desktop shell: from now on HEIM_EV_WINDOW, HEIM_EV_WINDOW_APP
+ * and HEIM_EV_WINDOW_GONE tell about every normal window (the event's
+ * window is NULL; msg.info.id names the window). only the first client
+ * that asks is the shell.
+ */
+void heim_shell_start(heim_conn_t *conn);
+
+/**
+ * the shell does something to a window.
+ * @param id msg.info.id of the window.
+ * @param action HEIM_ACT_ACTIVATE, HEIM_ACT_MINIMIZE or HEIM_ACT_CLOSE.
+ */
+void heim_shell_act(heim_conn_t *conn, uint32_t id, uint32_t action);
+
+/**
+ * the shell ends the session: heimdalld stops and the text console comes
+ * back.
+ */
+void heim_shell_quit(heim_conn_t *conn);
