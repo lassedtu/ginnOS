@@ -32,14 +32,15 @@ struct stdio_file
     int unget;           // a byte pushed back, or EOF
     int owns_buffer;
     struct stdio_file *next; // every open stream, for fflush(NULL)
+    pid_t pid;               // popen: the command at the other end, else 0
 };
 
 static char stdin_buffer[BUFSIZ];
 static char stdout_buffer[BUFSIZ];
 
-static FILE stdin_file = {0, STREAM_READ, _IOLBF, stdin_buffer, BUFSIZ, 0, 0, 0, EOF, 0, NULL};
-static FILE stdout_file = {1, STREAM_WRITE, _IOLBF, stdout_buffer, BUFSIZ, 0, 0, 0, EOF, 0, NULL};
-static FILE stderr_file = {2, STREAM_WRITE, _IONBF, NULL, 0, 0, 0, 0, EOF, 0, NULL};
+static FILE stdin_file = {0, STREAM_READ, _IOLBF, stdin_buffer, BUFSIZ, 0, 0, 0, EOF, 0, NULL, 0};
+static FILE stdout_file = {1, STREAM_WRITE, _IOLBF, stdout_buffer, BUFSIZ, 0, 0, 0, EOF, 0, NULL, 0};
+static FILE stderr_file = {2, STREAM_WRITE, _IONBF, NULL, 0, 0, 0, 0, EOF, 0, NULL, 0};
 
 FILE *stdin = &stdin_file;
 FILE *stdout = &stdout_file;
@@ -429,6 +430,140 @@ int fclose(FILE *stream)
     return result;
 }
 
+FILE *freopen(const char *path, const char *mode, FILE *stream)
+{
+    int stream_flags;
+    int flags = parse_mode(mode, &stream_flags);
+    if (flags < 0)
+    {
+        fclose(stream);
+        errno = EINVAL;
+        return NULL;
+    }
+    fflush(stream);
+    if (path)
+    {
+        int fd = open(path, flags | O_CLOEXEC, 0666);
+        if (fd < 0)
+        {
+            int error = errno;
+            fclose(stream);
+            errno = error;
+            return NULL;
+        }
+        // keep the fd number: freopen on stdin must change fd 0
+        if (fd != stream->fd)
+        {
+            if (dup2(fd, stream->fd) < 0)
+            {
+                int error = errno;
+                close(fd);
+                fclose(stream);
+                errno = error;
+                return NULL;
+            }
+            close(fd);
+        }
+    }
+    stream->flags = stream_flags;
+    stream->read_pos = stream->read_len = stream->write_len = 0;
+    stream->unget = EOF;
+    if (isatty(stream->fd))
+    {
+        stream->flags |= STREAM_TTY;
+        stream->mode = _IOLBF;
+    }
+    else if (stream->buffer)
+    {
+        stream->mode = _IOFBF;
+    }
+    return stream;
+}
+
+FILE *tmpfile(void)
+{
+    char path[] = "/tmp/tmpfileXXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0)
+        return NULL;
+    unlink(path); // the file stays until its last close
+    FILE *stream = fdopen(fd, "w+");
+    if (!stream)
+        close(fd);
+    return stream;
+}
+
+FILE *popen(const char *command, const char *mode)
+{
+    int reading = mode && mode[0] == 'r';
+    if (!command || !mode || (!reading && mode[0] != 'w'))
+    {
+        errno = EINVAL;
+        return NULL;
+    }
+    int ends[2];
+    if (pipe(ends) < 0)
+        return NULL;
+    // the command's end: the write end when we read its output
+    int theirs = reading ? ends[1] : ends[0];
+    int ours = reading ? ends[0] : ends[1];
+
+    pid_t child = fork();
+    if (child < 0)
+    {
+        close(ends[0]);
+        close(ends[1]);
+        return NULL;
+    }
+    if (child == 0)
+    {
+        int target = reading ? 1 : 0;
+        close(ours);
+        if (theirs != target)
+        {
+            dup2(theirs, target);
+            close(theirs);
+        }
+        // the pipes of earlier popen calls are not the command's
+        for (FILE *s = open_streams; s; s = s->next)
+            if (s->pid)
+                close(s->fd);
+        char *argv[] = {"sh", "-c", (char *)command, NULL};
+        execve("/bin/sh", argv, environ);
+        _exit(127);
+    }
+
+    close(theirs);
+    fcntl(ours, F_SETFD, FD_CLOEXEC); // not into other programs we start
+    FILE *stream = fdopen(ours, reading ? "r" : "w");
+    if (!stream)
+    {
+        close(ours);
+        waitpid(child, NULL, 0);
+        return NULL;
+    }
+    stream->pid = child;
+    return stream;
+}
+
+int pclose(FILE *stream)
+{
+    pid_t pid = stream->pid;
+    if (!pid)
+    {
+        errno = ECHILD;
+        return -1;
+    }
+    fclose(stream); // the command sees the end of its input
+    int status;
+    while (waitpid(pid, &status, 0) < 0)
+    {
+        if (errno != EINTR)
+            return -1;
+    }
+    return status;
+}
+
 int setvbuf(FILE *stream, char *buf, int mode, size_t size)
 {
     if (mode != _IOFBF && mode != _IOLBF && mode != _IONBF)
@@ -478,6 +613,16 @@ long ftell(FILE *stream)
     return position;
 }
 
+int fseeko(FILE *stream, off_t offset, int whence)
+{
+    return fseek(stream, (long)offset, whence);
+}
+
+off_t ftello(FILE *stream)
+{
+    return (off_t)ftell(stream);
+}
+
 void rewind(FILE *stream)
 {
     fseek(stream, 0, SEEK_SET);
@@ -497,6 +642,42 @@ int ferror(FILE *stream)
 void clearerr(FILE *stream)
 {
     stream->flags &= ~(STREAM_EOF | STREAM_ERROR);
+}
+
+void flockfile(FILE *stream)
+{
+    (void)stream;
+}
+
+int ftrylockfile(FILE *stream)
+{
+    (void)stream;
+    return 0;
+}
+
+void funlockfile(FILE *stream)
+{
+    (void)stream;
+}
+
+int getc_unlocked(FILE *stream)
+{
+    return getc(stream);
+}
+
+int getchar_unlocked(void)
+{
+    return getchar();
+}
+
+int putc_unlocked(int c, FILE *stream)
+{
+    return putc(c, stream);
+}
+
+int putchar_unlocked(int c)
+{
+    return putchar(c);
 }
 
 int remove(const char *path)

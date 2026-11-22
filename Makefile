@@ -561,6 +561,9 @@ sysroot: $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A)
 	@mkdir -p $(SYSROOT)/usr/include $(SYSROOT)/usr/lib
 	cp -R src/libc/include/. $(SYSROOT)/usr/include/
 	cp $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A) $(SYSROOT)/usr/lib/
+	@# the math functions are in libc.a: -lm finds an empty library
+	@rm -f $(SYSROOT)/usr/lib/libm.a
+	$(CROSS)ar rcs $(SYSROOT)/usr/lib/libm.a
 
 # user libraries (src/lib/<name>/, see src/lib/lib.mk), built before the
 # programs that use them

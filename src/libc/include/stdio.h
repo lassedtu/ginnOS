@@ -44,6 +44,33 @@ FILE *fopen(const char *path, const char *mode);
 FILE *fdopen(int fd, const char *mode);
 int fclose(FILE *stream);
 int fflush(FILE *stream); // NULL flushes every stream
+
+/**
+ * give a stream another file: the old file is closed, the stream keeps
+ * its fd number (so freopen on stdin or stdout changes fd 0 or 1).
+ * @param path the new file; NULL keeps the file and changes only the mode.
+ * @return stream, or NULL (errno set; the stream is closed).
+ */
+FILE *freopen(const char *path, const char *mode, FILE *stream);
+
+/**
+ * a new file for reading and writing that goes when it is closed (it is
+ * made in /tmp and removed at once).
+ */
+FILE *tmpfile(void);
+
+/**
+ * run "sh -c command" with a pipe to its standard output ("r") or from
+ * its standard input ("w").
+ * @return the stream of the pipe, or NULL (errno set).
+ */
+FILE *popen(const char *command, const char *mode);
+
+/**
+ * close a stream of popen and wait for the command.
+ * @return its status as waitpid gives it, or -1.
+ */
+int pclose(FILE *stream);
 int setvbuf(FILE *stream, char *buf, int mode, size_t size);
 void setbuf(FILE *stream, char *buf);
 int fileno(FILE *stream);
@@ -65,6 +92,8 @@ int puts(const char *s);
 // position and state
 int fseek(FILE *stream, long offset, int whence);
 long ftell(FILE *stream);
+int fseeko(FILE *stream, off_t offset, int whence);
+off_t ftello(FILE *stream);
 void rewind(FILE *stream);
 int feof(FILE *stream);
 int ferror(FILE *stream);
@@ -103,3 +132,20 @@ int rename(const char *old_path, const char *new_path);
  * remove a file or an empty directory.
  */
 int remove(const char *path);
+
+/**
+ * write "s: " (when s is not NULL or empty) and the text of errno to
+ * stderr (in errno.c; errno.h declares it too).
+ */
+void perror(const char *s);
+
+// locks of a stream for threads. a ginnOS process has one thread, so
+// they do nothing and the _unlocked calls are the plain ones; they are
+// here for programs written for threads.
+void flockfile(FILE *stream);
+int ftrylockfile(FILE *stream); // 0: locked
+void funlockfile(FILE *stream);
+int getc_unlocked(FILE *stream);
+int getchar_unlocked(void);
+int putc_unlocked(int c, FILE *stream);
+int putchar_unlocked(int c);

@@ -167,3 +167,67 @@ double pow(double x, double y)
     }
     return exp(y * log(x));
 }
+
+double ldexp(double x, int exponent)
+{
+    // fscale: x * 2^exponent, exactly
+    double result;
+    __asm__("fscale" : "=t"(result) : "0"(x), "u"((double)exponent));
+    return result;
+}
+
+double scalbn(double x, int exponent)
+{
+    return ldexp(x, exponent);
+}
+
+double frexp(double x, int *exponent)
+{
+    union
+    {
+        double d;
+        unsigned long long bits;
+    } v = {x};
+    int raw = (int)((v.bits >> 52) & 0x7FF);
+    *exponent = 0;
+    if (raw == 0x7FF || x == 0.0)
+        return x; // infinity, NaN and zero stay as they are
+    if (raw == 0)
+    {
+        // a subnormal number: make it normal first
+        v.d = x * 18014398509481984.0; // 2^54
+        raw = (int)((v.bits >> 52) & 0x7FF);
+        *exponent = -54;
+    }
+    // the fraction in [0.5, 1): the exponent field of 0.5 is 0x3FE
+    *exponent += raw - 0x3FE;
+    v.bits = (v.bits & ~(0x7FFULL << 52)) | (0x3FEULL << 52);
+    return v.d;
+}
+
+// below this size, sinh(x) and tanh(x) are x to the last bit
+#define TINY 3.7252902984e-09 // 2^-28
+
+double sinh(double x)
+{
+    if (fabs(x) < TINY)
+        return x;
+    return (exp(x) - exp(-x)) / 2.0;
+}
+
+double cosh(double x)
+{
+    return (exp(x) + exp(-x)) / 2.0;
+}
+
+double tanh(double x)
+{
+    if (fabs(x) < TINY)
+        return x;
+    if (x > 22.0)
+        return 1.0; // e^(2x) is too large to add 1 to
+    if (x < -22.0)
+        return -1.0;
+    double e = exp(2.0 * x);
+    return (e - 1.0) / (e + 1.0);
+}

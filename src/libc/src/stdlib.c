@@ -7,6 +7,8 @@
 #include "sys/mman.h"
 #include "sys/wait.h"
 #include "ctype.h"
+#include "fcntl.h"
+#include "time.h"
 
 /**
  * @file stdlib.c
@@ -785,4 +787,37 @@ int system(const char *command)
         }
     }
     return status;
+}
+
+int mkstemp(char *template)
+{
+    static const char letters[] =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    static unsigned long long counter;
+    size_t length = strlen(template);
+    if (length < 6 || strcmp(template + length - 6, "XXXXXX") != 0)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    char *x = template + length - 6;
+
+    for (int tries = 0; tries < 100; tries++)
+    {
+        // not secret, only different: the time, the pid and a count
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        unsigned long long v = (unsigned long long)now.tv_nsec * 2654435761u ^
+                               ((unsigned long long)getpid() << 32) ^ ++counter * 40503u;
+        for (int i = 0; i < 6; i++)
+        {
+            x[i] = letters[v % (sizeof(letters) - 1)];
+            v /= sizeof(letters) - 1;
+        }
+        int fd = open(template, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+        if (fd >= 0 || errno != EEXIST)
+            return fd;
+    }
+    errno = EEXIST;
+    return -1;
 }
