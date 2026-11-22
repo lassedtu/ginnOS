@@ -6,7 +6,9 @@
 #include "gfx.h"
 #include "../gfx_internal.h"
 #include "hosttest.h"
+#include "image.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -210,6 +212,125 @@ static void test_scene(void)
     gfx_buffer_free(buf);
 }
 
+/**
+ * the pixels of a buffer as RGB bytes (over black).
+ */
+static uint8_t *rgb_of(const gfx_buffer_t *buf)
+{
+    uint8_t *rgb = malloc((size_t)buf->width * buf->height * 3);
+    for (int32_t i = 0; i < buf->width * buf->height; i++)
+    {
+        uint32_t p = *gfx_pixel_at(buf, i % buf->width, i / buf->width);
+        rgb[i * 3] = (uint8_t)(p >> 16);
+        rgb[i * 3 + 1] = (uint8_t)(p >> 8);
+        rgb[i * 3 + 2] = (uint8_t)p;
+    }
+    return rgb;
+}
+
+/**
+ * compare a buffer with its reference cell (test/reference/<name>.png,
+ * drawn by Chrome; tools/idunn-ref/spec.py).
+ */
+static void reference(const char *name, const gfx_buffer_t *buf, int limit)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/reference/%s.png", TEST_DIR, name);
+    const char *error = NULL;
+    gfx_buffer_t *ref = image_load(path, &error);
+    CHECK(ref != NULL);
+    if (!ref)
+        return;
+    CHECK(ref->width == buf->width && ref->height == buf->height);
+    if (ref->width == buf->width && ref->height == buf->height)
+    {
+        uint8_t *got = rgb_of(buf);
+        uint8_t *want = rgb_of(ref);
+        hosttest_compare(name, got, want, buf->width, buf->height, limit);
+        free(got);
+        free(want);
+    }
+    gfx_buffer_free(ref);
+}
+
+static gfx_buffer_t *cell(int32_t width, int32_t height, gfx_color_t background)
+{
+    gfx_buffer_t *buf = gfx_buffer_new(width, height);
+    gfx_clear(buf, background);
+    return buf;
+}
+
+/**
+ * the reference cells of the idunn look, drawn with libgfx (the same
+ * values as the CSS in tools/idunn-ref/spec.py). the limits allow the edge
+ * pixels of round corners to differ (Chrome draws arcs as short lines) and
+ * shadows by a little (8-bit blur passes); a wrong size, place or colour
+ * is far over them.
+ */
+static void test_reference(void)
+{
+    gfx_color_t rose = gfx_rgb(0xe1, 0x1d, 0x48);
+    gfx_rect_t box = gfx_rect(24, 24, 72, 32);
+
+    gfx_buffer_t *b = cell(120, 80, gfx_rgb(0x09, 0x09, 0x0b));
+    gfx_fill_round_rect(b, box, 6, rose);
+    reference("fill", b, 48);
+    gfx_buffer_free(b);
+
+    b = cell(120, 80, gfx_rgb(0x09, 0x09, 0x0b));
+    gfx_fill_round_rect_gradient(b, box, 6, rose, gfx_rgb(0x3b, 0x82, 0xf6));
+    reference("gradient", b, 48);
+    gfx_buffer_free(b);
+
+    b = cell(120, 80, gfx_rgb(255, 255, 255));
+    gfx_border_round_rect(b, box, 6, 1, gfx_rgb(0xe4, 0xe4, 0xe7));
+    reference("border", b, 16);
+    gfx_buffer_free(b);
+
+    b = cell(120, 80, gfx_rgb(0x09, 0x09, 0x0b));
+    gfx_fill_round_rect(b, box, 10, gfx_rgb(0x18, 0x18, 0x1b));
+    gfx_border_round_rect(b, box, 10, 1, gfx_rgba(255, 255, 255, 26));
+    reference("card", b, 20);
+    gfx_buffer_free(b);
+
+    // CSS paints outer shadows, then the background, then the border
+    b = cell(120, 80, gfx_rgb(255, 255, 255));
+    gfx_shadow_t ring = {0, 0, 0, 3, gfx_rgba(0xe1, 0x1d, 0x48, 128), false};
+    gfx_box_shadow(b, box, 6, &ring);
+    gfx_fill_round_rect(b, box, 6, gfx_rgb(255, 255, 255));
+    gfx_border_round_rect(b, box, 6, 1, rose);
+    reference("focus", b, 40);
+    gfx_buffer_free(b);
+
+    b = cell(160, 120, gfx_rgb(0xfb, 0xfb, 0xfb));
+    gfx_rect_t card = gfx_rect(40, 32, 80, 48);
+    gfx_shadow_t md = {0, 8, 20, -4, gfx_rgba(0, 0, 0, 36), false};
+    gfx_box_shadow(b, card, 6, &md);
+    gfx_fill_round_rect(b, card, 6, gfx_rgb(255, 255, 255));
+    reference("shadow", b, 8);
+    gfx_buffer_free(b);
+
+    // the first CSS shadow is on top, so the list is drawn from the end
+    b = cell(220, 200, gfx_rgb(0x4a, 0x3f, 0x78));
+    gfx_rect_t win = gfx_rect(50, 40, 120, 90);
+    gfx_shadow_t far = {0, 28, 56, -16, gfx_rgba(0, 0, 0, 166), false};
+    gfx_shadow_t near = {0, 10, 22, -6, gfx_rgba(0, 0, 0, 128), false};
+    gfx_box_shadow(b, win, 10, &far);
+    gfx_box_shadow(b, win, 10, &near);
+    gfx_fill_round_rect(b, win, 10, gfx_rgb(0x09, 0x09, 0x0b));
+    reference("window", b, 32);
+    gfx_buffer_free(b);
+
+    // an inset shadow is inside the border: on the padding box
+    b = cell(120, 80, gfx_rgb(255, 255, 255));
+    gfx_fill_round_rect(b, box, 6, gfx_rgb(255, 255, 255));
+    gfx_shadow_t inset = {0, 1, 2, 0, gfx_rgba(0, 0, 0, 31), true};
+    gfx_box_shadow(b, gfx_rect(25, 25, 70, 30), 5, &inset);
+    gfx_border_round_rect(b, box, 6, 1, gfx_rgb(0xe4, 0xe4, 0xe7));
+    reference("inset", b, 12);
+    gfx_buffer_free(b);
+}
+
 int main(void)
 {
     test_arithmetic();
@@ -218,5 +339,6 @@ int main(void)
     test_copy_overlap();
     test_present();
     test_scene();
+    test_reference();
     return hosttest_done("gfx");
 }

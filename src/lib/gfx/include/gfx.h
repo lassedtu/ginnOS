@@ -177,10 +177,46 @@ void gfx_fill_rect(gfx_buffer_t *buf, gfx_rect_t r, gfx_color_t color);
 void gfx_stroke_rect(gfx_buffer_t *buf, gfx_rect_t r, int32_t thickness, gfx_color_t color);
 
 /**
- * fill a rectangle with round corners, with anti-aliased corners.
+ * fill a rectangle with round corners, with anti-aliased corners (as CSS
+ * border-radius).
  * @param radius the corner radius (made smaller if the rectangle is small).
  */
 void gfx_fill_round_rect(gfx_buffer_t *buf, gfx_rect_t r, int32_t radius, gfx_color_t color);
+
+/**
+ * fill a round rectangle with a vertical gradient from top to bottom,
+ * sampled at the pixel centres (as a CSS linear-gradient).
+ */
+void gfx_fill_round_rect_gradient(gfx_buffer_t *buf, gfx_rect_t r, int32_t radius,
+                                  gfx_color_t top, gfx_color_t bottom);
+
+/**
+ * the border of a round rectangle: width pixels wide, inside r (as a CSS
+ * border with box-sizing: border-box). the inside is not touched.
+ */
+void gfx_border_round_rect(gfx_buffer_t *buf, gfx_rect_t r, int32_t radius, int32_t width,
+                           gfx_color_t color);
+
+/**
+ * a CSS box-shadow: "x y blur spread color", and "inset".
+ */
+typedef struct
+{
+    int32_t x;      // the offset
+    int32_t y;
+    int32_t blur;   // the CSS blur radius: a Gaussian blur with sigma = blur / 2
+    int32_t spread; // grows the shape (shrinks it for an inset shadow)
+    gfx_color_t color;
+    bool inset;     // inside the box instead of outside it
+} gfx_shadow_t;
+
+/**
+ * draw a box-shadow of a round box. an outer shadow is drawn only outside
+ * the box and an inset one only inside it, as in CSS: draw outer shadows
+ * before the box, inset ones after its background.
+ * @param box the border box (an inset shadow: the box inside the border).
+ */
+void gfx_box_shadow(gfx_buffer_t *buf, gfx_rect_t box, int32_t radius, const gfx_shadow_t *shadow);
 
 /**
  * a line one pixel wide from (x0, y0) to (x1, y1), both ends included,
