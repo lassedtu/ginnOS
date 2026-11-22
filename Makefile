@@ -173,6 +173,9 @@ LIMINE_DIR       := build/limine
 LIMINE_FETCH     := tools/limine/fetch.sh
 LIMINE_DISK_TOOL := tools/limine/make_disk.py
 LIMINE_CONF      := tools/limine/limine-$(ARCH).conf
+# the screen size, for example RESOLUTION=1280x800. empty: limine picks the
+# size (in QEMU: 1280x1024 for i686, 1280x800 for x86_64).
+RESOLUTION       ?=
 
 # UEFI firmware for make run-uefi (OVMF; homebrew and nix qemu include it)
 QEMU_UEFI ?= qemu-system-x86_64
@@ -207,8 +210,10 @@ define limine_disk
 	./$(LIMINE_FETCH) $(LIMINE_DIR)
 	@mkdir -p $(4)
 	$(OBJCOPY) --strip-debug $(2) $(4)/kernel.elf
+	cp $(LIMINE_CONF) $(4)/limine.conf
+	$(if $(RESOLUTION),printf '    resolution: %s\n' '$(RESOLUTION)' >> $(4)/limine.conf)
 	$(PYTHON) $(LIMINE_DISK_TOOL) --output $(1) --ext2 $(3) --limine-dir $(LIMINE_DIR) $(if $(filter 1,$(GPT)),--gpt) \
-		--file $(LIMINE_CONF):/boot/limine/limine.conf \
+		--file $(4)/limine.conf:/boot/limine/limine.conf \
 		--file $(LIMINE_DIR)/limine-bios.sys:/boot/limine/limine-bios.sys \
 		--file $(LIMINE_DIR)/BOOTX64.EFI:/EFI/BOOT/BOOTX64.EFI \
 		--file $(LIMINE_DIR)/BOOTIA32.EFI:/EFI/BOOT/BOOTIA32.EFI \
