@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -497,5 +498,14 @@ void heim_clipboard_request(heim_conn_t *conn)
     heim_msg_t msg;
     memset(&msg, 0, sizeof(msg));
     msg.type = HEIM_REQ_CLIP_GET;
+    send_msg(conn, &msg, -1);
+}
+
+void heim_settings_changed(heim_conn_t *conn, const char *name)
+{
+    heim_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = HEIM_REQ_SETTINGS;
+    snprintf(msg.settings.name, sizeof(msg.settings.name), "%s", name);
     send_msg(conn, &msg, -1);
 }
