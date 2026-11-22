@@ -43,11 +43,14 @@ void window_look(void)
     S.title_face = S.title_font ? bragi_face_new(S.title_font, 13.0f * (float)scale) : NULL;
     icon_t **icons[] = {&S.icon_minimize, &S.icon_maximize, &S.icon_restore, &S.icon_close};
     const char *names[] = {"minus", "square", "copy", "x"};
+    // lucide's square fills 18 of its 24 units, minus and x about 13: the
+    // square and copy are drawn smaller, so all the buttons look one size
+    const int32_t sizes[] = {16, 13, 13, 16};
     icon_set_t *lucide = icon_set_named("lucide");
     for (int i = 0; i < 4; i++)
     {
         icon_free(*icons[i]);
-        *icons[i] = lucide ? icon_load(lucide, names[i], 16, scale) : NULL;
+        *icons[i] = lucide ? icon_load(lucide, names[i], sizes[i], scale) : NULL;
     }
     icon_set_close(lucide);
     cursor_init(scale);
