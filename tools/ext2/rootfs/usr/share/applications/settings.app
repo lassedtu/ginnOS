@@ -3,5 +3,5 @@
 name = Settings
 comment = The look, the keyboard, the sound and more
 exec = settings
-icon = preferences-system
+icon = systemsettings
 category = System
