@@ -297,12 +297,13 @@ static void read_framebuffer(const struct limine_framebuffer_response *response)
 
     const struct limine_framebuffer *fb = response->framebuffers[0];
     phys_addr_t phys = hhdm_to_phys(fb->address);
-    if (fb->memory_model != LIMINE_FRAMEBUFFER_RGB || (phys >> 32) != 0)
+    if (fb->memory_model != LIMINE_FRAMEBUFFER_RGB)
     {
         return;
     }
 
     boot_info.framebuffer_addr = (uint32_t)phys;
+    boot_info.framebuffer_addr_high = (uint32_t)((uint64_t)phys >> 32);
     boot_info.framebuffer_width = (uint32_t)fb->width;
     boot_info.framebuffer_height = (uint32_t)fb->height;
     boot_info.framebuffer_pitch = (uint32_t)fb->pitch;

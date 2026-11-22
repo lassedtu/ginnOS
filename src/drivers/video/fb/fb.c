@@ -387,13 +387,14 @@ static const device_ops_t fb_device_ops = {
 
 bool fb_init(const boot_info_t *boot)
 {
-    if (!boot || boot->framebuffer_type == 0 || boot->framebuffer_addr == 0)
+    uint64_t phys = boot ? ((uint64_t)boot->framebuffer_addr_high << 32) | boot->framebuffer_addr : 0;
+    if (!boot || boot->framebuffer_type == 0 || phys == 0 || (uint64_t)(phys_addr_t)phys != phys)
     {
         fb_ready = false;
         return false;
     }
 
-    fb.phys = boot->framebuffer_addr;
+    fb.phys = (phys_addr_t)phys;
     fb.width = boot->framebuffer_width;
     fb.height = boot->framebuffer_height;
     fb.pitch = boot->framebuffer_pitch;

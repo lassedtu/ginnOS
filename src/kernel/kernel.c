@@ -262,6 +262,12 @@ void kernel_main(boot_info_t *boot)
     stdio_set_putchar(console_putchar);
     klog_set_echo(console_putchar);
     printf("Kernel: entered C main (%s)\r\n", ARCH_NAME);
+    if (fb_available())
+    {
+        const fb_info_t *info = fb_get_info();
+        KLOG_INFO("fb: %ux%u, %u bpp, at %llx", info->width, info->height, info->bpp,
+                  (unsigned long long)info->phys);
+    }
 
     // the PCI devices, for the drivers of controllers that are not legacy
     // ISA devices (AHCI, NVMe)
