@@ -83,6 +83,44 @@ gfx_buffer_t *idunn_window_buffer(const idunn_window_t *win)
 void idunn_window_invalidate(idunn_window_t *win)
 {
     win->damage = gfx_rect(0, 0, win->buffer->width, win->buffer->height);
+    win->damage_list[0] = win->damage;
+    win->damage_count = 1;
+}
+
+static int64_t area(gfx_rect_t r)
+{
+    return (int64_t)r.w * r.h;
+}
+
+void idunn_window_add_damage(idunn_window_t *win, gfx_rect_t r)
+{
+    if (gfx_rect_empty(r))
+        return;
+    win->damage = gfx_rect_empty(win->damage) ? r : gfx_rect_union(win->damage, r);
+
+    // join it with a rect when that adds little area (both parts drawn
+    // once), else keep it apart; with no room, join the rect it grows least
+    int best = -1;
+    int64_t best_growth = 0;
+    for (int i = 0; i < win->damage_count; i++)
+    {
+        gfx_rect_t *d = &win->damage_list[i];
+        int64_t growth = area(gfx_rect_union(*d, r)) - area(*d) - area(r);
+        if (growth <= area(r) / 4)
+        {
+            *d = gfx_rect_union(*d, r);
+            return;
+        }
+        if (best < 0 || growth < best_growth)
+        {
+            best = i;
+            best_growth = growth;
+        }
+    }
+    if (win->damage_count < IDUNN_DAMAGE_MAX)
+        win->damage_list[win->damage_count++] = r;
+    else
+        win->damage_list[best] = gfx_rect_union(win->damage_list[best], r);
 }
 
 static bool touches(const idunn_widget_t *w, gfx_rect_t clip, int32_t overdraw)
@@ -165,32 +203,51 @@ static void layout(idunn_window_t *win)
     idunn_window_invalidate(win);
 }
 
-gfx_rect_t idunn_window_draw(idunn_window_t *win)
+int idunn_window_draw_parts(idunn_window_t *win, gfx_rect_t parts[IDUNN_DAMAGE_MAX])
 {
     gfx_buffer_t *buf = win->buffer;
     if (!buf)
-        return gfx_rect(0, 0, 0, 0);
+        return 0;
     layout(win);
-    gfx_rect_t clip = gfx_rect_intersect(win->damage, gfx_rect(0, 0, buf->width, buf->height));
     // drawing can ask for the next frame (a transition), so start anew
+    gfx_rect_t list[IDUNN_DAMAGE_MAX];
+    int count = win->damage_count;
+    memcpy(list, win->damage_list, sizeof(list));
     win->damage = gfx_rect(0, 0, 0, 0);
+    win->damage_count = 0;
     win->animating = false;
-    if (gfx_rect_empty(clip))
-        return clip;
 
     const idunn_theme_t *t = &win->ctx->theme;
-    gfx_set_clip(buf, clip);
     gfx_color_t ground = win->transparent ? GFX_TRANSPARENT : idunn_color(t, IDUNN_COLOR_SURFACE);
-    gfx_fill_rect(buf, clip, ground);
-    if (win->root)
-        draw_tree(win->root, buf, clip, idunn_overdraw(t), false);
-    if (win->modal)
+    int drawn = 0;
+    for (int i = 0; i < count; i++)
     {
-        gfx_fill_rect(buf, clip, idunn_color(t, IDUNN_COLOR_OVERLAY));
-        draw_tree(win->modal, buf, clip, idunn_overdraw(t), false);
+        gfx_rect_t clip = gfx_rect_intersect(list[i], gfx_rect(0, 0, buf->width, buf->height));
+        if (gfx_rect_empty(clip))
+            continue;
+        gfx_set_clip(buf, clip);
+        gfx_fill_rect(buf, clip, ground);
+        if (win->root)
+            draw_tree(win->root, buf, clip, idunn_overdraw(t), false);
+        if (win->modal)
+        {
+            gfx_fill_rect(buf, clip, idunn_color(t, IDUNN_COLOR_OVERLAY));
+            draw_tree(win->modal, buf, clip, idunn_overdraw(t), false);
+        }
+        parts[drawn++] = clip;
     }
     gfx_reset_clip(buf);
-    return clip;
+    return drawn;
+}
+
+gfx_rect_t idunn_window_draw(idunn_window_t *win)
+{
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX];
+    int count = idunn_window_draw_parts(win, parts);
+    gfx_rect_t all = gfx_rect(0, 0, 0, 0);
+    for (int i = 0; i < count; i++)
+        all = gfx_rect_empty(all) ? parts[i] : gfx_rect_union(all, parts[i]);
+    return all;
 }
 
 bool idunn_window_tick(idunn_window_t *win, uint32_t now)
@@ -336,6 +393,17 @@ static void close_tooltip(idunn_window_t *win)
     }
 }
 
+/**
+ * draw again what hover changes in a widget.
+ */
+static void dirty_hover(idunn_widget_t *w)
+{
+    if (w->cls->hover_area)
+        idunn_dirty_rect(w, w->cls->hover_area(w));
+    else
+        idunn_dirty(w);
+}
+
 static void set_hover(idunn_window_t *win, idunn_widget_t *w)
 {
     win->cursor = w ? w->cursor : IDUNN_CURSOR_ARROW;
@@ -353,14 +421,14 @@ static void set_hover(idunn_window_t *win, idunn_widget_t *w)
     {
         win->hover->state &= ~IDUNN_HOVER;
         idunn_anim_to(&win->hover->hover, 0, win->now, transition(win));
-        idunn_dirty(win->hover);
+        dirty_hover(win->hover);
     }
     win->hover = w;
     if (w)
     {
         w->state |= IDUNN_HOVER;
         idunn_anim_to(&w->hover, 1, win->now, transition(win));
-        idunn_dirty(w);
+        dirty_hover(w);
     }
 }
 

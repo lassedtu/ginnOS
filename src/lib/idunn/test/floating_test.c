@@ -325,8 +325,49 @@ static void test_dialog(idunn_context_t *ctx)
     free(win);
 }
 
+static void test_damage_parts(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 600, 400);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_box_set_align(col, IDUNN_START, IDUNN_START);
+    idunn_widget_t *a = idunn_add(col, idunn_button("Top", IDUNN_OUTLINE, NULL, NULL));
+    idunn_add(col, idunn_grow(idunn_column(0, 0), 1));
+    idunn_widget_t *b = idunn_add(col, idunn_button("Bottom", IDUNN_OUTLINE, NULL, NULL));
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+    CHECK(b->rect.y > 300);
+
+    // two changes far apart are drawn as two parts, not all between them
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX];
+    idunn_dirty(a);
+    idunn_dirty(b);
+    int count = idunn_window_draw_parts(win, parts);
+    CHECK_EQ(count, 2);
+    int64_t drawn = 0;
+    for (int i = 0; i < count; i++)
+        drawn += (int64_t)parts[i].w * parts[i].h;
+    CHECK(drawn < 600 * 120);
+
+    // near ones are joined; nothing left afterwards
+    idunn_dirty(a);
+    idunn_dirty(a);
+    CHECK_EQ(idunn_window_draw_parts(win, parts), 1);
+    CHECK_EQ(idunn_window_draw_parts(win, parts), 0);
+
+    // more parts than a window keeps: joined, still all drawn
+    for (int i = 0; i < IDUNN_DAMAGE_MAX + 4; i++)
+        idunn_window_add_damage(win, gfx_rect(i * 40, (i % 2) * 300, 10, 10));
+    count = idunn_window_draw_parts(win, parts);
+    CHECK(count == IDUNN_DAMAGE_MAX);
+
+    idunn_window_free_widgets(win);
+    idunn_reap(ctx);
+    free(win);
+}
+
 void test_floating(idunn_context_t *ctx)
 {
+    test_damage_parts(ctx);
     test_menu(ctx);
     test_select(ctx);
     test_tooltip(ctx);

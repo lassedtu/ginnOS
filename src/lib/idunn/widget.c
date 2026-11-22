@@ -231,7 +231,7 @@ void idunn_dirty_rect(idunn_widget_t *w, gfx_rect_t rect)
     }
     if (gfx_rect_empty(r))
         return;
-    win->damage = gfx_rect_empty(win->damage) ? r : gfx_rect_union(win->damage, r);
+    idunn_window_add_damage(win, r);
 }
 
 static void forget_tree(idunn_widget_t *w)

@@ -525,11 +525,19 @@ static void list_free(idunn_widget_t *w)
     free(l);
 }
 
+/** hover shows only on the row under the pointer */
+static gfx_rect_t list_hover_area(idunn_widget_t *w)
+{
+    const list_t *l = w->data;
+    return l->hover >= 0 && l->hover < l->count ? item_rect(w, l->hover) : gfx_rect(0, 0, 0, 0);
+}
+
 static const idunn_class_t list_class = {
     .name = "list view",
     .measure = list_measure,
     .draw = list_draw,
     .event = list_event,
+    .hover_area = list_hover_area,
     .free = list_free,
 };
 
