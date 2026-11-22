@@ -260,6 +260,16 @@ static gfx_buffer_t *cell(int32_t width, int32_t height, gfx_color_t background)
     return buf;
 }
 
+static void test_mix(void)
+{
+    gfx_color_t a = gfx_rgb(0, 0, 0);
+    gfx_color_t b = gfx_rgb(200, 100, 50);
+    CHECK_EQ(gfx_mix(a, b, 0), a);
+    CHECK_EQ(gfx_mix(a, b, 255), b);
+    CHECK_EQ(gfx_mix(a, b, 128), gfx_rgb(100, 50, 25));
+    CHECK_EQ(gfx_alpha(gfx_mix(gfx_rgba(0, 0, 0, 0), b, 128)), 128);
+}
+
 /**
  * the reference cells of the idunn look, drawn with libgfx (the same
  * values as the CSS in tools/idunn-ref/spec.py). the limits allow the edge
@@ -339,6 +349,7 @@ int main(void)
     test_copy_overlap();
     test_present();
     test_scene();
+    test_mix();
     test_reference();
     return hosttest_done("gfx");
 }

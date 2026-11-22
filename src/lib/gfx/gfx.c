@@ -8,8 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ---- colours -------------------------------------------------------------- */
-
 gfx_color_t gfx_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
     return gfx_scale_pixel(0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b, a);
@@ -25,7 +23,10 @@ gfx_color_t gfx_over(gfx_color_t dst, gfx_color_t src)
     return gfx_over_pixel(dst, src);
 }
 
-/* ---- rectangles ----------------------------------------------------------- */
+gfx_color_t gfx_mix(gfx_color_t a, gfx_color_t b, uint8_t amount)
+{
+    return gfx_lerp_pixel(a, b, amount + (amount >> 7));
+}
 
 gfx_rect_t gfx_rect_intersect(gfx_rect_t a, gfx_rect_t b)
 {
@@ -55,8 +56,6 @@ bool gfx_rect_contains(gfx_rect_t r, int32_t x, int32_t y)
 {
     return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 }
-
-/* ---- buffers -------------------------------------------------------------- */
 
 gfx_buffer_t *gfx_buffer_new(int32_t width, int32_t height)
 {
@@ -113,8 +112,6 @@ void gfx_reset_clip(gfx_buffer_t *buf)
 {
     buf->clip = gfx_rect(0, 0, buf->width, buf->height);
 }
-
-/* ---- fills ---------------------------------------------------------------- */
 
 static void fill_span(uint32_t *row, int32_t count, gfx_color_t color)
 {
@@ -180,8 +177,6 @@ void gfx_fill_gradient(gfx_buffer_t *buf, gfx_rect_t r, gfx_color_t top, gfx_col
             row[i] = color;
     }
 }
-
-/* ---- copies --------------------------------------------------------------- */
 
 /**
  * clip a copy from src_rect of src to (x, y) of dst.
@@ -262,8 +257,6 @@ void gfx_draw_mask(gfx_buffer_t *dst, int32_t x, int32_t y, const uint8_t *mask,
         }
     }
 }
-
-/* ---- output --------------------------------------------------------------- */
 
 void gfx_present(void *fb, uint32_t fb_pitch, int32_t fb_width, int32_t fb_height,
                  const gfx_format_t *format, const gfx_buffer_t *src, gfx_rect_t src_rect)

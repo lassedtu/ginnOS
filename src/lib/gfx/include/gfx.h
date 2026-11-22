@@ -62,8 +62,6 @@ typedef struct
     uint8_t blue_shift;
 } gfx_format_t;
 
-/* ---- colours -------------------------------------------------------------- */
-
 #define GFX_TRANSPARENT ((gfx_color_t)0)
 
 static inline gfx_color_t gfx_rgb(uint8_t r, uint8_t g, uint8_t b)
@@ -92,7 +90,11 @@ gfx_color_t gfx_fade(gfx_color_t c, uint8_t opacity);
  */
 gfx_color_t gfx_over(gfx_color_t dst, gfx_color_t src);
 
-/* ---- rectangles ----------------------------------------------------------- */
+/**
+ * a mix of two colours, as CSS color-mix in sRGB: amount of b (0 to 255)
+ * and the rest of a.
+ */
+gfx_color_t gfx_mix(gfx_color_t a, gfx_color_t b, uint8_t amount);
 
 static inline gfx_rect_t gfx_rect(int32_t x, int32_t y, int32_t w, int32_t h)
 {
@@ -116,8 +118,6 @@ gfx_rect_t gfx_rect_intersect(gfx_rect_t a, gfx_rect_t b);
 gfx_rect_t gfx_rect_union(gfx_rect_t a, gfx_rect_t b);
 
 bool gfx_rect_contains(gfx_rect_t r, int32_t x, int32_t y);
-
-/* ---- buffers -------------------------------------------------------------- */
 
 /**
  * a new buffer of transparent pixels, from malloc.
@@ -158,8 +158,6 @@ static inline uint32_t *gfx_pixel_at(const gfx_buffer_t *buf, int32_t x, int32_t
 {
     return buf->pixels + (ptrdiff_t)y * buf->stride + x;
 }
-
-/* ---- drawing -------------------------------------------------------------- */
 
 /**
  * set every pixel in the clip rectangle to a colour (no blending).
@@ -259,8 +257,6 @@ void gfx_draw_mask(gfx_buffer_t *dst, int32_t x, int32_t y, const uint8_t *mask,
  * (replacing the pixels). for backgrounds.
  */
 void gfx_fill_gradient(gfx_buffer_t *buf, gfx_rect_t r, gfx_color_t top, gfx_color_t bottom);
-
-/* ---- output --------------------------------------------------------------- */
 
 /**
  * copy a part of a buffer to a framebuffer, in its pixel format. the
