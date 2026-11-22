@@ -96,6 +96,35 @@ typedef struct
 #define FBIO_FLUSH 0x46F2
 
 /**
+ * FBIO_CURSOR: arg is an fb_cursor_t. a display that has a pointer of its
+ * own (virtio-gpu) shows pixels over the screen, with their top left
+ * corner at x, y; shown 0 hides it. only the owner of the screen
+ * (FBIO_GRAPHICS) can use it, and the pointer goes when the owner gives
+ * the screen back or ends. ENOTTY when the display has no pointer: draw
+ * it in the picture then.
+ *
+ * FBIO_CURSOR_MOVE: arg is an fb_point_t, the new top left corner.
+ */
+#define FB_CURSOR_SIZE 64
+
+typedef struct
+{
+    uint32_t shown;
+    uint32_t x;
+    uint32_t y;
+    uint32_t pixels[FB_CURSOR_SIZE * FB_CURSOR_SIZE]; // a8r8g8b8, row after row
+} fb_cursor_t;
+
+typedef struct
+{
+    uint32_t x;
+    uint32_t y;
+} fb_point_t;
+
+#define FBIO_CURSOR      0x46F3
+#define FBIO_CURSOR_MOVE 0x46F4
+
+/**
  * FBIOPUT_VSCREENINFO sets the mode to xres x yres at 32 bits per pixel
  * when a display driver can (EINVAL if it cannot). the framebuffer can
  * move: map it again after a change.

@@ -51,6 +51,20 @@ typedef struct
      * the screen shows the memory by itself).
      */
     void (*flush)(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+
+    /**
+     * show a pointer over the framebuffer, drawn by the card (optional).
+     * @param pixels FB_CURSOR_SIZE x FB_CURSOR_SIZE a8r8g8b8, or NULL to
+     *        hide the pointer.
+     * @param x where its top left corner goes.
+     * @return false if the card refused.
+     */
+    bool (*cursor_set)(const uint32_t *pixels, uint32_t x, uint32_t y);
+
+    /**
+     * move the pointer's top left corner to x, y (with cursor_set).
+     */
+    void (*cursor_move)(uint32_t x, uint32_t y);
 } display_driver_t;
 
 /**

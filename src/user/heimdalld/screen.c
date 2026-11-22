@@ -129,6 +129,7 @@ bool screen_init(const char *wallpaper)
     S.px = S.width / 2;
     S.py = S.height / 2;
     S.cursor_rect = cursor_rect(S.cursor, S.px, S.py);
+    S.hw_cursor = true; // until the card says it has no cursor
     screen_follow();
     return true;
 }
@@ -167,6 +168,7 @@ void screen_display_events(void)
         if (S.py >= S.height)
             S.py = S.height - 1;
         S.cursor_rect = cursor_rect(S.cursor, S.px, S.py);
+        cursor_hardware_reset();
         // a large screen can mean another scale
         if (idunn_theme_fit(&S.theme, S.width))
             window_look();
@@ -223,7 +225,8 @@ static void compose_rect(gfx_rect_t r)
     }
     if (S.drag == DRAG_RESIZE)
         draw_outline(S.drag_rect);
-    cursor_draw(S.screen, S.cursor, S.px, S.py);
+    if (!S.hw_cursor)
+        cursor_draw(S.screen, S.cursor, S.px, S.py);
     gfx_reset_clip(S.screen);
 }
 
@@ -262,10 +265,16 @@ static void report(void)
 
 void screen_compose(void)
 {
-    // the pointer: where it was, and where it is now
+    // the pointer: the card's own cursor, or drawn in the picture, where
+    // it was and where it is now
+    if (S.hw_cursor && !cursor_hardware(S.fb_fd, S.cursor, S.px, S.py))
+    {
+        S.hw_cursor = false;
+        S.cursor_rect = gfx_rect(0, 0, 0, 0); // draw it from now on
+    }
     gfx_rect_t now = cursor_rect(S.cursor, S.px, S.py);
-    if (now.x != S.cursor_rect.x || now.y != S.cursor_rect.y || now.w != S.cursor_rect.w ||
-        now.h != S.cursor_rect.h)
+    if (!S.hw_cursor && (now.x != S.cursor_rect.x || now.y != S.cursor_rect.y ||
+                         now.w != S.cursor_rect.w || now.h != S.cursor_rect.h))
     {
         screen_damage(S.cursor_rect);
         screen_damage(now);

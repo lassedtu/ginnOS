@@ -176,6 +176,7 @@ typedef struct
     window_t *grab;           // got the press; gets the pointer until all buttons are up
     uint32_t cursor;
     gfx_rect_t cursor_rect; // where the pointer is drawn
+    bool hw_cursor;         // the card shows the pointer: not in the picture
 
     drag_t drag;
     window_t *drag_window;
@@ -287,3 +288,14 @@ void keytext_of(uint16_t code, uint32_t mods, char out[8]);
 void cursor_init(int32_t scale);
 gfx_rect_t cursor_rect(uint32_t shape, int32_t x, int32_t y);
 void cursor_draw(gfx_buffer_t *buf, uint32_t shape, int32_t x, int32_t y);
+
+/**
+ * show the pointer with the card's own cursor (FBIO_CURSOR): moving it
+ * then draws nothing. the image goes up again when the shape changes or
+ * after cursor_init, else only the place.
+ * @return false if the card has no cursor or the shape is too large.
+ */
+bool cursor_hardware(int fb_fd, uint32_t shape, int32_t x, int32_t y);
+
+/** the card's cursor needs its image again (a new mode) */
+void cursor_hardware_reset(void);

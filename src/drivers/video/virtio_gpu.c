@@ -6,11 +6,13 @@
  * scanout 0; the host sees changes after a transfer and a flush, which
  * the display layer asks for (display_driver_t.flush). the size the
  * screen wants is the QEMU window: the device says when it changes with a
- * configuration interrupt.
+ * configuration interrupt. the pointer is the device's own cursor (a 64 x
+ * 64 resource on the cursor queue), so moving it draws nothing.
  */
 
 #include "virtio_gpu.h"
 
+#include "common/fb/fb_ioctl.h"
 #include "common/memory.h"
 #include "drivers/pci/pci_irq.h"
 #include "drivers/video/display.h"
@@ -35,9 +37,12 @@
 #define CMD_RESOURCE_FLUSH          0x0104
 #define CMD_TRANSFER_TO_HOST_2D     0x0105
 #define CMD_RESOURCE_ATTACH_BACKING 0x0106
+#define CMD_UPDATE_CURSOR           0x0300
+#define CMD_MOVE_CURSOR             0x0301
 #define RESP_OK_NODATA              0x1100
 #define RESP_OK_DISPLAY_INFO        0x1101
 
+#define FORMAT_B8G8R8A8 1 // bytes B, G, R, A: a8r8g8b8 in a little-endian word
 #define FORMAT_B8G8R8X8 2 // bytes B, G, R, X: x8r8g8b8 in a little-endian word
 #define MAX_SCANOUTS    16
 #define EVENT_DISPLAY   1
@@ -126,8 +131,27 @@ typedef struct
     uint32_t padding;
 } __attribute__((packed)) flush_t;
 
+typedef struct
+{
+    header_t hdr;
+    uint32_t scanout_id;
+    uint32_t x;
+    uint32_t y;
+    uint32_t padding;
+    uint32_t resource_id; // 0: no pointer
+    uint32_t hot_x;
+    uint32_t hot_y;
+    uint32_t padding2;
+} __attribute__((packed)) cursor_command_t;
+
 static virtio_device_t device;
 static virtq_t control;
+static virtq_t cursor_queue;
+
+// the pointer: a resource of FB_CURSOR_SIZE x FB_CURSOR_SIZE
+static uint32_t cursor_resource; // 0: none yet
+static uint32_t *cursor_pixels;  // direct-map pointer to its frames
+static bool cursor_visible;
 
 // the mode on the screen
 static uint32_t resource;  // 0: none yet
@@ -273,6 +297,83 @@ static void gpu_interrupt(void *context)
     }
 }
 
+/**
+ * send a command on the cursor queue (the device writes no answer).
+ */
+static bool cursor_command(uint32_t type, uint32_t resource_id, uint32_t x, uint32_t y)
+{
+    // the hotspot stays 0: x, y is the top left corner, which the host
+    // displays all read the same way
+    cursor_command_t c = {.hdr.type = type, .x = x, .y = y, .resource_id = resource_id};
+    header_t response;
+    return virtq_call(&cursor_queue, &c, sizeof(c), &response, sizeof(response));
+}
+
+static bool make_cursor_resource(void)
+{
+    const uint32_t size = FB_CURSOR_SIZE * FB_CURSOR_SIZE * 4;
+    uint32_t count = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint8_t *frames = pmm_alloc_contiguous(count);
+    if (!frames)
+    {
+        return false;
+    }
+    uint32_t id = next_resource++;
+    create_2d_t create = {.hdr.type = CMD_RESOURCE_CREATE_2D,
+                          .resource_id = id,
+                          .format = FORMAT_B8G8R8A8,
+                          .width = FB_CURSOR_SIZE,
+                          .height = FB_CURSOR_SIZE};
+    attach_backing_t attach = {.hdr.type = CMD_RESOURCE_ATTACH_BACKING,
+                               .resource_id = id,
+                               .nr_entries = 1,
+                               .addr = virt_to_phys(frames),
+                               .length = size};
+    if (!command(&create, sizeof(create)) || !command(&attach, sizeof(attach)))
+    {
+        KLOG_WARN("virtio-gpu: the device refused a cursor");
+        unref_t unref = {.hdr.type = CMD_RESOURCE_UNREF, .resource_id = id};
+        command(&unref, sizeof(unref));
+        free_frames(frames, count);
+        return false;
+    }
+    cursor_resource = id;
+    cursor_pixels = (uint32_t *)frames;
+    return true;
+}
+
+static bool gpu_cursor_set(const uint32_t *pixels, uint32_t x, uint32_t y)
+{
+    if (!pixels)
+    {
+        cursor_visible = false;
+        return cursor_command(CMD_UPDATE_CURSOR, 0, x, y);
+    }
+    if (!cursor_resource && !make_cursor_resource())
+    {
+        return false;
+    }
+    memcpy(cursor_pixels, pixels, FB_CURSOR_SIZE * FB_CURSOR_SIZE * 4);
+    transfer_t t = {.hdr.type = CMD_TRANSFER_TO_HOST_2D,
+                    .r = {0, 0, FB_CURSOR_SIZE, FB_CURSOR_SIZE},
+                    .resource_id = cursor_resource};
+    if (!command(&t, sizeof(t)) || !cursor_command(CMD_UPDATE_CURSOR, cursor_resource, x, y))
+    {
+        return false;
+    }
+    cursor_visible = true;
+    return true;
+}
+
+static void gpu_cursor_move(uint32_t x, uint32_t y)
+{
+    // a move with resource 0 would hide the pointer
+    if (cursor_visible)
+    {
+        cursor_command(CMD_MOVE_CURSOR, cursor_resource, x, y);
+    }
+}
+
 static const display_driver_t gpu_driver = {
     .name = "virtio-gpu",
     .max_width = MAX_WIDTH,
@@ -280,6 +381,8 @@ static const display_driver_t gpu_driver = {
     .set_mode = gpu_set_mode,
     .preferred = gpu_preferred,
     .flush = gpu_flush,
+    .cursor_set = gpu_cursor_set,
+    .cursor_move = gpu_cursor_move,
 };
 
 bool virtio_gpu_init(void)
@@ -297,7 +400,8 @@ bool virtio_gpu_init(void)
     {
         return false;
     }
-    if (!virtio_init(&device, pci, 0) || !virtio_queue_init(&device, &control, 0))
+    if (!virtio_init(&device, pci, 0) || !virtio_queue_init(&device, &control, 0) ||
+        !virtio_queue_init(&device, &cursor_queue, 1))
     {
         KLOG_WARN("virtio-gpu: the device cannot be set up");
         return false;

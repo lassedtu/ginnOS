@@ -38,6 +38,20 @@ static bool fb_ready;
 // has it, fb_flush leaves the screen alone; the console still draws into
 // the back buffer, so its text is there when the screen comes back.
 static uint32_t graphics_owner;
+static bool cursor_shown; // the card shows a pointer for the owner
+
+/**
+ * hide the card's pointer when the owner of the screen is gone.
+ */
+static void cursor_off(void)
+{
+    const display_driver_t *driver = display_driver();
+    if (cursor_shown && driver && driver->cursor_set)
+    {
+        driver->cursor_set(NULL, 0, 0);
+    }
+    cursor_shown = false;
+}
 
 // where drawing lands: the back buffer when double-buffered, else the LFB.
 static uint8_t *draw_target;
@@ -320,8 +334,54 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
         }
         else if (graphics_owner == self->pid)
         {
+            cursor_off();
             fb_release_graphics();
         }
+        return 0;
+    }
+
+    case FBIO_CURSOR:
+    case FBIO_CURSOR_MOVE:
+    {
+        const display_driver_t *driver = display_driver();
+        process_t *self = process_current();
+        if (!driver || !driver->cursor_set || !driver->cursor_move)
+        {
+            return -ENOTTY;
+        }
+        if (!self || graphics_owner != self->pid)
+        {
+            return -EBUSY;
+        }
+        if (request == FBIO_CURSOR_MOVE)
+        {
+            fb_point_t at;
+            if (kerr_failed(copy_from_user(&at, arg, sizeof(at))))
+            {
+                return -EFAULT;
+            }
+            if (cursor_shown)
+            {
+                driver->cursor_move(at.x, at.y);
+            }
+            return 0;
+        }
+        // too large for the kernel stack, and kept off the kernel image;
+        // only the owner uses it
+        static fb_cursor_t *cursor;
+        if (!cursor && !(cursor = kmalloc(sizeof(*cursor))))
+        {
+            return -ENOMEM;
+        }
+        if (kerr_failed(copy_from_user(cursor, arg, sizeof(*cursor))))
+        {
+            return -EFAULT;
+        }
+        if (!driver->cursor_set(cursor->shown ? cursor->pixels : NULL, cursor->x, cursor->y))
+        {
+            return -EIO;
+        }
+        cursor_shown = cursor->shown != 0;
         return 0;
     }
 
@@ -596,6 +656,7 @@ static bool graphics_taken(void)
     arch_irq_restore(flags);
     if (!alive)
     {
+        cursor_off();
         fb_release_graphics();
     }
     return alive;
