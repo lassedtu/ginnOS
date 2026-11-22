@@ -1,14 +1,14 @@
 /**
  * @file gfetch.c
- * @brief the system at a glance: Yggdrasil, and the facts next to it.
+ * @brief the system at a glance: Ginnungagap, and the facts next to it.
  *
  * usage: gfetch [-n]
  *
  *   -n  no colours (also when the output is not a terminal)
  *
  * the facts come from uname, /proc, the framebuffer, the keyboard and
- * the CPU itself. a terminal narrower than the tree and the facts gets
- * the facts under the tree.
+ * the CPU itself. a terminal narrower than the logo and the facts gets
+ * the facts under the logo.
  */
 
 #include <dirent.h>
@@ -29,30 +29,50 @@
 #define FACTS_MAX 20
 #define FACT_MAX  96
 
-// Yggdrasil: the crown, the trunk, and the roots that go down to the wells
-static const char *const tree[] = {
-    "           *    .  .    *",
-    "        _.-~~~~~~~~~~~~~~-._",
-    "    .-~~  \\  \\   ||   /  /  ~~-.",
-    "  .~  \\ \\  \\  \\  ||  /  /  / /  ~.",
-    " (  ~-.\\ \\  \\  \\ || /  /  / /.-~  )",
-    "  `-._ `-.\\ \\  \\ || /  / /.-' _.-'",
-    " .-~~-._ `-.\\ \\ \\||/ / /.-' _.-~~-.",
-    "(  ~~~~~`-._`-.\\\\||//.-'_.-'~~~~~  )",
-    " `-.________`-._\\||/_.-'________.-'",
-    "                 ||",
-    "                 ||",
-    "                 ||",
-    "                /||\\",
-    "          __.--' || `--.__",
-    "   ~~~ .-'  _.-'/||\\`-._  `-. ~~~",
-    "      /   .'   / || \\   `.   \\",
-    "  ~~~    ~~~  ~~    ~~  ~~~    ~~~",
+// Ginnungagap, the gap before the worlds: the ice of Niflheim above, the
+// fire of Muspelheim below, and the spark where they meet
+static const char *const logo[] = {
+    "         .:ssggggggggggss:.",
+    "      .:gggggggggggggggggggg:.",
+    "    .sggggggggggggggggggggggggs.",
+    "   :ggggggggggggssssgggggggggggg:",
+    "  sgggggggggs:        :sgggggggggs",
+    " :ggggggggs              sgggggggg:",
+    " gggggggg:                :gggggggg",
+    ".::::::::                  ::::::::.",
+    "                .:*:.",
+    ".::::::::                  ::::::::.",
+    " gggggggg:                :gggggggg",
+    " :ggggggggs              sgggggggg:",
+    "  sgggggggggs:        :sgggggggggs",
+    "   :ggggggggggggssssgggggggggggg:",
+    "    .sggggggggggggggggggggggggs.",
+    "      .:gggggggggggggggggggg:.",
+    "         .:ssggggggggggss:.",
 };
-#define TREE_LINES (int)(sizeof(tree) / sizeof(tree[0]))
-#define TREE_WIDTH 36
-#define CROWN_END  8  // the last line of the crown
-#define ROOTS      13 // the first line of the roots
+
+// the colour of each character of the logo: I ice, F fire, S the spark
+static const char *const logo_colors[] = {
+    "         IIIIIIIIIIIIIIIIII",
+    "      IIIIIIIIIIIIIIIIIIIIIIII",
+    "    IIIIIIIIIIIIIIIIIIIIIIIIIIII",
+    "   IIIIIIIIIIIIIIIIIIIIIIIIIIIIII",
+    "  IIIIIIIIIIII        IIIIIIIIIIII",
+    " IIIIIIIIII              IIIIIIIIII",
+    " IIIIIIIII                IIIIIIIII",
+    "IIIIIIIII                  IIIIIIIII",
+    "                SSSSS",
+    "FFFFFFFFF                  FFFFFFFFF",
+    " FFFFFFFFF                FFFFFFFFF",
+    " FFFFFFFFFF              FFFFFFFFFF",
+    "  FFFFFFFFFFFF        FFFFFFFFFFFF",
+    "   FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "    FFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "      FFFFFFFFFFFFFFFFFFFFFFFF",
+    "         FFFFFFFFFFFFFFFFFF",
+};
+#define LOGO_LINES (int)(sizeof(logo) / sizeof(logo[0]))
+#define LOGO_WIDTH 36
 
 static bool color = true;
 
@@ -303,36 +323,39 @@ static void gather(void)
 }
 
 /**
- * a line of the tree in its colours: the leaves green, the wood brown
- * (yellow in the 16 colours), the water of the wells cyan.
+ * a line of the logo in its colours: the ice cyan, the fire red, the
+ * spark yellow.
  */
-static void print_tree_line(int i)
+static void print_logo_line(int i)
 {
-    const char *line = i < TREE_LINES ? tree[i] : "";
+    const char *line = i < LOGO_LINES ? logo[i] : "";
+    const char *map = i < LOGO_LINES ? logo_colors[i] : "";
     const char *now = "";
     int width = 0;
-    for (const char *c = line; *c; c++, width++)
+    for (int x = 0; line[x]; x++, width++)
     {
         const char *want;
-        bool wood = *c == '\\' || *c == '/' || *c == '|' || *c == '`' || *c == '\'' ||
-                    *c == '_' || *c == '-' || *c == '.';
-        if (i == 0)
-            want = "\033[1;33m"; // the stars
-        else if (i <= CROWN_END)
-            want = (*c == '\\' || *c == '/' || *c == '|') ? "\033[33m" : "\033[32m";
-        else if (i < ROOTS)
+        switch (map[x])
+        {
+        case 'F':
+            want = "\033[31m";
+            break;
+        case 'I':
+            want = "\033[36m";
+            break;
+        default:
             want = "\033[33m";
-        else
-            want = *c == '~' ? "\033[36m" : wood ? "\033[33m" : "";
-        if (*c != ' ' && strcmp(want, now) != 0)
+            break;
+        }
+        if (line[x] != ' ' && strcmp(want, now) != 0)
         {
             fputs(ansi(want), stdout);
             now = want;
         }
-        putchar(*c);
+        putchar(line[x]);
     }
     fputs(ansi("\033[0m"), stdout);
-    for (; width < TREE_WIDTH; width++)
+    for (; width < LOGO_WIDTH; width++)
         putchar(' ');
 }
 
@@ -345,8 +368,9 @@ static void print_fact_line(int i)
     {
         const char *at = strchr(title, '@');
         int user = at ? (int)(at - title) : (int)strlen(title);
-        printf("%s%.*s%s@%s%s%s", ansi("\033[1;32m"), user, title, ansi("\033[0m"),
-               ansi("\033[1;32m"), at ? at + 1 : "", ansi("\033[0m"));
+        // the user in fire, the host in ice
+        printf("%s%.*s%s@%s%s%s", ansi("\033[1;31m"), user, title, ansi("\033[0m"),
+               ansi("\033[1;36m"), at ? at + 1 : "", ansi("\033[0m"));
         return;
     }
     if (i == 1)
@@ -362,7 +386,7 @@ static void print_fact_line(int i)
         const char *v = facts[f].value;
         int length = (int)strlen(v);
         bool cut = length > value_width;
-        printf("%s%-9s%s %.*s%s", ansi("\033[1;32m"), facts[f].label, ansi("\033[0m"),
+        printf("%s%-9s%s %.*s%s", ansi("\033[1;36m"), facts[f].label, ansi("\033[0m"),
                cut ? value_width - 3 : length, v, cut ? "..." : "");
         return;
     }
@@ -395,9 +419,9 @@ int main(int argc, char **argv)
     int fact_lines = 2 + fact_count + (color ? 3 : 0);
     struct winsize size;
     int columns = ioctl(1, TIOCGWINSZ, &size) == 0 && size.ws_col ? size.ws_col : 80;
-    // the facts beside the tree when there is room for most values (a
+    // the facts beside the logo when there is room for most values (a
     // line must not reach the last column: the console wraps there)
-    int beside = columns - 1 - 2 - TREE_WIDTH - 3 - 10;
+    int beside = columns - 1 - 2 - LOGO_WIDTH - 3 - 10;
     bool narrow = beside < 24;
     value_width = narrow ? columns - 1 - 2 - 10 : beside;
     if (value_width < 8)
@@ -406,11 +430,11 @@ int main(int argc, char **argv)
     putchar('\n');
     if (narrow)
     {
-        // narrow: the tree, then the facts under it
-        for (int i = 0; i < TREE_LINES; i++)
+        // narrow: the logo, then the facts under it
+        for (int i = 0; i < LOGO_LINES; i++)
         {
             printf("  ");
-            print_tree_line(i);
+            print_logo_line(i);
             putchar('\n');
         }
         putchar('\n');
@@ -423,11 +447,11 @@ int main(int argc, char **argv)
     }
     else
     {
-        int lines = TREE_LINES > fact_lines ? TREE_LINES : fact_lines;
+        int lines = LOGO_LINES > fact_lines ? LOGO_LINES : fact_lines;
         for (int i = 0; i < lines; i++)
         {
             printf("  ");
-            print_tree_line(i);
+            print_logo_line(i);
             printf("   ");
             print_fact_line(i);
             putchar('\n');
