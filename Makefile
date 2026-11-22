@@ -171,10 +171,11 @@ ICONS_PACKS := $(ICONS_OUT)/lucide.pack $(ICONS_OUT)/tela.pack
 
 # the default wallpaper (/usr/share/wallpapers/default.png), made by
 # tools/wallpaper/make.py from your own image (git ignores .hidden): put on
-# black and given black sides to 16:10. needs Pillow; without the image or
-# Pillow, heimdalld draws its gradient. WALLPAPER= leaves it out.
+# black at the screen size (RESOLUTION), so it is shown pixel for pixel.
+# needs Pillow; without the image or Pillow, heimdalld draws its gradient.
+# WALLPAPER= leaves it out.
 WALLPAPER     ?= .hidden/orbitals/6_3_1.png
-WALLPAPER_OUT := build/wallpaper/default.png
+WALLPAPER_OUT  = build/wallpaper/default-$(or $(RESOLUTION),any).png
 
 LIMINE_DIR       := build/limine
 LIMINE_FETCH     := tools/limine/fetch.sh
@@ -182,7 +183,7 @@ LIMINE_DISK_TOOL := tools/limine/make_disk.py
 LIMINE_CONF      := tools/limine/limine-$(ARCH).conf
 # the screen size, for example RESOLUTION=1280x800. empty: limine picks the
 # size (in QEMU: 1280x1024 for i686, 1280x800 for x86_64).
-RESOLUTION       ?=
+RESOLUTION       ?= 1920x1080
 
 # UEFI firmware for make run-uefi (OVMF; homebrew and nix qemu include it)
 QEMU_UEFI ?= qemu-system-x86_64
@@ -575,7 +576,7 @@ $(ICONS_OUT)/lucide.pack: tools/icons/build.py tools/icons/fetch.sh tools/icons/
 icons: $(ICONS_PACKS)
 
 $(WALLPAPER_OUT): $(wildcard $(WALLPAPER)) tools/wallpaper/make.py
-	$(PYTHON) tools/wallpaper/make.py "$(WALLPAPER)" $@
+	$(PYTHON) tools/wallpaper/make.py "$(WALLPAPER)" $@ $(RESOLUTION)
 
 rootfs-image: $(ROOTFS_KERNEL) user-programs $(if $(filter 1,$(ICONS)),$(ICONS_PACKS)) \
               $(if $(WALLPAPER),$(WALLPAPER_OUT))
