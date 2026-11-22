@@ -39,6 +39,7 @@ isr_stub_%1:
 ; the syscall entry (syscall.asm) also comes here, with the same frame
 global isr_common
 isr_common:
+    cld                 ; the C code expects the direction flag clear
     push rax
     push rbx
     push rcx

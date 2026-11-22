@@ -280,7 +280,7 @@ void isr_init_gates(void)
     idt_set_gate(11, isr_stub_11, GDT_KERNEL_CODE, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_TRAP);
     idt_set_gate(12, isr_stub_12, GDT_KERNEL_CODE, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_TRAP);
     idt_set_gate(13, isr_stub_13, GDT_KERNEL_CODE, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_TRAP);
-    idt_set_gate(14, isr_stub_14, GDT_KERNEL_CODE, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_TRAP);
+    idt_set_gate(14, isr_stub_14, GDT_KERNEL_CODE, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_INT);
     idt_set_gate(15, isr_stub_15, GDT_KERNEL_CODE, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_TRAP);
     idt_set_gate(16, isr_stub_16, GDT_KERNEL_CODE, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_TRAP);
     idt_set_gate(17, isr_stub_17, GDT_KERNEL_CODE, IDT_FLAG_RING0 | IDT_FLAG_GATE_32BIT_TRAP);

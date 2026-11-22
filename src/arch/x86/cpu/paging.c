@@ -9,6 +9,7 @@
 #include "exception.h"
 #include "isr.h"
 
+#include "arch/arch.h"
 #include "common/memory.h"
 #include "common/stdio.h"
 #include "kernel/memory/pmm.h"
@@ -44,8 +45,15 @@ extern uint32_t paging_read_cr3(void);
  */
 static void page_fault_handler(struct registers *regs)
 {
+    // the page fault vector is an interrupt gate: CR2 is read before an
+    // interrupt can switch to a process whose own fault changes it. then
+    // interrupts are as they were before the fault
     uint32_t faulting_address = paging_read_cr2();
     uint32_t err = regs->error;
+    if (REG_FLAGS(regs) & EFLAGS_IF)
+    {
+        arch_enable_interrupts();
+    }
 
     if (err & PF_USER)
     {

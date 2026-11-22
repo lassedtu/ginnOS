@@ -54,6 +54,9 @@ struct registers
 
 #endif
 
+// the interrupt flag in EFLAGS (RFLAGS): set when interrupts are enabled
+#define EFLAGS_IF 0x200u
+
 /*
  * REG_IP, REG_SP, REG_FP, REG_FLAGS and REG_RESULT name the instruction
  * pointer, the stack pointer, the frame pointer, the flags and the
