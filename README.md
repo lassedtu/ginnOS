@@ -439,6 +439,11 @@ i686-elf-binutils`) and uses them; or update binutils in your toolchain.
 `make GPT=1` makes a GPT disk instead of an MBR disk (it boots with BIOS
 and UEFI too).
 
+`make run RESOLUTION=1280x800` sets the screen size (Limine only). Without
+it, Limine picks the size itself (in QEMU: 1280x1024 for i686, 1280x800
+for x86_64). If the firmware does not have the size, Limine picks another
+one.
+
 To boot a real machine, write the image to a USB stick (this erases the
 stick; check the device name first):
 

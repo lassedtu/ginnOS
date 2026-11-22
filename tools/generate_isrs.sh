@@ -81,9 +81,12 @@ FUNC_OPEN
 i=0
 while [ "$i" -le 255 ]; do
     # vectors 0-31: CPU exceptions, use trap gates so IF is not cleared on entry.
+    # the page fault (14) is the exception: it uses an interrupt gate, so that
+    # no other process can fault and change CR2 before the handler reads it
+    # (the handler sets IF again after that).
     # vectors 32+: hardware IRQs and user-defined, use interrupt gates to prevent
     # re-entrant IRQ dispatch while a handler is running.
-    if [ "$i" -le 31 ]; then
+    if [ "$i" -le 31 ] && [ "$i" -ne 14 ]; then
         gate_type="IDT_FLAG_GATE_32BIT_TRAP"
     else
         gate_type="IDT_FLAG_GATE_32BIT_INT"

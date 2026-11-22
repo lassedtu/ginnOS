@@ -76,3 +76,12 @@ typedef struct
 } fb_mode_t;
 
 #define FBIOGET_MODE 0x46F0
+
+/**
+ * FBIO_GRAPHICS: int arg 1 takes the screen for this process, 0 gives it
+ * back. while a process has the screen, the text console does not draw on
+ * it (its text is kept, and comes back when the screen is given back). the
+ * screen comes back by itself when the process ends, and on a kernel
+ * panic. EBUSY if another live process has it.
+ */
+#define FBIO_GRAPHICS 0x46F1

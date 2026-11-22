@@ -563,6 +563,19 @@ static int32_t keyboard_ioctl(device_t *dev, uint32_t request, void *arg)
         return keyboard_set_layout(index) ? 0 : -EINVAL;
     }
 
+    case KBD_IOC_GET_KEYMAP:
+    {
+        // the layout tables are indexed by scan code set 1, which is the
+        // Linux key code for the keys that have characters
+        const keyboard_layout_t *layout = keyboard_get_layout();
+        struct kbd_keymap map;
+        memcpy(map.normal, layout->normal, sizeof(map.normal));
+        memcpy(map.shift, layout->shift, sizeof(map.shift));
+        memcpy(map.altgr, layout->altgr, sizeof(map.altgr));
+        memcpy(map.altgr_shift, layout->altgr_shift, sizeof(map.altgr_shift));
+        return kerr_to_errno(copy_to_user(arg, &map, sizeof(map)));
+    }
+
     default:
         return -ENOTTY;
     }

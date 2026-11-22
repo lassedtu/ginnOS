@@ -8,6 +8,7 @@
 #include "kernel/memory/heap.h"
 #include "kernel/memory/mman.h"
 #include "kernel/memory/mmio.h"
+#include "kernel/process/process.h"
 #include "common/fb/fb_ioctl.h"
 #include "common/boot/video_modes.h"
 #include "common/memory.h"
@@ -26,6 +27,11 @@
 
 static fb_info_t fb;
 static bool fb_ready;
+
+// the process that has the screen (FBIO_GRAPHICS), 0 for none. while one
+// has it, fb_flush leaves the screen alone; the console still draws into
+// the back buffer, so its text is there when the screen comes back.
+static uint32_t graphics_owner;
 
 // where drawing lands: the back buffer when double-buffered, else the LFB.
 static uint8_t *draw_target;
@@ -251,6 +257,34 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
             return 0;
         }
         return -EINVAL;
+    }
+
+    case FBIO_GRAPHICS:
+    {
+        int32_t on;
+        if (kerr_failed(copy_from_user(&on, arg, sizeof(on))))
+        {
+            return -EFAULT;
+        }
+        process_t *self = process_current();
+        if (!self)
+        {
+            return -EINVAL;
+        }
+        fb_flush(); // gives the screen back if its owner has ended
+        if (on)
+        {
+            if (graphics_owner && graphics_owner != self->pid)
+            {
+                return -EBUSY;
+            }
+            graphics_owner = self->pid;
+        }
+        else if (graphics_owner == self->pid)
+        {
+            fb_release_graphics();
+        }
+        return 0;
     }
 
     case FBIOGET_MODE:
@@ -486,9 +520,41 @@ void fb_copy_rect(uint32_t dst_x, uint32_t dst_y,
     mark_dirty(dst_y, h);
 }
 
+/**
+ * true while a live process has the screen. an owner that has ended (or
+ * is a zombie) gives the screen back here.
+ */
+static bool graphics_taken(void)
+{
+    if (!graphics_owner)
+    {
+        return false;
+    }
+    uint32_t flags = arch_irq_save();
+    process_t *owner = process_get(graphics_owner);
+    bool alive = owner && owner->state != PROC_STATE_ZOMBIE;
+    arch_irq_restore(flags);
+    if (!alive)
+    {
+        fb_release_graphics();
+    }
+    return alive;
+}
+
+void fb_release_graphics(void)
+{
+    graphics_owner = 0;
+    if (back_buffer)
+    {
+        // the whole console comes back
+        dirty_top = 0;
+        dirty_bottom = fb.height;
+    }
+}
+
 void fb_flush(void)
 {
-    if (!fb_ready || !back_buffer || dirty_top >= dirty_bottom)
+    if (!fb_ready || !back_buffer || dirty_top >= dirty_bottom || graphics_taken())
     {
         return;
     }

@@ -42,6 +42,7 @@ isr_stub_%1:
 
 ; common ISR handler, saves register state, calls C handler, restores state.
 isr_common:
+    cld                 ; the C code expects the direction flag clear
     pusha               ; push eax, ecx, edx, ebx, esp, ebp, esi, edi
 
     xor eax, eax        ; save the current data segment selector

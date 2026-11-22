@@ -109,6 +109,10 @@ higher_half:
 
 section .bss
 align 16
+; the boot stack. the kernel stays on it after boot (the tests, the idle
+; loop, and the interrupts that come in there), so 4 KiB was too little:
+; it ran over its bottom into the last variables of .data. 16 KiB, as on
+; x86_64.
 stack_bottom:
-    resb 4096
+    resb 16384
 stack_top:

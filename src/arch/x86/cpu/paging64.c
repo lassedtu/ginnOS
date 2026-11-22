@@ -18,6 +18,7 @@
 #include "exception.h"
 #include "isr.h"
 
+#include "arch/arch.h"
 #include "common/memory.h"
 #include "common/stdio.h"
 #include "kernel/assert.h"
@@ -184,8 +185,15 @@ static phys_addr_t translate(const pte_t *pml4, uintptr_t virt)
  */
 static void page_fault_handler(struct registers *regs)
 {
+    // the page fault vector is an interrupt gate: CR2 is read before an
+    // interrupt can switch to a process whose own fault changes it. then
+    // interrupts are as they were before the fault
     uintptr_t address = read_cr2();
     uint32_t err = (uint32_t)regs->error;
+    if (REG_FLAGS(regs) & EFLAGS_IF)
+    {
+        arch_enable_interrupts();
+    }
 
     if (err & PF_USER)
     {
