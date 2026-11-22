@@ -636,7 +636,30 @@ void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, 
         }
         break;
     }
+    case IDUNN_POINTER_MENU:
+    {
+        close_tooltip(win);
+        win->tip_widget = NULL;
+        win->menu_x = x;
+        win->menu_y = y;
+        set_hover(win, under);
+        if (under && (under->flags & IDUNN_FOCUSABLE))
+            set_focus(win, under, false);
+        idunn_event_t ev = {.type = IDUNN_EV_MENU, .x = x, .y = y, .mods = mods};
+        for (idunn_widget_t *w = under; w; w = w->parent)
+        {
+            if (!(w->state & IDUNN_DISABLED) && idunn_send(w, &ev))
+                break;
+        }
+        break;
     }
+    }
+}
+
+void idunn_window_on_key(idunn_window_t *win, idunn_key_hook_t on_key, void *data)
+{
+    win->on_key = on_key;
+    win->on_key_data = data;
 }
 
 /**
@@ -686,6 +709,9 @@ void idunn_window_key(idunn_window_t *win, uint16_t code, uint32_t mods, const c
         if (idunn_send(w, &ev))
             return;
     }
+    // the window's own shortcuts (not under a dialog)
+    if (!win->modal && win->on_key && win->on_key(win, code, mods, text ? text : "", win->on_key_data))
+        return;
     // Escape that nothing used closes a dialog or a popup
     if (code == IDUNN_KEY_ESCAPE && win->modal)
         idunn_dialog_dismiss(win);

@@ -29,6 +29,7 @@
 #define TILE_W   96   // a grid tile
 #define TILE_H   88
 #define PICTURE  48
+#define ROW_PICTURE 20 // a Tela icon in a row (idunn_list_view_set_pictures)
 #define TILE_GAP 4
 #define FIND_MS  1000 // typed letters are one search for this long
 #define FIND_MAX 32
@@ -52,12 +53,15 @@ typedef struct
     bool multiple;
     bool framed;
     bool grid;
+    bool pictures; // rows have Tela icons, not Lucide ones
     char find[FIND_MAX];
     uint32_t find_at;
     idunn_callback_t on_select;
     void *select_data;
     idunn_callback_t on_activate;
     void *activate_data;
+    idunn_callback_t on_menu;
+    void *menu_data;
 } list_t;
 
 static int32_t pad_of(const idunn_widget_t *w)
@@ -191,7 +195,17 @@ static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
 
     int32_t x = r.x + idunn_px(t, ROW_PAD);
     int32_t right = r.x + r.w - idunn_px(t, ROW_PAD);
-    if (it->icon)
+    if (it->icon && l->pictures)
+    {
+        int32_t size = idunn_px(t, ROW_PICTURE);
+        const icon_t *picture = idunn_picture(ctx, it->icon, ROW_PICTURE);
+        if (!picture)
+            picture = idunn_picture(ctx, "unknown", ROW_PICTURE);
+        if (picture)
+            icon_draw(buf, picture, x, r.y + (r.h - size) / 2, 255);
+        x += size + idunn_px(t, ICON_GAP);
+    }
+    else if (it->icon)
     {
         int32_t size = idunn_px(t, ICON);
         const icon_t *icon = idunn_icon(ctx, it->icon, ICON);
@@ -471,7 +485,15 @@ static bool list_event(idunn_widget_t *w, const idunn_event_t *ev)
     {
         int i = item_at(w, ev->x, ev->y);
         if (i < 0)
+        {
+            // a press beside the items: nothing is selected
+            if (!(ev->mods & (IDUNN_MOD_CTRL | IDUNN_MOD_SHIFT)))
+            {
+                select_only(w, -1);
+                selection_changed(w);
+            }
             return true;
+        }
         if (ev->clicks == 2 && !(ev->mods & (IDUNN_MOD_CTRL | IDUNN_MOD_SHIFT)))
         {
             if (l->on_activate)
@@ -495,6 +517,23 @@ static bool list_event(idunn_widget_t *w, const idunn_event_t *ev)
             select_only(w, i);
         }
         selection_changed(w);
+        return true;
+    }
+    case IDUNN_EV_MENU:
+    {
+        int i = item_at(w, ev->x, ev->y);
+        if (i < 0 || !l->items[i].selected)
+        {
+            if (i >= 0)
+            {
+                set_current(w, i);
+                l->anchor = i;
+            }
+            select_only(w, i);
+            selection_changed(w);
+        }
+        if (l->on_menu)
+            l->on_menu(w, l->menu_data);
         return true;
     }
     case IDUNN_EV_FOCUS:
@@ -678,4 +717,29 @@ void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activ
         return;
     l->on_activate = on_activate;
     l->activate_data = data;
+}
+
+void idunn_list_view_on_menu(idunn_widget_t *list, idunn_callback_t on_menu, void *data)
+{
+    list_t *l = as_list(list);
+    if (!l)
+        return;
+    l->on_menu = on_menu;
+    l->menu_data = data;
+}
+
+int idunn_list_view_item_at(const idunn_widget_t *list, int32_t x, int32_t y)
+{
+    if (!as_list(list))
+        return -1;
+    return item_at(list, x, y);
+}
+
+void idunn_list_view_set_pictures(idunn_widget_t *list, bool pictures)
+{
+    list_t *l = as_list(list);
+    if (!l || l->pictures == pictures)
+        return;
+    l->pictures = pictures;
+    idunn_dirty(list);
 }

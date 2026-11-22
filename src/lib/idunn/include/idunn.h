@@ -146,6 +146,15 @@ idunn_window_t *idunn_panel_new(idunn_app_t *app, int32_t height);
 void idunn_window_set_root(idunn_window_t *win, idunn_widget_t *root);
 
 /**
+ * keys that no widget used (the focused one and its parents): the
+ * window's own shortcuts. on_key returns true when it used the key.
+ * code is a Linux key code, mods IDUNN_MOD_, text what it types or "".
+ */
+typedef bool (*idunn_key_hook_t)(idunn_window_t *win, uint16_t code, uint32_t mods,
+                                 const char *text, void *data);
+void idunn_window_on_key(idunn_window_t *win, idunn_key_hook_t on_key, void *data);
+
+/**
  * close and free the window (and its widgets).
  */
 void idunn_window_close(idunn_window_t *win);
@@ -431,6 +440,8 @@ int idunn_list_view_count(const idunn_widget_t *list);
 const char *idunn_list_view_text(const idunn_widget_t *list, int item);
 /** many items can be selected (Ctrl, Shift, Ctrl+A) */
 void idunn_list_view_set_multiple(idunn_widget_t *list, bool multiple);
+/** rows with a Tela icon (a file or folder icon name) in colour, not a Lucide one */
+void idunn_list_view_set_pictures(idunn_widget_t *list, bool pictures);
 /** a border, the large radius and the card colour around the items */
 void idunn_list_view_set_framed(idunn_widget_t *list, bool framed);
 bool idunn_list_view_selected(const idunn_widget_t *list, int item);
@@ -440,6 +451,14 @@ int idunn_list_view_current(const idunn_widget_t *list);
 /** on_select after the selection changes; on_activate on a double click or Enter */
 void idunn_list_view_on_select(idunn_widget_t *list, idunn_callback_t on_select, void *data);
 void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activate, void *data);
+/**
+ * on_menu on a right click: on an item that is not selected, it selects
+ * only that item first; on no item, nothing stays selected. open a menu
+ * with idunn_menu_popup_at_pointer.
+ */
+void idunn_list_view_on_menu(idunn_widget_t *list, idunn_callback_t on_menu, void *data);
+/** the item at a point of the window, or -1 */
+int idunn_list_view_item_at(const idunn_widget_t *list, int32_t x, int32_t y);
 
 // things that float: menus, selects, tooltips, popovers and dialogs
 
@@ -469,6 +488,8 @@ void idunn_menu_set_checked(idunn_menu_t *menu, int item, bool checked);
 void idunn_menu_set_min_width(idunn_menu_t *menu, int32_t width);
 /** open the menu under a widget (a button's on_click does it) */
 void idunn_menu_popup(idunn_menu_t *menu, idunn_widget_t *owner);
+/** open the menu where the last right click was (a context menu) */
+void idunn_menu_popup_at_pointer(idunn_menu_t *menu, idunn_widget_t *owner);
 
 /**
  * a select: a field with the chosen value; it opens a menu of the choices.
@@ -561,6 +582,7 @@ typedef enum
     IDUNN_POINTER_PRESS,   // the left button
     IDUNN_POINTER_RELEASE,
     IDUNN_POINTER_LEAVE,
+    IDUNN_POINTER_MENU,    // the right button went down: a context menu
 } idunn_pointer_t;
 
 /**

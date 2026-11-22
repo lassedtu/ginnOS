@@ -58,6 +58,7 @@ typedef enum
     IDUNN_EV_TIMER,   // the time it asked for with idunn_wake came
     IDUNN_EV_PASTE,   // the clipboard text it asked for with idunn_paste: text, length
     IDUNN_EV_MOTION,  // the pointer moved over it (no button down): x, y
+    IDUNN_EV_MENU,    // the right button went down on it (then its parents): x, y, mods
 } idunn_event_type_t;
 
 typedef struct
@@ -178,6 +179,13 @@ struct idunn_window
     int32_t press_x;
     int32_t press_y;
     int clicks;
+    // the last right press, where a context menu opens
+    int32_t menu_x;
+    int32_t menu_y;
+
+    // keys no widget used (idunn_window_on_key)
+    idunn_key_hook_t on_key;
+    void *on_key_data;
 
     // times widgets asked to be woken at (idunn_wake)
     struct

@@ -188,6 +188,76 @@ static void test_tabs(idunn_context_t *ctx)
     free(win);
 }
 
+static int menus;
+static void count_menu(idunn_widget_t *w, void *data)
+{
+    (void)w;
+    (void)data;
+    menus++;
+}
+
+static int window_keys;
+static bool window_key(idunn_window_t *win, uint16_t code, uint32_t mods, const char *text,
+                       void *data)
+{
+    (void)win;
+    (void)mods;
+    (void)text;
+    (void)data;
+    window_keys++;
+    return code == IDUNN_KEY_BACKSPACE;
+}
+
+/**
+ * a right press: the list selects the item under it and calls on_menu;
+ * beside the items nothing stays selected. keys the list does not use go
+ * to the window's hook.
+ */
+static void test_list_menu(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 400);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_widget_t *list = idunn_list_view();
+    for (int i = 0; i < 5; i++)
+        idunn_list_view_add(list, "file", "name", NULL);
+    idunn_list_view_set_multiple(list, true);
+    idunn_grow(idunn_add(col, list), 1);
+    idunn_list_view_on_menu(list, count_menu, NULL);
+    idunn_window_on_key(win, window_key, NULL);
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+
+    menus = 0;
+    idunn_window_pointer(win, IDUNN_POINTER_MENU, 50, 4 + 2 * 33 + 10, 0);
+    CHECK_EQ(menus, 1);
+    CHECK(idunn_list_view_selected(list, 2) && !idunn_list_view_selected(list, 0));
+    CHECK_EQ(idunn_list_view_item_at(list, 50, 4 + 2 * 33 + 10), 2);
+    CHECK_EQ(win->menu_x, 50);
+
+    // on a selected item, the selection stays (a menu for all of them)
+    key(win, IDUNN_KEY_A, IDUNN_MOD_CTRL);
+    idunn_window_pointer(win, IDUNN_POINTER_MENU, 50, 4 + 10, 0);
+    CHECK(idunn_list_view_selected(list, 0) && idunn_list_view_selected(list, 4));
+    CHECK_EQ(menus, 2);
+
+    // beside the items: none selected, the menu still comes
+    idunn_window_pointer(win, IDUNN_POINTER_MENU, 50, 380, 0);
+    CHECK(!idunn_list_view_selected(list, 0) && !idunn_list_view_selected(list, 2));
+    CHECK_EQ(menus, 3);
+
+    // a left press beside the items clears the selection too
+    key(win, IDUNN_KEY_A, IDUNN_MOD_CTRL);
+    idunn_window_tick(win, 50000);
+    click_at(win, 50, 380, 0);
+    CHECK(!idunn_list_view_selected(list, 1));
+
+    // Backspace is not the list's: the window's hook gets it
+    window_keys = 0;
+    key(win, IDUNN_KEY_BACKSPACE, 0);
+    CHECK_EQ(window_keys, 1);
+    idunn_window_free_widgets(win);
+}
+
 static void test_list(idunn_context_t *ctx)
 {
     idunn_window_t *win = idunn_window_offscreen(ctx, 300, 200);
@@ -312,5 +382,6 @@ void test_lists(idunn_context_t *ctx)
     test_hidden(ctx);
     test_tabs(ctx);
     test_list(ctx);
+    test_list_menu(ctx);
     test_grid(ctx);
 }
