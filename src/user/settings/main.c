@@ -32,7 +32,7 @@ static const page_t pages[] = {
      appearance_page},
     {"keyboard", "Keyboard", "keyboard", "The layout the keys type in.", keyboard_page},
     {"sound", "Sound", "volume-2", "The volume of the sound card.", sound_page},
-    {"terminal", "Terminal", "square-terminal", "The text of mimir.", terminal_page},
+    {"terminal", "Terminal", "square-terminal", "The text of Mimir.", terminal_page},
     {"about", "About", "info", "What this computer is and runs.", about_page},
 };
 #define PAGE_COUNT (int)(sizeof(pages) / sizeof(pages[0]))

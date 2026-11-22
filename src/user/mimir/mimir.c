@@ -5,7 +5,7 @@
  * usage: mimir [-k] [-d folder] [program [arguments]]
  *
  * without a program it starts the shell, /bin/sh. the program starts in
- * the folder of -d (the file manager's "Open in mimir"), else in $HOME.
+ * the folder of -d (the file manager's "Open in Mimir"), else in $HOME.
  * the window closes when the program ends; with -k it stays, so the
  * output of a program the file manager ran can be read.
  *
@@ -369,7 +369,7 @@ static void canvas_frame(idunn_widget_t *canvas, void *data)
     if (vt->title_changed)
     {
         vt->title_changed = false;
-        idunn_window_set_title(M.win, vt->title[0] ? vt->title : "mimir");
+        idunn_window_set_title(M.win, vt->title[0] ? vt->title : "Mimir");
     }
     vt->bell = false;
     int scrolled = vt->scrolled;
@@ -1018,7 +1018,7 @@ int main(int argc, char **argv)
     // 80 by 24 cells, in design pixels
     int32_t width = (80 * M.cw + 2 * M.pad + M.scale - 1) / M.scale;
     int32_t height = (24 * M.ch + 2 * M.pad + M.scale - 1) / M.scale;
-    M.win = idunn_window_new(M.app, "mimir", width, height);
+    M.win = idunn_window_new(M.app, "Mimir", width, height);
     if (!M.win)
         return 1;
     static const idunn_canvas_hooks_t hooks = {canvas_draw, canvas_input, canvas_resize,

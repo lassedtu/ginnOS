@@ -276,6 +276,9 @@ static void gather(void)
         fact("Desktop", "none (the text console)");
 
     const char *term = getenv("TERM_PROGRAM");
+    // our terminal by its name (TERM_PROGRAM is the program's, mimir)
+    if (term && strcmp(term, "mimir") == 0)
+        term = "Mimir";
     fact("Terminal", "%s", term ? term : "the text console");
 
     int fb = open("/dev/fb0", O_RDONLY | O_CLOEXEC);
