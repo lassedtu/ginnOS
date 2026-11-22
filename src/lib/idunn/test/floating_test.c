@@ -8,6 +8,7 @@
 #include "hosttest.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -338,7 +339,7 @@ static void test_damage_parts(idunn_context_t *ctx)
     CHECK(b->rect.y > 300);
 
     // two changes far apart are drawn as two parts, not all between them
-    gfx_rect_t parts[IDUNN_DAMAGE_MAX];
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1];
     idunn_dirty(a);
     idunn_dirty(b);
     int count = idunn_window_draw_parts(win, parts);
@@ -365,9 +366,77 @@ static void test_damage_parts(idunn_context_t *ctx)
     free(win);
 }
 
+/**
+ * the buffer after moved pixels must be the buffer a full drawing makes.
+ */
+static bool same_as_full(idunn_window_t *win)
+{
+    gfx_buffer_t *buf = win->buffer;
+    size_t size = (size_t)buf->width * buf->height;
+    uint32_t *copy = malloc(size * 4);
+    if (!copy)
+        return false;
+    for (int32_t y = 0; y < buf->height; y++)
+        memcpy(copy + (size_t)y * buf->width, gfx_pixel_at(buf, 0, y), (size_t)buf->width * 4);
+    idunn_window_invalidate(win);
+    idunn_window_draw(win);
+    bool same = true;
+    for (int32_t y = 0; y < buf->height && same; y++)
+        same = memcmp(copy + (size_t)y * buf->width, gfx_pixel_at(buf, 0, y),
+                      (size_t)buf->width * 4) == 0;
+    free(copy);
+    return same;
+}
+
+static void test_scroll_moves_pixels(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 400, 300);
+    idunn_widget_t *content = idunn_column(2, 4);
+    for (int i = 0; i < 40; i++)
+    {
+        char text[32];
+        snprintf(text, sizeof(text), "Row %d of the content", i);
+        idunn_add(content, idunn_button(text, i % 3 ? IDUNN_OUTLINE : IDUNN_PRIMARY, NULL, NULL));
+    }
+    idunn_widget_t *view = idunn_scroll_view(content);
+    idunn_window_set_root(win, view);
+    idunn_window_tick(win, 1000);
+    idunn_window_draw(win);
+
+    // a jump down: only the strip that comes into view (and the bar) is drawn
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1];
+    idunn_scroll_view_scroll_to(view, 37);
+    int count = idunn_window_draw_parts(win, parts);
+    int64_t drawn = 0;
+    for (int i = 0; i < count - 1; i++) // the last part is the moved pixels
+        drawn += (int64_t)parts[i].w * parts[i].h;
+    CHECK(drawn < 400 * 60);
+    CHECK(same_as_full(win));
+
+    // and back up
+    idunn_scroll_view_scroll_to(view, 5);
+    idunn_window_draw(win);
+    CHECK(same_as_full(win));
+
+    // a wheel step glides over some frames; each frame is right
+    idunn_window_scroll(win, 100, 100, -2);
+    for (uint32_t t = 1000; t <= 1200; t += 16)
+    {
+        idunn_window_tick(win, t);
+        idunn_window_draw(win);
+        CHECK(same_as_full(win));
+    }
+    CHECK(idunn_scroll_view_offset(view) > 5);
+
+    idunn_window_free_widgets(win);
+    idunn_reap(ctx);
+    free(win);
+}
+
 void test_floating(idunn_context_t *ctx)
 {
     test_damage_parts(ctx);
+    test_scroll_moves_pixels(ctx);
     test_menu(ctx);
     test_select(ctx);
     test_tooltip(ctx);

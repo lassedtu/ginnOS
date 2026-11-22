@@ -52,6 +52,28 @@ static void place_child(idunn_widget_t *w, int32_t offset)
 }
 
 /**
+ * the strip the bar is drawn in, at its widest.
+ */
+static gfx_rect_t bar_strip(idunn_widget_t *w)
+{
+    int32_t width = idunn_px(idunn_theme(w), BAR_NEAR + 2 * INSET);
+    return gfx_rect(w->rect.x + w->rect.w - width, w->rect.y, width, w->rect.h);
+}
+
+/**
+ * show the content from offset: the pixels that stay in view move, and
+ * only the strip that comes into view (and the bar) is drawn again.
+ */
+static void move_to(idunn_widget_t *w, int32_t offset)
+{
+    scroll_t *s = w->data;
+    int32_t dy = s->placed - offset;
+    place_child(w, offset);
+    idunn_window_move_pixels(w, w->rect, dy);
+    idunn_dirty_rect(w, bar_strip(w));
+}
+
+/**
  * scroll to offset (kept in range), gliding or at once.
  * @return false if it was there already.
  */
@@ -66,8 +88,9 @@ static bool scroll_to(idunn_widget_t *w, int32_t offset, bool glide)
     uint32_t now = w->window ? w->window->now : 0;
     idunn_anim_to(&s->to, (float)offset, now, glide && motion ? GLIDE_MS : 0);
     if (!glide || !motion)
-        place_child(w, offset);
-    idunn_dirty(w);
+        move_to(w, offset);
+    else
+        idunn_dirty_rect(w, bar_strip(w)); // a frame, where the glide starts
     return true;
 }
 
@@ -98,18 +121,17 @@ static void scroll_layout(idunn_widget_t *w)
     place_child(w, now > m ? m : now);
 }
 
-static void scroll_draw(idunn_widget_t *w, gfx_buffer_t *buf)
+static void scroll_frame(idunn_widget_t *w)
 {
-    (void)buf;
     scroll_t *s = w->data;
     uint32_t now = w->window->now;
     int32_t at = (int32_t)(idunn_anim_value(&s->to, now) + 0.5f);
     if (at != s->placed)
-        place_child(w, at);
+        move_to(w, at);
     if (idunn_anim_running(&s->to, now))
     {
         w->window->animating = true;
-        idunn_dirty(w);
+        idunn_dirty_rect(w, bar_strip(w)); // the next frame
     }
 }
 
@@ -147,15 +169,6 @@ static void scroll_draw_over(idunn_widget_t *w, gfx_buffer_t *buf)
 static bool near_bar(const idunn_widget_t *w, int32_t x)
 {
     return most(w) > 0 && x >= w->rect.x + w->rect.w - idunn_px(idunn_theme(w), NEAR);
-}
-
-/**
- * the strip the bar is drawn in, at its widest.
- */
-static gfx_rect_t bar_strip(idunn_widget_t *w)
-{
-    int32_t width = idunn_px(idunn_theme(w), BAR_NEAR + 2 * INSET);
-    return gfx_rect(w->rect.x + w->rect.w - width, w->rect.y, width, w->rect.h);
 }
 
 static bool scroll_key(idunn_widget_t *w, const idunn_event_t *ev)
@@ -270,7 +283,7 @@ static const idunn_class_t scroll_class = {
     .name = "scroll view",
     .measure = scroll_measure,
     .layout = scroll_layout,
-    .draw = scroll_draw,
+    .frame = scroll_frame,
     .draw_over = scroll_draw_over,
     .event = scroll_event,
     .reveal = scroll_reveal,

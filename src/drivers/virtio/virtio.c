@@ -44,6 +44,12 @@
 
 #define WAIT_LOOPS 50000000u // a second or so of polling
 
+// virtq_post: requests on the way at once, each in a slot of the slots
+// page (the request, then room for its response), on descriptors from 2
+#define SLOTS       16
+#define SLOT_SIZE   128
+#define RESPONSE_AT 96
+
 typedef struct
 {
     uint64_t addr;
@@ -197,6 +203,7 @@ bool virtio_queue_init(virtio_device_t *dev, virtq_t *q, uint16_t index)
     q->size = most < VIRTQ_SIZE ? most : VIRTQ_SIZE;
     q->ring = pmm_alloc_page();
     q->buffer = pmm_alloc_page();
+    q->slots = q->size >= 2 + 2 * SLOTS ? pmm_alloc_page() : NULL; // none: post calls
     if (!q->ring || !q->buffer)
     {
         return false;
@@ -228,6 +235,87 @@ void virtio_ready(virtio_device_t *dev)
                VIRTIO_STATUS_DRIVER_OK);
 }
 
+/**
+ * the requests the device has not done yet.
+ */
+static uint16_t on_the_way(const virtq_t *q)
+{
+    volatile uint16_t *used = (volatile uint16_t *)(q->ring + USED_OFFSET);
+    return (uint16_t)(q->avail_next - used[1]);
+}
+
+/**
+ * wait until the device has done all requests (the lock is held).
+ */
+static bool drain(virtq_t *q)
+{
+    for (uint32_t i = 0; i < WAIT_LOOPS; i++)
+    {
+        if (on_the_way(q) == 0)
+        {
+            q->used_seen = q->avail_next;
+            return true;
+        }
+        __builtin_ia32_pause();
+    }
+    return false;
+}
+
+/**
+ * give the device the chain that starts at descriptor head (the lock is
+ * held).
+ */
+static void make_available(virtq_t *q, uint16_t head)
+{
+    volatile uint16_t *avail = (volatile uint16_t *)(q->ring + AVAIL_OFFSET);
+    avail[2 + q->avail_next % q->size] = head;
+    __sync_synchronize();
+    q->avail_next++;
+    avail[1] = q->avail_next;
+    __sync_synchronize();
+    *q->note = q->index;
+}
+
+bool virtq_post(virtq_t *q, const void *request, uint32_t request_size)
+{
+    if (!q->slots)
+    {
+        uint8_t response[RESPONSE_AT];
+        return virtq_call(q, request, request_size, response, sizeof(response));
+    }
+    if (!q->ring || request_size > RESPONSE_AT)
+    {
+        return false;
+    }
+    uint32_t flags = spin_lock_irqsave(&q->lock);
+
+    // in order: with fewer than SLOTS on the way, the request that last
+    // had this slot is done
+    bool room = false;
+    for (uint32_t i = 0; i < WAIT_LOOPS && !room; i++)
+    {
+        room = on_the_way(q) < SLOTS;
+        if (!room)
+        {
+            __builtin_ia32_pause();
+        }
+    }
+    if (room)
+    {
+        uint16_t slot = q->avail_next % SLOTS;
+        uint8_t *buffer = q->slots + slot * SLOT_SIZE;
+        memcpy(buffer, request, request_size);
+        phys_addr_t phys = virt_to_phys(buffer);
+        uint16_t head = (uint16_t)(2 + slot * 2);
+        desc_t *desc = (desc_t *)q->ring;
+        desc[head] = (desc_t){phys, request_size, DESC_NEXT, (uint16_t)(head + 1)};
+        desc[head + 1] = (desc_t){phys + RESPONSE_AT, SLOT_SIZE - RESPONSE_AT, DESC_WRITE, 0};
+        make_available(q, head);
+    }
+    spin_unlock_irqrestore(&q->lock, flags);
+    return room;
+}
+
 bool virtq_call(virtq_t *q, const void *request, uint32_t request_size, void *response,
                 uint32_t response_size)
 {
@@ -237,6 +325,12 @@ bool virtq_call(virtq_t *q, const void *request, uint32_t request_size, void *re
         return false;
     }
     uint32_t flags = spin_lock_irqsave(&q->lock);
+    // posted requests first
+    if (!drain(q))
+    {
+        spin_unlock_irqrestore(&q->lock, flags);
+        return false;
+    }
 
     // one request at a time: descriptors 0 and 1, buffers in the page
     memcpy(q->buffer, request, request_size);
@@ -244,14 +338,7 @@ bool virtq_call(virtq_t *q, const void *request, uint32_t request_size, void *re
     desc_t *desc = (desc_t *)q->ring;
     desc[0] = (desc_t){buffer, request_size, DESC_NEXT, 1};
     desc[1] = (desc_t){buffer + half, response_size, DESC_WRITE, 0};
-
-    volatile uint16_t *avail = (volatile uint16_t *)(q->ring + AVAIL_OFFSET);
-    avail[2 + q->avail_next % q->size] = 0; // the chain starts at descriptor 0
-    __sync_synchronize();
-    q->avail_next++;
-    avail[1] = q->avail_next;
-    __sync_synchronize();
-    *q->note = q->index;
+    make_available(q, 0);
 
     volatile uint16_t *used = (volatile uint16_t *)(q->ring + USED_OFFSET);
     bool done = false;

@@ -9,6 +9,8 @@
 #include "heimdalld.h"
 
 #include <string.h>
+#include <sys/fb.h>
+#include <sys/ioctl.h>
 
 typedef struct
 {
@@ -18,6 +20,19 @@ typedef struct
 } cursor_t;
 
 static cursor_t cursors[CURSOR_COUNT];
+
+// what the card's cursor shows now
+static struct
+{
+    bool up;        // an image is there
+    uint32_t shape;
+    int32_t cut_x;  // columns cut off at the left edge of the screen
+    int32_t cut_y;
+    int32_t x;      // its top left corner
+    int32_t y;
+} hw;
+
+static fb_cursor_t upload; // 16 KiB: not on the stack
 
 static const char *const arrow[] = {
     "#           ", "##          ", "#.#         ", "#..#        ", "#...#       ",
@@ -137,6 +152,59 @@ void cursor_init(int32_t scale)
     diagonal(&cursors[CURSOR_RESIZE_NESW], true);
     for (int i = 0; i < CURSOR_COUNT; i++)
         enlarge(&cursors[i], scale);
+    hw.up = false;
+}
+
+void cursor_hardware_reset(void)
+{
+    hw.up = false;
+}
+
+bool cursor_hardware(int fb_fd, uint32_t shape, int32_t x, int32_t y)
+{
+    shape = shape < CURSOR_COUNT ? shape : 0;
+    const cursor_t *c = &cursors[shape];
+    if (!c->image || c->image->width > FB_CURSOR_SIZE || c->image->height > FB_CURSOR_SIZE)
+        return false;
+
+    // the card takes no place left of or above the screen: cut the image
+    int32_t left = x - c->hot_x;
+    int32_t top = y - c->hot_y;
+    int32_t cut_x = left < 0 ? -left : 0;
+    int32_t cut_y = top < 0 ? -top : 0;
+    left += cut_x;
+    top += cut_y;
+
+    if (!hw.up || hw.shape != shape || hw.cut_x != cut_x || hw.cut_y != cut_y)
+    {
+        // gfx pixels are premultiplied; the shapes are only opaque or
+        // see-through, where both ways are the same
+        memset(upload.pixels, 0, sizeof(upload.pixels));
+        for (int32_t row = 0; row + cut_y < c->image->height; row++)
+            for (int32_t col = 0; col + cut_x < c->image->width; col++)
+                upload.pixels[row * FB_CURSOR_SIZE + col] =
+                    *gfx_pixel_at(c->image, col + cut_x, row + cut_y);
+        upload.shown = 1;
+        upload.x = (uint32_t)left;
+        upload.y = (uint32_t)top;
+        if (ioctl(fb_fd, FBIO_CURSOR, &upload) != 0)
+            return false;
+        hw.up = true;
+        hw.shape = shape;
+        hw.cut_x = cut_x;
+        hw.cut_y = cut_y;
+        hw.x = left;
+        hw.y = top;
+        return true;
+    }
+    if (left != hw.x || top != hw.y)
+    {
+        fb_point_t at = {(uint32_t)left, (uint32_t)top};
+        ioctl(fb_fd, FBIO_CURSOR_MOVE, &at);
+        hw.x = left;
+        hw.y = top;
+    }
+    return true;
 }
 
 gfx_rect_t cursor_rect(uint32_t shape, int32_t x, int32_t y)
