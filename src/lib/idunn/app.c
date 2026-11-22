@@ -229,6 +229,14 @@ int idunn_app_run(idunn_app_t *app)
                     timeout = left;
             }
         }
+        // a window made while drawing (a tooltip) or changed by a timer
+        // is drawn before the loop waits
+        for (idunn_window_t *win = app->windows; win; win = win->next)
+        {
+            bool work = win->needs_layout || !gfx_rect_empty(win->damage);
+            if (!win->dead && work && !heim_window_busy(win->heim))
+                timeout = 0;
+        }
         int got = heim_next_event(app->conn, &ev, timeout);
         if (got < 0)
             break;
