@@ -96,6 +96,15 @@ void idunn_app_on_event(idunn_app_t *app,
  */
 void idunn_app_every(idunn_app_t *app, uint32_t period, void (*every)(void *data), void *data);
 
+#define IDUNN_WATCH_MAX 4
+
+/**
+ * call ready(fd, data) when fd can be read (or has hung up) while the app
+ * runs: a pty, a pipe. at most IDUNN_WATCH_MAX at a time; ready NULL
+ * stops watching fd.
+ */
+void idunn_app_watch(idunn_app_t *app, int fd, void (*ready)(int fd, void *data), void *data);
+
 /**
  * run until the last window is closed or idunn_app_quit.
  * @return the exit status for main.
@@ -592,6 +601,91 @@ uint32_t idunn_window_cursor(const idunn_window_t *win);
  * the widget with the keyboard focus, or NULL.
  */
 idunn_widget_t *idunn_window_focus(const idunn_window_t *win);
+
+typedef enum
+{
+    IDUNN_INPUT_KEY,     // code, mods, text (a press or a repeat)
+    IDUNN_INPUT_PRESS,   // the left button went down: x, y, mods, clicks (1 to 3)
+    IDUNN_INPUT_DRAG,    // the pointer moved with the button down: x, y
+    IDUNN_INPUT_RELEASE, // the button went up: x, y
+    IDUNN_INPUT_MOTION,  // the pointer moved, no button down: x, y
+    IDUNN_INPUT_SCROLL,  // the wheel: steps, up is positive
+    IDUNN_INPUT_PASTE,   // the clipboard text it asked for: text, length
+    IDUNN_INPUT_FOCUS,   // it got the keyboard
+    IDUNN_INPUT_BLUR,    // it lost the keyboard
+    IDUNN_INPUT_TIMER,   // the time it asked for (idunn_canvas_wake) came
+} idunn_input_type_t;
+
+/**
+ * input for a canvas. x and y are from the canvas's top left corner.
+ */
+typedef struct
+{
+    idunn_input_type_t type;
+    uint16_t code;    // KEY: the Linux key code
+    uint32_t mods;    // KEY, PRESS: IDUNN_MOD_
+    const char *text; // KEY: the characters it types (UTF-8), or ""; PASTE: the text
+    size_t length;    // PASTE
+    int32_t x;
+    int32_t y;
+    int clicks;
+    int32_t steps;
+} idunn_input_t;
+
+/**
+ * what a canvas does; each hook can be NULL.
+ */
+typedef struct
+{
+    /**
+     * draw the canvas, which is at rect in the window. only the part in
+     * buf->clip must be drawn (the rest is still right).
+     */
+    void (*draw)(idunn_widget_t *canvas, gfx_buffer_t *buf, gfx_rect_t rect, void *data);
+    /** @return true if it used the input (else it goes to the parents) */
+    bool (*input)(idunn_widget_t *canvas, const idunn_input_t *in, void *data);
+    /** the canvas has a new size (also the first time it is laid out) */
+    void (*resize)(idunn_widget_t *canvas, int32_t width, int32_t height, void *data);
+    /**
+     * before a frame is drawn, while the window still holds the last
+     * frame: move pixels (idunn_canvas_move) and say what to draw again.
+     */
+    void (*frame)(idunn_widget_t *canvas, void *data);
+} idunn_canvas_hooks_t;
+
+/**
+ * a widget the program draws itself: a terminal, a game. it takes the
+ * keyboard (Tab too), the pointer and the wheel. it is as large as its
+ * box lets it grow, or idunn_set_size.
+ */
+idunn_widget_t *idunn_canvas(const idunn_canvas_hooks_t *hooks, void *data);
+
+/** draw a rect of the canvas again (canvas coordinates) */
+void idunn_canvas_damage(idunn_widget_t *canvas, gfx_rect_t r);
+
+/** a frame soon, so the frame hook runs (new data came) */
+void idunn_canvas_update(idunn_widget_t *canvas);
+
+/**
+ * in the frame hook: move the pixels of area up (dy < 0) or down; the
+ * strip that comes into view is damaged.
+ */
+void idunn_canvas_move(idunn_widget_t *canvas, gfx_rect_t area, int32_t dy);
+
+/** put text on the clipboard; ask for its text (an IDUNN_INPUT_PASTE comes) */
+void idunn_canvas_copy(idunn_widget_t *canvas, const char *text, size_t length);
+void idunn_canvas_paste(idunn_widget_t *canvas);
+
+/** an IDUNN_INPUT_TIMER in ms (one at a time; a new call moves it) */
+void idunn_canvas_wake(idunn_widget_t *canvas, uint32_t ms);
+
+/** the pointer shape over the canvas (IDUNN_CURSOR_) */
+void idunn_canvas_set_cursor(idunn_widget_t *canvas, uint32_t shape);
+
+/**
+ * give the keyboard to a widget in a window (a canvas at the start).
+ */
+void idunn_set_focus(idunn_widget_t *w);
 
 /**
  * where a widget is in its window, after layout.

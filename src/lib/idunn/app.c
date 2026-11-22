@@ -9,7 +9,9 @@
 
 #include "idunn_internal.h"
 
+#include <errno.h>
 #include <heimdall.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +35,14 @@ struct idunn_app
     void *every_data;
     uint32_t every_period; // ms (0: off)
     uint32_t every_next;   // when it is called next
+
+    struct
+    {
+        int fd;
+        void (*ready)(int fd, void *data);
+        void *data;
+    } watch[IDUNN_WATCH_MAX]; // fds the loop also waits on (a pty)
+    int watch_count;
 };
 
 static uint32_t now_ms(void)
@@ -100,6 +110,64 @@ void idunn_app_every(idunn_app_t *app, uint32_t period, void (*every)(void *data
     app->every_data = data;
     app->every_period = every ? period : 0;
     app->every_next = now_ms() + period;
+}
+
+void idunn_app_watch(idunn_app_t *app, int fd, void (*ready)(int fd, void *data), void *data)
+{
+    for (int i = 0; i < app->watch_count; i++)
+    {
+        if (app->watch[i].fd != fd)
+            continue;
+        if (ready)
+        {
+            app->watch[i].ready = ready;
+            app->watch[i].data = data;
+        }
+        else
+        {
+            app->watch[i] = app->watch[--app->watch_count];
+        }
+        return;
+    }
+    if (!ready || app->watch_count == IDUNN_WATCH_MAX)
+        return;
+    app->watch[app->watch_count].fd = fd;
+    app->watch[app->watch_count].ready = ready;
+    app->watch[app->watch_count].data = data;
+    app->watch_count++;
+}
+
+/**
+ * wait for the server or a watched fd, and call the watches that are
+ * ready.
+ * @return 1 if the server has a message, 0 if not (a timer or a watch),
+ *         -1 if the wait failed.
+ */
+static int wait_watches(idunn_app_t *app, int timeout)
+{
+    struct pollfd fds[1 + IDUNN_WATCH_MAX];
+    int count = app->watch_count;
+    fds[0] = (struct pollfd){heim_fd(app->conn), POLLIN, 0};
+    for (int i = 0; i < count; i++)
+        fds[1 + i] = (struct pollfd){app->watch[i].fd, POLLIN, 0};
+    int ready = poll(fds, (nfds_t)(1 + count), timeout);
+    if (ready < 0)
+        return errno == EINTR ? 0 : -1;
+    for (int i = 0; i < count; i++)
+    {
+        if (!fds[1 + i].revents)
+            continue;
+        // a callback can stop a watch: find it again by its fd
+        for (int j = 0; j < app->watch_count; j++)
+        {
+            if (app->watch[j].fd == fds[1 + i].fd)
+            {
+                app->watch[j].ready(app->watch[j].fd, app->watch[j].data);
+                break;
+            }
+        }
+    }
+    return fds[0].revents ? 1 : 0;
 }
 
 const idunn_theme_t *idunn_app_theme(const idunn_app_t *app)
@@ -357,6 +425,15 @@ int idunn_app_run(idunn_app_t *app)
             {
                 timeout = left;
             }
+        }
+        if (app->watch_count && !heim_pending(app->conn))
+        {
+            int server = wait_watches(app, timeout);
+            if (server < 0)
+                break;
+            if (server == 0)
+                continue; // a watch or a timer: draw what changed
+            timeout = 0;
         }
         int got = heim_next_event(app->conn, &ev, timeout);
         if (got < 0)

@@ -16,6 +16,8 @@
 #define IDUNN_SHRINKS     0x04u // it can be narrower than it wants (text with "...")
 #define IDUNN_TEXT_INPUT  0x08u // it takes typing: the ring shows after a click too
 #define IDUNN_CLIPS       0x10u // its children are drawn and hit only inside its rect
+#define IDUNN_TAKES_TAB   0x20u // Tab goes to it, not to the next widget (a terminal)
+#define IDUNN_OWN_LOOK    0x40u // it draws its own hover, press and focus (a canvas)
 
 // widget states
 #define IDUNN_HOVER    0x01u
