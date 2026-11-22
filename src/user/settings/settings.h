@@ -5,7 +5,7 @@
  * @brief settings: the parts the pages share.
  *
  * main.c makes the window and the list of pages; each page is a file of
- * its own (appearance.c, keyboard.c, sound.c, terminal.c, about.c) with
+ * its own (appearance.c, display.c, keyboard.c, sound.c, terminal.c, about.c) with
  * one function that builds it. common.c has the helpers below.
  */
 
@@ -22,6 +22,7 @@ extern heim_conn_t *settings_conn;
 
 idunn_widget_t *appearance_page(void);
 idunn_widget_t *keyboard_page(void);
+idunn_widget_t *display_page(void);
 idunn_widget_t *sound_page(void);
 idunn_widget_t *terminal_page(void);
 idunn_widget_t *about_page(void);

@@ -186,9 +186,20 @@ LIMINE_DIR       := build/limine
 LIMINE_FETCH     := tools/limine/fetch.sh
 LIMINE_DISK_TOOL := tools/limine/make_disk.py
 LIMINE_CONF      := tools/limine/limine-$(ARCH).conf
-# the screen size, for example RESOLUTION=1280x800. empty: limine picks the
-# size (in QEMU: 1280x1024 for i686, 1280x800 for x86_64).
+LIMINE_MENU_TOOL := tools/limine/boot_menu.py
+# the size of the QEMU window (and of the wallpaper), for example
+# RESOLUTION=1280x800. the virtio-gpu driver takes it at start.
 RESOLUTION       ?= 1440x900
+# the screen size the first boot entry asks for. empty: limine picks it
+# (the monitor's own size when the firmware tells it, else the firmware's
+# mode). set it for QEMU_VGA=std, which has no driver to change the mode.
+BOOT_RESOLUTION  ?=
+# the sizes in the boot menu's "Screen sizes" folder, for a computer whose
+# firmware does not tell the monitor's size
+BOOT_SIZES       ?= 3840x2160 2560x1600 2560x1440 1920x1200 1920x1080 1680x1050 1600x900 \
+                    1440x900 1366x768 1280x800 1280x720 1024x768
+# seconds the boot menu waits (a key stops the count)
+BOOT_TIMEOUT     ?= 3
 # the graphics card: virtio-vga. its window opens at RESOLUTION; when the
 # window is resized (or goes full screen), the desktop takes the new size.
 # QEMU_VGA=std gives the plain VGA card, fixed at RESOLUTION.
@@ -232,8 +243,8 @@ define limine_disk
 	./$(LIMINE_FETCH) $(LIMINE_DIR)
 	@mkdir -p $(4)
 	$(OBJCOPY) --strip-debug $(2) $(4)/kernel.elf
-	cp $(LIMINE_CONF) $(4)/limine.conf
-	$(if $(RESOLUTION),printf '    resolution: %s\n' '$(RESOLUTION)' >> $(4)/limine.conf)
+	$(PYTHON) $(LIMINE_MENU_TOOL) $(LIMINE_CONF) $(4)/limine.conf --timeout $(BOOT_TIMEOUT) \
+		$(if $(BOOT_RESOLUTION),--resolution $(BOOT_RESOLUTION)) --sizes "$(BOOT_SIZES)"
 	$(PYTHON) $(LIMINE_DISK_TOOL) --output $(1) --ext2 $(3) --limine-dir $(LIMINE_DIR) $(if $(filter 1,$(GPT)),--gpt) \
 		--file $(4)/limine.conf:/boot/limine/limine.conf \
 		--file $(LIMINE_DIR)/limine-bios.sys:/boot/limine/limine-bios.sys \

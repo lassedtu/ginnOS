@@ -3,7 +3,7 @@
  * @brief settings: the window, with the list of pages on the left and
  * the page on the right.
  *
- * usage: settings [page]   (appearance, keyboard, sound, terminal, about)
+ * usage: settings [page]   (appearance, display, keyboard, sound, terminal, about)
  *
  * each value lives in a plain config file (libconf, ~/.config/ginnos),
  * so it works without this app too. after a change the app tells the
@@ -30,6 +30,7 @@ typedef struct
 static const page_t pages[] = {
     {"appearance", "Appearance", "palette", "The theme, the accent colour and the wallpaper.",
      appearance_page},
+    {"display", "Display", "monitor", "The size of the screen.", display_page},
     {"keyboard", "Keyboard", "keyboard", "The layout the keys type in.", keyboard_page},
     {"sound", "Sound", "volume-2", "The volume of the sound card.", sound_page},
     {"terminal", "Terminal", "square-terminal", "The text of Mimir.", terminal_page},
@@ -95,7 +96,7 @@ int main(int argc, char **argv)
                 first = i;
         if (first < 0)
         {
-            fprintf(stderr, "usage: settings [appearance|keyboard|sound|terminal|about]\n");
+            fprintf(stderr, "usage: settings [appearance|display|keyboard|sound|terminal|about]\n");
             return 1;
         }
     }
