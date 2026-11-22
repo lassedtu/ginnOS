@@ -206,6 +206,12 @@ void idunn_box_set_padding(idunn_widget_t *box, int vertical, int horizontal);
  * a background for a box, a colour token (by default it has none).
  */
 void idunn_box_set_background(idunn_widget_t *box, idunn_color_t color);
+/**
+ * a row that is too short for its children shows the last ones: the
+ * first go out of view on the left, whole (a path bar keeps the folder
+ * that is open in view).
+ */
+void idunn_box_set_keep_end(idunn_widget_t *box, bool keep_end);
 
 /**
  * a card: a column on the card colour with a border, the large radius and

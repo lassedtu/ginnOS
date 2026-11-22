@@ -28,6 +28,7 @@ typedef struct
     idunn_align_t justify; // along
     int background;       // a colour token, or -1
     bool card;            // the card look: a border, a large radius, a shadow
+    bool keep_end;        // too little room: the first children go out of view
     idunn_shadow_t shadow; // the card's shadow
 } box_t;
 
@@ -174,6 +175,18 @@ static void box_layout(idunn_widget_t *w)
     }
 
     int32_t pos = aligned(b->justify, free_space, 0);
+    // still too long: start so far to the left that the last children fit,
+    // and whole children go out of view (the box clips them)
+    if (b->keep_end && free_space < 0)
+    {
+        int32_t length = total + gap * (n - 1);
+        pos = 0;
+        for (int i = 0; i < n - 1 && length > main; i++)
+        {
+            pos -= along[i] + gap;
+            length -= along[i] + gap;
+        }
+    }
     int32_t extra = b->justify == IDUNN_SPACE_BETWEEN && n > 1 ? free_space / (n - 1) : 0;
     for (int i = 0; i < n; i++)
     {
@@ -223,8 +236,14 @@ static idunn_widget_t *box_new(bool column, int gap, int padding)
     box_t *b = malloc(sizeof(*b));
     if (!b)
         return NULL;
-    *b = (box_t){column, gap, padding, padding, IDUNN_STRETCH, IDUNN_START, -1, false,
-                 IDUNN_SHADOW_XS};
+    *b = (box_t){.column = column,
+                 .gap = gap,
+                 .pad_v = padding,
+                 .pad_h = padding,
+                 .align = IDUNN_STRETCH,
+                 .justify = IDUNN_START,
+                 .background = -1,
+                 .shadow = IDUNN_SHADOW_XS};
     idunn_widget_t *w = idunn_widget_new(&box_class, b, IDUNN_SHRINKS);
     if (!w)
         free(b);
@@ -317,4 +336,17 @@ idunn_widget_t *idunn_spacer(void)
     if (w)
         w->grow = 1;
     return w;
+}
+
+void idunn_box_set_keep_end(idunn_widget_t *box, bool keep_end)
+{
+    box_t *b = as_box(box);
+    if (!b)
+        return;
+    b->keep_end = keep_end;
+    if (keep_end)
+        box->flags |= IDUNN_CLIPS;
+    else
+        box->flags &= ~IDUNN_CLIPS;
+    idunn_relayout(box);
 }

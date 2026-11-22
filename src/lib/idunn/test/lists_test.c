@@ -188,6 +188,32 @@ static void test_tabs(idunn_context_t *ctx)
     free(win);
 }
 
+/**
+ * a row that keeps its end: the last children are in view, the first are
+ * out of it (left of the row) and the row clips them.
+ */
+static void test_keep_end(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 200, 100);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_widget_t *bar = idunn_add(col, idunn_row(0, 0));
+    idunn_widget_t *parts[6];
+    for (int i = 0; i < 6; i++)
+    {
+        parts[i] = idunn_add(bar, idunn_button("Folder", IDUNN_GHOST, NULL, NULL));
+        idunn_set_size(parts[i], 60, 0);
+    }
+    idunn_box_set_keep_end(bar, true);
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+    // 6 of 60 in 200: the last three fit, the third is the first in view
+    CHECK_EQ(parts[5]->rect.x + parts[5]->rect.w, 180);
+    CHECK_EQ(parts[3]->rect.x, 0);
+    CHECK(parts[2]->rect.x < 0);
+    CHECK(bar->flags & IDUNN_CLIPS);
+    idunn_window_free_widgets(win);
+}
+
 static int menus;
 static void count_menu(idunn_widget_t *w, void *data)
 {
@@ -392,5 +418,6 @@ void test_lists(idunn_context_t *ctx)
     test_tabs(ctx);
     test_list(ctx);
     test_list_menu(ctx);
+    test_keep_end(ctx);
     test_grid(ctx);
 }

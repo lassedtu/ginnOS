@@ -2,11 +2,12 @@
  * @file places.c
  * @brief yggdrasil: the sidebar: the home folder and the folders in it,
  *        the whole computer, and the trash. the place that is open has
- *        the outline look.
+ *        the outline look. a right click on the trash can empty it.
  */
 
 #include "yggdrasil.h"
 
+#include <dirent.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -53,6 +54,51 @@ static void place_clicked(idunn_widget_t *b, void *data)
     navigate(path, true);
 }
 
+#define TRASH_PLACE 7
+
+static void trash_open(idunn_widget_t *w, void *data)
+{
+    (void)data;
+    place_clicked(w, (void *)(intptr_t)TRASH_PLACE);
+}
+
+static void trash_empty_chosen(idunn_widget_t *w, void *data)
+{
+    (void)w;
+    (void)data;
+    actions_empty_trash();
+}
+
+/** true when the trash has something in it */
+static bool trash_has_things(void)
+{
+    char files[PATH_LEN];
+    snprintf(files, sizeof(files), "%s/files", Y.trash);
+    DIR *dir = opendir(files);
+    struct dirent *e;
+    bool found = false;
+    while (dir && !found && (e = readdir(dir)))
+        found = strcmp(e->d_name, ".") != 0 && strcmp(e->d_name, "..") != 0;
+    if (dir)
+        closedir(dir);
+    return found;
+}
+
+static void trash_menu(idunn_widget_t *w, void *data)
+{
+    (void)data;
+    static idunn_menu_t *menu;
+    if (menu)
+        idunn_menu_free(menu);
+    menu = idunn_menu_new();
+    idunn_menu_add(menu, "folder-open", "Open", NULL, trash_open, NULL);
+    idunn_menu_add_separator(menu);
+    int empty = idunn_menu_add(menu, "trash", "Empty the trash...", NULL, trash_empty_chosen,
+                               NULL);
+    idunn_menu_set_disabled(menu, empty, !trash_has_things());
+    idunn_menu_popup_at_pointer(menu, w);
+}
+
 void places_update(void)
 {
     char path[PATH_LEN];
@@ -94,5 +140,6 @@ idunn_widget_t *places_build(void)
         if (places[i].folder && !own_home)
             idunn_set_hidden(buttons[i], true);
     }
+    idunn_on_menu(buttons[TRASH_PLACE], trash_menu, NULL);
     return side;
 }

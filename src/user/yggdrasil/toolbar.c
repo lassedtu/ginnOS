@@ -4,7 +4,8 @@
  *        list and grid buttons.
  *
  * the path bar has a button for each folder of the path (the home folder
- * is one button, "Home"); a click goes there. Ctrl+L, or a click on the
+ * is one button, "Home"); a click goes there. when the path is longer
+ * than the bar, the first buttons go out of view on the left. Ctrl+L, or a click on the
  * free space of the bar, makes it a text field to type a path in.
  */
 
@@ -14,7 +15,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define PARTS_MAX 8 // the last folders of a long path; "..." before them
+#define PARTS_MAX 64 // folders in the path bar; a long path shows its end
+#define NAME_SHOWN 32 // a longer folder name is cut, with "..." at its end
 
 static struct
 {
@@ -124,18 +126,16 @@ static void build_parts(void)
     snprintf(T.paths[index], PATH_LEN, "%s", in_home ? Y.home : "/");
     add_part(index++, in_home ? "house" : "hard-drive", in_home ? "Home" : "Computer",
              count == 0);
-    if (first > 0)
-    {
-        // "..." goes to the folder above the first one shown
-        snprintf(T.paths[index], PATH_LEN, "%.*s", (int)(starts[first] - 1 - path), path);
-        add_part(index++, NULL, "...", false);
-    }
     for (int i = first; i < count; i++)
     {
         const char *end = i + 1 < count ? starts[i + 1] - 1 : rest + strlen(rest);
         snprintf(T.paths[index], PATH_LEN, "%.*s", (int)(end - path), path);
-        char name[256];
-        snprintf(name, sizeof(name), "%.*s", (int)(end - starts[i]), starts[i]);
+        int length = (int)(end - starts[i]);
+        char name[NAME_SHOWN + 8];
+        if (length > NAME_SHOWN)
+            snprintf(name, sizeof(name), "%.*s...", NAME_SHOWN - 3, starts[i]);
+        else
+            snprintf(name, sizeof(name), "%.*s", length, starts[i]);
         add_part(index++, NULL, name, i == count - 1);
     }
 }
@@ -202,6 +202,7 @@ idunn_widget_t *toolbar_build(void)
 
     T.bar = idunn_grow(idunn_add(row, idunn_row(1, 0)), 1);
     idunn_box_set_padding(T.bar, 0, 2);
+    idunn_box_set_keep_end(T.bar, true);
     idunn_box_set_align(T.bar, IDUNN_CENTER, IDUNN_START);
     idunn_on_menu(T.bar, bar_menu, NULL);
 
