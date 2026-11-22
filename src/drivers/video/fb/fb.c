@@ -9,6 +9,8 @@
 #include "kernel/memory/mman.h"
 #include "kernel/memory/mmio.h"
 #include "kernel/process/process.h"
+#include "drivers/video/display.h"
+#include "kernel/memory/pmm.h"
 #include "common/fb/fb_ioctl.h"
 #include "common/boot/video_modes.h"
 #include "common/memory.h"
@@ -23,6 +25,10 @@
  * uncached linear framebuffer. if the back buffer can't be allocated the
  * driver falls back to writing the LFB directly (draw_target == fb.addr) and
  * fb_flush becomes a no-op.
+ *
+ * a display driver (drivers/video/display.h) can change the mode: the
+ * framebuffer then moves, and the back buffer is made again at the new
+ * size with the old picture in its top left corner.
  */
 
 static fb_info_t fb;
@@ -103,8 +109,10 @@ static int32_t fb_dev_mmap(device_t *dev, addr_space_t as, uintptr_t virt,
         length = fb_bytes - offset;
     }
 
-    // writable unless the caller asked for a read-only mapping.
+    // writable unless the caller asked for a read-only mapping. shared, so
+    // a fork does not copy it
     uint32_t flags = (prot & PROT_WRITE) ? MMU_USER_RW : MMU_FLAG_PRESENT | MMU_FLAG_USER;
+    flags |= MMU_FLAG_SHARED;
 
     phys_addr_t phys = fb.phys + offset;
     phys_addr_t phys_start = PAGE_ALIGN_DOWN(phys);
@@ -116,6 +124,13 @@ static int32_t fb_dev_mmap(device_t *dev, addr_space_t as, uintptr_t virt,
         if (arch_map_page(as, v, p, flags) != 0)
         {
             return -ENOMEM;
+        }
+        // a framebuffer in RAM (virtio-gpu): the mapping holds a reference,
+        // which the unmap drops, so the frames outlive a mode change while
+        // they are still mapped
+        if (pmm_owns(p))
+        {
+            pmm_page_ref(phys_to_virt(p));
         }
         v += PAGE_SIZE;
     }
@@ -245,18 +260,41 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
 
     case FBIOPUT_VSCREENINFO:
     {
-        // mode-setting is not supported: accept only a request matching the
-        // current mode, reject anything else. the seam is here for later.
         fb_var_screeninfo_t var;
         if (kerr_failed(copy_from_user(&var, arg, sizeof(var))))
         {
             return -EFAULT;
         }
-        if (var.xres == fb.width && var.yres == fb.height && var.bits_per_pixel == fb.bpp)
+        if (var.xres == fb.width && var.yres == fb.height &&
+            (var.bits_per_pixel == fb.bpp || var.bits_per_pixel == 0))
         {
             return 0;
         }
-        return -EINVAL;
+        if (var.bits_per_pixel != 32 && var.bits_per_pixel != 0)
+        {
+            return -EINVAL;
+        }
+        return fb_set_mode(var.xres, var.yres) ? 0 : -EINVAL;
+    }
+
+    case FBIO_FLUSH:
+    {
+        fb_rect_t r;
+        if (kerr_failed(copy_from_user(&r, arg, sizeof(r))))
+        {
+            return -EFAULT;
+        }
+        const display_driver_t *driver = display_driver();
+        if (driver && driver->flush && r.x < fb.width && r.y < fb.height)
+        {
+            uint32_t w = r.width < fb.width - r.x ? r.width : fb.width - r.x;
+            uint32_t h = r.height < fb.height - r.y ? r.height : fb.height - r.y;
+            if (w && h)
+            {
+                driver->flush(r.x, r.y, w, h);
+            }
+        }
+        return 0;
     }
 
     case FBIO_GRAPHICS:
@@ -296,7 +334,18 @@ static int32_t fb_dev_ioctl(device_t *dev, uint32_t request, void *arg)
         }
         const boot_video_mode_t *modes;
         uint32_t count = boot_video_modes(&modes);
-        if (count == 0)
+        mode.preferred = 0;
+        if (display_driver())
+        {
+            bool preferred;
+            if (!display_mode_at(mode.index, &mode.width, &mode.height, &preferred))
+            {
+                return -EINVAL;
+            }
+            mode.bpp = 32;
+            mode.preferred = preferred;
+        }
+        else if (count == 0)
         {
             // no list from the bootloader: the current mode is the only one
             if (mode.index != 0)
@@ -508,6 +557,16 @@ void fb_copy_rect(uint32_t dst_x, uint32_t dst_y,
         return;
     }
 
+    // the text grid can be larger than a smaller mode set after it
+    uint32_t bottom = dst_y > src_y ? dst_y : src_y;
+    uint32_t right = dst_x > src_x ? dst_x : src_x;
+    if (bottom >= fb.height || right >= fb.width)
+    {
+        return;
+    }
+    h = h < fb.height - bottom ? h : fb.height - bottom;
+    w = w < fb.width - right ? w : fb.width - right;
+
     // top-to-bottom row order is safe when moving up (dst_y < src_y), which is
     // how the terminal scrolls.
     for (uint32_t row = 0; row < h; row++)
@@ -563,7 +622,64 @@ void fb_flush(void)
     uint32_t offset = dirty_top * fb.pitch;
     uint32_t bytes = (dirty_bottom - dirty_top) * fb.pitch;
     memcpy(fb.addr + offset, back_buffer + offset, bytes);
+    const display_driver_t *driver = display_driver();
+    if (driver && driver->flush)
+    {
+        driver->flush(0, dirty_top, fb.width, dirty_bottom - dirty_top);
+    }
 
     dirty_top = 0;
     dirty_bottom = 0;
+}
+
+bool fb_set_mode(uint32_t width, uint32_t height)
+{
+    const display_driver_t *driver = display_driver();
+    if (!fb_ready || !driver || width == 0 || height == 0 || width > driver->max_width ||
+        height > driver->max_height)
+    {
+        return false;
+    }
+    display_surface_t s;
+    if (!driver->set_mode(width, height, &s))
+    {
+        return false;
+    }
+
+    // a back buffer of the new size, with the old picture in its top left
+    // corner. without memory for it, drawing goes to the screen itself.
+    uint8_t *next = back_buffer ? kmalloc(s.height * s.pitch) : NULL;
+    if (next)
+    {
+        memset(next, 0, s.height * s.pitch);
+        uint32_t rows = fb.height < s.height ? fb.height : s.height;
+        uint32_t bytes = (fb.width < s.width ? fb.width : s.width) * 4;
+        for (uint32_t y = 0; fb.bytes_pp == 4 && y < rows; y++)
+        {
+            memcpy(next + y * s.pitch, back_buffer + y * fb.pitch, bytes);
+        }
+    }
+
+    uint32_t flags = arch_irq_save();
+    kfree(back_buffer);
+    back_buffer = next;
+    fb.phys = s.phys;
+    fb.addr = s.addr;
+    fb.width = s.width;
+    fb.height = s.height;
+    fb.pitch = s.pitch;
+    fb.bpp = 32;
+    fb.bytes_pp = 4;
+    fb.red_size = fb.green_size = fb.blue_size = 8;
+    fb.red_shift = 16;
+    fb.green_shift = 8;
+    fb.blue_shift = 0;
+    draw_target = back_buffer ? back_buffer : fb.addr;
+    dirty_top = 0;
+    dirty_bottom = fb.height;
+    arch_irq_restore(flags);
+
+    fb_flush();
+    display_event(FB_EVENT_MODE, fb.width, fb.height);
+    return true;
 }

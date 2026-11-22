@@ -37,7 +37,9 @@
 #include "kernel/input/input.h"
 #include "kernel/tty/pty.h"
 #include "kernel/device/null.h"
+#include "drivers/video/display.h"
 #include "drivers/video/fb/fb.h"
+#include "drivers/video/virtio_gpu.h"
 #include "common/memory.h"
 #include "common/string.h"
 #include "klog/klog.h"
@@ -276,6 +278,11 @@ void kernel_main(boot_info_t *boot)
     // bring up the linear framebuffer (if the bootloader set a graphics mode).
     // must follow paging_init: the LFB lives above identity-mapped RAM.
     fb_init(boot);
+
+    // a display driver that can change the mode takes over the screen,
+    // at the size the screen wants, before the console sizes its text grid
+    display_init();
+    virtio_gpu_init();
 
     // bring up the console now that the framebuffer (if any) is mapped. it
     // picks the framebuffer backend when present, else the VGA text buffer.
