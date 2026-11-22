@@ -235,6 +235,11 @@ bool input_init(void);
 void input_read(void);
 void input_pointer_update(void);
 
+// in keytext.c
+void keytext_init(const char *layout_name);
+/** the text a key press types with these modifiers, UTF-8, in out (8 bytes) */
+void keytext_of(uint16_t code, uint32_t mods, char out[8]);
+
 // in cursor.c
 
 void cursor_init(void);
