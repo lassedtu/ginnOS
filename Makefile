@@ -183,7 +183,7 @@ LIMINE_DISK_TOOL := tools/limine/make_disk.py
 LIMINE_CONF      := tools/limine/limine-$(ARCH).conf
 # the screen size, for example RESOLUTION=1280x800. empty: limine picks the
 # size (in QEMU: 1280x1024 for i686, 1280x800 for x86_64).
-RESOLUTION       ?= 1920x1080
+RESOLUTION       ?= 2560x1664
 
 # UEFI firmware for make run-uefi (OVMF; homebrew and nix qemu include it)
 QEMU_UEFI ?= qemu-system-x86_64
@@ -639,8 +639,17 @@ else
 QEMU_AUDIO_FLAGS :=
 endif
 
+# the window of make run: on macOS, the screen is scaled smoothly to fit the
+# window and full screen (a Retina display has fewer points than the guest
+# has pixels, and the default scaling is nearest neighbour)
+ifeq ($(shell uname -s),Darwin)
+QEMU_DISPLAY ?= -display cocoa,zoom-to-fit=on,zoom-interpolation=on
+else
+QEMU_DISPLAY ?=
+endif
+
 run: check-tools $(DISK_IMAGE)
-	$(QEMU) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+	$(QEMU) $(QEMU_FLAGS) $(QEMU_DISPLAY) $(QEMU_AUDIO_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 # boot the disk image with UEFI firmware (limine only: stage1 is BIOS-only).
 # the i686 kernel also runs on an x86_64 CPU, so this uses the x86_64
@@ -648,7 +657,7 @@ run: check-tools $(DISK_IMAGE)
 run-uefi: check-tools $(DISK_IMAGE)
 	@test "$(BOOTLOADER)" = limine || { echo "make run-uefi needs BOOTLOADER=limine"; exit 1; }
 	@test -n "$(OVMF_CODE)" || { echo "no OVMF firmware found: set OVMF_CODE=<path to OVMF_CODE.fd>"; exit 1; }
-	$(QEMU_UEFI) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) \
+	$(QEMU_UEFI) $(QEMU_FLAGS) $(QEMU_DISPLAY) $(QEMU_AUDIO_FLAGS) \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
