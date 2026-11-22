@@ -239,6 +239,11 @@ int heim_next_event(heim_conn_t *conn, heim_event_t *event, int timeout_ms)
         event->window->busy = false;
     if (event->type == HEIM_EV_CLIPBOARD)
         read_clipboard(conn, event);
+    if (event->type == HEIM_EV_SCREEN)
+    {
+        conn->screen_width = event->msg.size.width;
+        conn->screen_height = event->msg.size.height;
+    }
     return 1;
 }
 

@@ -101,8 +101,33 @@ static void diagonal(cursor_t *cur, bool mirror)
     cur->hot_y = n / 2;
 }
 
-void cursor_init(void)
+/**
+ * make a cursor scale times larger, each pixel a square, so it stays sharp.
+ */
+static void enlarge(cursor_t *cur, int32_t scale)
 {
+    if (!cur->image || scale <= 1)
+        return;
+    gfx_buffer_t *small = cur->image;
+    cur->image = gfx_buffer_new(small->width * scale, small->height * scale);
+    if (cur->image)
+    {
+        for (int32_t y = 0; y < cur->image->height; y++)
+            for (int32_t x = 0; x < cur->image->width; x++)
+                *gfx_pixel_at(cur->image, x, y) = *gfx_pixel_at(small, x / scale, y / scale);
+    }
+    cur->hot_x = cur->hot_x * scale + scale / 2;
+    cur->hot_y = cur->hot_y * scale + scale / 2;
+    gfx_buffer_free(small);
+}
+
+void cursor_init(int32_t scale)
+{
+    for (int i = 0; i < CURSOR_COUNT; i++)
+    {
+        gfx_buffer_free(cursors[i].image);
+        cursors[i].image = NULL;
+    }
     from_rows(&cursors[HEIM_CURSOR_ARROW], arrow, 20, 0, 0, false);
     from_rows(&cursors[HEIM_CURSOR_TEXT], beam, 17, 3, 8, false);
     from_rows(&cursors[HEIM_CURSOR_HAND], hand, 18, 5, 0, false);
@@ -110,6 +135,8 @@ void cursor_init(void)
     from_rows(&cursors[CURSOR_RESIZE_V], resize_h, 9, 10, 4, true);
     diagonal(&cursors[CURSOR_RESIZE_NWSE], false);
     diagonal(&cursors[CURSOR_RESIZE_NESW], true);
+    for (int i = 0; i < CURSOR_COUNT; i++)
+        enlarge(&cursors[i], scale);
 }
 
 gfx_rect_t cursor_rect(uint32_t shape, int32_t x, int32_t y)

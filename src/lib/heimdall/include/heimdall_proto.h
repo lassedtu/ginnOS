@@ -68,6 +68,7 @@
 #define HEIM_EV_FRAME     70 // the last commit is on the screen
 #define HEIM_EV_CLIPBOARD 71 // clip: the length; with an fd of the text when not 0
 #define HEIM_EV_SETTINGS  72 // settings: the settings file that changed (read it again)
+#define HEIM_EV_SCREEN    73 // size: the screen has a new size
 
 // create flags
 #define HEIM_WINDOW_RESIZABLE   0x01 // the user can resize it

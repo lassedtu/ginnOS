@@ -37,6 +37,22 @@ static gfx_color_t token(idunn_color_t which)
 
 void window_look(void)
 {
+    // the title, the buttons and the pointer at the scale
+    int32_t scale = S.theme.scale;
+    bragi_face_free(S.title_face);
+    S.title_face = S.title_font ? bragi_face_new(S.title_font, 13.0f * (float)scale) : NULL;
+    icon_t **icons[] = {&S.icon_minimize, &S.icon_maximize, &S.icon_restore, &S.icon_close};
+    const char *names[] = {"minus", "square", "copy", "x"};
+    icon_set_t *lucide = icon_set_named("lucide");
+    for (int i = 0; i < 4; i++)
+    {
+        icon_free(*icons[i]);
+        *icons[i] = lucide ? icon_load(lucide, names[i], 16, scale) : NULL;
+    }
+    icon_set_close(lucide);
+    cursor_init(scale);
+    S.cursor_rect = cursor_rect(S.cursor, S.px, S.py);
+
     radius = idunn_radius_lg(&S.theme);
 
     // the shadow: the theme's window shadow around a window large enough
@@ -179,7 +195,7 @@ static gfx_rect_t button_rect(const window_t *w, part_t part)
         slot = 1;
     else if (part == PART_MINIMIZE)
         slot = (w->flags & HEIM_WINDOW_RESIZABLE) ? 2 : 1;
-    int32_t x = w->content.width - 6 - (slot + 1) * BUTTON_WIDTH;
+    int32_t x = w->content.width - idunn_px(&S.theme, 6) - (slot + 1) * BUTTON_WIDTH;
     return gfx_rect(x, (TITLE_HEIGHT - BUTTON_HEIGHT) / 2, BUTTON_WIDTH, BUTTON_HEIGHT);
 }
 
@@ -239,7 +255,7 @@ static void draw_bar(window_t *w)
     gfx_fill_rect(w->bar, gfx_rect(0, TITLE_HEIGHT - 1, width, 1), token(IDUNN_COLOR_BORDER));
 
     // the title, in the middle, between the buttons
-    int32_t buttons = 6 + 3 * BUTTON_WIDTH + 8;
+    int32_t buttons = idunn_px(&S.theme, 6 + 8) + 3 * BUTTON_WIDTH;
     if (S.title_face && width > 2 * buttons)
     {
         bragi_face_t *f = S.title_face;
@@ -635,10 +651,11 @@ void window_show(window_t *w)
         return;
     }
     gfx_rect_t f = window_frame(w);
-    int32_t step = (int32_t)(S.placed % 8) * 28;
+    int32_t cascade = idunn_px(&S.theme, 28);
+    int32_t step = (int32_t)(S.placed % 8) * cascade;
     S.placed++;
-    w->x = (S.width - f.w) / 2 - 3 * 28 + step;
-    w->y = (S.height - f.h) / 2 - 3 * 28 + step;
+    w->x = (S.width - f.w) / 2 - 3 * cascade + step;
+    w->y = (S.height - f.h) / 2 - 3 * cascade + step;
     if (w->x + f.w > S.width)
         w->x = S.width - f.w;
     if (w->y + f.h > S.height)

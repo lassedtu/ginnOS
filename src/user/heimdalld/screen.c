@@ -165,7 +165,11 @@ void screen_display_events(void)
         if (S.py >= S.height)
             S.py = S.height - 1;
         S.cursor_rect = cursor_rect(S.cursor, S.px, S.py);
+        // a large screen can mean another scale
+        if (idunn_theme_fit(&S.theme, S.width))
+            window_look();
         window_screen_changed();
+        client_screen_changed();
     }
 }
 
