@@ -79,6 +79,7 @@ static const char *find_iwad(void)
 }
 
 static uint8_t *screen;      // the mapped framebuffer
+static int screen_fd = -1;   // /dev/fb0, for the flushes
 static uint32_t screen_pitch; // bytes per framebuffer row
 static uint32_t screen_bpp;   // bytes per framebuffer pixel
 static fb_var_screeninfo_t screen_info;
@@ -186,7 +187,12 @@ void DG_Init(void)
     }
 
     screen = mmap(NULL, fix.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    close(fd);
+    // the fd stays open: each frame is flushed (virtio-gpu shows only what
+    // is flushed), and the console stays off the screen. the kernel gives
+    // the screen back when doom ends.
+    screen_fd = fd;
+    int on = 1;
+    ioctl(fd, FBIO_GRAPHICS, &on);
     if (screen == MAP_FAILED)
     {
         fprintf(stderr, "doom: cannot map the framebuffer\n");
@@ -221,6 +227,8 @@ void DG_Init(void)
     {
         memset(screen + y * screen_pitch, 0, screen_info.xres * screen_bpp);
     }
+    fb_rect_t whole = {0, 0, screen_info.xres, screen_info.yres};
+    ioctl(screen_fd, FBIO_FLUSH, &whole);
 }
 
 void DG_DrawFrame(void)
@@ -263,6 +271,8 @@ void DG_DrawFrame(void)
             }
         }
     }
+    fb_rect_t picture = {origin_x, origin_y, width, DOOMGENERIC_RESY * scale};
+    ioctl(screen_fd, FBIO_FLUSH, &picture);
 }
 
 void DG_SleepMs(uint32_t ms)

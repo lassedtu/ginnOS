@@ -148,12 +148,17 @@ int main(int argc, char **argv)
 
     uint8_t *fbmem = (uint8_t *)mmap(0, fix.smem_len, PROT_READ | PROT_WRITE,
                                      MAP_SHARED, fd, 0);
-    close(fd); // the mapping persists after close (kernel maps eagerly).
     if (fbmem == MAP_FAILED)
     {
         printf("metaballs: framebuffer map failed\n");
         return 1;
     }
+    // the fd stays open: each frame is flushed to the screen (virtio-gpu
+    // shows only what is flushed). the console stays off the screen until
+    // the program ends; the kernel then gives the screen back.
+    int on = 1;
+    ioctl(fd, FBIO_GRAPHICS, &on);
+    fb_rect_t whole = {0, 0, fb.width, fb.height};
 
     int color_mode = (argc > 1 && strcmp(argv[1], "color") == 0);
 
@@ -194,6 +199,8 @@ int main(int argc, char **argv)
             // built as explicit bytes (ESC = 0x1B) to avoid GCC emitting a
             // .base64 directive for a string literal containing \033.
             char seq[] = {0x1B, '[', '2', 'J', 0x1B, '[', 'H', '\0'};
+            int off = 0;
+            ioctl(fd, FBIO_GRAPHICS, &off);
             for (int i = 0; seq[i]; i++)
             {
                 putchar(seq[i]);
@@ -273,6 +280,7 @@ int main(int argc, char **argv)
             }
         }
 
+        ioctl(fd, FBIO_FLUSH, &whole);
         delay();
     }
 
