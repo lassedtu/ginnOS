@@ -172,7 +172,8 @@ void gfx_fill_gradient(gfx_buffer_t *buf, gfx_rect_t r, gfx_color_t top, gfx_col
     gfx_rect_t c = gfx_rect_intersect(r, gfx_clip_of(buf));
     for (int32_t y = c.y; y < c.y + c.h; y++)
     {
-        uint32_t f = r.h > 1 ? (uint32_t)((y - r.y) * 256 / (r.h - 1)) : 0;
+        // sampled at the pixel centre, as CSS gradients are
+        uint32_t f = (uint32_t)(((int64_t)(y - r.y) * 2 + 1) * 256 / (2 * r.h));
         uint32_t color = gfx_lerp_pixel(top, bottom, f);
         uint32_t *row = gfx_pixel_at(buf, c.x, y);
         for (int32_t i = 0; i < c.w; i++)

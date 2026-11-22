@@ -1,7 +1,7 @@
 TEST     := bragi
 SRCS     := bragi_test.c
 LIB_SRCS := ../bragi_font.c ../bragi_cache.c ../bragi_text.c ../bragi_cell.c
-LIBS     := gfx
+LIBS     := gfx image
 include ../../host-test.mk
 
 # the tests use the real fonts (tools/fonts/fetch.sh, from its cache)

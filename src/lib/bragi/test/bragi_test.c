@@ -9,7 +9,9 @@
 
 #include "bragi.h"
 #include "hosttest.h"
+#include "image.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -102,6 +104,45 @@ static void test_measure(void)
     CHECK(cw >= 8 && cw <= 10);
     CHECK_EQ(ch, bragi_line_height(m));
     bragi_face_free(m);
+}
+
+static void test_caret(void)
+{
+    bragi_face_t *face = bragi_face_new(inter, 13);
+    const char *text = "Tab \xc3\xa6x"; // "Tab æx": æ is 2 bytes
+
+    // the caret at each character is where the text before it ends
+    CHECK_EQ(bragi_caret_x(face, text, -1, 0), 0);
+    int32_t prev = 0;
+    for (int32_t offset = 1; offset <= 7; offset++)
+    {
+        if (offset == 5)
+            continue; // the middle of æ
+        int32_t x = bragi_caret_x(face, text, -1, offset);
+        CHECK(x > prev);
+        CHECK(x - bragi_measure(face, text, offset) <= 0);
+        CHECK(bragi_measure(face, text, offset) - x <= 1);
+        prev = x;
+    }
+    CHECK_EQ(bragi_caret_x(face, text, -1, 99), bragi_caret_x(face, text, -1, 7));
+
+    // a click goes to the nearest caret place, never into a character
+    CHECK_EQ(bragi_offset_at(face, text, -1, -5), 0);
+    CHECK_EQ(bragi_offset_at(face, text, -1, 1), 0);
+    CHECK_EQ(bragi_offset_at(face, text, -1, 999), 7);
+    for (int32_t offset = 0; offset <= 7; offset++)
+    {
+        if (offset == 5)
+            continue;
+        CHECK_EQ(bragi_offset_at(face, text, -1, bragi_caret_x(face, text, -1, offset)), offset);
+    }
+
+    // letter spacing moves the caret too
+    int32_t plain = bragi_caret_x(face, text, -1, 3);
+    bragi_face_set_tracking(face, 0.1f);
+    CHECK(bragi_caret_x(face, text, -1, 3) >= plain + 3);
+    CHECK(bragi_measure(face, text, 3) >= plain + 3);
+    bragi_face_free(face);
 }
 
 static void test_wrap(void)
@@ -259,6 +300,71 @@ static void test_scene(void)
     gfx_buffer_free(buf);
 }
 
+static uint8_t *rgb_of(const gfx_buffer_t *buf)
+{
+    uint8_t *rgb = malloc((size_t)buf->width * buf->height * 3);
+    for (int32_t i = 0; i < buf->width * buf->height; i++)
+    {
+        uint32_t p = *gfx_pixel_at(buf, i % buf->width, i / buf->width);
+        rgb[i * 3] = (uint8_t)(p >> 16);
+        rgb[i * 3 + 1] = (uint8_t)(p >> 8);
+        rgb[i * 3 + 2] = (uint8_t)p;
+    }
+    return rgb;
+}
+
+/**
+ * draw one line of text as a reference cell does (its line box at
+ * (12, 11)) and compare it with Chrome's drawing in test/reference.
+ */
+static void text_cell(const char *name, const char *font_file, float size, float tracking,
+                      int32_t line_height, int32_t width, int32_t height, gfx_color_t background,
+                      gfx_color_t color, const char *text, double mean_limit)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/inter/%s", FONT_DIR, font_file);
+    bragi_font_t *font = bragi_font_open(path);
+    bragi_face_t *face = font ? bragi_face_new(font, size) : NULL;
+    snprintf(path, sizeof(path), "%s/reference/%s.png", TEST_DIR, name);
+    gfx_buffer_t *ref = image_load(path, NULL);
+    CHECK(face != NULL && ref != NULL);
+    if (face && ref)
+    {
+        bragi_face_set_tracking(face, tracking);
+        gfx_buffer_t *buf = gfx_buffer_new(width, height);
+        gfx_clear(buf, background);
+        bragi_draw(buf, face, 12, 11 + bragi_line_baseline(face, line_height), text, -1, color);
+        uint8_t *got = rgb_of(buf);
+        uint8_t *want = rgb_of(ref);
+        hosttest_compare(name, got, want, width, height, 255, mean_limit);
+        free(got);
+        free(want);
+        gfx_buffer_free(buf);
+    }
+    gfx_buffer_free(ref);
+    bragi_face_free(face);
+    bragi_font_close(font);
+}
+
+/**
+ * the text styles of idunn (plan section 2.3) against Chrome's drawing of
+ * the same Inter files (tools/idunn-ref/spec.py). the places, widths and
+ * baselines are the same; single pixels can differ much, as Chrome moves
+ * the x-height of small text onto a pixel row (hinting) and stb_truetype
+ * does not, so only the mean is checked.
+ */
+static void test_reference(void)
+{
+    gfx_color_t dark = gfx_rgb(0x09, 0x09, 0x0b);
+    gfx_color_t light = gfx_rgb(0xfa, 0xfa, 0xfa);
+    text_cell("label", "Inter-Medium.ttf", 13, -0.006f, 18, 140, 40, dark, light, "Apply changes",
+              4.0);
+    text_cell("body", "Inter-Regular.ttf", 13, -0.006f, 18, 140, 40, gfx_rgb(255, 255, 255), dark,
+              "Find a file", 3.0);
+    text_cell("heading", "Inter-SemiBold.ttf", 19, -0.02f, 26, 160, 48, dark, light, "Appearance",
+              0.5);
+}
+
 int main(void)
 {
     inter = bragi_font_open(FONT_DIR "/inter/Inter-Regular.ttf");
@@ -270,10 +376,12 @@ int main(void)
     test_utf8();
     test_fonts();
     test_measure();
+    test_caret();
     test_wrap();
     test_cache();
     test_fallback();
     test_scene();
+    test_reference();
     bragi_font_close(inter);
     bragi_font_close(mono);
     return hosttest_done("bragi");
