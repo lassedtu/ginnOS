@@ -73,6 +73,19 @@ int heim_next_event(heim_conn_t *conn, heim_event_t *event, int timeout_ms);
 heim_window_t *heim_window_new(heim_conn_t *conn, int32_t width, int32_t height,
                                const char *title, uint32_t flags);
 
+/**
+ * make a popup of parent (a menu, a popover; with HEIM_WINDOW_TOOLTIP a
+ * tooltip). place it with heim_window_place before its first commit.
+ */
+heim_window_t *heim_popup_new(heim_window_t *parent, int32_t width, int32_t height,
+                              uint32_t flags);
+
+/**
+ * where a popup goes: next to the rect r of its parent's content, on a
+ * side (HEIM_SIDE_). margin: the shadow around its card in its buffer.
+ */
+void heim_window_place(heim_window_t *popup, gfx_rect_t r, uint32_t side, int32_t margin);
+
 void heim_window_free(heim_window_t *win);
 
 /**

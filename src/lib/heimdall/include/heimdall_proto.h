@@ -24,6 +24,16 @@
  * is placed by the server. HEIM_EV_CONFIGURE asks the client for another
  * size (maximize, a resize with the mouse): the client attaches a buffer
  * of that size and commits it.
+ *
+ * a popup (a menu, a select's choices, a popover, a tooltip) is a window
+ * with HEIM_WINDOW_POPUP and a parent window. it has no decorations and
+ * its pixels can be see-through; the client draws its shadow in a margin
+ * around it. HEIM_REQ_PLACE gives a rect in the parent's content to show
+ * it next to and a side; the server puts it there, on the other side
+ * when there is no room, and inside the screen. a popup is above its
+ * parent and gets the keyboard (a tooltip, HEIM_WINDOW_TOOLTIP, gets no
+ * input at all). a press outside the open popups closes them: each gets
+ * HEIM_EV_CLOSE, and the press goes nowhere else.
  */
 
 #include <stdint.h>
@@ -47,6 +57,7 @@
 #define HEIM_REQ_CLIP_SET 8 // clip: the length; with an fd of the text when not 0
 #define HEIM_REQ_CLIP_GET 9 // answered with HEIM_EV_CLIPBOARD
 #define HEIM_REQ_SETTINGS 10 // settings: a settings file changed; all clients are told
+#define HEIM_REQ_PLACE    11 // place: where a popup goes
 
 #define HEIM_EV_WELCOME   64 // size: the screen
 #define HEIM_EV_CONFIGURE 65 // configure: the size the window should get
@@ -62,6 +73,13 @@
 #define HEIM_WINDOW_RESIZABLE   0x01 // the user can resize it
 #define HEIM_WINDOW_ALPHA       0x02 // the content has see-through pixels
 #define HEIM_WINDOW_UNDECORATED 0x04 // no title bar and no shadow
+#define HEIM_WINDOW_POPUP       0x08 // a popup of create.parent (see above)
+#define HEIM_WINDOW_TOOLTIP     0x10 // with POPUP: no keyboard, no pointer
+
+// the side of a rect a popup goes to (place.side)
+#define HEIM_SIDE_BELOW 0 // under it, from its left edge (or above it)
+#define HEIM_SIDE_ABOVE 1 // over it, in the middle (or below it)
+#define HEIM_SIDE_RIGHT 2 // to its right, from its top (or to its left): a sub-menu
 
 // configure state
 #define HEIM_STATE_MAXIMIZED 0x01
@@ -119,7 +137,17 @@ typedef struct
             int32_t height;
             uint32_t flags; // HEIM_WINDOW_
             char title[HEIM_TITLE_MAX];
+            uint32_t parent; // POPUP: the window it belongs to
         } create;
+        struct
+        {
+            int32_t x; // a rect in the parent's content
+            int32_t y;
+            int32_t width;
+            int32_t height;
+            uint32_t side;  // HEIM_SIDE_
+            int32_t margin; // the shadow around the popup's card in its buffer
+        } place;
         struct
         {
             int32_t width;

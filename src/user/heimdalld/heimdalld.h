@@ -74,6 +74,10 @@ typedef struct window
     client_t *client;
     uint32_t id; // the client's number for it
     uint32_t flags;
+    struct window *parent; // a popup's window (NULL: a normal window)
+    gfx_rect_t anchor;     // a popup: the rect of the parent's content it goes next to
+    uint32_t side;         // HEIM_SIDE_
+    int32_t margin;        // the shadow around its card
     char title[HEIM_TITLE_MAX];
 
     int32_t x; // the top left of the frame (the title bar)
@@ -198,7 +202,18 @@ void screen_compose(void);
 // in window.c
 
 void window_init(void);
-window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title);
+window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title,
+                     window_t *parent);
+bool window_is_popup(const window_t *w);
+/** a popup's window at the bottom of its chain (a normal window: itself) */
+window_t *window_root(window_t *w);
+/** put a popup next to its anchor, after a HEIM_REQ_PLACE */
+void window_place(window_t *w);
+/**
+ * send HEIM_EV_CLOSE to every popup and hide them.
+ * @return true if a popup that takes input was open (not only a tooltip).
+ */
+bool window_close_popups(void);
 void window_destroy(window_t *w);
 window_t *window_find(client_t *client, uint32_t id);
 bool window_decorated(const window_t *w);

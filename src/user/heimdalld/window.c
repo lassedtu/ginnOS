@@ -92,7 +92,20 @@ gfx_rect_t window_bounds(const window_t *w)
 
 bool window_visible(const window_t *w)
 {
-    return w->shown && !w->minimized && w->content.pixels;
+    return w->shown && !w->minimized && w->content.pixels &&
+           (!w->parent || window_visible(w->parent));
+}
+
+bool window_is_popup(const window_t *w)
+{
+    return w->flags & HEIM_WINDOW_POPUP;
+}
+
+window_t *window_root(window_t *w)
+{
+    while (w && w->parent)
+        w = w->parent;
+    return w;
 }
 
 void window_damage(window_t *w)
@@ -156,7 +169,8 @@ static void draw_bar(window_t *w)
         if (!w->bar)
             return;
     }
-    bool focused = S.focus == w;
+    // a window with a menu open looks focused
+    bool focused = S.focus && window_root(S.focus) == w;
     gfx_clear(w->bar, GFX_TRANSPARENT);
     gfx_fill_round_rect(w->bar, gfx_rect(0, 0, width, TITLE_HEIGHT + CORNER_RADIUS),
                         rounded(w) ? CORNER_RADIUS : 0, focused ? bar_focused : bar_unfocused);
@@ -302,14 +316,26 @@ void window_draw(window_t *w, gfx_rect_t clip)
     draw_content(w, clip);
 }
 
-window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title)
+window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title,
+                     window_t *parent)
 {
     window_t *w = calloc(1, sizeof(*w));
     if (!w)
         return NULL;
     w->client = client;
     w->id = id;
-    w->flags = flags & (HEIM_WINDOW_RESIZABLE | HEIM_WINDOW_ALPHA | HEIM_WINDOW_UNDECORATED);
+    w->flags = flags & (HEIM_WINDOW_RESIZABLE | HEIM_WINDOW_ALPHA | HEIM_WINDOW_UNDECORATED |
+                        HEIM_WINDOW_POPUP | HEIM_WINDOW_TOOLTIP);
+    if (parent)
+    {
+        w->flags = (w->flags & HEIM_WINDOW_TOOLTIP) | HEIM_WINDOW_POPUP | HEIM_WINDOW_ALPHA |
+                   HEIM_WINDOW_UNDECORATED;
+        w->parent = parent;
+    }
+    else
+    {
+        w->flags &= ~(uint32_t)(HEIM_WINDOW_POPUP | HEIM_WINDOW_TOOLTIP);
+    }
     memcpy(w->title, title, HEIM_TITLE_MAX);
     w->title[HEIM_TITLE_MAX - 1] = '\0';
     w->bar_dirty = true;
@@ -342,6 +368,19 @@ void window_destroy(window_t *w)
 {
     window_damage(w);
     unlink_window(w);
+    // its popups go with it: hidden now, freed when their client says so
+    for (window_t *o = S.bottom; o; o = o->above)
+    {
+        if (o->parent == w)
+        {
+            heim_msg_t msg = {0};
+            msg.type = HEIM_EV_CLOSE;
+            client_send_window(o, &msg);
+            o->parent = NULL;
+            o->shown = false;
+        }
+    }
+    window_t *parent = w->parent;
     if (S.pointer_window == w)
         S.pointer_window = NULL;
     if (S.grab == w)
@@ -365,7 +404,9 @@ void window_destroy(window_t *w)
     if (had_focus)
         S.focus = NULL;
     free(w);
-    if (had_focus)
+    if (had_focus && parent && window_visible(parent))
+        window_focus(parent);
+    else if (had_focus)
         window_focus_top();
     input_pointer_update();
 }
@@ -378,7 +419,7 @@ window_t *window_find(client_t *client, uint32_t id)
     return NULL;
 }
 
-void window_raise(window_t *w)
+static void to_top(window_t *w)
 {
     if (S.top == w)
         return;
@@ -390,6 +431,24 @@ void window_raise(window_t *w)
         S.bottom = w;
     S.top = w;
     window_damage(w);
+}
+
+void window_raise(window_t *w)
+{
+    to_top(w);
+    if (w->parent)
+        return;
+    // its popups stay above it, in their order
+    enum { MAX = 16 };
+    window_t *popups[MAX];
+    int count = 0;
+    for (window_t *o = S.bottom; o && count < MAX; o = o->above)
+    {
+        if (o->parent && window_root(o) == w)
+            popups[count++] = o;
+    }
+    for (int i = 0; i < count; i++)
+        to_top(popups[i]);
 }
 
 static void send_focus(window_t *w, bool focused)
@@ -406,15 +465,17 @@ void window_focus(window_t *w)
         return;
     if (S.focus)
     {
-        S.focus->bar_dirty = true;
-        window_damage(S.focus);
+        window_t *root = window_root(S.focus);
+        root->bar_dirty = true;
+        window_damage(root);
         send_focus(S.focus, false);
     }
     S.focus = w;
     if (w)
     {
-        w->bar_dirty = true;
-        window_damage(w);
+        window_t *root = window_root(w);
+        root->bar_dirty = true;
+        window_damage(root);
         send_focus(w, true);
     }
 }
@@ -423,7 +484,7 @@ void window_focus_top(void)
 {
     for (window_t *w = S.top; w; w = w->below)
     {
-        if (window_visible(w))
+        if (window_visible(w) && !(w->flags & HEIM_WINDOW_TOOLTIP))
         {
             window_focus(w);
             return;
@@ -436,8 +497,82 @@ void window_focus_top(void)
  * the first time a window shows: place it (a cascade from the middle) and
  * give it the focus.
  */
+void window_place(window_t *w)
+{
+    if (!w->parent || !w->content.pixels)
+        return;
+    gfx_rect_t pc = window_content(w->parent);
+    gfx_rect_t a = gfx_rect(pc.x + w->anchor.x, pc.y + w->anchor.y, w->anchor.w, w->anchor.h);
+    int32_t m = w->margin;
+    int32_t cw = w->content.width - 2 * m;
+    int32_t ch = w->content.height - 2 * m;
+    int32_t x;
+    int32_t y;
+    switch (w->side)
+    {
+    case HEIM_SIDE_ABOVE:
+        x = a.x + (a.w - cw) / 2;
+        y = a.y - ch;
+        if (y < 0)
+            y = a.y + a.h;
+        break;
+    case HEIM_SIDE_RIGHT:
+        x = a.x + a.w;
+        y = a.y;
+        if (x + cw > S.width)
+            x = a.x - cw;
+        break;
+    default:
+        x = a.x;
+        y = a.y + a.h;
+        if (y + ch > S.height && a.y - ch >= 0)
+            y = a.y - ch;
+        break;
+    }
+    // inside the screen
+    x = x + cw > S.width ? S.width - cw : x;
+    y = y + ch > S.height ? S.height - ch : y;
+    x = x < 0 ? 0 : x;
+    y = y < 0 ? 0 : y;
+    window_damage(w);
+    w->x = x - m;
+    w->y = y - m;
+    window_damage(w);
+}
+
+bool window_close_popups(void)
+{
+    bool taking = false;
+    for (window_t *w = S.bottom; w; w = w->above)
+    {
+        if (!w->parent || !w->shown)
+            continue;
+        if (!(w->flags & HEIM_WINDOW_TOOLTIP))
+            taking = true;
+        heim_msg_t msg = {0};
+        msg.type = HEIM_EV_CLOSE;
+        client_send_window(w, &msg);
+        window_damage(w);
+        w->shown = false;
+    }
+    if (S.focus && S.focus->parent && !S.focus->shown)
+        window_focus(window_root(S.focus));
+    input_pointer_update();
+    return taking;
+}
+
 void window_show(window_t *w)
 {
+    if (w->parent)
+    {
+        w->shown = true;
+        window_place(w);
+        to_top(w);
+        if (!(w->flags & HEIM_WINDOW_TOOLTIP))
+            window_focus(w);
+        window_damage(w);
+        return;
+    }
     gfx_rect_t f = window_frame(w);
     int32_t step = (int32_t)(S.placed % 8) * 28;
     S.placed++;
@@ -522,6 +657,7 @@ void window_toggle_maximize(window_t *w)
 
 void window_minimize(window_t *w)
 {
+    window_close_popups();
     window_damage(w);
     w->minimized = true;
     w->hover = PART_NONE;
@@ -557,9 +693,21 @@ window_t *window_at(int32_t x, int32_t y, part_t *part, uint32_t *edges)
     *edges = 0;
     for (window_t *w = S.top; w; w = w->below)
     {
-        if (!window_visible(w))
+        if (!window_visible(w) || (w->flags & HEIM_WINDOW_TOOLTIP))
             continue;
         gfx_rect_t f = window_frame(w);
+        if (w->parent)
+        {
+            // a popup is its card: its shadow is not part of it
+            f = gfx_rect(f.x + w->margin, f.y + w->margin, f.w - 2 * w->margin,
+                         f.h - 2 * w->margin);
+            if (gfx_rect_contains(f, x, y))
+            {
+                *part = PART_CONTENT;
+                return w;
+            }
+            continue;
+        }
         if (gfx_rect_contains(f, x, y))
         {
             int32_t bx = x - f.x;
