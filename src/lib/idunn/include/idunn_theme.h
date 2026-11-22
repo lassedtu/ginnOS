@@ -41,6 +41,7 @@ typedef enum
     IDUNN_COLOR_MUTED_FOREGROUND,     // help text, placeholders, inactive things
     IDUNN_COLOR_BORDER,
     IDUNN_COLOR_INPUT,                // the border of inputs
+    IDUNN_COLOR_FIELD,                // the inside of text fields
     IDUNN_COLOR_PRIMARY,              // the main button: the accent
     IDUNN_COLOR_PRIMARY_FOREGROUND,
     IDUNN_COLOR_SECONDARY,

@@ -54,6 +54,13 @@ static void forget(idunn_widget_t *w)
         win->pressed = NULL;
     if (win->focus == w)
         win->focus = NULL;
+    if (win->paste_to == w)
+        win->paste_to = NULL;
+    for (size_t i = 0; i < sizeof(win->timers) / sizeof(win->timers[0]); i++)
+    {
+        if (win->timers[i].widget == w)
+            win->timers[i].widget = NULL;
+    }
 }
 
 static void free_tree(idunn_widget_t *w)
@@ -136,6 +143,15 @@ void idunn_set_disabled(idunn_widget_t *w, bool disabled)
     idunn_dirty(w);
 }
 
+void idunn_set_error(idunn_widget_t *w, bool error)
+{
+    if (error)
+        w->state |= IDUNN_ERROR;
+    else
+        w->state &= ~IDUNN_ERROR;
+    idunn_dirty(w);
+}
+
 gfx_rect_t idunn_widget_rect(const idunn_widget_t *w)
 {
     return w->rect;
@@ -179,7 +195,9 @@ void idunn_relayout(idunn_widget_t *w)
 
 bool idunn_ring_visible(const idunn_widget_t *w)
 {
-    return (w->state & IDUNN_FOCUSED) && w->window && w->window->focus_visible;
+    // a text input shows it after a click too (:focus-within in the preview)
+    return (w->state & IDUNN_FOCUSED) && w->window &&
+           (w->window->focus_visible || (w->flags & IDUNN_TEXT_INPUT));
 }
 
 static uint8_t amount(idunn_widget_t *w, const idunn_anim_t *a)

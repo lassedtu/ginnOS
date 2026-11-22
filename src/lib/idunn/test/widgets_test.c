@@ -12,6 +12,7 @@
 #include <stdlib.h>
 
 void test_widgets(void);
+void test_inputs(idunn_context_t *ctx);
 
 static idunn_context_t *ctx;
 static int clicks;
@@ -148,11 +149,11 @@ static void test_input(void)
 
     // hover, then a click
     clicks = 0;
-    idunn_window_pointer(win, IDUNN_POINTER_MOTION, r.x + 4, r.y + 4);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, r.x + 4, r.y + 4, 0);
     CHECK(one->state & IDUNN_HOVER);
-    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 4, r.y + 4);
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 4, r.y + 4, 0);
     CHECK(one->state & IDUNN_PRESSED);
-    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, r.x + 4, r.y + 4);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, r.x + 4, r.y + 4, 0);
     CHECK_EQ(clicks, 1);
     CHECK(!(one->state & IDUNN_PRESSED));
 
@@ -161,15 +162,15 @@ static void test_input(void)
     CHECK(!idunn_ring_visible(one));
 
     // pressed, then let go somewhere else: no click
-    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 4, r.y + 4);
-    idunn_window_pointer(win, IDUNN_POINTER_MOTION, 299, 99);
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 4, r.y + 4, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, 299, 99, 0);
     CHECK(!(one->state & IDUNN_HOVER));
-    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, 299, 99);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, 299, 99, 0);
     CHECK_EQ(clicks, 1);
 
     // a disabled button gets nothing
-    idunn_window_pointer(win, IDUNN_POINTER_PRESS, off->rect.x + 4, off->rect.y + 4);
-    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, off->rect.x + 4, off->rect.y + 4);
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, off->rect.x + 4, off->rect.y + 4, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, off->rect.x + 4, off->rect.y + 4, 0);
     CHECK_EQ(clicks, 1);
     CHECK(!(off->state & IDUNN_HOVER));
     CHECK(idunn_window_focus(win) == NULL);
@@ -193,9 +194,9 @@ static void test_input(void)
     CHECK_EQ(clicks, 3);
 
     // the pointer leaves the window
-    idunn_window_pointer(win, IDUNN_POINTER_MOTION, two->rect.x + 2, two->rect.y + 2);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, two->rect.x + 2, two->rect.y + 2, 0);
     CHECK(two->state & IDUNN_HOVER);
-    idunn_window_pointer(win, IDUNN_POINTER_LEAVE, 0, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_LEAVE, 0, 0, 0);
     CHECK(!(two->state & IDUNN_HOVER));
 
     // freeing the focused widget forgets it
@@ -221,7 +222,7 @@ static void test_drawing(void)
     // around the button
     idunn_window_tick(win, 1000);
     gfx_color_t before = *gfx_pixel_at(win->buffer, b->rect.x + 8, b->rect.y + 20);
-    idunn_window_pointer(win, IDUNN_POINTER_MOTION, b->rect.x + 2, b->rect.y + 2);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, b->rect.x + 2, b->rect.y + 2, 0);
     gfx_rect_t damage = idunn_window_draw(win);
     CHECK(damage.w < 300 && damage.w >= b->rect.w);
     idunn_window_tick(win, 1050);
@@ -240,7 +241,7 @@ static void test_drawing(void)
     idunn_theme_t theme = ctx->theme;
     theme.motion = false;
     idunn_context_set_theme(ctx, &theme);
-    idunn_window_pointer(win, IDUNN_POINTER_LEAVE, 0, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_LEAVE, 0, 0, 0);
     idunn_window_draw(win);
     CHECK(!idunn_window_tick(win, 1101));
     CHECK_EQ(*gfx_pixel_at(win->buffer, b->rect.x + 8, b->rect.y + 20), before);
@@ -316,6 +317,7 @@ void test_widgets(void)
     test_layout();
     test_input();
     test_drawing();
+    test_inputs(ctx);
     reference_buttons("buttons-dark", IDUNN_DARK, 5.0);
     reference_buttons("buttons-light", IDUNN_LIGHT, 5.0);
     idunn_context_free(ctx);

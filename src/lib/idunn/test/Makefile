@@ -1,7 +1,7 @@
 TEST     := idunn
-SRCS     := idunn_test.c widgets_test.c
+SRCS     := idunn_test.c widgets_test.c inputs_test.c
 LIB_SRCS := ../theme.c ../context.c ../widget.c ../layout.c ../window.c ../label.c \
-            ../button.c ../separator.c
+            ../button.c ../separator.c ../text_edit.c ../text_field.c
 LIBS     := conf gfx bragi icon image
 include ../../host-test.mk
 

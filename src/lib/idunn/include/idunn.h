@@ -46,11 +46,24 @@ typedef void (*idunn_callback_t)(idunn_widget_t *widget, void *data);
 #define IDUNN_MOD_ALT   0x04
 
 // keys idunn uses (Linux key codes, as in sys/input.h)
-#define IDUNN_KEY_ESCAPE 1
-#define IDUNN_KEY_TAB    15
-#define IDUNN_KEY_ENTER  28
-#define IDUNN_KEY_A      30
-#define IDUNN_KEY_SPACE  57
+#define IDUNN_KEY_ESCAPE    1
+#define IDUNN_KEY_BACKSPACE 14
+#define IDUNN_KEY_TAB       15
+#define IDUNN_KEY_ENTER     28
+#define IDUNN_KEY_A         30
+#define IDUNN_KEY_X         45
+#define IDUNN_KEY_C         46
+#define IDUNN_KEY_V         47
+#define IDUNN_KEY_SPACE     57
+#define IDUNN_KEY_HOME      102
+#define IDUNN_KEY_UP        103
+#define IDUNN_KEY_PAGEUP    104
+#define IDUNN_KEY_LEFT      105
+#define IDUNN_KEY_RIGHT     106
+#define IDUNN_KEY_END       107
+#define IDUNN_KEY_DOWN      108
+#define IDUNN_KEY_PAGEDOWN  109
+#define IDUNN_KEY_DELETE    111
 
 /**
  * connect to the window server and read the theme.
@@ -157,6 +170,12 @@ void idunn_set_size(idunn_widget_t *w, int32_t width, int32_t height);
  */
 void idunn_set_disabled(idunn_widget_t *w, bool disabled);
 
+/**
+ * a control with a wrong value: its border and ring are red (a field
+ * sets this on its control with idunn_field_set_error).
+ */
+void idunn_set_error(idunn_widget_t *w, bool error);
+
 // the widgets
 
 /**
@@ -216,6 +235,23 @@ void idunn_button_set_align(idunn_widget_t *button, idunn_align_t align);
  */
 idunn_widget_t *idunn_separator(void);
 
+/**
+ * a one-line text field, 32 pixels high.
+ * @param placeholder the muted text it shows when it is empty, or NULL.
+ */
+idunn_widget_t *idunn_text_field(const char *placeholder);
+
+/** the text (UTF-8); valid until the text changes */
+const char *idunn_text_field_text(const idunn_widget_t *field);
+void idunn_text_field_set_text(idunn_widget_t *field, const char *text);
+
+/** an icon (a Lucide name) at the start, as in a search field */
+void idunn_text_field_set_icon(idunn_widget_t *field, const char *icon);
+
+/** on_change after every change of the text; on_submit on Enter */
+void idunn_text_field_on_change(idunn_widget_t *field, idunn_callback_t on_change, void *data);
+void idunn_text_field_on_submit(idunn_widget_t *field, idunn_callback_t on_submit, void *data);
+
 // without the window server: for tests and pictures
 
 /**
@@ -261,9 +297,26 @@ typedef enum
 } idunn_pointer_t;
 
 /**
- * the pointer moved, or the left button went down or up, at (x, y).
+ * the pointer moved, or the left button went down or up, at (x, y),
+ * with these modifier keys held (Shift+click extends a selection).
  */
-void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, int32_t y);
+void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, int32_t y,
+                          uint32_t mods);
+
+/**
+ * the wheel turned over (x, y): steps, up is positive.
+ */
+void idunn_window_scroll(idunn_window_t *win, int32_t x, int32_t y, int32_t steps);
+
+/**
+ * the clipboard text a widget asked for came (from the window server).
+ */
+void idunn_window_paste(idunn_window_t *win, const char *text, size_t length);
+
+/**
+ * the next time (ms) the window must be ticked for a timer, or 0 for none.
+ */
+uint32_t idunn_window_next_wake(const idunn_window_t *win);
 
 /**
  * a key press (or repeat).

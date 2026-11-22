@@ -22,6 +22,7 @@ struct idunn_app
     heim_conn_t *conn;
     idunn_context_t *ctx;
     idunn_window_t *windows;
+    idunn_window_t *paste_window; // it asked for the clipboard's text
     bool quit;
 };
 
@@ -71,6 +72,17 @@ void idunn_app_set_theme(idunn_app_t *app, const idunn_theme_t *theme)
     }
 }
 
+static void clipboard_set(idunn_window_t *win, const char *text, size_t length)
+{
+    heim_clipboard_set(win->app->conn, text, length);
+}
+
+static void clipboard_get(idunn_window_t *win)
+{
+    win->app->paste_window = win;
+    heim_clipboard_request(win->app->conn);
+}
+
 idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t width,
                                  int32_t height)
 {
@@ -91,6 +103,8 @@ idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t wi
     win->heim = heim;
     win->buffer = heim_window_buffer(heim);
     win->needs_layout = true;
+    win->clipboard_set = clipboard_set;
+    win->clipboard_get = clipboard_get;
     win->next = app->windows;
     app->windows = win;
     return win;
@@ -99,6 +113,8 @@ idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t wi
 void idunn_window_close(idunn_window_t *win)
 {
     idunn_app_t *app = win->app;
+    if (app->paste_window == win)
+        app->paste_window = NULL;
     for (idunn_window_t **p = &app->windows; *p; p = &(*p)->next)
     {
         if (*p == win)
@@ -119,9 +135,10 @@ void idunn_window_close(idunn_window_t *win)
 static void present(idunn_window_t *win, uint32_t now)
 {
     heim_window_t *heim = win->heim;
+    // timers fire now; what they change is drawn with the next frame
+    idunn_window_tick(win, now);
     if (heim_window_busy(heim))
         return;
-    idunn_window_tick(win, now);
     gfx_rect_t damage = idunn_window_draw(win);
     if (!gfx_rect_empty(damage))
         heim_window_commit(heim, damage);
@@ -135,10 +152,10 @@ static void pointer(idunn_window_t *win, const heim_event_t *ev)
     {
     case HEIM_POINTER_MOTION:
     case HEIM_POINTER_ENTER:
-        idunn_window_pointer(win, IDUNN_POINTER_MOTION, p->x, p->y);
+        idunn_window_pointer(win, IDUNN_POINTER_MOTION, p->x, p->y, p->mods);
         break;
     case HEIM_POINTER_LEAVE:
-        idunn_window_pointer(win, IDUNN_POINTER_LEAVE, p->x, p->y);
+        idunn_window_pointer(win, IDUNN_POINTER_LEAVE, p->x, p->y, p->mods);
         break;
     case HEIM_POINTER_PRESS:
     case HEIM_POINTER_RELEASE:
@@ -146,7 +163,10 @@ static void pointer(idunn_window_t *win, const heim_event_t *ev)
             idunn_window_pointer(win,
                                  p->kind == HEIM_POINTER_PRESS ? IDUNN_POINTER_PRESS
                                                                : IDUNN_POINTER_RELEASE,
-                                 p->x, p->y);
+                                 p->x, p->y, p->mods);
+        break;
+    case HEIM_POINTER_SCROLL:
+        idunn_window_scroll(win, p->x, p->y, p->value);
         break;
     default:
         break;
@@ -161,13 +181,26 @@ int idunn_app_run(idunn_app_t *app)
     while (app->windows && !app->quit)
     {
         uint32_t now = now_ms();
+        int timeout = -1;
         for (idunn_window_t *win = app->windows; win; win = win->next)
         {
             win->now = now;
             present(win, now);
+            // wait no longer than the next timer (a caret blinks)
+            uint32_t wake = idunn_window_next_wake(win);
+            if (wake)
+            {
+                int32_t left = (int32_t)(wake - now);
+                left = left < 0 ? 0 : left;
+                if (timeout < 0 || left < timeout)
+                    timeout = left;
+            }
         }
-        if (heim_next_event(app->conn, &ev, -1) < 0)
+        int got = heim_next_event(app->conn, &ev, timeout);
+        if (got < 0)
             break;
+        if (got == 0)
+            continue; // a timer: present ticks the windows
         idunn_window_t *win = ev.window ? heim_window_data(ev.window) : NULL;
         if (win)
             win->now = now_ms();
@@ -189,6 +222,15 @@ int idunn_app_run(idunn_app_t *app)
         case HEIM_EV_KEY:
             if (win && ev.msg.key.value != HEIM_KEY_RELEASE)
                 idunn_window_key(win, ev.msg.key.code, ev.msg.key.mods, ev.msg.key.text);
+            break;
+        case HEIM_EV_CLIPBOARD:
+            if (app->paste_window)
+            {
+                idunn_window_t *to = app->paste_window;
+                app->paste_window = NULL;
+                to->now = now_ms();
+                idunn_window_paste(to, ev.clipboard ? ev.clipboard : "", ev.clipboard_length);
+            }
             break;
         case HEIM_EV_SETTINGS:
             if (strcmp(ev.msg.settings.name, "theme") == 0)
