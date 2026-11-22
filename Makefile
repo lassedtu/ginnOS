@@ -600,9 +600,11 @@ user-programs: $(USER_CRT0) $(LIBC_A) user-libs
 		$(MAKE) --no-print-directory -C $$d $(USER_MAKE_VARS) || exit 1; \
 	done
 
-# library tests on the host, with the host compiler (src/lib/host-test.mk).
+# library and program tests on the host, with the host compiler
+# (src/lib/host-test.mk).
 # GOLDEN=update writes the golden images again.
-HOST_TEST_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/test/Makefile)))
+HOST_TEST_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/test/Makefile \
+                                                             src/user/*/test/Makefile)))
 
 host-test:
 	@for d in $(HOST_TEST_DIRS); do \
