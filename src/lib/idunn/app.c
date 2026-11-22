@@ -170,6 +170,12 @@ static int wait_watches(idunn_app_t *app, int timeout)
     return fds[0].revents ? 1 : 0;
 }
 
+void idunn_window_set_title(idunn_window_t *win, const char *title)
+{
+    if (win && win->heim)
+        heim_window_set_title(win->heim, title);
+}
+
 const idunn_theme_t *idunn_app_theme(const idunn_app_t *app)
 {
     return &app->ctx->theme;

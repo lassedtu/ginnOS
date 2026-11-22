@@ -149,6 +149,11 @@ void idunn_window_set_root(idunn_window_t *win, idunn_widget_t *root);
  */
 void idunn_window_close(idunn_window_t *win);
 
+/**
+ * a new title in the window's title bar (and the shell's window list).
+ */
+void idunn_window_set_title(idunn_window_t *win, const char *title);
+
 // the tree and the layout
 
 typedef enum
