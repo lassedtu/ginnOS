@@ -81,6 +81,21 @@ find more; note them here.
 - `<unistd.h>` declares `intptr_t`, as POSIX says.
 - `execv` and `execvp` (with a PATH search) were missing.
 
+Lua 5.4.7 and zlib 1.3.1 (2026-11-22, `plans/userspace-plan.md` U2):
+
+- `<locale.h>` with the "C" locale only.
+- `frexp`, `ldexp`, `scalbn`, `sinh`, `cosh`, `tanh`.
+- `freopen`, `tmpfile`, `popen`/`pclose`, `fseeko`/`ftello`, and the
+  `flockfile`/`*_unlocked` calls (one thread: the plain calls).
+- `perror` was there, but declared only in `<errno.h>`; C puts it in
+  `<stdio.h>`.
+- `mkstemp`, `execl`, `execlp`, `execle`, `_setjmp`/`_longjmp`.
+- `-lm`: the math is in `libc.a`, so `make sysroot` makes an empty
+  `libm.a` for build files that ask for it.
+
+Both now build with no warnings. Lua runs a script of 21 checks on
+ginnOS (numbers, math, errors, coroutines, files, tmpfile, popen).
+
 ## Not yet
 
 - `crt0` does not call `_init` or the `.init_array` constructors: C++

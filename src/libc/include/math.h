@@ -38,3 +38,17 @@ double log(double x);
 double log2(double x);
 double log10(double x);
 double pow(double x, double y);
+
+/** x * 2^exponent */
+double ldexp(double x, int exponent);
+double scalbn(double x, int exponent);
+
+/**
+ * split x into a fraction in [0.5, 1) (or 0) and a power of 2:
+ * x = fraction * 2^*exponent.
+ */
+double frexp(double x, int *exponent);
+
+double sinh(double x);
+double cosh(double x);
+double tanh(double x);

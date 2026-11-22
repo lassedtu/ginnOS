@@ -69,6 +69,14 @@ double atof(const char *str);
 int system(const char *command);
 
 /**
+ * make and open a new file with a name no other file has. the last six
+ * characters of template must be "XXXXXX"; they are changed to the name
+ * that was used.
+ * @return an fd open for reading and writing (mode 0600), or -1 (errno set).
+ */
+int mkstemp(char *template);
+
+/**
  * the environment: a NULL-terminated array of "KEY=VALUE" strings.
  */
 extern char **environ;

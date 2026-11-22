@@ -1,5 +1,6 @@
 #include "unistd.h"
 #include <stdarg.h>
+#include <stdbool.h>
 #include "errno.h"
 #include <limits.h>
 #include <stdlib.h>
@@ -137,6 +138,72 @@ int execvp(const char *file, char *const argv[])
     }
     errno = error;
     return -1;
+}
+
+#define EXECL_ARGS_MAX 64
+
+/**
+ * the arguments of an execl call (arg, then the va_list up to NULL) as an
+ * argv array.
+ * @return false if there are too many.
+ */
+static bool list_to_argv(const char *arg, va_list *ap, char *argv[EXECL_ARGS_MAX])
+{
+    int count = 0;
+    for (const char *a = arg; a; a = va_arg(*ap, const char *))
+    {
+        if (count == EXECL_ARGS_MAX - 1)
+            return false;
+        argv[count++] = (char *)a;
+    }
+    argv[count] = NULL;
+    return true;
+}
+
+int execl(const char *path, const char *arg, ...)
+{
+    char *argv[EXECL_ARGS_MAX];
+    va_list ap;
+    va_start(ap, arg);
+    bool fits = list_to_argv(arg, &ap, argv);
+    va_end(ap);
+    if (!fits)
+    {
+        errno = E2BIG;
+        return -1;
+    }
+    return execv(path, argv);
+}
+
+int execlp(const char *file, const char *arg, ...)
+{
+    char *argv[EXECL_ARGS_MAX];
+    va_list ap;
+    va_start(ap, arg);
+    bool fits = list_to_argv(arg, &ap, argv);
+    va_end(ap);
+    if (!fits)
+    {
+        errno = E2BIG;
+        return -1;
+    }
+    return execvp(file, argv);
+}
+
+int execle(const char *path, const char *arg, ...)
+{
+    char *argv[EXECL_ARGS_MAX];
+    va_list ap;
+    va_start(ap, arg);
+    bool fits = list_to_argv(arg, &ap, argv);
+    char *const *envp = va_arg(ap, char *const *); // after the NULL
+    va_end(ap);
+    if (!fits)
+    {
+        errno = E2BIG;
+        return -1;
+    }
+    return execve(path, argv, envp);
 }
 
 pid_t waitpid(pid_t pid, int *status, int options)

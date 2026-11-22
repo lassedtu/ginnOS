@@ -22,3 +22,8 @@ int setjmp(jmp_buf env) __attribute__((returns_twice));
  * value is 0).
  */
 void longjmp(jmp_buf env, int value) __attribute__((noreturn));
+
+// the BSD names: setjmp here never saves the signal mask, so they are the
+// same calls
+#define _setjmp(env)          setjmp(env)
+#define _longjmp(env, value) longjmp(env, value)

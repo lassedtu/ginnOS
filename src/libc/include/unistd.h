@@ -80,6 +80,15 @@ int execv(const char *path, char *const argv[]);
 int execvp(const char *file, char *const argv[]);
 
 /**
+ * execv, execvp and execve with the arguments as a list that ends with
+ * NULL. execle takes the environment after the NULL.
+ * @return only on failure: -1 (errno set).
+ */
+int execl(const char *path, const char *arg, ...);
+int execlp(const char *file, const char *arg, ...);
+int execle(const char *path, const char *arg, ...);
+
+/**
  * terminate the current process.
  * @param status exit code.
  */
