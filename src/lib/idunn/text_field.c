@@ -109,7 +109,7 @@ static void field_layout(idunn_widget_t *w)
     keep_caret_visible(w);
 }
 
-static void draw_well(idunn_widget_t *w, gfx_buffer_t *buf)
+void idunn_draw_well(idunn_widget_t *w, gfx_buffer_t *buf)
 {
     const idunn_theme_t *t = idunn_theme(w);
     int32_t radius = idunn_radius(t);
@@ -151,7 +151,7 @@ static void field_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     field_t *f = w->data;
     idunn_context_t *ctx = idunn_ctx(w);
     const idunn_theme_t *t = &ctx->theme;
-    draw_well(w, buf);
+    idunn_draw_well(w, buf);
 
     if (f->icon)
     {

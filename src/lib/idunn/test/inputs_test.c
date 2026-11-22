@@ -203,8 +203,192 @@ static void test_text_field(idunn_context_t *ctx)
     free(win);
 }
 
+static void click_at(idunn_window_t *win, int32_t x, int32_t y)
+{
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, x, y, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, x, y, 0);
+}
+
+static void test_choices(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 400, 300);
+    idunn_widget_t *col = idunn_column(2, 2);
+    idunn_box_set_align(col, IDUNN_START, IDUNN_START);
+    changes = 0;
+    idunn_widget_t *check = idunn_add(col, idunn_check_box("Show hidden files", false,
+                                                           count_change, NULL));
+    static const char *const sizes[] = {"Small", "Medium", "Large"};
+    idunn_widget_t *radio = idunn_add(col, idunn_radio_group(sizes, 3, 1, count_change, NULL));
+    idunn_widget_t *sw = idunn_add(col, idunn_switch("Natural scrolling", false, count_change, NULL));
+    idunn_widget_t *slider = idunn_add(col, idunn_slider(0, 10, 1, 6, count_change, NULL));
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+
+    // a check box with its label: 16 + 10 + the text, as high as a line
+    CHECK_EQ(check->rect.h, 18);
+    CHECK(check->rect.w > 26 + 60);
+
+    // a click on the label checks it; Space unchecks; mixed goes to checked
+    click_at(win, check->rect.x + check->rect.w - 4, check->rect.y + 9);
+    CHECK_EQ(idunn_check_box_state(check), IDUNN_CHECKED);
+    key(win, IDUNN_KEY_SPACE, 0, " ");
+    CHECK_EQ(idunn_check_box_state(check), IDUNN_UNCHECKED);
+    idunn_check_box_set_state(check, IDUNN_MIXED);
+    click_at(win, check->rect.x + 8, check->rect.y + 9);
+    CHECK_EQ(idunn_check_box_state(check), IDUNN_CHECKED);
+    CHECK_EQ(changes, 3);
+
+    // the radio group: three choices 8 apart; a press chooses, the arrows move
+    CHECK_EQ(radio->rect.h, 3 * 18 + 2 * 8);
+    click_at(win, radio->rect.x + 8, radio->rect.y + 2 * 26 + 9);
+    CHECK_EQ(idunn_radio_group_chosen(radio), 2);
+    key(win, IDUNN_KEY_DOWN, 0, "");
+    CHECK_EQ(idunn_radio_group_chosen(radio), 0);
+    key(win, IDUNN_KEY_UP, 0, "");
+    CHECK_EQ(idunn_radio_group_chosen(radio), 2);
+    idunn_radio_group_set_row(radio, true);
+    idunn_window_draw(win);
+    CHECK_EQ(radio->rect.h, 18);
+
+    // one Tab stop for the group: check box, radio, switch, slider
+    key(win, IDUNN_KEY_TAB, 0, "");
+    CHECK(idunn_window_focus(win) == sw);
+    key(win, IDUNN_KEY_TAB, IDUNN_MOD_SHIFT, "");
+    CHECK(idunn_window_focus(win) == radio);
+
+    // the switch slides in 120 ms
+    idunn_window_tick(win, 2000);
+    click_at(win, sw->rect.x + 4, sw->rect.y + 9);
+    CHECK(idunn_switch_on(sw));
+    idunn_window_draw(win);
+    idunn_window_tick(win, 2060);
+    idunn_window_draw(win);
+    CHECK(idunn_window_tick(win, 2060));
+    idunn_window_tick(win, 2120);
+    idunn_window_draw(win);
+    CHECK(!idunn_window_tick(win, 2120));
+    key(win, IDUNN_KEY_SPACE, 0, " ");
+    CHECK(!idunn_switch_on(sw));
+
+    // the slider: a press at its end, a drag back, the keys
+    gfx_rect_t r = slider->rect;
+    CHECK_EQ(r.h, 16);
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + r.w - 1, r.y + 8, 0);
+    CHECK_EQ(idunn_slider_value(slider), 10);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, r.x + 8 + (r.w - 16) * 3 / 10, r.y + 8, 0);
+    CHECK_EQ(idunn_slider_value(slider), 3);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, r.x - 50, r.y + 8, 0);
+    CHECK_EQ(idunn_slider_value(slider), 0);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, r.x - 50, r.y + 8, 0);
+    key(win, IDUNN_KEY_RIGHT, 0, "");
+    CHECK_EQ(idunn_slider_value(slider), 1);
+    key(win, IDUNN_KEY_PAGEUP, 0, "");
+    CHECK_EQ(idunn_slider_value(slider), 10);
+    key(win, IDUNN_KEY_HOME, 0, "");
+    CHECK_EQ(idunn_slider_value(slider), 0);
+
+    idunn_window_free_widgets(win);
+    free(win);
+}
+
+static void test_field(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 200);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_widget_t *input = idunn_text_field("you@example.com");
+    idunn_widget_t *field = idunn_add(col, idunn_field("Email", input, "We never share it."));
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+
+    // the label (18), 6, the control (32), 6, the help (16)
+    CHECK_EQ(field->rect.h, 18 + 6 + 32 + 6 + 16);
+    CHECK_EQ(input->rect.y, 24);
+    CHECK_EQ(input->rect.w, 300);
+
+    idunn_field_set_error(field, "That is not an email address.");
+    CHECK(input->state & IDUNN_ERROR);
+    idunn_field_set_error(field, NULL);
+    CHECK(!(input->state & IDUNN_ERROR));
+    CHECK_EQ(field->child_count, 3);
+
+    // without help text, the error line comes and goes
+    idunn_widget_t *bare = idunn_add(col, idunn_field("Name", idunn_text_field(NULL), NULL));
+    CHECK_EQ(bare->child_count, 2);
+    idunn_field_set_error(bare, "Required.");
+    CHECK_EQ(bare->child_count, 3);
+    idunn_field_set_error(bare, NULL);
+    CHECK_EQ(bare->child_count, 2);
+
+    idunn_window_free_widgets(win);
+    free(win);
+}
+
+static void test_text_area(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 200);
+    idunn_widget_t *col = idunn_column(0, 2);
+    idunn_box_set_align(col, IDUNN_START, IDUNN_START);
+    idunn_widget_t *area = idunn_add(col, idunn_text_area("Notes", 3));
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+
+    // 3 lines of 18, 8 padding and a 1 px border above and below
+    CHECK_EQ(area->rect.h, 3 * 18 + 2 * 9);
+    click_at(win, area->rect.x + 20, area->rect.y + 20);
+    CHECK(idunn_window_focus(win) == area);
+
+    // Enter makes lines; Up keeps the column; Home and End go along the line
+    type(win, "first");
+    key(win, IDUNN_KEY_ENTER, 0, "\n");
+    type(win, "second line");
+    CHECK(strcmp(idunn_text_area_text(area), "first\nsecond line") == 0);
+    key(win, IDUNN_KEY_UP, 0, "");
+    type(win, "!");
+    CHECK(strcmp(idunn_text_area_text(area), "first!\nsecond line") == 0);
+    key(win, IDUNN_KEY_DOWN, 0, "");
+    key(win, IDUNN_KEY_HOME, 0, "");
+    type(win, ">");
+    CHECK(strcmp(idunn_text_area_text(area), "first!\n>second line") == 0);
+    key(win, IDUNN_KEY_END, IDUNN_MOD_SHIFT, "");
+    key(win, IDUNN_KEY_BACKSPACE, 0, "");
+    CHECK(strcmp(idunn_text_area_text(area), "first!\n>") == 0);
+
+    // a long line wraps: Down goes to the next part of it, not past it
+    idunn_text_area_set_text(area, "one two three four five six seven eight nine ten eleven twelve");
+    key(win, IDUNN_KEY_HOME, IDUNN_MOD_CTRL, "");
+    key(win, IDUNN_KEY_DOWN, 0, "");
+    type(win, "|");
+    const char *text = idunn_text_area_text(area);
+    const char *bar = strchr(text, '|');
+    CHECK(bar != NULL && bar > text + 10 && bar < text + 50);
+
+    // many lines: the caret at the end scrolls, Ctrl+Home scrolls back
+    idunn_text_area_set_text(area, "1\n2\n3\n4\n5\n6\n7\n8");
+    key(win, IDUNN_KEY_END, IDUNN_MOD_CTRL, "");
+    idunn_window_draw(win);
+    key(win, IDUNN_KEY_HOME, IDUNN_MOD_CTRL, "");
+    type(win, "0");
+    CHECK(strncmp(idunn_text_area_text(area), "01\n2", 4) == 0);
+
+    // the wheel scrolls, and at the end leaves the event to the parents
+    idunn_window_scroll(win, area->rect.x + 10, area->rect.y + 10, -1);
+    idunn_window_scroll(win, area->rect.x + 10, area->rect.y + 10, -5);
+    idunn_window_scroll(win, area->rect.x + 10, area->rect.y + 10, 9);
+
+    // a press on the third shown line puts the caret there
+    click_at(win, area->rect.x + 13, area->rect.y + 9 + 2 * 18 + 9);
+    type(win, "x");
+    CHECK(strncmp(idunn_text_area_text(area), "01\n2\nx3", 7) == 0);
+
+    idunn_window_free_widgets(win);
+    free(win);
+}
+
 void test_inputs(idunn_context_t *ctx)
 {
     test_edit();
     test_text_field(ctx);
+    test_choices(ctx);
+    test_field(ctx);
+    test_text_area(ctx);
 }

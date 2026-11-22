@@ -252,6 +252,69 @@ void idunn_text_field_set_icon(idunn_widget_t *field, const char *icon);
 void idunn_text_field_on_change(idunn_widget_t *field, idunn_callback_t on_change, void *data);
 void idunn_text_field_on_submit(idunn_widget_t *field, idunn_callback_t on_submit, void *data);
 
+/**
+ * a text area: lines that wrap, Enter for a new line; it scrolls.
+ * @param rows the lines it shows (its height), 0 for 4.
+ */
+idunn_widget_t *idunn_text_area(const char *placeholder, int rows);
+const char *idunn_text_area_text(const idunn_widget_t *area);
+void idunn_text_area_set_text(idunn_widget_t *area, const char *text);
+void idunn_text_area_on_change(idunn_widget_t *area, idunn_callback_t on_change, void *data);
+
+typedef enum
+{
+    IDUNN_UNCHECKED,
+    IDUNN_CHECKED,
+    IDUNN_MIXED, // some of the things it stands for (a dash)
+} idunn_check_t;
+
+/**
+ * a check box with a label to its right (a click on the label clicks it).
+ * on_change comes after a click or Space.
+ */
+idunn_widget_t *idunn_check_box(const char *label, bool checked, idunn_callback_t on_change,
+                                void *data);
+idunn_check_t idunn_check_box_state(const idunn_widget_t *box);
+void idunn_check_box_set_state(idunn_widget_t *box, idunn_check_t state);
+
+/**
+ * a group of choices with round buttons, one chosen; one Tab stop, the
+ * arrows move the choice. in a column (or a row: idunn_radio_group_set_row).
+ * @param chosen the index of the chosen one, or -1 for none.
+ */
+idunn_widget_t *idunn_radio_group(const char *const *labels, int count, int chosen,
+                                  idunn_callback_t on_change, void *data);
+int idunn_radio_group_chosen(const idunn_widget_t *group);
+void idunn_radio_group_choose(idunn_widget_t *group, int chosen);
+void idunn_radio_group_set_row(idunn_widget_t *group, bool row);
+
+/**
+ * a switch with a label to its right; it slides when it changes.
+ */
+idunn_widget_t *idunn_switch(const char *label, bool on, idunn_callback_t on_change, void *data);
+bool idunn_switch_on(const idunn_widget_t *sw);
+void idunn_switch_set_on(idunn_widget_t *sw, bool on);
+
+/**
+ * a slider from min to max in steps (the arrows move it by one step).
+ */
+idunn_widget_t *idunn_slider(int32_t min, int32_t max, int32_t step, int32_t value,
+                             idunn_callback_t on_change, void *data);
+int32_t idunn_slider_value(const idunn_widget_t *slider);
+void idunn_slider_set_value(idunn_widget_t *slider, int32_t value);
+
+/**
+ * a form row: a label above the control and help text below it (or NULL).
+ * the field owns the control.
+ */
+idunn_widget_t *idunn_field(const char *label, idunn_widget_t *control, const char *help);
+
+/**
+ * show an error: the message in red under the control, and the control's
+ * border and ring red. NULL takes it away (the help text comes back).
+ */
+void idunn_field_set_error(idunn_widget_t *field, const char *message);
+
 // without the window server: for tests and pictures
 
 /**

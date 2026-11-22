@@ -243,6 +243,22 @@ idunn_edit_result_t idunn_edit_key(idunn_widget_t *w, idunn_edit_t *e, const idu
 /** insert clipboard text (a single line keeps one line) */
 bool idunn_edit_paste(idunn_edit_t *e, const char *text, size_t length, bool multiline);
 
+// options: a small control with a label to its right (option.c)
+void idunn_option_measure(idunn_widget_t *w, int32_t control_w, int32_t control_h,
+                          const char *label, int32_t *width, int32_t *height);
+gfx_rect_t idunn_option_control(const idunn_widget_t *w, int32_t control_w, int32_t control_h);
+void idunn_option_draw_label(idunn_widget_t *w, gfx_buffer_t *buf, int32_t control_w,
+                             const char *label);
+/** the border of check boxes and radios (firmer than inputs in dark mode) */
+gfx_color_t idunn_option_border(const idunn_theme_t *t);
+
+/** the well of a text input: fill, inset shadow, border and ring (text_field.c) */
+void idunn_draw_well(idunn_widget_t *w, gfx_buffer_t *buf);
+
+/** all the layers of a shadow token around a round box */
+void idunn_draw_shadow(const idunn_theme_t *t, gfx_buffer_t *buf, gfx_rect_t box, int32_t radius,
+                       idunn_shadow_t which);
+
 /** the 3 px focus ring around a round box */
 void idunn_draw_ring(const idunn_widget_t *w, gfx_buffer_t *buf, gfx_rect_t box, int32_t radius);
 
