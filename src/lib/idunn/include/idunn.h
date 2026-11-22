@@ -82,6 +82,12 @@ void idunn_app_quit(idunn_app_t *app);
  * use another theme in all windows of the app (they are drawn again).
  */
 void idunn_app_set_theme(idunn_app_t *app, const idunn_theme_t *theme);
+/**
+ * change a theme setting (mode, accent, radius, font_size, scale, motion)
+ * in the user's theme file. every app and the window decorations change.
+ * @return false if the file cannot be written; this app changes then.
+ */
+bool idunn_app_save_theme(idunn_app_t *app, const char *key, const char *value);
 const idunn_theme_t *idunn_app_theme(const idunn_app_t *app);
 
 /**
