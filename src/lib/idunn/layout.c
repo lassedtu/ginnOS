@@ -3,10 +3,13 @@
  * @brief idunn: rows and columns (a small CSS flexbox) and spacers.
  *
  * a box measures its children, gives the free space along it to the
- * children that grow (or, when there is too little, takes it from all of
- * them in proportion to their size, as flex-shrink does), and places
- * them with the gap between them. across the box a child is stretched or
- * aligned.
+ * children that grow, and places them with the gap between them. across
+ * the box a child is stretched or aligned.
+ *
+ * when a row is too narrow, the children that can shrink (text and the
+ * boxes it is in) give up room in proportion to their size, as
+ * flex-shrink does. nothing else shrinks, as in CSS, where an item is not
+ * made smaller than its content: a column that is too short overflows.
  */
 
 #include "idunn_internal.h"
@@ -68,6 +71,12 @@ static void box_measure(idunn_widget_t *w, int32_t max_width, int32_t *width, in
     *height = (b->column ? along : across) + 2 * pad_v;
 }
 
+/** a child can give up room along a row: text and boxes, unless their width is fixed */
+static bool can_shrink(const idunn_widget_t *child)
+{
+    return (child->flags & IDUNN_SHRINKS) && child->width == 0;
+}
+
 /** where a size goes in a space: at the start, in the middle or at the end */
 static int32_t aligned(idunn_align_t align, int32_t space, int32_t size)
 {
@@ -98,17 +107,20 @@ static void box_layout(idunn_widget_t *w)
         return;
     int32_t *across = along + n;
     int32_t total = 0;
+    int32_t shrinkable = 0;
     int grow = 0;
     for (int i = 0; i < n; i++)
     {
         child_size(w->children[i], b->column, inner.w, &along[i], &across[i]);
         total += along[i];
         grow += w->children[i]->grow;
+        if (can_shrink(w->children[i]))
+            shrinkable += along[i];
     }
     int32_t free_space = main - total - gap * (n - 1);
 
     // give the free space to the children that grow, or take what is
-    // missing from all of them
+    // missing from the ones that can shrink
     if (free_space > 0 && grow > 0)
     {
         int32_t given = 0;
@@ -124,15 +136,17 @@ static void box_layout(idunn_widget_t *w)
         }
         free_space = 0;
     }
-    else if (free_space < 0 && total > 0)
+    else if (free_space < 0 && !b->column && shrinkable > 0)
     {
-        int32_t missing = -free_space;
+        int32_t missing = -free_space < shrinkable ? -free_space : shrinkable;
         int32_t taken = 0;
         int64_t seen = 0;
         for (int i = 0; i < n; i++)
         {
+            if (!can_shrink(w->children[i]))
+                continue;
             seen += along[i];
-            int32_t share = (int32_t)(missing * seen / total) - taken;
+            int32_t share = (int32_t)(missing * seen / shrinkable) - taken;
             along[i] -= share;
             taken += share;
         }
@@ -179,7 +193,7 @@ static idunn_widget_t *box_new(bool column, int gap, int padding)
     if (!b)
         return NULL;
     *b = (box_t){column, gap, padding, padding, IDUNN_STRETCH, IDUNN_START, -1};
-    idunn_widget_t *w = idunn_widget_new(&box_class, b, 0);
+    idunn_widget_t *w = idunn_widget_new(&box_class, b, IDUNN_SHRINKS);
     if (!w)
         free(b);
     return w;

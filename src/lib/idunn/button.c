@@ -18,6 +18,7 @@ typedef struct
     char *icon; // a Lucide name, or NULL
     idunn_variant_t variant;
     idunn_size_t size;
+    idunn_align_t align; // the content: centred, or at the start
     idunn_callback_t on_click;
     void *data;
 } button_t;
@@ -207,7 +208,8 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     int32_t pad = idunn_px(t, padding_of(b) + 1);
     int32_t width = content_width(w);
     int32_t room = w->rect.w - 2 * pad;
-    int32_t x = w->rect.x + (width < room || !b->text ? (w->rect.w - width) / 2 : pad);
+    bool centred = b->align != IDUNN_START && (width < room || !b->text);
+    int32_t x = w->rect.x + (centred ? (w->rect.w - width) / 2 : pad);
     if (b->icon)
     {
         const icon_t *icon = idunn_icon(ctx, b->icon, ICON_SIZE);
@@ -281,6 +283,7 @@ idunn_widget_t *idunn_button(const char *text, idunn_variant_t variant, idunn_ca
         return NULL;
     b->text = text ? strdup(text) : NULL;
     b->variant = variant;
+    b->align = IDUNN_CENTER;
     b->on_click = on_click;
     b->data = data;
     idunn_widget_t *w = idunn_widget_new(&button_class, b, IDUNN_FOCUSABLE | IDUNN_INTERACTIVE);
@@ -334,5 +337,24 @@ void idunn_button_set_text(idunn_widget_t *button, const char *text)
     free(b->text);
     b->text = copy;
     idunn_relayout(button);
+    idunn_dirty(button);
+}
+
+void idunn_button_set_variant(idunn_widget_t *button, idunn_variant_t variant)
+{
+    button_t *b = as_button(button);
+    if (!b)
+        return;
+    b->variant = variant;
+    idunn_relayout(button);
+    idunn_dirty(button);
+}
+
+void idunn_button_set_align(idunn_widget_t *button, idunn_align_t align)
+{
+    button_t *b = as_button(button);
+    if (!b)
+        return;
+    b->align = align;
     idunn_dirty(button);
 }

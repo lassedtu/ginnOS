@@ -97,7 +97,7 @@ idunn_widget_t *idunn_label(const char *text, idunn_text_t style)
     l->text = strdup(text ? text : "");
     l->style = style;
     l->color = IDUNN_COLOR_FOREGROUND;
-    idunn_widget_t *w = l->text ? idunn_widget_new(&label_class, l, 0) : NULL;
+    idunn_widget_t *w = l->text ? idunn_widget_new(&label_class, l, IDUNN_SHRINKS) : NULL;
     if (!w)
     {
         free(l->text);

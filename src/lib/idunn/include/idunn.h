@@ -203,6 +203,13 @@ idunn_widget_t *idunn_icon_button(const char *icon, idunn_variant_t variant,
 void idunn_button_set_icon(idunn_widget_t *button, const char *icon);
 void idunn_button_set_size(idunn_widget_t *button, idunn_size_t size);
 void idunn_button_set_text(idunn_widget_t *button, const char *text);
+void idunn_button_set_variant(idunn_widget_t *button, idunn_variant_t variant);
+
+/**
+ * where the icon and text go: IDUNN_CENTER (the default) or IDUNN_START
+ * (side bar items, menu-like lists).
+ */
+void idunn_button_set_align(idunn_widget_t *button, idunn_align_t align);
 
 /**
  * a 1 pixel line: across a column, or down a row.

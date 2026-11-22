@@ -129,7 +129,8 @@ void idunn_draw_text(idunn_context_t *ctx, gfx_buffer_t *buf, idunn_text_t style
         return;
     int32_t baseline = y + bragi_line_baseline(face, idunn_text_style(&ctx->theme, style).line_height);
     int32_t length = (int32_t)strlen(text);
-    if (max_width <= 0 || bragi_measure(face, text, length) <= max_width)
+    // the width to the nearest pixel, as layout measures text
+    if (max_width <= 0 || bragi_caret_x(face, text, length, length) <= max_width)
     {
         bragi_draw(buf, face, x, baseline, text, length, color);
         return;

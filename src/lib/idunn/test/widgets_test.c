@@ -81,14 +81,39 @@ static void test_layout(void)
     CHECK_EQ(second->rect.x, 368);
     CHECK_EQ(icon->rect.y, 0);
 
-    // too little room: the children give it up in proportion, and the
-    // text ends with "..."
-    idunn_window_resize(win, 60, 40);
+    // too little room in a row: text gives it up (and ends with "..."),
+    // a button does not
+    idunn_window_resize(win, 100, 40);
     idunn_widget_t *r4 = idunn_row(0, 0);
     idunn_widget_t *long_label = idunn_add(r4, idunn_label("A long line of text", IDUNN_TEXT_BODY));
+    idunn_widget_t *fixed = idunn_add(r4, idunn_button("Keep", IDUNN_OUTLINE, NULL, NULL));
     idunn_window_set_root(win, r4);
     idunn_window_draw(win);
-    CHECK_EQ(long_label->rect.w, 60);
+    int32_t keep_width;
+    int32_t keep_height;
+    idunn_measure(fixed, 0, &keep_width, &keep_height);
+    CHECK_EQ(fixed->rect.w, keep_width);
+    CHECK_EQ(long_label->rect.w, 100 - keep_width);
+
+    // a box with a fixed width keeps it (a side bar)
+    idunn_widget_t *r6 = idunn_row(0, 0);
+    idunn_widget_t *side = idunn_add(r6, idunn_column(0, 0));
+    idunn_set_size(side, 40, 0);
+    idunn_widget_t *rest = idunn_add(r6, idunn_column(0, 0));
+    idunn_add(rest, idunn_label("A long line of text", IDUNN_TEXT_BODY));
+    idunn_window_set_root(win, r6);
+    idunn_window_draw(win);
+    CHECK_EQ(side->rect.w, 40);
+    CHECK_EQ(rest->rect.w, 60);
+
+    // a column that is too short does not squash its children
+    idunn_widget_t *c4 = idunn_column(0, 0);
+    idunn_widget_t *b1 = idunn_add(c4, idunn_button("One", IDUNN_OUTLINE, NULL, NULL));
+    idunn_widget_t *b2 = idunn_add(c4, idunn_button("Two", IDUNN_OUTLINE, NULL, NULL));
+    idunn_window_set_root(win, c4);
+    idunn_window_draw(win);
+    CHECK_EQ(b1->rect.h, 32);
+    CHECK_EQ(b2->rect.y, 32);
 
     // a wrapping label is as high as its lines
     idunn_window_resize(win, 60, 200);

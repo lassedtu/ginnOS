@@ -13,6 +13,7 @@
 // widget flags (what it can do)
 #define IDUNN_FOCUSABLE   0x01u // Tab and a click give it the keyboard
 #define IDUNN_INTERACTIVE 0x02u // it gets hover, presses and clicks
+#define IDUNN_SHRINKS     0x04u // it can be narrower than it wants (text with "...")
 
 // widget states
 #define IDUNN_HOVER    0x01u
