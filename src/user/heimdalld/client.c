@@ -299,6 +299,12 @@ static void settings_changed(client_t *c, heim_msg_t *msg)
         kill_client(c, "a bad settings name");
         return;
     }
+    // the decorations follow the theme too
+    if (strcmp(name, "theme") == 0)
+    {
+        idunn_theme_load(&S.theme);
+        window_look();
+    }
     heim_msg_t event = {0};
     event.type = HEIM_EV_SETTINGS;
     memcpy(event.settings.name, name, sizeof(event.settings.name));

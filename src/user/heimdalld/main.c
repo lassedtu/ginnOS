@@ -61,6 +61,8 @@ static bool listen_socket(void)
 
 static void load_look(void)
 {
+    idunn_theme_load(&S.theme);
+    window_look();
     bragi_font_t *font = bragi_font_open(FONTS "inter/Inter-SemiBold.ttf");
     S.title_face = font ? bragi_face_new(font, 13.0f) : NULL;
     icon_set_t *lucide = icon_set_named("lucide");
@@ -148,7 +150,6 @@ int main(int argc, char **argv)
     signal(SIGPIPE, SIG_IGN);
 
     cursor_init();
-    window_init();
     load_look();
     if (!listen_socket() || !screen_init(wallpaper) || !input_init())
         return 1;
