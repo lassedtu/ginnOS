@@ -127,8 +127,190 @@ static void test_hidden(idunn_context_t *ctx)
     free(win);
 }
 
+static int changes;
+static int activations;
+
+static void count_change(idunn_widget_t *w, void *data)
+{
+    (void)w;
+    (void)data;
+    changes++;
+}
+
+static void count_activate(idunn_widget_t *w, void *data)
+{
+    (void)w;
+    (void)data;
+    activations++;
+}
+
+static void click_at(idunn_window_t *win, int32_t x, int32_t y, uint32_t mods)
+{
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, x, y, mods);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, x, y, mods);
+}
+
+static void test_tabs(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 400, 200);
+    idunn_widget_t *col = idunn_column(0, 0);
+    changes = 0;
+    idunn_widget_t *tabs = idunn_add(col, idunn_tabs(count_change, NULL));
+    idunn_widget_t *one = idunn_tabs_add(tabs, "Account", idunn_button("A", IDUNN_SECONDARY, NULL, NULL));
+    idunn_widget_t *two = idunn_tabs_add(tabs, "Password", idunn_button("B", IDUNN_SECONDARY, NULL, NULL));
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+
+    // the strip is 30 high, the page 16 below it; only the active page shows
+    CHECK_EQ(one->rect.y, 30 + 16);
+    CHECK(!(one->state & IDUNN_HIDDEN));
+    CHECK(two->state & IDUNN_HIDDEN);
+
+    // a press on the second name; the arrows go round
+    gfx_rect_t strip = tabs->rect;
+    click_at(win, strip.x + 3 + 70 + 20, strip.y + 15, 0);
+    CHECK_EQ(idunn_tabs_active(tabs), 1);
+    CHECK(one->state & IDUNN_HIDDEN);
+    idunn_window_draw(win);
+    CHECK_EQ(two->rect.y, 46);
+    key(win, IDUNN_KEY_RIGHT, 0);
+    CHECK_EQ(idunn_tabs_active(tabs), 0);
+    CHECK_EQ(changes, 2);
+
+    // one Tab stop for the strip, then the page
+    idunn_window_draw(win);
+    key(win, IDUNN_KEY_TAB, 0);
+    CHECK(idunn_window_focus(win) == one);
+    key(win, IDUNN_KEY_TAB, IDUNN_MOD_SHIFT);
+    CHECK(idunn_window_focus(win) == tabs);
+
+    idunn_window_free_widgets(win);
+    free(win);
+}
+
+static void test_list(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 200);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_widget_t *list = idunn_list_view();
+    static const char *const names[] = {"apple", "banana", "blueberry", "cherry", "date"};
+    for (int i = 0; i < 100; i++)
+        idunn_list_view_add(list, i % 2 ? "file" : "folder", names[i % 5], "1 KB");
+    idunn_widget_t *view = idunn_grow(idunn_add(col, idunn_scroll_view(list)), 1);
+    idunn_list_view_on_select(list, count_change, NULL);
+    idunn_list_view_on_activate(list, count_activate, NULL);
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+
+    // 100 rows of 32 with 1 between, 4 around
+    CHECK_EQ(list->rect.h, 8 + 100 * 33 - 1);
+
+    // a press selects; Down moves; End goes to the last row and scrolls to it
+    changes = 0;
+    click_at(win, 50, 4 + 33 + 10, 0);
+    CHECK_EQ(idunn_list_view_current(list), 1);
+    CHECK(idunn_list_view_selected(list, 1));
+    key(win, IDUNN_KEY_DOWN, 0);
+    CHECK_EQ(idunn_list_view_current(list), 2);
+    CHECK(!idunn_list_view_selected(list, 1));
+    key(win, IDUNN_KEY_END, 0);
+    CHECK_EQ(idunn_list_view_current(list), 99);
+    CHECK_EQ(idunn_scroll_view_offset(view), list->rect.h - 200);
+    key(win, IDUNN_KEY_HOME, 0);
+    CHECK_EQ(idunn_scroll_view_offset(view), 0);
+    CHECK_EQ(changes, 4);
+
+    // type to find: "b" then "b" again goes on; "bl" finds blueberry
+    idunn_window_tick(win, 10000);
+    idunn_window_key(win, 0, 0, "b");
+    CHECK_EQ(idunn_list_view_current(list), 1);
+    idunn_window_key(win, 0, 0, "b");
+    CHECK_EQ(idunn_list_view_current(list), 2);
+    idunn_window_tick(win, 12000);
+    idunn_window_key(win, 0, 0, "b");
+    idunn_window_key(win, 0, 0, "l");
+    CHECK_EQ(idunn_list_view_current(list), 7);
+    CHECK(strcmp(idunn_list_view_text(list, 7), "blueberry") == 0);
+
+    // Enter and a double click activate
+    activations = 0;
+    key(win, IDUNN_KEY_ENTER, 0);
+    idunn_window_tick(win, 20000);
+    click_at(win, 50, 4 + 10, 0);
+    click_at(win, 50, 4 + 10, 0);
+    CHECK_EQ(activations, 2);
+
+    // many: Ctrl toggles, Shift selects a range, Ctrl+A all
+    idunn_list_view_set_multiple(list, true);
+    idunn_window_tick(win, 30000);
+    click_at(win, 50, 4 + 10, 0);
+    click_at(win, 50, 4 + 2 * 33 + 10, IDUNN_MOD_CTRL);
+    CHECK(idunn_list_view_selected(list, 0) && idunn_list_view_selected(list, 2));
+    CHECK(!idunn_list_view_selected(list, 1));
+    idunn_window_tick(win, 31000);
+    click_at(win, 50, 4 + 4 * 33 + 10, IDUNN_MOD_SHIFT);
+    CHECK(idunn_list_view_selected(list, 3) && idunn_list_view_selected(list, 4));
+    CHECK(!idunn_list_view_selected(list, 0));
+    key(win, IDUNN_KEY_A, IDUNN_MOD_CTRL);
+    CHECK(idunn_list_view_selected(list, 0) && idunn_list_view_selected(list, 99));
+    key(win, IDUNN_KEY_DOWN, IDUNN_MOD_SHIFT);
+    CHECK(idunn_list_view_selected(list, 5) && !idunn_list_view_selected(list, 6));
+
+    // the selected rows have the selection colour; it is drawn in the view
+    idunn_window_tick(win, 40000);
+    idunn_window_draw(win);
+    gfx_color_t selection = idunn_color(&ctx->theme, IDUNN_COLOR_SELECTION);
+    gfx_rect_t row3 = gfx_rect(4, list->rect.y + 4 + 3 * 33, 292, 32);
+    gfx_color_t want = gfx_over(idunn_color(&ctx->theme, IDUNN_COLOR_SURFACE), selection);
+    CHECK(*gfx_pixel_at(win->buffer, row3.x + 6, row3.y + 16) == want);
+
+    idunn_window_free_widgets(win);
+    free(win);
+}
+
+static void test_grid(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 420, 300);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_widget_t *grid = idunn_grid_view();
+    for (int i = 0; i < 10; i++)
+        idunn_list_view_add(grid, i < 3 ? "folder" : "text-x-generic", "notes.txt", NULL);
+    idunn_add(col, idunn_scroll_view(grid));
+    idunn_grow(col->children[0], 1);
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+
+    // tiles of 96 by 88 with 4 between: 4 in a line of 420, so 3 lines
+    int32_t gw;
+    int32_t gh;
+    idunn_measure(grid, 420, &gw, &gh);
+    CHECK_EQ(gh, 8 + 3 * 92 - 4);
+
+    // Right, Down (a line), and a press on the second tile of the second line
+    click_at(win, 4 + 10, 4 + 10, 0);
+    key(win, IDUNN_KEY_RIGHT, 0);
+    CHECK_EQ(idunn_list_view_current(grid), 1);
+    key(win, IDUNN_KEY_DOWN, 0);
+    CHECK_EQ(idunn_list_view_current(grid), 5);
+    click_at(win, 4 + 100 + 10, 4 + 92 + 10, 0);
+    CHECK_EQ(idunn_list_view_current(grid), 5);
+    click_at(win, 4 + 96 + 2, 4 + 10, 0);
+    CHECK_EQ(idunn_list_view_current(grid), 5);
+
+    // the picture is drawn: a folder is not the surface colour
+    idunn_window_draw(win);
+    gfx_color_t surface = idunn_color(&ctx->theme, IDUNN_COLOR_SURFACE);
+    CHECK(*gfx_pixel_at(win->buffer, 4 + 48, 4 + 8 + 30) != surface);
+
+    idunn_window_free_widgets(win);
+    free(win);
+}
+
 void test_lists(idunn_context_t *ctx)
 {
     test_scroll(ctx);
     test_hidden(ctx);
+    test_tabs(ctx);
+    test_list(ctx);
+    test_grid(ctx);
 }

@@ -330,6 +330,64 @@ idunn_widget_t *idunn_slider(int32_t min, int32_t max, int32_t step, int32_t val
 int32_t idunn_slider_value(const idunn_widget_t *slider);
 void idunn_slider_set_value(idunn_widget_t *slider, int32_t value);
 
+typedef enum
+{
+    IDUNN_BADGE_DEFAULT, // the accent
+    IDUNN_BADGE_SECONDARY,
+    IDUNN_BADGE_OUTLINE,
+    IDUNN_BADGE_DESTRUCTIVE,
+} idunn_badge_t;
+
+/** a badge: a short word in a small pill */
+idunn_widget_t *idunn_badge(const char *text, idunn_badge_t variant);
+
+/** a Lucide icon on its own, size points, in a colour token */
+idunn_widget_t *idunn_icon_view(const char *name, int32_t size, idunn_color_t color);
+
+/**
+ * an empty state: an icon on a muted square, a title and a muted line (or
+ * NULL), in the middle of its space. add buttons to it for actions.
+ */
+idunn_widget_t *idunn_empty_state(const char *icon, const char *title, const char *text);
+
+/**
+ * tabs: a strip of names and the page of the active one below it. the
+ * strip is one Tab stop; the arrows change the tab.
+ */
+idunn_widget_t *idunn_tabs(idunn_callback_t on_change, void *data);
+/** add a tab with its page (the tabs own it); the first one is active */
+idunn_widget_t *idunn_tabs_add(idunn_widget_t *tabs, const char *name, idunn_widget_t *page);
+int idunn_tabs_active(const idunn_widget_t *tabs);
+void idunn_tabs_set_active(idunn_widget_t *tabs, int active);
+
+/**
+ * a list view: rows with a Lucide icon (or NULL), text and a muted second
+ * text on the right (or NULL). put it in a scroll view when it is long.
+ */
+idunn_widget_t *idunn_list_view(void);
+/**
+ * a grid view: the same, as tiles of a 48 point Tela icon (a file or
+ * folder icon name) with the name below; it wraps to the width.
+ */
+idunn_widget_t *idunn_grid_view(void);
+/** @return the index of the new item, or -1 */
+int idunn_list_view_add(idunn_widget_t *list, const char *icon, const char *text,
+                        const char *detail);
+void idunn_list_view_clear(idunn_widget_t *list);
+int idunn_list_view_count(const idunn_widget_t *list);
+const char *idunn_list_view_text(const idunn_widget_t *list, int item);
+/** many items can be selected (Ctrl, Shift, Ctrl+A) */
+void idunn_list_view_set_multiple(idunn_widget_t *list, bool multiple);
+/** a border, the large radius and the card colour around the items */
+void idunn_list_view_set_framed(idunn_widget_t *list, bool framed);
+bool idunn_list_view_selected(const idunn_widget_t *list, int item);
+void idunn_list_view_select(idunn_widget_t *list, int item, bool selected);
+/** the item with the keyboard, or -1 */
+int idunn_list_view_current(const idunn_widget_t *list);
+/** on_select after the selection changes; on_activate on a double click or Enter */
+void idunn_list_view_on_select(idunn_widget_t *list, idunn_callback_t on_select, void *data);
+void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activate, void *data);
+
 /**
  * a form row: a label above the control and help text below it (or NULL).
  * the field owns the control.

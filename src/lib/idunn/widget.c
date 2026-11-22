@@ -179,11 +179,16 @@ void idunn_place(idunn_widget_t *w, gfx_rect_t rect)
 
 void idunn_dirty(idunn_widget_t *w)
 {
+    idunn_dirty_rect(w, w->rect);
+}
+
+void idunn_dirty_rect(idunn_widget_t *w, gfx_rect_t rect)
+{
     idunn_window_t *win = w->window;
-    if (!win || gfx_rect_empty(w->rect))
+    if (!win || gfx_rect_empty(rect))
         return;
     int32_t m = idunn_overdraw(&win->ctx->theme);
-    gfx_rect_t r = gfx_rect(w->rect.x - m, w->rect.y - m, w->rect.w + 2 * m, w->rect.h + 2 * m);
+    gfx_rect_t r = gfx_rect(rect.x - m, rect.y - m, rect.w + 2 * m, rect.h + 2 * m);
     // a scroll view shows only what is inside it
     for (const idunn_widget_t *p = w->parent; p; p = p->parent)
     {

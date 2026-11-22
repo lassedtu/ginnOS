@@ -247,8 +247,9 @@ static gfx_rect_t scroll_reveal(idunn_widget_t *w, gfx_rect_t r)
     if (top - margin < want)
         want = top - margin;
     scroll_to(w, want, true);
+    // the views around this one need to show only what this one shows
     r.y += s->placed - target(w);
-    return r;
+    return gfx_rect_intersect(r, w->rect);
 }
 
 static void scroll_free(idunn_widget_t *w)

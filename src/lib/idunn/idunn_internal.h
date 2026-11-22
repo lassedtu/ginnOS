@@ -112,6 +112,9 @@ struct idunn_context
     bragi_font_t *fonts[4]; // Inter 400, 500, 600 and JetBrains Mono
     bragi_face_t *faces[IDUNN_TEXT_COUNT];
     icon_set_t *icons;      // Lucide
+    icon_set_t *pictures;   // Tela (colour), opened when first needed
+    bool pictures_tried;
+    char icon_dir[200];     // where the packs are
     struct icon_entry *icon_cache;
 };
 
@@ -161,6 +164,8 @@ struct idunn_window
 // the context
 bragi_face_t *idunn_face(idunn_context_t *ctx, idunn_text_t style);
 const icon_t *idunn_icon(idunn_context_t *ctx, const char *name, int32_t size);
+/** a colour icon of the Tela set (files, folders, apps), cached */
+const icon_t *idunn_picture(idunn_context_t *ctx, const char *name, int32_t size);
 
 static inline idunn_context_t *idunn_ctx(const idunn_widget_t *w)
 {
@@ -177,6 +182,8 @@ idunn_widget_t *idunn_widget_new(const idunn_class_t *cls, void *data, uint32_t 
 void idunn_measure(idunn_widget_t *w, int32_t max_width, int32_t *width, int32_t *height);
 void idunn_place(idunn_widget_t *w, gfx_rect_t rect);
 void idunn_dirty(idunn_widget_t *w);
+/** draw a part of w again (a row of a list), with room for a ring */
+void idunn_dirty_rect(idunn_widget_t *w, gfx_rect_t rect);
 void idunn_relayout(idunn_widget_t *w);
 void idunn_set_window(idunn_widget_t *w, idunn_window_t *win);
 bool idunn_is_column(const idunn_widget_t *w);

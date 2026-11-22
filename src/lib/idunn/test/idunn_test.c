@@ -78,7 +78,7 @@ static void test_text_styles(void)
     idunn_theme_t t;
     idunn_theme_default(&t);
     static const int32_t sizes[IDUNN_TEXT_COUNT][2] = {
-        {13, 18}, {13, 18}, {12, 16}, {15, 22}, {19, 26}, {23, 30}, {12, 18}};
+        {13, 18}, {13, 18}, {12, 16}, {15, 22}, {19, 26}, {23, 30}, {12, 18}, {12, 16}};
     for (int i = 0; i < IDUNN_TEXT_COUNT; i++)
     {
         idunn_text_style_t s = idunn_text_style(&t, i);
