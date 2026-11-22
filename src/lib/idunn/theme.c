@@ -268,7 +268,7 @@ int32_t idunn_radius_lg(const idunn_theme_t *theme)
 
 idunn_text_style_t idunn_text_style(const idunn_theme_t *theme, idunn_text_t which)
 {
-    // at the default 13 px: 13/18, 13/18, 12/16, 15/22, 19/26, 23/30, 12/18
+    // at the default 13 px: 13/18, 13/18, 12/16, 15/22, 19/26, 23/30, 12/18, 12/16
     int32_t fs = theme->font_size;
     int32_t small = fs - 1 > 12 ? fs - 1 : 12;
     idunn_text_style_t style;
@@ -291,6 +291,9 @@ idunn_text_style_t idunn_text_style(const idunn_theme_t *theme, idunn_text_t whi
         break;
     case IDUNN_TEXT_MONO:
         style = (idunn_text_style_t){fs - 1, fs + 5, 400, 0.0f, true};
+        break;
+    case IDUNN_TEXT_CAPTION:
+        style = (idunn_text_style_t){small, small + 4, 500, 0.0f, false};
         break;
     default:
         style = (idunn_text_style_t){fs, fs + 5, 400, -0.006f, false};

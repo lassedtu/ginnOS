@@ -19,12 +19,20 @@ typedef struct
 
 static idunn_widget_t *buttons_page(void);
 static idunn_widget_t *inputs_page(void);
+static idunn_widget_t *lists_page(void);
+static idunn_widget_t *cards_page(void);
+static idunn_widget_t *menus_page(void);
+static idunn_widget_t *dialogs_page(void);
 static idunn_widget_t *text_page(void);
 
 static const page_t pages[] = {
     {"Buttons", "layout-grid", "Actions in six variants, three sizes, with icons and without.",
      buttons_page},
     {"Inputs", "pencil", "Text fields, choices and sliders, with help and errors.", inputs_page},
+    {"Lists", "list", "Lists and icon grids that scroll, with one or many selected.", lists_page},
+    {"Cards", "panels-top-left", "Cards, tabs, badges and empty states.", cards_page},
+    {"Menus", "menu", "Menus, selects, tooltips and popovers, in popup windows.", menus_page},
+    {"Dialogs", "square", "Dialogs over the window, for questions and short forms.", dialogs_page},
     {"Text", "type", "The text styles: Inter in three weights, and JetBrains Mono.", text_page},
 };
 #define PAGE_COUNT (int)(sizeof(pages) / sizeof(pages[0]))
@@ -32,6 +40,8 @@ static const page_t pages[] = {
 static struct
 {
     idunn_app_t *app;
+    idunn_menu_t *file_menu;
+    idunn_menu_t *more_menu;
     idunn_widget_t *main;
     idunn_widget_t *page;
     idunn_widget_t *title;
@@ -212,6 +222,255 @@ static idunn_widget_t *inputs_page(void)
     return page;
 }
 
+static void show_selected(idunn_widget_t *list, void *data)
+{
+    int count = 0;
+    for (int i = 0; i < idunn_list_view_count(list); i++)
+        count += idunn_list_view_selected(list, i);
+    char text[64];
+    snprintf(text, sizeof(text), count == 1 ? "1 file selected." : "%d files selected.", count);
+    idunn_label_set_text(data, text);
+}
+
+/** a card around a scroll view of a fixed height: a frame that stays */
+static idunn_widget_t *framed(idunn_widget_t *content, int32_t height)
+{
+    idunn_widget_t *card = idunn_card(0);
+    idunn_box_set_padding(card, 1, 1);
+    idunn_widget_t *view = idunn_add(card, idunn_scroll_view(content));
+    idunn_set_size(view, 0, height);
+    return card;
+}
+
+static idunn_widget_t *lists_page(void)
+{
+    idunn_widget_t *page = idunn_column(6, 0);
+
+    idunn_widget_t *list = idunn_list_view();
+    idunn_list_view_set_multiple(list, true);
+    idunn_list_view_add(list, "folder", "Pictures", "12 items");
+    idunn_list_view_add(list, "folder", "Documents", "48 items");
+    idunn_list_view_add(list, "file-text", "notes.txt", "2.1 KB");
+    idunn_list_view_add(list, "image", "wallpaper.png", "840 KB");
+    for (int i = 1; i <= 200; i++)
+    {
+        char name[32];
+        char size[16];
+        snprintf(name, sizeof(name), "report-%03d.txt", i);
+        snprintf(size, sizeof(size), "%d KB", (i * 37) % 900 + 3);
+        idunn_list_view_add(list, "file", name, size);
+    }
+    idunn_widget_t *list_part = idunn_column(2, 0);
+    idunn_add(list_part, framed(list, 232));
+    idunn_widget_t *status = idunn_add(list_part, muted("No file selected.", IDUNN_TEXT_SMALL));
+    idunn_list_view_on_select(list, show_selected, status);
+    section(page, "List view", "204 rows. Ctrl and Shift select more; type a name to find it.",
+            list_part);
+
+    static const char *const files[][2] = {
+        {"folder-documents", "Documents"},  {"folder-download", "Downloads"},
+        {"folder-pictures", "Pictures"},    {"folder-music", "Music"},
+        {"user-desktop", "Desktop"},        {"text-x-generic", "notes.txt"},
+        {"text-x-script", "build.sh"},      {"text-x-csrc", "main.c"},
+        {"image-x-generic", "wallpaper.png"}, {"audio-x-generic", "song.ogg"},
+        {"application-x-executable", "doom"}, {"application-x-archive", "backup.tar"},
+        {"user-trash", "Trash"},            {"drive-harddisk", "Disk"},
+    };
+    idunn_widget_t *grid = idunn_grid_view();
+    idunn_list_view_set_multiple(grid, true);
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++)
+        idunn_list_view_add(grid, files[i][0], files[i][1], NULL);
+    section(page, "Grid view", "Tela icons for files; the arrows move in two directions.",
+            framed(grid, 200));
+    return page;
+}
+
+static idunn_widget_t *cards_page(void)
+{
+    idunn_widget_t *page = idunn_column(6, 0);
+
+    idunn_widget_t *card = idunn_card(5);
+    idunn_card_header(card, "Storage", "How the disk is used by your files and the system.");
+    idunn_widget_t *line = idunn_add(card, idunn_row(2, 0));
+    idunn_box_set_align(line, IDUNN_CENTER, IDUNN_START);
+    idunn_add(line, idunn_badge("64 %", IDUNN_BADGE_SECONDARY));
+    idunn_add(line, muted("2.1 GB of 3.2 GB used", IDUNN_TEXT_BODY));
+    idunn_widget_t *actions = idunn_add(card, idunn_row(2, 0));
+    idunn_box_set_align(actions, IDUNN_CENTER, IDUNN_END);
+    idunn_add(actions, idunn_button("Details", IDUNN_OUTLINE, clicked, "Details"));
+    idunn_add(actions, idunn_button("Clean up", IDUNN_PRIMARY, clicked, "Clean up"));
+    section(page, "Card", "A title, a description, a body and actions on the right.", card);
+
+    idunn_widget_t *tabs = idunn_tabs(NULL, NULL);
+    idunn_widget_t *account = idunn_column(4, 0);
+    idunn_add(account, idunn_field("Name", idunn_text_field("Ada Lovelace"), NULL));
+    idunn_add(account, idunn_field("User name", idunn_text_field("ada"), "Used to sign in."));
+    idunn_tabs_add(tabs, "Account", account);
+    idunn_widget_t *password = idunn_column(4, 0);
+    idunn_add(password, idunn_field("Current password", idunn_text_field(NULL), NULL));
+    idunn_add(password, idunn_field("New password", idunn_text_field(NULL), NULL));
+    idunn_tabs_add(tabs, "Password", password);
+    idunn_widget_t *notes = idunn_column(2, 0);
+    idunn_box_set_align(notes, IDUNN_START, IDUNN_START);
+    idunn_add(notes, idunn_switch("Sounds", true, NULL, NULL));
+    idunn_add(notes, idunn_switch("Show on the lock screen", false, NULL, NULL));
+    idunn_tabs_add(tabs, "Notifications", notes);
+    section(page, "Tabs", "One Tab stop; the arrows change the tab.", tabs);
+
+    idunn_widget_t *badges = idunn_row(2, 0);
+    idunn_box_set_align(badges, IDUNN_CENTER, IDUNN_START);
+    idunn_add(badges, idunn_badge("Default", IDUNN_BADGE_DEFAULT));
+    idunn_add(badges, idunn_badge("Secondary", IDUNN_BADGE_SECONDARY));
+    idunn_add(badges, idunn_badge("Outline", IDUNN_BADGE_OUTLINE));
+    idunn_add(badges, idunn_badge("Error", IDUNN_BADGE_DESTRUCTIVE));
+    section(page, "Badges", "A word or a number in a small pill.", badges);
+
+    idunn_widget_t *empty_card = idunn_card(0);
+    idunn_widget_t *empty = idunn_add(empty_card,
+                                      idunn_empty_state("inbox", "No messages",
+                                                        "New mail shows up here."));
+    idunn_add(empty, idunn_button("Check again", IDUNN_OUTLINE, clicked, "Check again"));
+    section(page, "Empty state", "What a list shows when it has nothing in it.", empty_card);
+
+    G.status = idunn_add(page, muted("Click a button.", IDUNN_TEXT_BODY));
+    return page;
+}
+
+static void say(idunn_widget_t *w, void *data)
+{
+    (void)w;
+    clicked(NULL, data);
+}
+
+static void open_file_menu(idunn_widget_t *button, void *data)
+{
+    (void)data;
+    idunn_menu_popup(G.file_menu, button);
+}
+
+static void open_more_menu(idunn_widget_t *button, void *data)
+{
+    (void)data;
+    idunn_menu_popup(G.more_menu, button);
+}
+
+static void make_menus(void)
+{
+    if (G.file_menu)
+        return;
+    G.file_menu = idunn_menu_new();
+    idunn_menu_add(G.file_menu, "file-plus", "New file", "Ctrl+N", say, "New file");
+    idunn_menu_add(G.file_menu, "folder", "Open...", "Ctrl+O", say, "Open");
+    idunn_menu_t *recent = idunn_menu_new();
+    idunn_menu_add(recent, "file-text", "notes.txt", NULL, say, "notes.txt");
+    idunn_menu_add(recent, "file-text", "todo.txt", NULL, say, "todo.txt");
+    idunn_menu_add(recent, "image", "wallpaper.png", NULL, say, "wallpaper.png");
+    idunn_menu_add_sub(G.file_menu, "list", "Open recent", recent);
+    idunn_menu_add_separator(G.file_menu);
+    idunn_menu_add_check(G.file_menu, "Word wrap", true, say, "Word wrap");
+    idunn_menu_add_check(G.file_menu, "Show hidden files", false, say, "Show hidden files");
+    idunn_menu_add_separator(G.file_menu);
+    int print = idunn_menu_add(G.file_menu, NULL, "Print", "Ctrl+P", say, "Print");
+    idunn_menu_set_disabled(G.file_menu, print, true);
+    idunn_menu_add(G.file_menu, "x", "Close", "Ctrl+W", say, "Close");
+
+    G.more_menu = idunn_menu_new();
+    idunn_menu_add(G.more_menu, "pencil", "Rename", "F2", say, "Rename");
+    idunn_menu_add(G.more_menu, "copy", "Copy", "Ctrl+C", say, "Copy");
+    idunn_menu_add(G.more_menu, "share", "Share", NULL, say, "Share");
+    idunn_menu_add_separator(G.more_menu);
+    idunn_menu_add(G.more_menu, "trash", "Move to trash", "Delete", say, "Move to trash");
+}
+
+static void open_popover(idunn_widget_t *button, void *data)
+{
+    (void)data;
+    idunn_widget_t *content = idunn_column(3, 0);
+    idunn_widget_t *head = idunn_add(content, idunn_column(1, 0));
+    idunn_add(head, idunn_label("Dimensions", IDUNN_TEXT_LABEL));
+    idunn_add(head, muted("Set the size of the picture.", IDUNN_TEXT_SMALL));
+    idunn_add(content, idunn_field("Width", idunn_text_field("1440 px"), NULL));
+    idunn_add(content, idunn_field("Height", idunn_text_field("900 px"), NULL));
+    idunn_popover(button, content);
+}
+
+static idunn_widget_t *menus_page(void)
+{
+    make_menus();
+    idunn_widget_t *page = idunn_column(6, 0);
+
+    idunn_widget_t *menus = idunn_row(2, 0);
+    idunn_box_set_align(menus, IDUNN_CENTER, IDUNN_START);
+    idunn_widget_t *file = idunn_add(menus, idunn_button("File", IDUNN_OUTLINE, open_file_menu, NULL));
+    idunn_button_set_icon(file, "chevron-down");
+    idunn_widget_t *more = idunn_add(menus, idunn_icon_button("ellipsis", IDUNN_GHOST,
+                                                              open_more_menu, NULL));
+    idunn_set_tooltip(more, "More");
+    section(page, "Dropdown menu", "Icons, shortcuts, checks, a sub-menu and a disabled item.",
+            menus);
+
+    static const char *const themes[] = {"Light", "Dark", "Like the system"};
+    static const char *const accents[] = {"Rose", "Blue", "Green", "Orange", "Violet", "Neutral"};
+    idunn_widget_t *selects = idunn_row(3, 0);
+    idunn_box_set_align(selects, IDUNN_START, IDUNN_START);
+    idunn_add(selects, idunn_field("Theme", idunn_select(themes, 3, 1, NULL, NULL), NULL));
+    idunn_widget_t *accent = idunn_select(accents, 6, -1, NULL, NULL);
+    idunn_select_set_placeholder(accent, "Pick a colour");
+    idunn_add(selects, idunn_field("Accent", accent, NULL));
+    section(page, "Select", "A value from a list; the arrows open it too.", selects);
+
+    idunn_widget_t *tips = idunn_row(1, 0);
+    idunn_box_set_align(tips, IDUNN_CENTER, IDUNN_START);
+    static const char *const icons[][2] = {
+        {"search", "Search"}, {"star", "Add to favourites"}, {"copy", "Copy"}, {"trash", "Delete"}};
+    for (int i = 0; i < 4; i++)
+        idunn_set_tooltip(idunn_add(tips, idunn_icon_button(icons[i][0], IDUNN_GHOST, NULL, NULL)),
+                          icons[i][1]);
+    section(page, "Tooltip", "Keep the pointer on a button for a moment.", tips);
+
+    idunn_widget_t *pop = idunn_row(0, 0);
+    idunn_add(pop, idunn_button("Dimensions", IDUNN_OUTLINE, open_popover, NULL));
+    section(page, "Popover", "A card with a small form; Escape or a press outside closes it.",
+            pop);
+
+    G.status = idunn_add(page, muted("Choose something from a menu.", IDUNN_TEXT_BODY));
+    return page;
+}
+
+static void ask_delete(idunn_widget_t *button, void *data)
+{
+    (void)data;
+    idunn_widget_t *dialog =
+        idunn_dialog("Delete notes.txt?", "It goes to the trash. You can get it back from there.");
+    idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, NULL, NULL);
+    idunn_dialog_add_button(dialog, "Delete", IDUNN_DESTRUCTIVE, say, "Delete");
+    idunn_dialog_open(button, dialog);
+}
+
+static void ask_rename(idunn_widget_t *button, void *data)
+{
+    (void)data;
+    idunn_widget_t *dialog = idunn_dialog("Rename", "Give the file a new name.");
+    idunn_add(idunn_dialog_content(dialog),
+              idunn_field("Name", idunn_text_field("notes.txt"), "Letters, digits, - and ."));
+    idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, NULL, NULL);
+    idunn_dialog_add_button(dialog, "Rename", IDUNN_PRIMARY, say, "Rename");
+    idunn_dialog_open(button, dialog);
+}
+
+static idunn_widget_t *dialogs_page(void)
+{
+    idunn_widget_t *page = idunn_column(6, 0);
+    idunn_widget_t *ask = idunn_row(2, 0);
+    idunn_box_set_align(ask, IDUNN_CENTER, IDUNN_START);
+    idunn_add(ask, idunn_button("Delete file", IDUNN_DESTRUCTIVE, ask_delete, NULL));
+    idunn_add(ask, idunn_button("Rename file", IDUNN_OUTLINE, ask_rename, NULL));
+    section(page, "Dialog",
+            "Over the window, which gets no input until it closes. Escape is Cancel.", ask);
+    G.status = idunn_add(page, muted("Open a dialog.", IDUNN_TEXT_BODY));
+    return page;
+}
+
 static idunn_widget_t *text_page(void)
 {
     static const struct
@@ -249,6 +508,14 @@ static idunn_widget_t *text_page(void)
     return page;
 }
 
+/** a page in a scroll view, 24 by 32 pixels inside */
+static idunn_widget_t *page_view(int index)
+{
+    idunn_widget_t *content = pages[index].build();
+    idunn_box_set_padding(content, 6, 8);
+    return idunn_scroll_view(content);
+}
+
 static void show_page(idunn_widget_t *button, void *data)
 {
     (void)button;
@@ -259,8 +526,7 @@ static void show_page(idunn_widget_t *button, void *data)
     idunn_label_set_text(G.description, pages[index].description);
     G.status = NULL;
     idunn_widget_free(G.page);
-    G.page = idunn_grow(idunn_add(G.main, pages[index].build()), 1);
-    idunn_box_set_padding(G.page, 6, 8);
+    G.page = idunn_grow(idunn_add(G.main, page_view(index)), 1);
 }
 
 static void switch_mode(idunn_widget_t *button, void *data)
@@ -323,8 +589,7 @@ int main(void)
     G.main = idunn_grow(idunn_add(root, idunn_column(0, 0)), 1);
     idunn_add(G.main, header());
     idunn_add(G.main, idunn_separator());
-    G.page = idunn_grow(idunn_add(G.main, pages[0].build()), 1);
-    idunn_box_set_padding(G.page, 6, 8);
+    G.page = idunn_grow(idunn_add(G.main, page_view(0)), 1);
 
     idunn_window_set_root(win, root);
     return idunn_app_run(G.app);

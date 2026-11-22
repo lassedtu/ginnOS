@@ -333,12 +333,24 @@ static void handle(client_t *c, heim_msg_t *msg)
     switch (msg->type)
     {
     case HEIM_REQ_CREATE:
+    {
         msg->create.title[HEIM_TITLE_MAX - 1] = '\0';
+        window_t *parent = NULL;
+        if (msg->create.flags & HEIM_WINDOW_POPUP)
+        {
+            parent = window_find(c, msg->create.parent);
+            if (!parent)
+            {
+                kill_client(c, "a popup without its window");
+                return;
+            }
+        }
         if (msg->window == 0 || w || !good_size(msg->create.width, msg->create.height))
             kill_client(c, "a bad window");
-        else if (!window_new(c, msg->window, msg->create.flags, msg->create.title))
+        else if (!window_new(c, msg->window, msg->create.flags, msg->create.title, parent))
             kill_client(c, "out of memory");
         return;
+    }
     case HEIM_REQ_CLIP_SET:
         clip_set(c, msg);
         return;
@@ -364,6 +376,13 @@ static void handle(client_t *c, heim_msg_t *msg)
         break;
     case HEIM_REQ_COMMIT:
         commit(c, w, msg);
+        break;
+    case HEIM_REQ_PLACE:
+        w->anchor = gfx_rect(msg->place.x, msg->place.y, msg->place.width, msg->place.height);
+        w->side = msg->place.side;
+        w->margin = msg->place.margin > 0 && msg->place.margin < 256 ? msg->place.margin : 0;
+        if (w->shown)
+            window_place(w);
         break;
     case HEIM_REQ_TITLE:
         memcpy(w->title, msg->title.title, HEIM_TITLE_MAX);

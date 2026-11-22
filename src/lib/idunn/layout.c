@@ -27,6 +27,8 @@ typedef struct
     idunn_align_t align;   // across
     idunn_align_t justify; // along
     int background;       // a colour token, or -1
+    bool card;            // the card look: a border, a large radius, a shadow
+    idunn_shadow_t shadow; // the card's shadow
 } box_t;
 
 static box_t *box_of(idunn_widget_t *w)
@@ -58,12 +60,15 @@ static void box_measure(idunn_widget_t *w, int32_t max_width, int32_t *width, in
 
     int32_t along = 0;
     int32_t across = 0;
+    int shown = 0;
     for (int i = 0; i < w->child_count; i++)
     {
+        if (w->children[i]->state & IDUNN_HIDDEN)
+            continue;
         int32_t a;
         int32_t c;
         child_size(w->children[i], b->column, inner, &a, &c);
-        along += a + (i > 0 ? gap : 0);
+        along += a + (shown++ > 0 ? gap : 0);
         if (c > across)
             across = c;
     }
@@ -90,9 +95,21 @@ static int32_t aligned(idunn_align_t align, int32_t space, int32_t size)
 static void box_layout(idunn_widget_t *w)
 {
     const box_t *b = box_of(w);
-    int n = w->child_count;
-    if (n == 0)
+    // the children that take part (hidden ones do not)
+    idunn_widget_t **kids = malloc((size_t)(w->child_count ? w->child_count : 1) * sizeof(*kids));
+    if (!kids)
         return;
+    int n = 0;
+    for (int i = 0; i < w->child_count; i++)
+    {
+        if (!(w->children[i]->state & IDUNN_HIDDEN))
+            kids[n++] = w->children[i];
+    }
+    if (n == 0)
+    {
+        free(kids);
+        return;
+    }
     const idunn_theme_t *t = idunn_theme(w);
     int32_t pad_v = idunn_px(t, b->pad_v * UNIT);
     int32_t pad_h = idunn_px(t, b->pad_h * UNIT);
@@ -104,17 +121,20 @@ static void box_layout(idunn_widget_t *w)
 
     int32_t *along = malloc((size_t)n * 2 * sizeof(int32_t));
     if (!along)
+    {
+        free(kids);
         return;
+    }
     int32_t *across = along + n;
     int32_t total = 0;
     int32_t shrinkable = 0;
     int grow = 0;
     for (int i = 0; i < n; i++)
     {
-        child_size(w->children[i], b->column, inner.w, &along[i], &across[i]);
+        child_size(kids[i], b->column, inner.w, &along[i], &across[i]);
         total += along[i];
-        grow += w->children[i]->grow;
-        if (can_shrink(w->children[i]))
+        grow += kids[i]->grow;
+        if (can_shrink(kids[i]))
             shrinkable += along[i];
     }
     int32_t free_space = main - total - gap * (n - 1);
@@ -127,9 +147,9 @@ static void box_layout(idunn_widget_t *w)
         int seen = 0;
         for (int i = 0; i < n; i++)
         {
-            if (!w->children[i]->grow)
+            if (!kids[i]->grow)
                 continue;
-            seen += w->children[i]->grow;
+            seen += kids[i]->grow;
             int32_t share = (int32_t)((int64_t)free_space * seen / grow) - given;
             along[i] += share;
             given += share;
@@ -143,7 +163,7 @@ static void box_layout(idunn_widget_t *w)
         int64_t seen = 0;
         for (int i = 0; i < n; i++)
         {
-            if (!can_shrink(w->children[i]))
+            if (!can_shrink(kids[i]))
                 continue;
             seen += along[i];
             int32_t share = (int32_t)(missing * seen / shrinkable) - taken;
@@ -161,17 +181,28 @@ static void box_layout(idunn_widget_t *w)
         int32_t off = b->align == IDUNN_STRETCH ? 0 : aligned(b->align, cross, size);
         gfx_rect_t r = b->column ? gfx_rect(inner.x + off, inner.y + pos, size, along[i])
                                  : gfx_rect(inner.x + pos, inner.y + off, along[i], size);
-        idunn_place(w->children[i], r);
+        idunn_place(kids[i], r);
         pos += along[i] + gap + extra;
     }
     free(along);
+    free(kids);
 }
 
 static void box_draw(idunn_widget_t *w, gfx_buffer_t *buf)
 {
     const box_t *b = box_of(w);
+    const idunn_theme_t *t = idunn_theme(w);
+    if (b->card)
+    {
+        int32_t radius = idunn_radius_lg(t);
+        idunn_draw_shadow(t, buf, w->rect, radius, b->shadow);
+        gfx_fill_round_rect(buf, w->rect, radius, idunn_color(t, IDUNN_COLOR_CARD));
+        gfx_border_round_rect(buf, w->rect, radius, idunn_px(t, 1),
+                              idunn_color(t, IDUNN_COLOR_BORDER));
+        return;
+    }
     if (b->background >= 0)
-        gfx_fill_rect(buf, w->rect, idunn_color(idunn_theme(w), (idunn_color_t)b->background));
+        gfx_fill_rect(buf, w->rect, idunn_color(t, (idunn_color_t)b->background));
 }
 
 static void box_free(idunn_widget_t *w)
@@ -192,7 +223,8 @@ static idunn_widget_t *box_new(bool column, int gap, int padding)
     box_t *b = malloc(sizeof(*b));
     if (!b)
         return NULL;
-    *b = (box_t){column, gap, padding, padding, IDUNN_STRETCH, IDUNN_START, -1};
+    *b = (box_t){column, gap, padding, padding, IDUNN_STRETCH, IDUNN_START, -1, false,
+                 IDUNN_SHADOW_XS};
     idunn_widget_t *w = idunn_widget_new(&box_class, b, IDUNN_SHRINKS);
     if (!w)
         free(b);
@@ -247,6 +279,34 @@ void idunn_box_set_background(idunn_widget_t *box, idunn_color_t color)
         return;
     b->background = color;
     idunn_dirty(box);
+}
+
+idunn_widget_t *idunn_card_box(int gap, int padding, idunn_shadow_t shadow)
+{
+    idunn_widget_t *w = box_new(true, gap, padding);
+    if (w)
+    {
+        box_of(w)->card = true;
+        box_of(w)->shadow = shadow;
+    }
+    return w;
+}
+
+idunn_widget_t *idunn_card(int gap)
+{
+    return idunn_card_box(gap, 6, IDUNN_SHADOW_XS);
+}
+
+void idunn_card_header(idunn_widget_t *card, const char *title, const char *description)
+{
+    idunn_widget_t *head = idunn_add(card, idunn_column(1, 0));
+    idunn_add(head, idunn_label(title ? title : "", IDUNN_TEXT_TITLE));
+    if (description)
+    {
+        idunn_widget_t *d = idunn_add(head, idunn_label(description, IDUNN_TEXT_BODY));
+        idunn_label_set_color(d, IDUNN_COLOR_MUTED_FOREGROUND);
+        idunn_label_set_wrap(d, true);
+    }
 }
 
 static const idunn_class_t spacer_class = {.name = "spacer"};

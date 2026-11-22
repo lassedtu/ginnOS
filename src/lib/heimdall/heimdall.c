@@ -354,8 +354,8 @@ bool heim_window_resize(heim_window_t *win, int32_t width, int32_t height)
     return true;
 }
 
-heim_window_t *heim_window_new(heim_conn_t *conn, int32_t width, int32_t height,
-                               const char *title, uint32_t flags)
+static heim_window_t *new_window(heim_conn_t *conn, int32_t width, int32_t height,
+                                 const char *title, uint32_t flags, uint32_t parent)
 {
     heim_window_t *win = calloc(1, sizeof(*win));
     if (!win)
@@ -370,6 +370,7 @@ heim_window_t *heim_window_new(heim_conn_t *conn, int32_t width, int32_t height,
     msg.create.width = width;
     msg.create.height = height;
     msg.create.flags = flags;
+    msg.create.parent = parent;
     copy_title(msg.create.title, title);
     if (!send_msg(conn, &msg, -1) || !heim_window_resize(win, width, height))
     {
@@ -379,6 +380,34 @@ heim_window_t *heim_window_new(heim_conn_t *conn, int32_t width, int32_t height,
     win->next = conn->windows;
     conn->windows = win;
     return win;
+}
+
+heim_window_t *heim_window_new(heim_conn_t *conn, int32_t width, int32_t height,
+                               const char *title, uint32_t flags)
+{
+    return new_window(conn, width, height, title, flags & ~(uint32_t)HEIM_WINDOW_POPUP, 0);
+}
+
+heim_window_t *heim_popup_new(heim_window_t *parent, int32_t width, int32_t height,
+                              uint32_t flags)
+{
+    return new_window(parent->conn, width, height, "",
+                  (flags & HEIM_WINDOW_TOOLTIP) | HEIM_WINDOW_POPUP, parent->id);
+}
+
+void heim_window_place(heim_window_t *popup, gfx_rect_t r, uint32_t side, int32_t margin)
+{
+    heim_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = HEIM_REQ_PLACE;
+    msg.window = popup->id;
+    msg.place.x = r.x;
+    msg.place.y = r.y;
+    msg.place.width = r.w;
+    msg.place.height = r.h;
+    msg.place.side = side;
+    msg.place.margin = margin;
+    send_msg(popup->conn, &msg, -1);
 }
 
 void heim_window_free(heim_window_t *win)

@@ -213,6 +213,9 @@ static void button_press(uint16_t code, uint32_t time_ms)
     part_t part;
     uint32_t edges;
     window_t *w = window_at(S.px, S.py, &part, &edges);
+    // a press outside the open menus closes them, and does nothing else
+    if ((!w || !w->parent) && window_close_popups())
+        return;
     if (!w)
         return;
     window_raise(w);

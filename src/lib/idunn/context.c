@@ -13,6 +13,7 @@ struct icon_entry
 {
     char name[ICON_NAME_MAX + 1];
     int32_t size;
+    bool picture; // of the Tela set
     icon_t *icon;
     struct icon_entry *next;
 };
@@ -63,6 +64,11 @@ idunn_context_t *idunn_context_new(const idunn_theme_t *theme, const char *font_
         }
     }
     ctx->icons = icon_pack ? icon_set_open(icon_pack) : NULL;
+    // the colour set is in the same directory
+    const char *slash = icon_pack ? strrchr(icon_pack, '/') : NULL;
+    if (slash)
+        snprintf(ctx->icon_dir, sizeof(ctx->icon_dir), "%.*s", (int)(slash - icon_pack + 1),
+                 icon_pack);
     return ctx;
 }
 
@@ -70,11 +76,14 @@ void idunn_context_free(idunn_context_t *ctx)
 {
     if (!ctx)
         return;
+    idunn_reap(ctx);
+    free(ctx->dead_widgets);
     free_faces(ctx);
     free_icons(ctx);
     for (int i = 0; i < 4; i++)
         bragi_font_close(ctx->fonts[i]);
     icon_set_close(ctx->icons);
+    icon_set_close(ctx->pictures);
     free(ctx);
 }
 
@@ -101,13 +110,14 @@ bragi_face_t *idunn_face(idunn_context_t *ctx, idunn_text_t style)
     return ctx->faces[style];
 }
 
-const icon_t *idunn_icon(idunn_context_t *ctx, const char *name, int32_t size)
+static const icon_t *cached(idunn_context_t *ctx, icon_set_t *set, bool picture,
+                            const char *name, int32_t size)
 {
-    if (!ctx->icons || !name)
+    if (!set || !name)
         return NULL;
     for (struct icon_entry *e = ctx->icon_cache; e; e = e->next)
     {
-        if (e->size == size && strcmp(e->name, name) == 0)
+        if (e->size == size && e->picture == picture && strcmp(e->name, name) == 0)
             return e->icon;
     }
     struct icon_entry *e = calloc(1, sizeof(*e));
@@ -115,10 +125,28 @@ const icon_t *idunn_icon(idunn_context_t *ctx, const char *name, int32_t size)
         return NULL;
     snprintf(e->name, sizeof(e->name), "%s", name);
     e->size = size;
-    e->icon = icon_load(ctx->icons, name, size, ctx->theme.scale);
+    e->picture = picture;
+    e->icon = icon_load(set, name, size, ctx->theme.scale);
     e->next = ctx->icon_cache;
     ctx->icon_cache = e;
     return e->icon;
+}
+
+const icon_t *idunn_icon(idunn_context_t *ctx, const char *name, int32_t size)
+{
+    return cached(ctx, ctx->icons, false, name, size);
+}
+
+const icon_t *idunn_picture(idunn_context_t *ctx, const char *name, int32_t size)
+{
+    if (!ctx->pictures_tried)
+    {
+        ctx->pictures_tried = true;
+        char path[256];
+        snprintf(path, sizeof(path), "%stela.pack", ctx->icon_dir);
+        ctx->pictures = icon_set_open(path);
+    }
+    return cached(ctx, ctx->pictures, true, name, size);
 }
 
 void idunn_draw_text(idunn_context_t *ctx, gfx_buffer_t *buf, idunn_text_t style, int32_t x,

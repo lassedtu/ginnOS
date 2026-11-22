@@ -7,6 +7,7 @@
 #include "idunn_internal.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 idunn_widget_t *idunn_widget_new(const idunn_class_t *cls, void *data, uint32_t flags)
 {
@@ -56,6 +57,10 @@ static void forget(idunn_widget_t *w)
         win->focus = NULL;
     if (win->paste_to == w)
         win->paste_to = NULL;
+    if (win->tip_widget == w)
+        win->tip_widget = NULL;
+    if (win->modal_return == w)
+        win->modal_return = NULL;
     for (size_t i = 0; i < sizeof(win->timers) / sizeof(win->timers[0]); i++)
     {
         if (win->timers[i].widget == w)
@@ -70,8 +75,37 @@ static void free_tree(idunn_widget_t *w)
     forget(w);
     if (w->cls->free)
         w->cls->free(w);
+    free(w->tooltip);
     free(w->children);
     free(w);
+}
+
+void idunn_set_tooltip(idunn_widget_t *w, const char *text)
+{
+    if (!w)
+        return;
+    free(w->tooltip);
+    w->tooltip = text ? strdup(text) : NULL;
+}
+
+void idunn_free_later(idunn_widget_t *w)
+{
+    idunn_context_t *ctx = w && w->window ? w->window->ctx : NULL;
+    if (!ctx)
+    {
+        idunn_widget_free(w);
+        return;
+    }
+    if (ctx->dead_count == ctx->dead_capacity)
+    {
+        int capacity = ctx->dead_capacity ? ctx->dead_capacity * 2 : 4;
+        idunn_widget_t **grown = realloc(ctx->dead_widgets, (size_t)capacity * sizeof(*grown));
+        if (!grown)
+            return; // kept: better a leak than a widget freed under an event
+        ctx->dead_widgets = grown;
+        ctx->dead_capacity = capacity;
+    }
+    ctx->dead_widgets[ctx->dead_count++] = w;
 }
 
 void idunn_widget_free(idunn_widget_t *w)
@@ -179,12 +213,71 @@ void idunn_place(idunn_widget_t *w, gfx_rect_t rect)
 
 void idunn_dirty(idunn_widget_t *w)
 {
+    idunn_dirty_rect(w, w->rect);
+}
+
+void idunn_dirty_rect(idunn_widget_t *w, gfx_rect_t rect)
+{
     idunn_window_t *win = w->window;
-    if (!win || gfx_rect_empty(w->rect))
+    if (!win || gfx_rect_empty(rect))
         return;
     int32_t m = idunn_overdraw(&win->ctx->theme);
-    gfx_rect_t r = gfx_rect(w->rect.x - m, w->rect.y - m, w->rect.w + 2 * m, w->rect.h + 2 * m);
+    gfx_rect_t r = gfx_rect(rect.x - m, rect.y - m, rect.w + 2 * m, rect.h + 2 * m);
+    // a scroll view shows only what is inside it
+    for (const idunn_widget_t *p = w->parent; p; p = p->parent)
+    {
+        if (p->flags & IDUNN_CLIPS)
+            r = gfx_rect_intersect(r, p->rect);
+    }
+    if (gfx_rect_empty(r))
+        return;
     win->damage = gfx_rect_empty(win->damage) ? r : gfx_rect_union(win->damage, r);
+}
+
+static void forget_tree(idunn_widget_t *w)
+{
+    forget(w);
+    w->state &= ~(IDUNN_HOVER | IDUNN_PRESSED | IDUNN_FOCUSED);
+    for (int i = 0; i < w->child_count; i++)
+        forget_tree(w->children[i]);
+}
+
+void idunn_set_hidden(idunn_widget_t *w, bool hidden)
+{
+    if (hidden == ((w->state & IDUNN_HIDDEN) != 0))
+        return;
+    if (hidden)
+    {
+        idunn_dirty(w);
+        forget_tree(w);
+        w->state |= IDUNN_HIDDEN;
+    }
+    else
+    {
+        w->state &= ~IDUNN_HIDDEN;
+    }
+    if (w->parent)
+        idunn_relayout(w->parent);
+    idunn_dirty(w);
+}
+
+bool idunn_shown(const idunn_widget_t *w)
+{
+    for (; w; w = w->parent)
+    {
+        if (w->state & IDUNN_HIDDEN)
+            return false;
+    }
+    return true;
+}
+
+void idunn_reveal(idunn_widget_t *w, gfx_rect_t r)
+{
+    for (idunn_widget_t *p = w->parent; p; p = p->parent)
+    {
+        if (p->cls->reveal)
+            r = p->cls->reveal(p, r);
+    }
 }
 
 void idunn_relayout(idunn_widget_t *w)

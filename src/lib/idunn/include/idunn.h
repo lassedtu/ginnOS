@@ -139,6 +139,28 @@ void idunn_box_set_padding(idunn_widget_t *box, int vertical, int horizontal);
 void idunn_box_set_background(idunn_widget_t *box, idunn_color_t color);
 
 /**
+ * a card: a column on the card colour with a border, the large radius and
+ * a small shadow, 24 pixels inside.
+ * @param gap the space between its children, in units.
+ */
+idunn_widget_t *idunn_card(int gap);
+
+/**
+ * a title and a muted description (or NULL) at the top of a card.
+ */
+void idunn_card_header(idunn_widget_t *card, const char *title, const char *description);
+
+/**
+ * a scroll view: the child can be taller than the view. the view takes
+ * the height it is given (let it grow, or give it a size), as a CSS box
+ * with min-height 0. the wheel, the keys its children do not use and a
+ * thin scroll bar scroll it; Tab scrolls the focus into view.
+ */
+idunn_widget_t *idunn_scroll_view(idunn_widget_t *child);
+int32_t idunn_scroll_view_offset(const idunn_widget_t *view);
+void idunn_scroll_view_scroll_to(idunn_widget_t *view, int32_t offset);
+
+/**
  * empty space that grows (put it between children to push them apart).
  */
 idunn_widget_t *idunn_spacer(void);
@@ -164,6 +186,11 @@ idunn_widget_t *idunn_grow(idunn_widget_t *w, int weight);
  * a size a widget must have, in design pixels (0: its own size).
  */
 void idunn_set_size(idunn_widget_t *w, int32_t width, int32_t height);
+
+/**
+ * a hidden widget is not drawn, takes no room in its box and gets no input.
+ */
+void idunn_set_hidden(idunn_widget_t *w, bool hidden);
 
 /**
  * a disabled widget is drawn at half opacity and gets no input.
@@ -302,6 +329,130 @@ idunn_widget_t *idunn_slider(int32_t min, int32_t max, int32_t step, int32_t val
                              idunn_callback_t on_change, void *data);
 int32_t idunn_slider_value(const idunn_widget_t *slider);
 void idunn_slider_set_value(idunn_widget_t *slider, int32_t value);
+
+typedef enum
+{
+    IDUNN_BADGE_DEFAULT, // the accent
+    IDUNN_BADGE_SECONDARY,
+    IDUNN_BADGE_OUTLINE,
+    IDUNN_BADGE_DESTRUCTIVE,
+} idunn_badge_t;
+
+/** a badge: a short word in a small pill */
+idunn_widget_t *idunn_badge(const char *text, idunn_badge_t variant);
+
+/** a Lucide icon on its own, size points, in a colour token */
+idunn_widget_t *idunn_icon_view(const char *name, int32_t size, idunn_color_t color);
+
+/**
+ * an empty state: an icon on a muted square, a title and a muted line (or
+ * NULL), in the middle of its space. add buttons to it for actions.
+ */
+idunn_widget_t *idunn_empty_state(const char *icon, const char *title, const char *text);
+
+/**
+ * tabs: a strip of names and the page of the active one below it. the
+ * strip is one Tab stop; the arrows change the tab.
+ */
+idunn_widget_t *idunn_tabs(idunn_callback_t on_change, void *data);
+/** add a tab with its page (the tabs own it); the first one is active */
+idunn_widget_t *idunn_tabs_add(idunn_widget_t *tabs, const char *name, idunn_widget_t *page);
+int idunn_tabs_active(const idunn_widget_t *tabs);
+void idunn_tabs_set_active(idunn_widget_t *tabs, int active);
+
+/**
+ * a list view: rows with a Lucide icon (or NULL), text and a muted second
+ * text on the right (or NULL). put it in a scroll view when it is long.
+ */
+idunn_widget_t *idunn_list_view(void);
+/**
+ * a grid view: the same, as tiles of a 48 point Tela icon (a file or
+ * folder icon name) with the name below; it wraps to the width.
+ */
+idunn_widget_t *idunn_grid_view(void);
+/** @return the index of the new item, or -1 */
+int idunn_list_view_add(idunn_widget_t *list, const char *icon, const char *text,
+                        const char *detail);
+void idunn_list_view_clear(idunn_widget_t *list);
+int idunn_list_view_count(const idunn_widget_t *list);
+const char *idunn_list_view_text(const idunn_widget_t *list, int item);
+/** many items can be selected (Ctrl, Shift, Ctrl+A) */
+void idunn_list_view_set_multiple(idunn_widget_t *list, bool multiple);
+/** a border, the large radius and the card colour around the items */
+void idunn_list_view_set_framed(idunn_widget_t *list, bool framed);
+bool idunn_list_view_selected(const idunn_widget_t *list, int item);
+void idunn_list_view_select(idunn_widget_t *list, int item, bool selected);
+/** the item with the keyboard, or -1 */
+int idunn_list_view_current(const idunn_widget_t *list);
+/** on_select after the selection changes; on_activate on a double click or Enter */
+void idunn_list_view_on_select(idunn_widget_t *list, idunn_callback_t on_select, void *data);
+void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activate, void *data);
+
+// things that float: menus, selects, tooltips, popovers and dialogs
+
+/** a menu: items the app adds, shown in a popup by idunn_menu_popup */
+typedef struct idunn_menu idunn_menu_t;
+
+idunn_menu_t *idunn_menu_new(void);
+/** free a menu (not while it is open) and its sub-menus */
+void idunn_menu_free(idunn_menu_t *menu);
+/**
+ * an item: a Lucide icon (or NULL), text and a shortcut to show (or NULL).
+ * on_choose gets the widget the menu was opened for.
+ * @return the index of the item.
+ */
+int idunn_menu_add(idunn_menu_t *menu, const char *icon, const char *text, const char *shortcut,
+                   idunn_callback_t on_choose, void *data);
+/** an item with a check that a choice turns on and off */
+int idunn_menu_add_check(idunn_menu_t *menu, const char *text, bool checked,
+                         idunn_callback_t on_choose, void *data);
+void idunn_menu_add_separator(idunn_menu_t *menu);
+/** an item that opens a sub-menu (the menu owns it) */
+int idunn_menu_add_sub(idunn_menu_t *menu, const char *icon, const char *text, idunn_menu_t *sub);
+void idunn_menu_set_disabled(idunn_menu_t *menu, int item, bool disabled);
+bool idunn_menu_checked(const idunn_menu_t *menu, int item);
+void idunn_menu_set_checked(idunn_menu_t *menu, int item, bool checked);
+/** the least width of the menu, in design pixels (160 by default) */
+void idunn_menu_set_min_width(idunn_menu_t *menu, int32_t width);
+/** open the menu under a widget (a button's on_click does it) */
+void idunn_menu_popup(idunn_menu_t *menu, idunn_widget_t *owner);
+
+/**
+ * a select: a field with the chosen value; it opens a menu of the choices.
+ * @param chosen the index of the chosen one, or -1 (the placeholder shows).
+ */
+idunn_widget_t *idunn_select(const char *const *choices, int count, int chosen,
+                             idunn_callback_t on_change, void *data);
+int idunn_select_chosen(const idunn_widget_t *select);
+void idunn_select_choose(idunn_widget_t *select, int chosen);
+void idunn_select_set_placeholder(idunn_widget_t *select, const char *text);
+
+/** a tooltip: shown over the widget after 600 ms under the pointer (NULL: none) */
+void idunn_set_tooltip(idunn_widget_t *w, const char *text);
+
+/**
+ * a popover: content in a card under owner; a press outside it or Escape
+ * closes it. the popover owns content.
+ */
+void idunn_popover(idunn_widget_t *owner, idunn_widget_t *content);
+/** close the popover a widget is in */
+void idunn_popover_close(idunn_widget_t *inside);
+
+/**
+ * a dialog: a card with a title and a description (or NULL), in the middle
+ * of the window over the overlay colour. add content to
+ * idunn_dialog_content, then the buttons; a button closes the dialog and
+ * then calls its on_click (with the dialog). Escape closes it too.
+ */
+idunn_widget_t *idunn_dialog(const char *title, const char *description);
+idunn_widget_t *idunn_dialog_content(idunn_widget_t *dialog);
+/** a button at the bottom right: Cancel as outline, the action primary or destructive */
+idunn_widget_t *idunn_dialog_add_button(idunn_widget_t *dialog, const char *text,
+                                        idunn_variant_t variant, idunn_callback_t on_click,
+                                        void *data);
+/** show a dialog over the window of owner; the window owns it then */
+void idunn_dialog_open(idunn_widget_t *owner, idunn_widget_t *dialog);
+void idunn_dialog_close(idunn_widget_t *dialog);
 
 /**
  * a form row: a label above the control and help text below it (or NULL).
