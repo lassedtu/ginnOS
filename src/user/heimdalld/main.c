@@ -2,7 +2,7 @@
  * @file main.c
  * @brief heimdalld, the ginnOS window server.
  *
- * usage: heimdalld [-w image] [program [arguments]]
+ * usage: heimdalld [-s] [-w image] [program [arguments]]
  *
  * takes the screen, the keyboard and the mouse, and serves windows on the
  * Unix socket HEIM_SOCKET (heimdall_proto.h). with a program, starts it
@@ -11,6 +11,9 @@
  *
  *   -w image   the wallpaper (PNG, JPEG or BMP), scaled to cover the screen;
  *              without it, /usr/share/wallpapers/default.png if it is there
+ *   -s         every 2 seconds with frames, a line of statistics in the
+ *              kernel log (/dev/kmsg, the serial port): frames, pixels and
+ *              the time in composing, presenting and flushing
  */
 
 #include "heimdalld.h"
@@ -131,10 +134,20 @@ int main(int argc, char **argv)
 {
     const char *wallpaper = access(DEFAULT_WALLPAPER, R_OK) == 0 ? DEFAULT_WALLPAPER : NULL;
     int arg = 1;
-    if (arg + 1 < argc && strcmp(argv[arg], "-w") == 0)
+    for (;;)
     {
-        wallpaper = argv[arg + 1];
-        arg += 2;
+        if (arg + 1 < argc && strcmp(argv[arg], "-w") == 0)
+        {
+            wallpaper = argv[arg + 1];
+            arg += 2;
+        }
+        else if (arg < argc && strcmp(argv[arg], "-s") == 0)
+        {
+            S.stats.fd = open("/dev/kmsg", O_WRONLY);
+            arg++;
+        }
+        else
+            break;
     }
 
     signal(SIGTERM, on_signal);

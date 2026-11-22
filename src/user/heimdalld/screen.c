@@ -17,6 +17,8 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <time.h>
+#include <string.h>
 
 /**
  * the wallpaper: an image scaled to cover the screen, or a gradient.
@@ -225,6 +227,39 @@ static void compose_rect(gfx_rect_t r)
     gfx_reset_clip(S.screen);
 }
 
+static uint64_t now_us(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000u + (uint64_t)ts.tv_nsec / 1000u;
+}
+
+/**
+ * every 2 seconds with frames, a line of statistics in the kernel log.
+ */
+static void report(void)
+{
+    uint32_t now = (uint32_t)(now_us() / 1000);
+    if (!S.stats.since)
+        S.stats.since = now;
+    uint32_t span = now - S.stats.since;
+    if (span < 2000 || !S.stats.frames)
+        return;
+    char line[160];
+    uint32_t f = S.stats.frames;
+    int n = snprintf(line, sizeof(line),
+                     "heimdalld: %u frames/s, %u kpixels/frame, per frame: compose %u us, "
+                     "present %u us, flush %u us\n",
+                     (unsigned)(f * 1000u / span), (unsigned)(S.stats.pixels / f / 1000),
+                     (unsigned)(S.stats.compose_us / f), (unsigned)(S.stats.present_us / f),
+                     (unsigned)(S.stats.flush_us / f));
+    write(S.stats.fd, line, (size_t)n);
+    uint32_t fd = (uint32_t)S.stats.fd;
+    memset(&S.stats, 0, sizeof(S.stats));
+    S.stats.fd = (int)fd;
+    S.stats.since = now;
+}
+
 void screen_compose(void)
 {
     // the pointer: where it was, and where it is now
@@ -239,16 +274,31 @@ void screen_compose(void)
 
     // all of it into the composition first, then to the screen in one go,
     // so the screen shows old and new together for as short a time as can be
+    bool timed = S.stats.fd > 0 && S.damage_count > 0;
+    uint64_t t0 = timed ? now_us() : 0;
     for (int i = 0; i < S.damage_count; i++)
         compose_rect(S.damage[i]);
+    uint64_t t1 = timed ? now_us() : 0;
     for (int i = 0; i < S.damage_count; i++)
         gfx_present(S.fb, S.pitch, S.width, S.height, &S.format, S.screen, S.damage[i]);
+    uint64_t t2 = timed ? now_us() : 0;
     // a display that does not show the memory by itself (virtio-gpu)
     for (int i = 0; i < S.damage_count; i++)
     {
         gfx_rect_t r = S.damage[i];
         fb_rect_t flush = {(uint32_t)r.x, (uint32_t)r.y, (uint32_t)r.w, (uint32_t)r.h};
         ioctl(S.fb_fd, FBIO_FLUSH, &flush);
+    }
+    if (timed)
+    {
+        uint64_t t3 = now_us();
+        S.stats.frames++;
+        for (int i = 0; i < S.damage_count; i++)
+            S.stats.pixels += (uint64_t)S.damage[i].w * (uint64_t)S.damage[i].h;
+        S.stats.compose_us += t1 - t0;
+        S.stats.present_us += t2 - t1;
+        S.stats.flush_us += t3 - t2;
+        report();
     }
     S.damage_count = 0;
 
