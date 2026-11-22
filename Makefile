@@ -69,7 +69,12 @@ KERNEL_FRAME_FLAGS := -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer \
 # per-subsystem compiler flags. -g only adds debug info to the ELF files (for
 # make gdb); the flat binaries made with objcopy are unchanged by it.
 KERNEL_CFLAGS := $(BASE_CFLAGS) $(BASE_WARNINGS) -O2 -g -DNDEBUG \
-                 -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS) $(KERNEL_ARCH_CFLAGS)
+                 -fno-pie -fno-jump-tables $(KERNEL_FRAME_FLAGS) $(KERNEL_ARCH_CFLAGS) \
+                 -I$(BUILD_DIR)/generated
+
+# the release of ginnOS (uname -r). the version (uname -v) is the git
+# commit and its date, in build/<arch>/generated/version.h.
+GINNOS_RELEASE := 0.1
 
 DRIVER_CFLAGS := $(KERNEL_CFLAGS)
 
@@ -515,6 +520,21 @@ $(STAGE2_BIN): $(STAGE2_LINK_OBJS) $(LINKER_DIR)/stage2.ld $(ISR_GEN_SCRIPT)
 $(STAGE2_PAD): $(STAGE2_BIN)
 	cp $(STAGE2_BIN) $@
 	truncate -s $(STAGE2_MAX_BYTES) $@
+
+# the version header changes only with the commit, so a build of the same
+# commit does not compile the kernel again.
+VERSION_H := $(BUILD_DIR)/generated/version.h
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_DATE   := $(shell git log -1 --format=%cs 2>/dev/null)
+GIT_DIRTY  := $(shell git diff --quiet HEAD 2>/dev/null || echo +)
+
+$(VERSION_H): FORCE
+	@mkdir -p $(dir $@)
+	@printf '#pragma once\n#define GINNOS_RELEASE "%s"\n#define GINNOS_VERSION "%s"\n' \
+		'$(GINNOS_RELEASE)' '$(GIT_COMMIT)$(GIT_DIRTY) $(GIT_DATE)' > $@.tmp; \
+	if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+$(BUILD_DIR)/kernel/syscall/sys_uname.o $(TEST_BUILD_DIR)/obj/kernel/syscall/sys_uname.o: $(VERSION_H)
 
 # kernel objects rebuild when the kernel C flags change.
 $(KERNEL_FLAGS_FILE): FORCE

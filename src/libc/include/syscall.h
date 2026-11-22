@@ -82,6 +82,7 @@
 #define SYS_SOCKETPAIR 73 // make two connected sockets
 #define SYS_SENDMSG 74    // send data and files
 #define SYS_RECVMSG 75    // receive data and files
+#define SYS_UNAME 76      // the name, release and machine of the system
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

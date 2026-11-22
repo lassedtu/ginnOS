@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <stdio.h>
 
 /**
@@ -532,4 +533,9 @@ mode_t umask(mode_t mask)
 int reboot(void)
 {
     return check(_syscall(SYS_REBOOT, 0, 0, 0, 0, 0));
+}
+
+int uname(struct utsname *name)
+{
+    return check(_syscall(SYS_UNAME, (long)name, 0, 0, 0, 0));
 }
