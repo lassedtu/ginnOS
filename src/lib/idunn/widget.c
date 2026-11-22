@@ -7,6 +7,7 @@
 #include "idunn_internal.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 idunn_widget_t *idunn_widget_new(const idunn_class_t *cls, void *data, uint32_t flags)
 {
@@ -56,6 +57,10 @@ static void forget(idunn_widget_t *w)
         win->focus = NULL;
     if (win->paste_to == w)
         win->paste_to = NULL;
+    if (win->tip_widget == w)
+        win->tip_widget = NULL;
+    if (win->modal_return == w)
+        win->modal_return = NULL;
     for (size_t i = 0; i < sizeof(win->timers) / sizeof(win->timers[0]); i++)
     {
         if (win->timers[i].widget == w)
@@ -70,8 +75,37 @@ static void free_tree(idunn_widget_t *w)
     forget(w);
     if (w->cls->free)
         w->cls->free(w);
+    free(w->tooltip);
     free(w->children);
     free(w);
+}
+
+void idunn_set_tooltip(idunn_widget_t *w, const char *text)
+{
+    if (!w)
+        return;
+    free(w->tooltip);
+    w->tooltip = text ? strdup(text) : NULL;
+}
+
+void idunn_free_later(idunn_widget_t *w)
+{
+    idunn_context_t *ctx = w && w->window ? w->window->ctx : NULL;
+    if (!ctx)
+    {
+        idunn_widget_free(w);
+        return;
+    }
+    if (ctx->dead_count == ctx->dead_capacity)
+    {
+        int capacity = ctx->dead_capacity ? ctx->dead_capacity * 2 : 4;
+        idunn_widget_t **grown = realloc(ctx->dead_widgets, (size_t)capacity * sizeof(*grown));
+        if (!grown)
+            return; // kept: better a leak than a widget freed under an event
+        ctx->dead_widgets = grown;
+        ctx->dead_capacity = capacity;
+    }
+    ctx->dead_widgets[ctx->dead_count++] = w;
 }
 
 void idunn_widget_free(idunn_widget_t *w)

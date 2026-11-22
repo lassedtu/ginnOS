@@ -83,18 +83,18 @@ static void clipboard_get(idunn_window_t *win)
     heim_clipboard_request(win->app->conn);
 }
 
-idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t width,
-                                 int32_t height)
+static idunn_window_t *popup_new(idunn_window_t *opener, int32_t width, int32_t height,
+                                 bool tooltip);
+static void popup_place(idunn_window_t *popup);
+static void popup_free(idunn_window_t *popup);
+
+/** an idunn window over a heimdall window, in the app's list */
+static idunn_window_t *wrap(idunn_app_t *app, heim_window_t *heim)
 {
     idunn_window_t *win = calloc(1, sizeof(*win));
     if (!win)
-        return NULL;
-    const idunn_theme_t *t = &app->ctx->theme;
-    heim_window_t *heim = heim_window_new(app->conn, idunn_px(t, width), idunn_px(t, height),
-                                          title, HEIM_WINDOW_RESIZABLE);
-    if (!heim)
     {
-        free(win);
+        heim_window_free(heim);
         return NULL;
     }
     heim_window_set_data(heim, win);
@@ -105,9 +105,39 @@ idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t wi
     win->needs_layout = true;
     win->clipboard_set = clipboard_set;
     win->clipboard_get = clipboard_get;
+    win->popup_new = popup_new;
+    win->popup_place = popup_place;
+    win->popup_free = popup_free;
     win->next = app->windows;
     app->windows = win;
     return win;
+}
+
+idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t width,
+                                 int32_t height)
+{
+    const idunn_theme_t *t = &app->ctx->theme;
+    heim_window_t *heim = heim_window_new(app->conn, idunn_px(t, width), idunn_px(t, height),
+                                          title, HEIM_WINDOW_RESIZABLE);
+    return heim ? wrap(app, heim) : NULL;
+}
+
+static idunn_window_t *popup_new(idunn_window_t *opener, int32_t width, int32_t height,
+                                 bool tooltip)
+{
+    heim_window_t *heim =
+        heim_popup_new(opener->heim, width, height, tooltip ? HEIM_WINDOW_TOOLTIP : 0);
+    return heim ? wrap(opener->app, heim) : NULL;
+}
+
+static void popup_place(idunn_window_t *popup)
+{
+    heim_window_place(popup->heim, popup->anchor, (uint32_t)popup->side, popup->margin);
+}
+
+static void popup_free(idunn_window_t *popup)
+{
+    idunn_window_close(popup);
 }
 
 void idunn_window_close(idunn_window_t *win)
@@ -180,11 +210,14 @@ int idunn_app_run(idunn_app_t *app)
     heim_event_t ev;
     while (app->windows && !app->quit)
     {
+        idunn_reap(app->ctx);
         uint32_t now = now_ms();
         int timeout = -1;
         for (idunn_window_t *win = app->windows; win; win = win->next)
         {
             win->now = now;
+            if (win->dead)
+                continue;
             present(win, now);
             // wait no longer than the next timer (a caret blinks)
             uint32_t wake = idunn_window_next_wake(win);
@@ -202,12 +235,17 @@ int idunn_app_run(idunn_app_t *app)
         if (got == 0)
             continue; // a timer: present ticks the windows
         idunn_window_t *win = ev.window ? heim_window_data(ev.window) : NULL;
+        if (win && win->dead && ev.type != HEIM_EV_CLOSE)
+            continue;
         if (win)
             win->now = now_ms();
         switch (ev.type)
         {
         case HEIM_EV_CLOSE:
-            if (win)
+            // the server closes popups (a press outside them); the app, windows
+            if (win && win->opener)
+                idunn_popup_close(win);
+            else if (win && !win->dead)
                 idunn_window_close(win);
             break;
         case HEIM_EV_CONFIGURE:

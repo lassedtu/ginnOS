@@ -15,6 +15,7 @@ void test_widgets(void);
 void compare_reference(const char *name, const gfx_buffer_t *buf, double mean_limit);
 void test_inputs(idunn_context_t *ctx);
 void test_lists(idunn_context_t *ctx);
+void test_floating(idunn_context_t *ctx);
 
 static idunn_context_t *ctx;
 static int clicks;
@@ -330,6 +331,7 @@ void test_widgets(void)
     test_drawing();
     test_inputs(ctx);
     test_lists(ctx);
+    test_floating(ctx);
     reference_buttons("buttons-dark", IDUNN_DARK, 5.0);
     reference_buttons("buttons-light", IDUNN_LIGHT, 5.0);
     idunn_context_free(ctx);

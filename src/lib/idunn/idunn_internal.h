@@ -103,6 +103,7 @@ struct idunn_widget
     int32_t height;
     idunn_anim_t hover;   // 0 to 1: the hover look
     idunn_anim_t press;   // 0 to 1: the pressed look
+    char *tooltip;        // shown over it after a while under the pointer, or NULL
     void *data;           // the class's own state
 };
 
@@ -116,6 +117,10 @@ struct idunn_context
     bool pictures_tried;
     char icon_dir[200];     // where the packs are
     struct icon_entry *icon_cache;
+    idunn_window_t *dead; // closed popups, to be freed
+    idunn_widget_t **dead_widgets; // closed dialogs, to be freed
+    int dead_count;
+    int dead_capacity;
 };
 
 struct idunn_window
@@ -154,6 +159,33 @@ struct idunn_window
     char *clipboard;
     size_t clipboard_length;
     idunn_widget_t *paste_to;
+
+    // a tooltip waits to show over this widget
+    idunn_widget_t *tip_widget;
+    uint32_t tip_at;
+    uint32_t tip_closed; // when the last tooltip went (the next comes at once)
+
+    // a dialog (dialog.c): over the window, it gets all the input
+    idunn_widget_t *modal;
+    idunn_widget_t *modal_return; // the focus before it
+
+    // popups (popup.c): a window has at most one popup open (a menu, and
+    // the menu its sub-menu); a popup has the window it came from
+    idunn_window_t *popup;
+    idunn_window_t *opener;
+    bool transparent;      // a popup: see-through outside its card
+    int32_t margin;        // a popup: room for the shadow around the root
+    gfx_rect_t anchor;     // a popup: the rect in the opener it is next to
+    int side;              // IDUNN_SIDE_
+    bool tooltip;
+    bool dead;                 // closed: freed by idunn_reap, after the event it came from
+    idunn_window_t *next_dead;
+    void (*closed)(idunn_window_t *popup); // before a popup goes away
+    void *popup_data;
+    // make, place and free popups: heimdall's in an app, offscreen ones in tests
+    idunn_window_t *(*popup_new)(idunn_window_t *win, int32_t width, int32_t height, bool tooltip);
+    void (*popup_place)(idunn_window_t *popup);
+    void (*popup_free)(idunn_window_t *popup);
 
     // for app.c
     idunn_app_t *app;
@@ -277,6 +309,54 @@ void idunn_reveal(idunn_widget_t *w, gfx_rect_t r);
 
 /** true if w and its parents are not hidden */
 bool idunn_shown(const idunn_widget_t *w);
+
+// popups (popup.c)
+typedef enum
+{
+    IDUNN_SIDE_BELOW, // as the HEIM_SIDE_ values
+    IDUNN_SIDE_ABOVE,
+    IDUNN_SIDE_RIGHT,
+} idunn_side_t;
+
+/**
+ * open a popup window next to anchor (a rect in owner's window) with root
+ * in it, margin pixels of room around root for its shadow. a popup that
+ * owner's window has open already is closed first.
+ * @return the popup, or NULL.
+ */
+idunn_window_t *idunn_popup_open(idunn_widget_t *owner, idunn_widget_t *root, gfx_rect_t anchor,
+                                 idunn_side_t side, int32_t margin, bool tooltip);
+/**
+ * close a popup and the popups it has open. it is freed by idunn_reap:
+ * the event that closed it can still be using it.
+ */
+void idunn_popup_close(idunn_window_t *popup);
+/** free the closed popups (the app loop does it before each event) */
+void idunn_reap(idunn_context_t *ctx);
+/** close a popup and the popups it came from (a chosen menu item) */
+void idunn_popup_close_all(idunn_window_t *popup);
+/**
+ * open a menu next to anchor (a rect in owner's window), with item current
+ * (or -1) as the current one; on_closed (or NULL) is called when it closes.
+ */
+idunn_window_t *idunn_menu_open(idunn_menu_t *menu, idunn_widget_t *owner, gfx_rect_t anchor,
+                                int current, void (*on_closed)(void *data), void *data);
+
+/** give w the keyboard (without the ring) */
+void idunn_focus(idunn_widget_t *w);
+/** give the keyboard to the first widget that takes it in w */
+void idunn_focus_first(idunn_widget_t *w);
+
+/** free w (and its children) after the event that is running (idunn_reap) */
+void idunn_free_later(idunn_widget_t *w);
+
+// floating.c
+/** show w's tooltip over it */
+void idunn_tooltip_show(idunn_widget_t *w);
+/** a box with the card look and another shadow (popovers: md, dialogs: window) */
+idunn_widget_t *idunn_card_box(int gap, int padding, idunn_shadow_t shadow);
+/** close the dialog in win (Escape) */
+void idunn_dialog_dismiss(idunn_window_t *win);
 
 /** the well of a text input: fill, inset shadow, border and ring (text_field.c) */
 void idunn_draw_well(idunn_widget_t *w, gfx_buffer_t *buf);

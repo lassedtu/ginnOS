@@ -388,6 +388,72 @@ int idunn_list_view_current(const idunn_widget_t *list);
 void idunn_list_view_on_select(idunn_widget_t *list, idunn_callback_t on_select, void *data);
 void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activate, void *data);
 
+// things that float: menus, selects, tooltips, popovers and dialogs
+
+/** a menu: items the app adds, shown in a popup by idunn_menu_popup */
+typedef struct idunn_menu idunn_menu_t;
+
+idunn_menu_t *idunn_menu_new(void);
+/** free a menu (not while it is open) and its sub-menus */
+void idunn_menu_free(idunn_menu_t *menu);
+/**
+ * an item: a Lucide icon (or NULL), text and a shortcut to show (or NULL).
+ * on_choose gets the widget the menu was opened for.
+ * @return the index of the item.
+ */
+int idunn_menu_add(idunn_menu_t *menu, const char *icon, const char *text, const char *shortcut,
+                   idunn_callback_t on_choose, void *data);
+/** an item with a check that a choice turns on and off */
+int idunn_menu_add_check(idunn_menu_t *menu, const char *text, bool checked,
+                         idunn_callback_t on_choose, void *data);
+void idunn_menu_add_separator(idunn_menu_t *menu);
+/** an item that opens a sub-menu (the menu owns it) */
+int idunn_menu_add_sub(idunn_menu_t *menu, const char *icon, const char *text, idunn_menu_t *sub);
+void idunn_menu_set_disabled(idunn_menu_t *menu, int item, bool disabled);
+bool idunn_menu_checked(const idunn_menu_t *menu, int item);
+void idunn_menu_set_checked(idunn_menu_t *menu, int item, bool checked);
+/** the least width of the menu, in design pixels (160 by default) */
+void idunn_menu_set_min_width(idunn_menu_t *menu, int32_t width);
+/** open the menu under a widget (a button's on_click does it) */
+void idunn_menu_popup(idunn_menu_t *menu, idunn_widget_t *owner);
+
+/**
+ * a select: a field with the chosen value; it opens a menu of the choices.
+ * @param chosen the index of the chosen one, or -1 (the placeholder shows).
+ */
+idunn_widget_t *idunn_select(const char *const *choices, int count, int chosen,
+                             idunn_callback_t on_change, void *data);
+int idunn_select_chosen(const idunn_widget_t *select);
+void idunn_select_choose(idunn_widget_t *select, int chosen);
+void idunn_select_set_placeholder(idunn_widget_t *select, const char *text);
+
+/** a tooltip: shown over the widget after 600 ms under the pointer (NULL: none) */
+void idunn_set_tooltip(idunn_widget_t *w, const char *text);
+
+/**
+ * a popover: content in a card under owner; a press outside it or Escape
+ * closes it. the popover owns content.
+ */
+void idunn_popover(idunn_widget_t *owner, idunn_widget_t *content);
+/** close the popover a widget is in */
+void idunn_popover_close(idunn_widget_t *inside);
+
+/**
+ * a dialog: a card with a title and a description (or NULL), in the middle
+ * of the window over the overlay colour. add content to
+ * idunn_dialog_content, then the buttons; a button closes the dialog and
+ * then calls its on_click (with the dialog). Escape closes it too.
+ */
+idunn_widget_t *idunn_dialog(const char *title, const char *description);
+idunn_widget_t *idunn_dialog_content(idunn_widget_t *dialog);
+/** a button at the bottom right: Cancel as outline, the action primary or destructive */
+idunn_widget_t *idunn_dialog_add_button(idunn_widget_t *dialog, const char *text,
+                                        idunn_variant_t variant, idunn_callback_t on_click,
+                                        void *data);
+/** show a dialog over the window of owner; the window owns it then */
+void idunn_dialog_open(idunn_widget_t *owner, idunn_widget_t *dialog);
+void idunn_dialog_close(idunn_widget_t *dialog);
+
 /**
  * a form row: a label above the control and help text below it (or NULL).
  * the field owns the control.

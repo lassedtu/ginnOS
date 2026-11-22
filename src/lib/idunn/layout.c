@@ -27,7 +27,8 @@ typedef struct
     idunn_align_t align;   // across
     idunn_align_t justify; // along
     int background;       // a colour token, or -1
-    bool card;            // the card look: a border, a large radius, a small shadow
+    bool card;            // the card look: a border, a large radius, a shadow
+    idunn_shadow_t shadow; // the card's shadow
 } box_t;
 
 static box_t *box_of(idunn_widget_t *w)
@@ -194,7 +195,7 @@ static void box_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     if (b->card)
     {
         int32_t radius = idunn_radius_lg(t);
-        idunn_draw_shadow(t, buf, w->rect, radius, IDUNN_SHADOW_XS);
+        idunn_draw_shadow(t, buf, w->rect, radius, b->shadow);
         gfx_fill_round_rect(buf, w->rect, radius, idunn_color(t, IDUNN_COLOR_CARD));
         gfx_border_round_rect(buf, w->rect, radius, idunn_px(t, 1),
                               idunn_color(t, IDUNN_COLOR_BORDER));
@@ -222,7 +223,8 @@ static idunn_widget_t *box_new(bool column, int gap, int padding)
     box_t *b = malloc(sizeof(*b));
     if (!b)
         return NULL;
-    *b = (box_t){column, gap, padding, padding, IDUNN_STRETCH, IDUNN_START, -1, false};
+    *b = (box_t){column, gap, padding, padding, IDUNN_STRETCH, IDUNN_START, -1, false,
+                 IDUNN_SHADOW_XS};
     idunn_widget_t *w = idunn_widget_new(&box_class, b, IDUNN_SHRINKS);
     if (!w)
         free(b);
@@ -279,12 +281,20 @@ void idunn_box_set_background(idunn_widget_t *box, idunn_color_t color)
     idunn_dirty(box);
 }
 
+idunn_widget_t *idunn_card_box(int gap, int padding, idunn_shadow_t shadow)
+{
+    idunn_widget_t *w = box_new(true, gap, padding);
+    if (w)
+    {
+        box_of(w)->card = true;
+        box_of(w)->shadow = shadow;
+    }
+    return w;
+}
+
 idunn_widget_t *idunn_card(int gap)
 {
-    idunn_widget_t *w = box_new(true, gap, 6);
-    if (w)
-        box_of(w)->card = true;
-    return w;
+    return idunn_card_box(gap, 6, IDUNN_SHADOW_XS);
 }
 
 void idunn_card_header(idunn_widget_t *card, const char *title, const char *description)

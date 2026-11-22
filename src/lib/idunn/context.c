@@ -76,6 +76,8 @@ void idunn_context_free(idunn_context_t *ctx)
 {
     if (!ctx)
         return;
+    idunn_reap(ctx);
+    free(ctx->dead_widgets);
     free_faces(ctx);
     free_icons(ctx);
     for (int i = 0; i < 4; i++)

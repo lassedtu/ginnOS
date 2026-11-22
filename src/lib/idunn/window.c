@@ -33,6 +33,8 @@ idunn_window_t *idunn_window_offscreen(idunn_context_t *ctx, int32_t width, int3
 
 void idunn_window_free_widgets(idunn_window_t *win)
 {
+    if (win->popup)
+        idunn_popup_close(win->popup);
     idunn_widget_free(win->root);
     win->root = NULL;
     free(win->clipboard);
@@ -144,8 +146,22 @@ static void layout(idunn_window_t *win)
     if (!win->needs_layout || !win->buffer)
         return;
     win->needs_layout = false;
+    int32_t m = win->margin;
+    int32_t width = win->buffer->width;
+    int32_t height = win->buffer->height;
     if (win->root)
-        idunn_place(win->root, gfx_rect(0, 0, win->buffer->width, win->buffer->height));
+        idunn_place(win->root, gfx_rect(m, m, width - 2 * m, height - 2 * m));
+    if (win->modal)
+    {
+        // a dialog: in the middle, at most 480 wide and 16 from the edges
+        const idunn_theme_t *t = &win->ctx->theme;
+        int32_t room = width - 2 * idunn_px(t, 16);
+        int32_t dw = idunn_px(t, 480) < room ? idunn_px(t, 480) : room;
+        int32_t mw;
+        int32_t mh;
+        idunn_measure(win->modal, dw, &mw, &mh);
+        idunn_place(win->modal, gfx_rect((width - dw) / 2, (height - mh) / 2, dw, mh));
+    }
     idunn_window_invalidate(win);
 }
 
@@ -164,9 +180,15 @@ gfx_rect_t idunn_window_draw(idunn_window_t *win)
 
     const idunn_theme_t *t = &win->ctx->theme;
     gfx_set_clip(buf, clip);
-    gfx_fill_rect(buf, clip, idunn_color(t, IDUNN_COLOR_SURFACE));
+    gfx_color_t ground = win->transparent ? GFX_TRANSPARENT : idunn_color(t, IDUNN_COLOR_SURFACE);
+    gfx_fill_rect(buf, clip, ground);
     if (win->root)
         draw_tree(win->root, buf, clip, idunn_overdraw(t), false);
+    if (win->modal)
+    {
+        gfx_fill_rect(buf, clip, idunn_color(t, IDUNN_COLOR_OVERLAY));
+        draw_tree(win->modal, buf, clip, idunn_overdraw(t), false);
+    }
     gfx_reset_clip(buf);
     return clip;
 }
@@ -174,6 +196,12 @@ gfx_rect_t idunn_window_draw(idunn_window_t *win)
 bool idunn_window_tick(idunn_window_t *win, uint32_t now)
 {
     win->now = now;
+    idunn_widget_t *tip = win->tip_widget;
+    if (tip && tip == win->hover && !win->popup && (int32_t)(now - win->tip_at) >= 0)
+    {
+        win->tip_widget = NULL;
+        idunn_tooltip_show(tip);
+    }
     for (size_t i = 0; i < sizeof(win->timers) / sizeof(win->timers[0]); i++)
     {
         idunn_widget_t *w = win->timers[i].widget;
@@ -195,6 +223,8 @@ uint32_t idunn_window_next_wake(const idunn_window_t *win)
         if (win->timers[i].widget && (!next || (int32_t)(win->timers[i].at - next) < 0))
             next = win->timers[i].at;
     }
+    if (win->tip_widget && (!next || (int32_t)(win->tip_at - next) < 0))
+        next = win->tip_at;
     return next;
 }
 
@@ -294,11 +324,31 @@ static idunn_widget_t *hit(idunn_widget_t *w, int32_t x, int32_t y)
     return (w->flags & IDUNN_INTERACTIVE) ? w : NULL;
 }
 
+#define TIP_MS       600 // under the pointer this long, a tooltip shows
+#define TIP_AGAIN_MS 300 // this soon after one went, the next shows at once
+
+static void close_tooltip(idunn_window_t *win)
+{
+    if (win->popup && win->popup->tooltip)
+    {
+        idunn_popup_close(win->popup);
+        win->tip_closed = win->now ? win->now : 1;
+    }
+}
+
 static void set_hover(idunn_window_t *win, idunn_widget_t *w)
 {
     win->cursor = w ? w->cursor : IDUNN_CURSOR_ARROW;
     if (win->hover == w)
         return;
+    close_tooltip(win);
+    win->tip_widget = NULL;
+    if (w && w->tooltip && !win->popup)
+    {
+        bool again = win->tip_closed && win->now - win->tip_closed < TIP_AGAIN_MS;
+        win->tip_widget = w;
+        win->tip_at = win->now + (again ? 0 : TIP_MS);
+    }
     if (win->hover)
     {
         win->hover->state &= ~IDUNN_HOVER;
@@ -383,7 +433,8 @@ void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, 
                           uint32_t mods)
 {
     layout(win); // the rects must be where they are drawn
-    idunn_widget_t *under = kind == IDUNN_POINTER_LEAVE ? NULL : hit(win->root, x, y);
+    idunn_widget_t *top = win->modal ? win->modal : win->root;
+    idunn_widget_t *under = kind == IDUNN_POINTER_LEAVE ? NULL : hit(top, x, y);
     switch (kind)
     {
     case IDUNN_POINTER_MOTION:
@@ -402,6 +453,8 @@ void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, 
         break;
     case IDUNN_POINTER_PRESS:
     {
+        close_tooltip(win);
+        win->tip_widget = NULL;
         int clicks = count_clicks(win, x, y);
         set_hover(win, under);
         win->pressed = under;
@@ -454,7 +507,7 @@ static void move_focus(idunn_window_t *win, bool back)
     enum { MAX = 512 };
     idunn_widget_t *list[MAX];
     int count = 0;
-    collect(win->root, list, &count, MAX);
+    collect(win->modal ? win->modal : win->root, list, &count, MAX);
     if (count == 0)
         return;
     int at = -1;
@@ -469,6 +522,8 @@ static void move_focus(idunn_window_t *win, bool back)
 
 void idunn_window_key(idunn_window_t *win, uint16_t code, uint32_t mods, const char *text)
 {
+    close_tooltip(win);
+    win->tip_widget = NULL;
     if (code == IDUNN_KEY_TAB && !(mods & (IDUNN_MOD_CTRL | IDUNN_MOD_ALT)))
     {
         move_focus(win, mods & IDUNN_MOD_SHIFT);
@@ -480,12 +535,45 @@ void idunn_window_key(idunn_window_t *win, uint16_t code, uint32_t mods, const c
         if (idunn_send(w, &ev))
             return;
     }
+    // Escape that nothing used closes a dialog or a popup
+    if (code == IDUNN_KEY_ESCAPE && win->modal)
+        idunn_dialog_dismiss(win);
+    else if (code == IDUNN_KEY_ESCAPE && win->opener)
+        idunn_popup_close(win);
+}
+
+void idunn_focus(idunn_widget_t *w)
+{
+    if (w && w->window)
+        set_focus(w->window, w, false);
+}
+
+static idunn_widget_t *first_focusable(idunn_widget_t *w)
+{
+    if (!w || (w->state & (IDUNN_DISABLED | IDUNN_HIDDEN)))
+        return NULL;
+    if (w->flags & IDUNN_FOCUSABLE)
+        return w;
+    for (int i = 0; i < w->child_count; i++)
+    {
+        idunn_widget_t *found = first_focusable(w->children[i]);
+        if (found)
+            return found;
+    }
+    return NULL;
+}
+
+void idunn_focus_first(idunn_widget_t *w)
+{
+    idunn_widget_t *first = first_focusable(w);
+    if (first && first->window)
+        set_focus(first->window, first, first->window->focus_visible);
 }
 
 void idunn_window_scroll(idunn_window_t *win, int32_t x, int32_t y, int32_t steps)
 {
     // the widget under the pointer, or the first of its parents that scrolls
-    idunn_widget_t *w = win->root;
+    idunn_widget_t *w = win->modal ? win->modal : win->root;
     while (w)
     {
         idunn_widget_t *inner = NULL;
