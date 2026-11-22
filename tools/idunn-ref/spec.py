@@ -60,6 +60,42 @@ BUTTON_CSS = """
 """
 
 
+# the inputs of the preview (refined finish)
+INPUT_CSS = """
+.inputs{position:absolute;left:0;top:0;display:flex;gap:16px;padding:16px;align-items:center;
+  font:400 13px/18px Inter;letter-spacing:-0.006em;-webkit-font-smoothing:antialiased}
+.inputs *{box-sizing:border-box}
+.light{--muted-fg:#71717a;--field:#fff;--check-border:#e4e4e7;--accent:#e11d48;--accent-fg:#fff;
+  --xs:0 1px 2px rgb(0 0 0/.05);--switch-off:#e4e4e7}
+.dark{--muted-fg:#a1a1aa;--field:#131315;--check-border:rgb(255 255 255/.25);--accent:#f43f5e;
+  --accent-fg:#fff;--xs:0 1px 2px rgb(0 0 0/.3);--switch-off:rgb(255 255 255/.18)}
+.fi{width:180px;height:32px;padding:0 12px;display:flex;align-items:center;border:1px solid var(--input);
+  border-radius:6px;background:var(--field);color:var(--muted-fg)}
+.light .fi{box-shadow:inset 0 1px 2px rgb(0 0 0/.04),0 1px 0 rgb(255 255 255/.6)}
+.dark .fi{box-shadow:inset 0 1px 2px rgb(0 0 0/.3)}
+.ck{width:16px;height:16px;border-radius:3px;border:1px solid var(--check-border);box-shadow:var(--xs);
+  display:grid;place-items:center}
+.ck.on{background:var(--accent);border-color:var(--accent)}
+.ck svg{width:12px;height:12px;fill:none;stroke:var(--accent-fg);stroke-width:2.5;
+  stroke-linecap:round;stroke-linejoin:round}
+.rd{width:16px;height:16px;border-radius:50%;border:1px solid var(--accent);box-shadow:var(--xs);
+  display:grid;place-items:center}
+.rd::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.sw{width:32px;height:18px;border-radius:999px;padding:0 2px;background:var(--switch-off);
+  display:flex;align-items:center}
+.sw.on{background:var(--accent);justify-content:flex-end}
+.sw::after{content:"";width:14px;height:14px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 2px rgb(0 0 0/.25)}
+"""
+
+
+def inputs(mode):
+    check = '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>'
+    return ('<div class="inputs %s"><span class="fi">Name</span><span class="ck on">%s</span>'
+            '<span class="ck"></span><span class="rd"></span><span class="sw on"></span>'
+            '<span class="sw"></span></div>' % (mode, check))
+
+
 def buttons(mode):
     names = ("Primary", "Secondary", "Outline", "Ghost", "Delete", "Link")
     kinds = ("primary", "secondary", "outline", "ghost", "destructive", "link")
@@ -104,6 +140,9 @@ CELLS = [
     # the button variants on the window's surface
     ("idunn", "buttons-dark", 520, 64, "#0e0e10", buttons("dark")),
     ("idunn", "buttons-light", 520, 64, "#fbfbfb", buttons("light")),
+    # the inputs on the window's surface
+    ("idunn", "inputs-dark", 400, 64, "#0e0e10", inputs("dark")),
+    ("idunn", "inputs-light", 400, 64, "#fbfbfb", inputs("light")),
 ]
 
 
@@ -129,7 +168,7 @@ def main():
     parts = ['<!doctype html><meta charset="utf-8"><style>' + font_faces() +
              'html,body{margin:0;background:#000}'
              '.cell{position:absolute;overflow:hidden}'
-             '.box{position:absolute;box-sizing:border-box}' + BUTTON_CSS +
+             '.box{position:absolute;box-sizing:border-box}' + BUTTON_CSS + INPUT_CSS +
              '</style>']
     places = []
     x = GAP

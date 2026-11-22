@@ -10,6 +10,7 @@
 #include <string.h>
 
 void test_inputs(idunn_context_t *ctx);
+void compare_reference(const char *name, const gfx_buffer_t *buf, double mean_limit);
 
 static int changes;
 static int submits;
@@ -384,6 +385,36 @@ static void test_text_area(idunn_context_t *ctx)
     free(win);
 }
 
+/**
+ * a text field, check boxes, a radio and switches in one mode, compared
+ * with the preview's CSS drawn by Chrome.
+ */
+static void reference_inputs(idunn_context_t *ctx, const char *name, idunn_mode_t mode,
+                             double mean_limit)
+{
+    idunn_theme_t theme = ctx->theme;
+    theme.mode = mode;
+    idunn_context_set_theme(ctx, &theme);
+    idunn_window_t *win = idunn_window_offscreen(ctx, 400, 64);
+    idunn_widget_t *row = idunn_row(4, 4);
+    idunn_box_set_align(row, IDUNN_CENTER, IDUNN_START);
+    idunn_widget_t *field = idunn_add(row, idunn_text_field("Name"));
+    idunn_set_size(field, 180, 0);
+    idunn_add(row, idunn_check_box(NULL, true, NULL, NULL));
+    idunn_add(row, idunn_check_box(NULL, false, NULL, NULL));
+    static const char *const one[] = {""};
+    idunn_add(row, idunn_radio_group(one, 1, 0, NULL, NULL));
+    idunn_add(row, idunn_switch(NULL, true, NULL, NULL));
+    idunn_add(row, idunn_switch(NULL, false, NULL, NULL));
+    idunn_window_set_root(win, row);
+    idunn_window_draw(win);
+    compare_reference(name, win->buffer, mean_limit);
+    idunn_window_free_widgets(win);
+    free(win);
+    theme.mode = IDUNN_DARK;
+    idunn_context_set_theme(ctx, &theme);
+}
+
 void test_inputs(idunn_context_t *ctx)
 {
     test_edit();
@@ -391,4 +422,6 @@ void test_inputs(idunn_context_t *ctx)
     test_choices(ctx);
     test_field(ctx);
     test_text_area(ctx);
+    reference_inputs(ctx, "inputs-dark", IDUNN_DARK, 1.5);
+    reference_inputs(ctx, "inputs-light", IDUNN_LIGHT, 1.5);
 }

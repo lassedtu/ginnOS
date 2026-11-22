@@ -12,6 +12,7 @@
 #include <stdlib.h>
 
 void test_widgets(void);
+void compare_reference(const char *name, const gfx_buffer_t *buf, double mean_limit);
 void test_inputs(idunn_context_t *ctx);
 
 static idunn_context_t *ctx;
@@ -266,6 +267,28 @@ static uint8_t *rgb_of(const gfx_buffer_t *buf)
 }
 
 /**
+ * compare a drawing with its reference cell (test/reference/<name>.png,
+ * the preview's CSS drawn by Chrome: tools/idunn-ref/spec.py).
+ */
+void compare_reference(const char *name, const gfx_buffer_t *buf, double mean_limit)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/reference/%s.png", TEST_DIR, name);
+    gfx_buffer_t *ref = image_load(path, NULL);
+    bool same_size = ref && ref->width == buf->width && ref->height == buf->height;
+    CHECK(same_size);
+    if (same_size)
+    {
+        uint8_t *got = rgb_of(buf);
+        uint8_t *want = rgb_of(ref);
+        hosttest_compare(name, got, want, buf->width, buf->height, 255, mean_limit);
+        free(got);
+        free(want);
+    }
+    gfx_buffer_free(ref);
+}
+
+/**
  * the button variants in one mode, compared with the preview's CSS drawn
  * by Chrome (test/reference, tools/idunn-ref/spec.py).
  */
@@ -287,20 +310,7 @@ static void reference_buttons(const char *name, idunn_mode_t mode, double mean_l
     idunn_add(row, idunn_button("Link", IDUNN_LINK, NULL, NULL));
     idunn_window_set_root(win, row);
     idunn_window_draw(win);
-
-    char path[512];
-    snprintf(path, sizeof(path), "%s/reference/%s.png", TEST_DIR, name);
-    gfx_buffer_t *ref = image_load(path, NULL);
-    CHECK(ref != NULL && ref->width == 520 && ref->height == 64);
-    if (ref && ref->width == 520 && ref->height == 64)
-    {
-        uint8_t *got = rgb_of(win->buffer);
-        uint8_t *want = rgb_of(ref);
-        hosttest_compare(name, got, want, 520, 64, 255, mean_limit);
-        free(got);
-        free(want);
-    }
-    gfx_buffer_free(ref);
+    compare_reference(name, win->buffer, mean_limit);
     idunn_window_free_widgets(win);
     free(win);
 }
