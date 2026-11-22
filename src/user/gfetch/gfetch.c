@@ -29,50 +29,51 @@
 #define FACTS_MAX 20
 #define FACT_MAX  96
 
-// Ginnungagap, the gap before the worlds: the ice of Niflheim above, the
-// fire of Muspelheim below, and the spark where they meet
+// Ginnungagap, the void before the worlds: the ice of Niflheim and the
+// fire of Muspelheim swirl out of one core, as the arms of a galaxy
 static const char *const logo[] = {
-    "         .:ssggggggggggss:.",
-    "      .:gggggggggggggggggggg:.",
-    "    .sggggggggggggggggggggggggs.",
-    "   :ggggggggggggssssgggggggggggg:",
-    "  sgggggggggs:        :sgggggggggs",
-    " :ggggggggs              sgggggggg:",
-    " gggggggg:                :gggggggg",
-    ".::::::::                  ::::::::.",
-    "                .:*:.",
-    ".::::::::                  ::::::::.",
-    " gggggggg:                :gggggggg",
-    " :ggggggggs              sgggggggg:",
-    "  sgggggggggs:        :sgggggggggs",
-    "   :ggggggggggggssssgggggggggggg:",
-    "    .sggggggggggggggggggggggggs.",
-    "      .:gggggggggggggggggggg:.",
-    "         .:ssggggggggggss:.",
+    "          ..:sssssss:.          ss:",
+    "       :sgggggggggggggggs.       .gs",
+    "    .sgggs:.        .:sgggs:       ss",
+    "   sggs.                :gggs.      gs",
+    " .ggs       .sssgsss.     sggg.     :g",
+    ".gg:     .sggggggggggg:    gggg      g",
+    "gg.     sgggggssssgggggs   sggg:     g",
+    "g:     sgggg:  :sggggggg.  sggg:     g",
+    "g     .gggg   sggggggggs   gggg.     g",
+    "g     :gggs  .gggggggs:  :ggggs     :g",
+    "g     :gggs   sgggggssssgggggs     .gg",
+    "g      gggg    :gggggggggggs.     :gg.",
+    "g:     .gggs     .sssgsss.       sgg.",
+    "sg      .sggg:                .sggs",
+    " ss       :sgggs:.        .:sgggs.",
+    "  sg.       .sgggggggggggggggs:",
+    "   :ss          .:sssssss:..",
 };
 
-// the colour of each character of the logo: I ice, F fire, S the spark
+// the colour of each character of the logo: 0 the core; a to d the ice
+// arm from the core out, w to z the fire arm
 static const char *const logo_colors[] = {
-    "         IIIIIIIIIIIIIIIIII",
-    "      IIIIIIIIIIIIIIIIIIIIIIII",
-    "    IIIIIIIIIIIIIIIIIIIIIIIIIIII",
-    "   IIIIIIIIIIIIIIIIIIIIIIIIIIIIII",
-    "  IIIIIIIIIIII        IIIIIIIIIIII",
-    " IIIIIIIIII              IIIIIIIIII",
-    " IIIIIIIII                IIIIIIIII",
-    "IIIIIIIII                  IIIIIIIII",
-    "                SSSSS",
-    "FFFFFFFFF                  FFFFFFFFF",
-    " FFFFFFFFF                FFFFFFFFF",
-    " FFFFFFFFFF              FFFFFFFFFF",
-    "  FFFFFFFFFFFF        FFFFFFFFFFFF",
-    "   FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
-    "    FFFFFFFFFFFFFFFFFFFFFFFFFFFF",
-    "      FFFFFFFFFFFFFFFFFFFFFFFF",
-    "         FFFFFFFFFFFFFFFFFF",
+    "          yyyyyyyyyyyy          ddd",
+    "       yyyyyyyyyyyyyyyyyyy       ddd",
+    "    yyyyyyyy        yyyyyxxx       dd",
+    "   yyyyy                xxxxxx      dd",
+    " yyyy       baaaaaaaa     xxxxx     dd",
+    "yyyy     bbbbaaaaaaaaaa    xxxx      d",
+    "yyy     bbbbbbaaaaaaaaaa   xxxxx     d",
+    "yy     bbbbbb  wwwwaaaaaa  xxxxx     d",
+    "z     bbbbb   wwww00aaaa   xxxxx     d",
+    "z     bbbbb  wwwwwaaaaa  xxxxxx     cc",
+    "z     bbbbb   wwwwwwwwwwxxxxxx     ccc",
+    "z      bbbb    wwwwwwwwwwxxxx     cccc",
+    "zz     bbbbb     wwwwwwwwx       cccc",
+    "zz      bbbbbb                ccccc",
+    " zz       bbbccccc        cccccccc",
+    "  zzz       ccccccccccccccccccc",
+    "   zzz          cccccccccccc",
 };
 #define LOGO_LINES (int)(sizeof(logo) / sizeof(logo[0]))
-#define LOGO_WIDTH 36
+#define LOGO_WIDTH 38
 
 static bool color = true;
 
@@ -322,9 +323,35 @@ static void gather(void)
     }
 }
 
+/** the colour of a letter of logo_colors */
+static const char *logo_color(char tag)
+{
+    switch (tag)
+    {
+    case '0':
+        return "\033[1;97m"; // the core: bright white
+    case 'a':
+        return "\033[97m"; // the ice: white, then cyan, then blue
+    case 'b':
+        return "\033[96m";
+    case 'c':
+        return "\033[36m";
+    case 'd':
+        return "\033[34m";
+    case 'w':
+        return "\033[93m"; // the fire: yellow, then red
+    case 'x':
+        return "\033[33m";
+    case 'y':
+        return "\033[91m";
+    default:
+        return "\033[31m";
+    }
+}
+
 /**
- * a line of the logo in its colours: the ice cyan, the fire red, the
- * spark yellow.
+ * a line of the logo in its colours: each arm goes from light at the core
+ * to dark at its end.
  */
 static void print_logo_line(int i)
 {
@@ -334,19 +361,7 @@ static void print_logo_line(int i)
     int width = 0;
     for (int x = 0; line[x]; x++, width++)
     {
-        const char *want;
-        switch (map[x])
-        {
-        case 'F':
-            want = "\033[31m";
-            break;
-        case 'I':
-            want = "\033[36m";
-            break;
-        default:
-            want = "\033[33m";
-            break;
-        }
+        const char *want = logo_color(map[x]);
         if (line[x] != ' ' && strcmp(want, now) != 0)
         {
             fputs(ansi(want), stdout);
