@@ -1,6 +1,9 @@
 #include "unistd.h"
 #include <stdarg.h>
 #include "errno.h"
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <stdio.h>
 
@@ -85,6 +88,54 @@ int execve(const char *path, char *const argv[], char *const envp[])
 {
     int ret = _syscall(SYS_EXECVE, (long)path, (long)argv, (long)envp, 0, 0);
     errno = -ret; // execve only returns on failure
+    return -1;
+}
+
+int execv(const char *path, char *const argv[])
+{
+    return execve(path, argv, environ);
+}
+
+int execvp(const char *file, char *const argv[])
+{
+    if (!file || !*file)
+    {
+        errno = ENOENT;
+        return -1;
+    }
+    if (strchr(file, '/'))
+        return execv(file, argv);
+
+    const char *path = getenv("PATH");
+    if (!path || !*path)
+        path = "/bin";
+    size_t name_length = strlen(file);
+    int error = ENOENT;
+    while (*path)
+    {
+        const char *end = strchr(path, ':');
+        size_t length = end ? (size_t)(end - path) : strlen(path);
+        char full[PATH_MAX];
+        if (length + 1 + name_length < sizeof(full))
+        {
+            // an empty entry is the current directory
+            size_t at = 0;
+            if (length == 0)
+                full[at++] = '.';
+            memcpy(full + at, path, length);
+            at += length;
+            full[at++] = '/';
+            memcpy(full + at, file, name_length + 1);
+            execv(full, argv);
+            // go on when it is not there; remember that one was found
+            if (errno != ENOENT && errno != ENOTDIR)
+                error = errno;
+        }
+        path += length;
+        if (*path == ':')
+            path++;
+    }
+    errno = error;
     return -1;
 }
 

@@ -288,6 +288,12 @@ STAGE2_LINK_OBJS := $(STAGE2_ENTRY_OBJ) $(sort $(STAGE2_C_OBJS)) $(COMMON_OBJS)
 # user programs
 USER_CRT0    := $(BUILD_DIR)/user/lib/crt0.o
 USER_CRT0_SRC := src/user/lib/$(ARCH)/crt0.asm
+USER_CRTI    := $(BUILD_DIR)/user/lib/crti.o
+USER_CRTN    := $(BUILD_DIR)/user/lib/crtn.o
+
+# the sysroot of the ginnOS toolchain (tools/toolchain): what
+# <arch>-ginnos-gcc finds as /usr/include and /usr/lib
+SYSROOT      := $(abspath $(BUILD_DIR))/sysroot
 
 # libc
 LIBC_CFLAGS  := -std=gnu11 -ffreestanding -O2 -Wall -Wextra $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
@@ -380,7 +386,7 @@ ALL_C_SRCS := $(COMMON_C_SRCS) $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) \
 ALL_H_SRCS := $(shell find src -name '*.h' -not -path '*/zen-editor/*' 2>/dev/null | sort)
 
 # phony targets
-.PHONY: all run run-uefi rootfs-image clean distclean check-tools debug gdb lint check64 format compile_commands test test-image FORCE user-libs host-test icons
+.PHONY: sysroot all run run-uefi rootfs-image clean distclean check-tools debug gdb lint check64 format compile_commands test test-image FORCE user-libs host-test icons
 
 all: check-tools $(DISK_IMAGE)
 
@@ -543,6 +549,18 @@ $(LIBC_A): $(LIBC_OBJS)
 $(USER_CRT0): $(USER_CRT0_SRC)
 	@mkdir -p $(dir $@)
 	$(AS) -f $(ASM_FORMAT) $< -o $@
+
+$(BUILD_DIR)/user/lib/crt%.o: src/user/lib/$(ARCH)/crt%.asm
+	@mkdir -p $(dir $@)
+	$(AS) -f $(ASM_FORMAT) $< -o $@
+
+# the libc headers, start files and libc.a where the ginnOS toolchain
+# looks for them; build the toolchain with tools/toolchain/build.sh
+sysroot: $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A)
+	@rm -rf $(SYSROOT)/usr/include
+	@mkdir -p $(SYSROOT)/usr/include $(SYSROOT)/usr/lib
+	cp -R src/libc/include/. $(SYSROOT)/usr/include/
+	cp $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A) $(SYSROOT)/usr/lib/
 
 # user libraries (src/lib/<name>/, see src/lib/lib.mk), built before the
 # programs that use them
