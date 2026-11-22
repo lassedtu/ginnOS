@@ -91,6 +91,7 @@ bragi_face_t *bragi_face_new(bragi_font_t *font, float pixel_size)
         return NULL;
     face->font = font;
     face->scale = stbtt_ScaleForMappingEmToPixels(&font->info, pixel_size);
+    face->size = pixel_size;
     face->budget = BRAGI_CACHE_BUDGET;
 
     int ascent;
@@ -101,6 +102,26 @@ bragi_face_t *bragi_face_new(bragi_font_t *font, float pixel_size)
     face->descent = (int32_t)ceil(-descent * face->scale);
     face->line_height = (int32_t)ceil((ascent - descent + line_gap) * face->scale);
     return face;
+}
+
+void bragi_face_set_tracking(bragi_face_t *face, float em)
+{
+    face->tracking = (int32_t)floor(em * face->size * BRAGI_UNITS + 0.5);
+}
+
+int32_t bragi_line_baseline(const bragi_face_t *face, int32_t line_height)
+{
+    int ascent;
+    int descent;
+    int line_gap;
+    stbtt_GetFontVMetrics(&face->font->info, &ascent, &descent, &line_gap);
+    // as CSS: the font's ascent and descent in whole pixels, and half the
+    // leading (rounded down) above them
+    int32_t a = (int32_t)floor(ascent * face->scale + 0.5);
+    int32_t d = (int32_t)floor(-descent * face->scale + 0.5);
+    int32_t leading = line_height - (a + d);
+    int32_t half = leading >= 0 ? leading / 2 : -((-leading + 1) / 2);
+    return half + a;
 }
 
 void bragi_face_free(bragi_face_t *face)

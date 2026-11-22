@@ -108,7 +108,7 @@ static int32_t run(gfx_buffer_t *buf, bragi_face_t *face, int32_t pen, int32_t b
                 bragi_blend_mask(buf, px + g->left, baseline + g->top, g->mask, g->width,
                                  g->height, g->width, color);
         }
-        pen += bragi_advance(f, glyph);
+        pen += bragi_advance(f, glyph) + face->tracking;
         prev_face = f;
         prev_glyph = glyph;
     }
@@ -131,8 +131,6 @@ int32_t bragi_draw(gfx_buffer_t *buf, bragi_face_t *face, int32_t x, int32_t bas
     int32_t pen = run(buf, face, x * BRAGI_UNITS, baseline, text, end_of(text, length), color);
     return units_to_pixels(pen - x * BRAGI_UNITS);
 }
-
-/* ---- layout --------------------------------------------------------------- */
 
 int32_t bragi_wrap(bragi_face_t *face, const char *text, int32_t width, const char **next)
 {
