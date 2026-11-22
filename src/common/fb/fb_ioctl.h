@@ -4,8 +4,8 @@
  * @file fb_ioctl.h
  * @brief framebuffer device uapi: screeninfo structs and FBIO* request codes.
  *
- * modelled on Linux's <linux/fb.h>, trimmed to what ginnOS supports: a single
- * fixed truecolor VBE mode, packed pixels, no colormap, no CRTC timings. these
+ * modelled on Linux's <linux/fb.h>, trimmed to what ginnOS supports: 32-bit
+ * truecolor modes, packed pixels, no colormap, no CRTC timings. these
  * definitions are ABI and must match the libc mirror in
  * src/libc/include/sys/fb.h exactly, since userspace passes them across the
  * ioctl boundary.
@@ -60,11 +60,11 @@ typedef struct
 #define FBIOGET_FSCREENINFO 0x4602
 
 /**
- * FBIOGET_MODE: one video mode the firmware offers. the caller sets index
- * (0, 1, ...); the kernel fills in the rest, or fails with EINVAL past the
- * last mode. when the bootloader gave no list, the only mode is the
- * current one. the mode is chosen at boot (limine.conf); the kernel
- * cannot change it.
+ * FBIOGET_MODE: one video mode. the caller sets index (0, 1, ...); the
+ * kernel fills in the rest, or fails with EINVAL past the last mode. with
+ * a display driver the list is the sizes it can set, the preferred one
+ * first; without one it is the firmware's list from the bootloader (or
+ * only the current mode).
  */
 typedef struct
 {
@@ -72,7 +72,8 @@ typedef struct
     uint32_t width;
     uint32_t height;
     uint32_t bpp;
-    uint32_t current; // 1 for the mode in use
+    uint32_t current;   // 1 for the mode in use
+    uint32_t preferred; // 1 for the size the screen wants (the QEMU window)
 } fb_mode_t;
 
 #define FBIOGET_MODE 0x46F0
@@ -85,3 +86,38 @@ typedef struct
  * panic. EBUSY if another live process has it.
  */
 #define FBIO_GRAPHICS 0x46F1
+
+/**
+ * FBIO_FLUSH: arg is an fb_rect_t of pixels that changed. a display that
+ * does not show the memory by itself (virtio-gpu) copies them to the
+ * screen; for the others it does nothing. a mapped framebuffer is only
+ * sure to be seen after this.
+ */
+typedef struct
+{
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+} fb_rect_t;
+
+#define FBIO_FLUSH 0x46F2
+
+/**
+ * FBIOPUT_VSCREENINFO sets the mode to xres x yres at 32 bits per pixel
+ * when a display driver can (EINVAL if it cannot). the framebuffer can
+ * move: map it again after a change.
+ *
+ * /dev/display: read gives fb_event_t records; poll says when one is
+ * there. a record comes when the mode changed and when the size the
+ * screen wants changed (the QEMU window was resized).
+ */
+typedef struct
+{
+    uint32_t type; // FB_EVENT_*
+    uint32_t width;
+    uint32_t height;
+} fb_event_t;
+
+#define FB_EVENT_MODE      1 // the mode is now width x height
+#define FB_EVENT_PREFERRED 2 // the screen wants width x height

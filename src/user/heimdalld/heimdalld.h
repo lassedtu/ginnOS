@@ -26,12 +26,13 @@
 #include <stdint.h>
 #include <sys/kbd.h>
 
-#define TITLE_HEIGHT 36
-#define RESIZE_BAND 6  // the band outside a window that resizes it
-#define BUTTON_WIDTH 28
-#define BUTTON_HEIGHT 24
-#define WINDOW_MIN_WIDTH 160
-#define WINDOW_MIN_HEIGHT 80
+// sizes of the decorations at the theme's scale (S.theme)
+#define TITLE_HEIGHT idunn_px(&S.theme, 36)
+#define RESIZE_BAND idunn_px(&S.theme, 6) // the band outside a window that resizes it
+#define BUTTON_WIDTH idunn_px(&S.theme, 28)
+#define BUTTON_HEIGHT idunn_px(&S.theme, 24)
+#define WINDOW_MIN_WIDTH idunn_px(&S.theme, 160)
+#define WINDOW_MIN_HEIGHT idunn_px(&S.theme, 80)
 
 #define CLIENT_IN (64 * 16)
 #define CLIENT_FDS 8
@@ -133,13 +134,17 @@ typedef enum
 typedef struct
 {
     // the screen
+    int fb_fd;
+    int display_fd; // /dev/display, -1 without a display driver
     void *fb;
+    size_t fb_size;
     uint32_t pitch;
     gfx_format_t format;
     int32_t width;
     int32_t height;
     gfx_buffer_t *screen;    // the composition
     gfx_buffer_t *wallpaper; // screen size
+    const char *wallpaper_path;
     gfx_rect_t damage[DAMAGE_MAX];
     int damage_count;
 
@@ -172,6 +177,7 @@ typedef struct
 
     // the look
     idunn_theme_t theme; // the colours, the radius and the shadows of the decorations
+    bragi_font_t *title_font;
     bragi_face_t *title_face;
     icon_t *icon_minimize;
     icon_t *icon_maximize;
@@ -195,6 +201,10 @@ extern server_t S;
 // in screen.c
 
 bool screen_init(const char *wallpaper);
+/** set the mode to the size the screen wants (the QEMU window), if it is not */
+void screen_follow(void);
+/** read /dev/display: follow the size the screen wants, map a new mode */
+void screen_display_events(void);
 void screen_damage(gfx_rect_t r);
 void screen_compose(void);
 
@@ -202,6 +212,8 @@ void screen_compose(void);
 
 /** make the shadow, the corners and the title bars from S.theme (again) */
 void window_look(void);
+/** the screen has a new size: maximized windows take it, the rest stay on it */
+void window_screen_changed(void);
 window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title,
                      window_t *parent);
 bool window_is_popup(const window_t *w);
@@ -242,6 +254,8 @@ void client_read(client_t *c);
 void client_flush(client_t *c);
 void client_send(client_t *c, const heim_msg_t *msg, int fd);
 void client_send_window(window_t *w, heim_msg_t *msg);
+/** tell every client the new size of the screen */
+void client_screen_changed(void);
 void client_reap(void);
 
 // in input.c
@@ -257,6 +271,7 @@ void keytext_of(uint16_t code, uint32_t mods, char out[8]);
 
 // in cursor.c
 
-void cursor_init(void);
+/** make the pointer shapes at a scale (1 or 2) */
+void cursor_init(int32_t scale);
 gfx_rect_t cursor_rect(uint32_t shape, int32_t x, int32_t y);
 void cursor_draw(gfx_buffer_t *buf, uint32_t shape, int32_t x, int32_t y);

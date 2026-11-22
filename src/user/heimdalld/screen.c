@@ -55,31 +55,30 @@ static bool make_wallpaper(const char *path)
     return true;
 }
 
-bool screen_init(const char *wallpaper)
+/**
+ * map the framebuffer in its current mode, and make the composition and
+ * the wallpaper at its size.
+ */
+static bool map_screen(void)
 {
-    int fd = fb_open();
     fb_var_screeninfo_t var;
     fb_fix_screeninfo_t fix;
-    if (fd < 0 || ioctl(fd, FBIOGET_VSCREENINFO, &var) < 0 ||
-        ioctl(fd, FBIOGET_FSCREENINFO, &fix) < 0)
+    if (ioctl(S.fb_fd, FBIOGET_VSCREENINFO, &var) < 0 ||
+        ioctl(S.fb_fd, FBIOGET_FSCREENINFO, &fix) < 0)
     {
         printf("heimdalld: no framebuffer\n");
         return false;
     }
-    int on = 1;
-    if (ioctl(fd, FBIO_GRAPHICS, &on) != 0)
-    {
-        printf("heimdalld: another program has the screen\n");
-        close(fd);
-        return false;
-    }
-    S.fb = mmap(0, fix.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    close(fd);
-    if (S.fb == MAP_FAILED)
+    void *fb = mmap(0, fix.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, S.fb_fd, 0);
+    if (fb == MAP_FAILED)
     {
         printf("heimdalld: cannot map the framebuffer\n");
         return false;
     }
+    if (S.fb)
+        munmap(S.fb, S.fb_size);
+    S.fb = fb;
+    S.fb_size = fix.smem_len;
     S.pitch = fix.line_length;
     S.width = (int32_t)var.xres;
     S.height = (int32_t)var.yres;
@@ -91,17 +90,87 @@ bool screen_init(const char *wallpaper)
     S.format.blue_size = (uint8_t)var.blue.length;
     S.format.blue_shift = (uint8_t)var.blue.offset;
 
+    gfx_buffer_free(S.screen);
+    gfx_buffer_free(S.wallpaper);
+    S.wallpaper = NULL;
     S.screen = gfx_buffer_new(S.width, S.height);
-    if (!S.screen || !make_wallpaper(wallpaper))
+    if (!S.screen || !make_wallpaper(S.wallpaper_path))
     {
         printf("heimdalld: out of memory\n");
         return false;
     }
+    S.damage_count = 0;
+    screen_damage(gfx_rect(0, 0, S.width, S.height));
+    return true;
+}
+
+bool screen_init(const char *wallpaper)
+{
+    S.wallpaper_path = wallpaper;
+    S.fb_fd = fb_open();
+    if (S.fb_fd < 0)
+    {
+        printf("heimdalld: no framebuffer\n");
+        return false;
+    }
+    int on = 1;
+    if (ioctl(S.fb_fd, FBIO_GRAPHICS, &on) != 0)
+    {
+        printf("heimdalld: another program has the screen\n");
+        return false;
+    }
+    // changes of the mode and of the size the screen wants (not there
+    // without a display driver)
+    S.display_fd = open("/dev/display", O_RDONLY | O_NONBLOCK);
+    if (!map_screen())
+        return false;
     S.px = S.width / 2;
     S.py = S.height / 2;
     S.cursor_rect = cursor_rect(S.cursor, S.px, S.py);
-    screen_damage(gfx_rect(0, 0, S.width, S.height));
+    screen_follow();
     return true;
+}
+
+void screen_follow(void)
+{
+    // the size the screen wants is the first mode in the list
+    fb_mode_t mode = {.index = 0};
+    if (ioctl(S.fb_fd, FBIOGET_MODE, &mode) != 0 || !mode.preferred || mode.current)
+        return;
+    fb_var_screeninfo_t var = {.xres = mode.width, .yres = mode.height, .bits_per_pixel = 32};
+    if (ioctl(S.fb_fd, FBIOPUT_VSCREENINFO, &var) != 0)
+        printf("heimdalld: cannot set %ux%u\n", mode.width, mode.height);
+}
+
+void screen_display_events(void)
+{
+    fb_event_t events[8];
+    ssize_t got;
+    bool moved = false;
+    bool wanted = false;
+    while ((got = read(S.display_fd, events, sizeof(events))) > 0)
+    {
+        for (size_t i = 0; i < (size_t)got / sizeof(events[0]); i++)
+        {
+            moved = moved || events[i].type == FB_EVENT_MODE;
+            wanted = wanted || events[i].type == FB_EVENT_PREFERRED;
+        }
+    }
+    if (wanted)
+        screen_follow(); // its FB_EVENT_MODE comes next
+    if (moved && map_screen())
+    {
+        if (S.px >= S.width)
+            S.px = S.width - 1;
+        if (S.py >= S.height)
+            S.py = S.height - 1;
+        S.cursor_rect = cursor_rect(S.cursor, S.px, S.py);
+        // a large screen can mean another scale
+        if (idunn_theme_fit(&S.theme, S.width))
+            window_look();
+        window_screen_changed();
+        client_screen_changed();
+    }
 }
 
 void screen_damage(gfx_rect_t r)
@@ -174,6 +243,13 @@ void screen_compose(void)
         compose_rect(S.damage[i]);
     for (int i = 0; i < S.damage_count; i++)
         gfx_present(S.fb, S.pitch, S.width, S.height, &S.format, S.screen, S.damage[i]);
+    // a display that does not show the memory by itself (virtio-gpu)
+    for (int i = 0; i < S.damage_count; i++)
+    {
+        gfx_rect_t r = S.damage[i];
+        fb_rect_t flush = {(uint32_t)r.x, (uint32_t)r.y, (uint32_t)r.w, (uint32_t)r.h};
+        ioctl(S.fb_fd, FBIO_FLUSH, &flush);
+    }
     S.damage_count = 0;
 
     // the commits are on the screen now

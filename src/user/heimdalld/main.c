@@ -61,19 +61,8 @@ static bool listen_socket(void)
 
 static void load_look(void)
 {
+    S.title_font = bragi_font_open(FONTS "inter/Inter-SemiBold.ttf");
     idunn_theme_load(&S.theme);
-    window_look();
-    bragi_font_t *font = bragi_font_open(FONTS "inter/Inter-SemiBold.ttf");
-    S.title_face = font ? bragi_face_new(font, 13.0f) : NULL;
-    icon_set_t *lucide = icon_set_named("lucide");
-    if (lucide)
-    {
-        S.icon_minimize = icon_load(lucide, "minus", 16, 1);
-        S.icon_maximize = icon_load(lucide, "square", 16, 1);
-        S.icon_restore = icon_load(lucide, "copy", 16, 1);
-        S.icon_close = icon_load(lucide, "x", 16, 1);
-        icon_set_close(lucide);
-    }
 }
 
 static void start(char **argv)
@@ -102,6 +91,7 @@ static void loop(void)
         int n = 0;
         fds[n++] = (struct pollfd){S.listen_fd, POLLIN, 0};
         fds[n++] = (struct pollfd){S.input_fd, POLLIN, 0};
+        fds[n++] = (struct pollfd){S.display_fd, POLLIN, 0}; // poll skips -1
         for (client_t *c = S.clients; c && n < POLL_MAX; c = c->next)
         {
             owners[n] = c;
@@ -119,7 +109,9 @@ static void loop(void)
 
         if (fds[1].revents)
             input_read();
-        for (int i = 2; i < n; i++)
+        if (fds[2].revents & POLLIN)
+            screen_display_events();
+        for (int i = 3; i < n; i++)
         {
             client_t *c = owners[i];
             if (fds[i].revents & (POLLIN | POLLHUP | POLLERR))
@@ -149,10 +141,12 @@ int main(int argc, char **argv)
     signal(SIGINT, on_signal);
     signal(SIGPIPE, SIG_IGN);
 
-    cursor_init();
     load_look();
     if (!listen_socket() || !screen_init(wallpaper) || !input_init())
         return 1;
+    // the scale can depend on the size of the screen
+    idunn_theme_fit(&S.theme, S.width);
+    window_look();
     if (arg < argc)
         start(argv + arg);
 

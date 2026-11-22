@@ -203,8 +203,20 @@ void idunn_theme_default(idunn_theme_t *theme)
     theme->radius = 6;
     theme->font_size = 13;
     theme->scale = 1;
+    theme->scale_auto = true;
     theme->motion = true;
     make_colors(theme, &accents[0], NULL);
+}
+
+bool idunn_theme_fit(idunn_theme_t *theme, int32_t screen_width)
+{
+    if (!theme->scale_auto)
+        return false;
+    int32_t scale = screen_width >= IDUNN_HIDPI_WIDTH ? 2 : 1;
+    if (scale == theme->scale)
+        return false;
+    theme->scale = scale;
+    return true;
 }
 
 void idunn_theme_from_conf(idunn_theme_t *theme, const conf_t *conf)
@@ -217,6 +229,8 @@ void idunn_theme_from_conf(idunn_theme_t *theme, const conf_t *conf)
     theme->mode = strcmp(mode, "light") == 0 ? IDUNN_LIGHT : IDUNN_DARK;
     theme->radius = (int32_t)clamp(conf_get_int(conf, "theme", "radius", 6), 4, 12);
     theme->font_size = (int32_t)clamp(conf_get_int(conf, "theme", "font_size", 13), 13, 15);
+    const char *scale = conf_get(conf, "theme", "scale", "auto");
+    theme->scale_auto = strcmp(scale, "auto") == 0;
     theme->scale = (int32_t)clamp(conf_get_int(conf, "theme", "scale", 1), 1, 2);
     theme->motion = conf_get_bool(conf, "theme", "motion", true);
 

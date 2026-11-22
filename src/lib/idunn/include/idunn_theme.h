@@ -97,7 +97,8 @@ typedef struct
     gfx_color_t colors[2][IDUNN_COLOR_COUNT]; // by mode: changing mode needs nothing else
     int32_t radius;    // the base radius at scale 1
     int32_t font_size; // the body text size at scale 1
-    int32_t scale;
+    int32_t scale;   // 1 or 2
+    bool scale_auto; // the scale follows the screen (idunn_theme_fit)
     bool motion;
 } idunn_theme_t;
 
@@ -116,6 +117,15 @@ void idunn_theme_from_conf(idunn_theme_t *theme, const conf_t *conf);
  * read the user's theme (conf_open("theme")).
  */
 void idunn_theme_load(idunn_theme_t *theme);
+
+/** screens at least this wide get scale 2 when the scale is auto */
+#define IDUNN_HIDPI_WIDTH 2400
+
+/**
+ * set the scale for a screen when the theme's scale is auto.
+ * @return true if the scale changed.
+ */
+bool idunn_theme_fit(idunn_theme_t *theme, int32_t screen_width);
 
 static inline gfx_color_t idunn_color(const idunn_theme_t *theme, idunn_color_t which)
 {

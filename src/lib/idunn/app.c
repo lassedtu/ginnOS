@@ -33,6 +33,18 @@ static uint32_t now_ms(void)
     return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
+/**
+ * set the scale of a theme for the screen (when the scale is auto).
+ * @return true if it changed.
+ */
+static bool fit(idunn_app_t *app, idunn_theme_t *theme)
+{
+    int32_t width;
+    int32_t height;
+    heim_screen_size(app->conn, &width, &height);
+    return idunn_theme_fit(theme, width);
+}
+
 idunn_app_t *idunn_app_new(const char *name)
 {
     (void)name;
@@ -49,6 +61,9 @@ idunn_app_t *idunn_app_new(const char *name)
         free(app);
         return NULL;
     }
+    // the scale can follow the size of the screen
+    if (fit(app, &theme))
+        idunn_context_set_theme(app->ctx, &theme);
     return app;
 }
 
@@ -62,11 +77,31 @@ const idunn_theme_t *idunn_app_theme(const idunn_app_t *app)
     return &app->ctx->theme;
 }
 
+/**
+ * a window of another size: a new buffer, and the server shows it at that
+ * size.
+ */
+static void resize(idunn_window_t *win, int32_t width, int32_t height)
+{
+    if (heim_window_resize(win->heim, width, height))
+        idunn_window_use_buffer(win, heim_window_buffer(win->heim));
+}
+
 void idunn_app_set_theme(idunn_app_t *app, const idunn_theme_t *theme)
 {
+    int32_t from = app->ctx->theme.scale;
+    int32_t to = theme->scale;
     idunn_context_set_theme(app->ctx, theme);
     for (idunn_window_t *win = app->windows; win; win = win->next)
     {
+        if (from != to && win->opener && !win->dead)
+        {
+            // a popup is placed for the old scale
+            idunn_popup_close(win);
+            continue;
+        }
+        if (from != to && !win->dead && win->buffer)
+            resize(win, win->buffer->width * to / from, win->buffer->height * to / from);
         win->needs_layout = true;
         idunn_window_invalidate(win);
     }
@@ -282,10 +317,16 @@ int idunn_app_run(idunn_app_t *app)
                 idunn_window_close(win);
             break;
         case HEIM_EV_CONFIGURE:
-            if (win && heim_window_resize(win->heim, ev.msg.configure.width,
-                                          ev.msg.configure.height))
-                idunn_window_use_buffer(win, heim_window_buffer(win->heim));
+            if (win)
+                resize(win, ev.msg.configure.width, ev.msg.configure.height);
             break;
+        case HEIM_EV_SCREEN:
+        {
+            idunn_theme_t theme = app->ctx->theme;
+            if (fit(app, &theme))
+                idunn_app_set_theme(app, &theme);
+            break;
+        }
         case HEIM_EV_POINTER:
             if (win)
                 pointer(win, &ev);
@@ -308,6 +349,7 @@ int idunn_app_run(idunn_app_t *app)
             {
                 idunn_theme_t theme;
                 idunn_theme_load(&theme);
+                fit(app, &theme);
                 idunn_app_set_theme(app, &theme);
             }
             break;

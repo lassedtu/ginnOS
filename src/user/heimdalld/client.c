@@ -302,8 +302,13 @@ static void settings_changed(client_t *c, heim_msg_t *msg)
     // the decorations follow the theme too
     if (strcmp(name, "theme") == 0)
     {
+        int32_t scale = S.theme.scale;
         idunn_theme_load(&S.theme);
+        idunn_theme_fit(&S.theme, S.width);
         window_look();
+        if (S.theme.scale != scale)
+            window_screen_changed(); // the title bars have another height
+
     }
     heim_msg_t event = {0};
     event.type = HEIM_EV_SETTINGS;
@@ -501,5 +506,18 @@ void client_reap(void)
         }
         close(c->fd);
         free(c);
+    }
+}
+
+void client_screen_changed(void)
+{
+    heim_msg_t event = {0};
+    event.type = HEIM_EV_SCREEN;
+    event.size.width = S.width;
+    event.size.height = S.height;
+    for (client_t *c = S.clients; c; c = c->next)
+    {
+        if (c->hello)
+            client_send(c, &event, -1);
     }
 }

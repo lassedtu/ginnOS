@@ -101,3 +101,10 @@ void fb_flush(void);
  * draws the whole console again. a kernel panic calls it.
  */
 void fb_release_graphics(void);
+
+/**
+ * change the mode with the display driver (32 bits per pixel). the text
+ * grid stays as it is; what does not fit is not drawn.
+ * @return false without a driver, or if the driver cannot set the size.
+ */
+bool fb_set_mode(uint32_t width, uint32_t height);

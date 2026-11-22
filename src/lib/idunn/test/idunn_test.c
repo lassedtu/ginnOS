@@ -56,6 +56,22 @@ static void test_file(void)
     CHECK_EQ(idunn_color(&t, IDUNN_COLOR_ACCENT), gfx_rgb(0x12, 0x34, 0x56));
     CHECK_EQ(idunn_color(&t, IDUNN_COLOR_ACCENT_FOREGROUND), gfx_rgb(255, 255, 255));
     CHECK_EQ(idunn_radius(&t), 24); // 12 at scale 2
+    // a fixed scale does not follow the screen
+    CHECK(!idunn_theme_fit(&t, 1440));
+    CHECK_EQ(t.scale, 2);
+    conf_free(conf);
+
+    // the scale follows the screen by default: 2 from 2400 pixels wide
+    conf = conf_from_text("[theme]\nmode = dark\n", NULL);
+    idunn_theme_from_conf(&t, conf);
+    CHECK(t.scale_auto);
+    CHECK(!idunn_theme_fit(&t, 1920));
+    CHECK_EQ(t.scale, 1);
+    CHECK(idunn_theme_fit(&t, 2560));
+    CHECK_EQ(t.scale, 2);
+    CHECK(!idunn_theme_fit(&t, 2880));
+    CHECK(idunn_theme_fit(&t, 1440));
+    CHECK_EQ(t.scale, 1);
     conf_free(conf);
 
     // an unknown accent and no file: the defaults
