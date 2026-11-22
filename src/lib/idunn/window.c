@@ -122,18 +122,26 @@ static void draw_tree(idunn_widget_t *w, gfx_buffer_t *buf, gfx_rect_t clip, int
     }
 }
 
+/**
+ * place the widgets again if something changed their sizes. it does not
+ * draw: the buffer can be on its way to the server.
+ */
+static void layout(idunn_window_t *win)
+{
+    if (!win->needs_layout || !win->buffer)
+        return;
+    win->needs_layout = false;
+    if (win->root)
+        idunn_place(win->root, gfx_rect(0, 0, win->buffer->width, win->buffer->height));
+    idunn_window_invalidate(win);
+}
+
 gfx_rect_t idunn_window_draw(idunn_window_t *win)
 {
     gfx_buffer_t *buf = win->buffer;
     if (!buf)
         return gfx_rect(0, 0, 0, 0);
-    if (win->needs_layout)
-    {
-        win->needs_layout = false;
-        if (win->root)
-            idunn_place(win->root, gfx_rect(0, 0, buf->width, buf->height));
-        idunn_window_invalidate(win);
-    }
+    layout(win);
     gfx_rect_t clip = gfx_rect_intersect(win->damage, gfx_rect(0, 0, buf->width, buf->height));
     // drawing can ask for the next frame (a transition), so start anew
     win->damage = gfx_rect(0, 0, 0, 0);
@@ -354,8 +362,7 @@ static int count_clicks(idunn_window_t *win, int32_t x, int32_t y)
 void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, int32_t y,
                           uint32_t mods)
 {
-    if (win->needs_layout)
-        idunn_window_draw(win); // the rects must be where they are drawn
+    layout(win); // the rects must be where they are drawn
     idunn_widget_t *under = kind == IDUNN_POINTER_LEAVE ? NULL : hit(win->root, x, y);
     switch (kind)
     {

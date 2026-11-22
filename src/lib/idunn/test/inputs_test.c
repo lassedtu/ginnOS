@@ -288,6 +288,16 @@ static void test_choices(idunn_context_t *ctx)
     key(win, IDUNN_KEY_HOME, 0, "");
     CHECK_EQ(idunn_slider_value(slider), 0);
 
+    // a pointer event after a change of layout does not draw: the frame
+    // it would draw (and its damage) is for the app loop to show
+    idunn_widget_t *value = idunn_add(col, idunn_label("6", IDUNN_TEXT_LABEL));
+    idunn_window_tick(win, 10000); // the transitions are over
+    idunn_window_draw(win);
+    CHECK(gfx_rect_empty(idunn_window_draw(win)));
+    idunn_label_set_text(value, "10 of 10");
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, r.x - 50, r.y + 8, 0); // no new hover
+    CHECK(!gfx_rect_empty(idunn_window_draw(win)));
+
     idunn_window_free_widgets(win);
     free(win);
 }

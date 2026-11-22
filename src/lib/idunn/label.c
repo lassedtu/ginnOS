@@ -117,10 +117,20 @@ void idunn_label_set_text(idunn_widget_t *label, const char *text)
     char *copy = l ? strdup(text ? text : "") : NULL;
     if (!copy)
         return;
+    // a text of the same size needs no new layout (a value while it changes)
+    int32_t old_w = 0;
+    int32_t old_h = 0;
+    if (label->window)
+        idunn_measure(label, label->rect.w, &old_w, &old_h);
     free(l->text);
     l->text = copy;
     idunn_dirty(label);
-    idunn_relayout(label);
+    int32_t new_w = 0;
+    int32_t new_h = 0;
+    if (label->window)
+        idunn_measure(label, label->rect.w, &new_w, &new_h);
+    if (!label->window || new_w != old_w || new_h != old_h)
+        idunn_relayout(label);
 }
 
 void idunn_label_set_color(idunn_widget_t *label, idunn_color_t color)
