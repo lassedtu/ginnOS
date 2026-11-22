@@ -1,0 +1,104 @@
+diff -ruN gcc-16.2.0/config.sub ../gcc-16.2.0/config.sub
+--- a/config.sub
++++ b/config.sub
+@@ -1735,7 +1735,7 @@
+ 	     | bosx* | nextstep* | cxux* | aout* | elf* | oabi* \
+ 	     | ptx* | coff* | ecoff* | winnt* | domain* | vsta* \
+ 	     | udi* | lites* | ieee* | go32* | aux* | hcos* \
+-	     | chorusrdb* | cegcc* | glidix* | serenity* \
++	     | chorusrdb* | cegcc* | glidix* | serenity* | ginnos* \
+ 	     | cygwin* | msys* | pe* | moss* | proelf* | rtems* \
+ 	     | midipix* | mingw32* | mingw64* | mint* \
+ 	     | uxpv* | beos* | mpeix* | udk* | moxiebox* \
+diff -ruN gcc-16.2.0/fixincludes/mkfixinc.sh ../gcc-16.2.0/fixincludes/mkfixinc.sh
+--- a/fixincludes/mkfixinc.sh
++++ b/fixincludes/mkfixinc.sh
+@@ -19,7 +19,8 @@
+     powerpcle-*-eabisim* | \
+     powerpcle-*-eabi* | \
+     *-*-vxworks7* | \
+-    *-musl* )
++    *-musl* | \
++    *-ginnos* )
+ 	#  IF there is no include fixing,
+ 	#  THEN create a no-op fixer and exit
+ 	(echo "#! /bin/sh" ; echo "exit 0" ) > ${target}
+diff -ruN gcc-16.2.0/gcc/config/ginnos.h ../gcc-16.2.0/gcc/config/ginnos.h
+--- a/gcc/config/ginnos.h
++++ b/gcc/config/ginnos.h
+@@ -0,0 +1,31 @@
++/* ginnOS: the target definitions for GCC (static executables, our libc) */
++
++#undef TARGET_GINNOS
++#define TARGET_GINNOS 1
++
++/* the C library; libgcc after it for the helpers it uses */
++#undef LIB_SPEC
++#define LIB_SPEC "-lc"
++
++/* crt0 starts a program; crti/crtn come with libc, crtbegin/crtend with
++   libgcc (static constructors) */
++#undef STARTFILE_SPEC
++#define STARTFILE_SPEC "crt0.o%s crti.o%s crtbegin.o%s"
++
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC "crtend.o%s crtn.o%s"
++
++/* static only for now; pages of 4 KiB */
++#undef LINK_SPEC
++#define LINK_SPEC "%{shared:-shared} %{!shared:-static} -z max-page-size=0x1000"
++
++#undef TARGET_OS_CPP_BUILTINS
++#define TARGET_OS_CPP_BUILTINS()          \
++    do                                    \
++    {                                     \
++        builtin_define("__ginnos__");     \
++        builtin_define("__unix__");       \
++        builtin_assert("system=ginnos");  \
++        builtin_assert("system=unix");    \
++        builtin_assert("system=posix");   \
++    } while (0);
+diff -ruN gcc-16.2.0/gcc/config.gcc ../gcc-16.2.0/gcc/config.gcc
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -932,6 +932,13 @@
+   rust_target_objs="${rust_target_objs} freebsd-rust.o"
+   target_has_targetrustm=yes
+   ;;
++*-*-ginnos*)
++  gas=yes
++  gnu_ld=yes
++  default_use_cxa_atexit=yes
++  use_gcc_stdint=wrap
++  native_system_header_dir=/usr/include
++  ;;
+ *-*-fuchsia*)
+   native_system_header_dir=/include
+   tmake_file="t-fuchsia"
+@@ -2011,6 +2018,12 @@
+ 	;;
+ i[34567]86-*-elf*)
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h"
++	;;
++i[34567]86-*-ginnos*)
++	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h glibc-stdint.h i386/i386elf.h ginnos.h"
++	;;
++x86_64-*-ginnos*)
++	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h glibc-stdint.h i386/i386elf.h i386/x86-64.h ginnos.h"
+ 	;;
+ x86_64-*-elf*)
+ 	tm_file="${tm_file} i386/unix.h i386/att.h elfos.h newlib-stdint.h i386/i386elf.h i386/x86-64.h"
+diff -ruN gcc-16.2.0/libgcc/config.host ../gcc-16.2.0/libgcc/config.host
+--- a/libgcc/config.host
++++ b/libgcc/config.host
+@@ -757,6 +757,10 @@
+ x86_64-*-fuchsia*)
+ 	tmake_file="$tmake_file t-libgcc-pic"
+ 	;;
++i[34567]86-*-ginnos* | x86_64-*-ginnos*)
++	extra_parts="$extra_parts crtbegin.o crtend.o"
++	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
++	;;
+ i[34567]86-*-dragonfly*)
+ 	tmake_file="${tmake_file} i386/t-dragonfly i386/t-crtstuff"
+ 	md_unwind_header=i386/dragonfly-unwind.h
