@@ -14,7 +14,7 @@ ifeq ($(ARCH),i686)
   # Apple Silicon / arm64 host, i386 runs under TCG software emulation (no HVF
   # for i386 on ARM), so these only soften the emulation cost. override with
   # e.g. `make run QEMU_FLAGS=...`.
-  QEMU_FLAGS  ?= -m 256 -cpu max -accel tcg,tb-size=256 -vga std
+  QEMU_FLAGS  ?= -m 512 -cpu max -accel tcg,tb-size=256 $(QEMU_VGA_FLAGS)
   ASM_FORMAT  := elf32
   ASM_BIN_FMT := bin
 else ifeq ($(ARCH),x86_64)
@@ -28,7 +28,7 @@ else ifeq ($(ARCH),x86_64)
   # registers are the user program's)
   KERNEL_ARCH_CFLAGS := -mcmodel=kernel -mno-red-zone -mgeneral-regs-only
   QEMU        := qemu-system-x86_64
-  QEMU_FLAGS  ?= -m 256 -cpu max -accel tcg,tb-size=256 -vga std
+  QEMU_FLAGS  ?= -m 512 -cpu max -accel tcg,tb-size=256 $(QEMU_VGA_FLAGS)
   ASM_FORMAT  := elf64
   ASM_BIN_FMT := bin
   ifneq ($(BOOTLOADER),)
@@ -184,6 +184,15 @@ LIMINE_CONF      := tools/limine/limine-$(ARCH).conf
 # the screen size, for example RESOLUTION=1280x800. empty: limine picks the
 # size (in QEMU: 1280x1024 for i686, 1280x800 for x86_64).
 RESOLUTION       ?= 1440x900
+# the graphics card: virtio-vga. its window opens at RESOLUTION; when the
+# window is resized (or goes full screen), the desktop takes the new size.
+# QEMU_VGA=std gives the plain VGA card, fixed at RESOLUTION.
+QEMU_VGA         ?= virtio
+VGA_SIZE          = $(subst x, ,$(RESOLUTION))
+QEMU_VGA_FLAGS    = -vga $(QEMU_VGA) \
+                    $(if $(and $(filter virtio,$(QEMU_VGA)),$(RESOLUTION)), \
+                      -global virtio-vga.xres=$(word 1,$(VGA_SIZE)) \
+                      -global virtio-vga.yres=$(word 2,$(VGA_SIZE)))
 
 # UEFI firmware for make run-uefi (OVMF; homebrew and nix qemu include it)
 QEMU_UEFI ?= qemu-system-x86_64
