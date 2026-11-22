@@ -125,3 +125,12 @@ void heim_clipboard_set(heim_conn_t *conn, const char *text, size_t length);
  * ask for the clipboard's text: it comes as a HEIM_EV_CLIPBOARD event.
  */
 void heim_clipboard_request(heim_conn_t *conn);
+
+/* ---- settings ------------------------------------------------------------- */
+
+/**
+ * tell all clients that the settings file name changed (after conf_save):
+ * each gets a HEIM_EV_SETTINGS event with the name, also this one.
+ * @param name the libconf name, "theme".
+ */
+void heim_settings_changed(heim_conn_t *conn, const char *name);
