@@ -63,6 +63,9 @@ static size_t offset_at(idunn_widget_t *w, int32_t x)
 /** scroll so the caret is in the field, and no further than the text */
 static void keep_caret_visible(idunn_widget_t *w)
 {
+    // not in a window yet: nothing to measure with (its layout does it)
+    if (!w->window)
+        return;
     field_t *f = w->data;
     int32_t width = text_box(w).w - idunn_px(idunn_theme(w), 1); // room for the caret
     int32_t caret = x_of(w, f->edit.caret);
@@ -348,4 +351,15 @@ void idunn_text_field_on_submit(idunn_widget_t *field, idunn_callback_t on_submi
         return;
     f->on_submit = on_submit;
     f->submit_data = data;
+}
+
+void idunn_text_field_select(idunn_widget_t *field, size_t start, size_t end)
+{
+    field_t *f = as_field(field);
+    if (!f)
+        return;
+    f->edit.anchor = start < f->edit.length ? start : f->edit.length;
+    f->edit.caret = end < f->edit.length ? end : f->edit.length;
+    keep_caret_visible(field);
+    idunn_dirty(field);
 }

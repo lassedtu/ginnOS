@@ -579,6 +579,30 @@ static int count_clicks(idunn_window_t *win, int32_t x, int32_t y)
     return win->clicks;
 }
 
+/**
+ * the deepest widget at a point, interactive or not (the wheel and a
+ * right click go to it and then to its parents).
+ */
+static idunn_widget_t *deepest(idunn_widget_t *w, int32_t x, int32_t y)
+{
+    while (w)
+    {
+        idunn_widget_t *inner = NULL;
+        if ((w->flags & IDUNN_CLIPS) && !gfx_rect_contains(w->rect, x, y))
+            break;
+        for (int i = w->child_count - 1; i >= 0 && !inner; i--)
+        {
+            idunn_widget_t *c = w->children[i];
+            if (!(c->state & IDUNN_HIDDEN) && gfx_rect_contains(c->rect, x, y))
+                inner = c;
+        }
+        if (!inner)
+            break;
+        w = inner;
+    }
+    return w;
+}
+
 void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, int32_t y,
                           uint32_t mods)
 {
@@ -646,10 +670,17 @@ void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, 
         if (under && (under->flags & IDUNN_FOCUSABLE))
             set_focus(win, under, false);
         idunn_event_t ev = {.type = IDUNN_EV_MENU, .x = x, .y = y, .mods = mods};
-        for (idunn_widget_t *w = under; w; w = w->parent)
+        for (idunn_widget_t *w = deepest(top, x, y); w; w = w->parent)
         {
-            if (!(w->state & IDUNN_DISABLED) && idunn_send(w, &ev))
+            if (w->state & IDUNN_DISABLED)
+                continue;
+            if (idunn_send(w, &ev))
                 break;
+            if (w->on_menu)
+            {
+                w->on_menu(w, w->menu_data);
+                break;
+            }
         }
         break;
     }
@@ -755,22 +786,7 @@ void idunn_focus_first(idunn_widget_t *w)
 void idunn_window_scroll(idunn_window_t *win, int32_t x, int32_t y, int32_t steps)
 {
     // the widget under the pointer, or the first of its parents that scrolls
-    idunn_widget_t *w = win->modal ? win->modal : win->root;
-    while (w)
-    {
-        idunn_widget_t *inner = NULL;
-        if ((w->flags & IDUNN_CLIPS) && !gfx_rect_contains(w->rect, x, y))
-            break;
-        for (int i = w->child_count - 1; i >= 0 && !inner; i--)
-        {
-            idunn_widget_t *c = w->children[i];
-            if (!(c->state & IDUNN_HIDDEN) && gfx_rect_contains(c->rect, x, y))
-                inner = c;
-        }
-        if (!inner)
-            break;
-        w = inner;
-    }
+    idunn_widget_t *w = deepest(win->modal ? win->modal : win->root, x, y);
     idunn_event_t ev = {.type = IDUNN_EV_SCROLL, .x = x, .y = y, .steps = steps};
     for (; w; w = w->parent)
     {

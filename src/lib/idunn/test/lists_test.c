@@ -251,6 +251,15 @@ static void test_list_menu(idunn_context_t *ctx)
     click_at(win, 50, 380, 0);
     CHECK(!idunn_list_view_selected(list, 1));
 
+    // a box around the list takes a right click beside the list
+    idunn_set_size(list, 0, 200);
+    idunn_grow(list, 0);
+    idunn_on_menu(col, count_menu, NULL);
+    idunn_window_draw(win);
+    int before = menus;
+    idunn_window_pointer(win, IDUNN_POINTER_MENU, 50, 300, 0);
+    CHECK_EQ(menus, before + 1);
+
     // Backspace is not the list's: the window's hook gets it
     window_keys = 0;
     key(win, IDUNN_KEY_BACKSPACE, 0);

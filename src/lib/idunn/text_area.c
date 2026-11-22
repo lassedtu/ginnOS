@@ -142,6 +142,9 @@ static size_t offset_at(idunn_widget_t *w, int32_t x, int32_t y)
 
 static void keep_caret_visible(idunn_widget_t *w)
 {
+    // not in a window yet: nothing to measure with (its layout does it)
+    if (!w->window)
+        return;
     area_t *a = w->data;
     wrap(w);
     int32_t lh = line_height(w);

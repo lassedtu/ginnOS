@@ -26,6 +26,9 @@ struct idunn_app
     idunn_context_t *ctx;
     idunn_window_t *windows;
     idunn_window_t *paste_window; // it asked for the clipboard's text
+    // the program asked for it (idunn_app_paste)
+    void (*paste_hook)(const char *text, size_t length, void *data);
+    void *paste_data;
     bool quit;
     char name[HEIM_APP_ID_MAX]; // the program's id, for the shell
 
@@ -482,7 +485,13 @@ int idunn_app_run(idunn_app_t *app)
                 idunn_window_key(win, ev.msg.key.code, ev.msg.key.mods, ev.msg.key.text);
             break;
         case HEIM_EV_CLIPBOARD:
-            if (app->paste_window)
+            if (app->paste_hook)
+            {
+                void (*hook)(const char *, size_t, void *) = app->paste_hook;
+                app->paste_hook = NULL;
+                hook(ev.clipboard ? ev.clipboard : "", ev.clipboard_length, app->paste_data);
+            }
+            else if (app->paste_window)
             {
                 idunn_window_t *to = app->paste_window;
                 app->paste_window = NULL;
@@ -514,4 +523,13 @@ int idunn_app_run(idunn_app_t *app)
     idunn_context_free(app->ctx);
     free(app);
     return 0;
+}
+
+void idunn_app_paste(idunn_app_t *app, void (*got)(const char *text, size_t length, void *data),
+                     void *data)
+{
+    app->paste_window = NULL;
+    app->paste_hook = got;
+    app->paste_data = data;
+    heim_clipboard_request(app->conn);
 }

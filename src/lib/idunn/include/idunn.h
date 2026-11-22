@@ -107,6 +107,13 @@ void idunn_app_every(idunn_app_t *app, uint32_t period, void (*every)(void *data
 void idunn_app_watch(idunn_app_t *app, int fd, void (*ready)(int fd, void *data), void *data);
 
 /**
+ * ask for the clipboard's text for the program itself (not a widget):
+ * got gets it when it comes ("" when the clipboard is empty).
+ */
+void idunn_app_paste(idunn_app_t *app, void (*got)(const char *text, size_t length, void *data),
+                     void *data);
+
+/**
  * run until the last window is closed or idunn_app_quit.
  * @return the exit status for main.
  */
@@ -258,6 +265,12 @@ void idunn_set_hidden(idunn_widget_t *w, bool hidden);
  * a disabled widget is drawn at half opacity and gets no input.
  */
 void idunn_set_disabled(idunn_widget_t *w, bool disabled);
+/**
+ * on_menu on a right click on the widget or in it, when no widget in it
+ * used the click (a list view uses it on its items: idunn_list_view_on_menu).
+ * open a menu with idunn_menu_popup_at_pointer.
+ */
+void idunn_on_menu(idunn_widget_t *w, idunn_callback_t on_menu, void *data);
 
 /**
  * a control with a wrong value: its border and ring are red (a field
@@ -333,6 +346,11 @@ idunn_widget_t *idunn_text_field(const char *placeholder);
 /** the text (UTF-8); valid until the text changes */
 const char *idunn_text_field_text(const idunn_widget_t *field);
 void idunn_text_field_set_text(idunn_widget_t *field, const char *text);
+/**
+ * select bytes start to end (the caret at end); typing replaces them.
+ * (size_t)-1 is the end of the text.
+ */
+void idunn_text_field_select(idunn_widget_t *field, size_t start, size_t end);
 
 /** an icon (a Lucide name) at the start, as in a search field */
 void idunn_text_field_set_icon(idunn_widget_t *field, const char *icon);
@@ -411,6 +429,11 @@ idunn_widget_t *idunn_icon_view(const char *name, int32_t size, idunn_color_t co
  * NULL), in the middle of its space. add buttons to it for actions.
  */
 idunn_widget_t *idunn_empty_state(const char *icon, const char *title, const char *text);
+
+#define IDUNN_PROGRESS_MAX 1000
+/** a progress bar across its box; value 0 to IDUNN_PROGRESS_MAX */
+idunn_widget_t *idunn_progress(void);
+void idunn_progress_set(idunn_widget_t *progress, int32_t value);
 
 /**
  * tabs: a strip of names and the page of the active one below it. the

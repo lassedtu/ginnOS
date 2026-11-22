@@ -425,8 +425,38 @@ static void reference_inputs(idunn_context_t *ctx, const char *name, idunn_mode_
     idunn_context_set_theme(ctx, &theme);
 }
 
+/**
+ * text set before the widget is in a window (a dialog builds its field
+ * first): no measuring then; the text shows once it is in one.
+ */
+static void test_text_before_window(idunn_context_t *ctx)
+{
+    idunn_widget_t *field = idunn_text_field(NULL);
+    idunn_text_field_set_text(field, "New folder");
+    idunn_widget_t *area = idunn_text_area(NULL, 3);
+    idunn_text_area_set_text(area, "one\ntwo");
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 200);
+    idunn_widget_t *col = idunn_column(2, 4);
+    idunn_add(col, field);
+    idunn_add(col, area);
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+    CHECK(strcmp(idunn_text_field_text(field), "New folder") == 0);
+    // a selected part is replaced by what is typed
+    idunn_text_field_select(field, 0, 3);
+    idunn_set_focus(field);
+    idunn_window_key(win, 0, 0, "Old");
+    CHECK(strcmp(idunn_text_field_text(field), "Old folder") == 0);
+    idunn_text_field_select(field, 0, (size_t)-1);
+    idunn_window_key(win, 0, 0, "x");
+    CHECK(strcmp(idunn_text_field_text(field), "x") == 0);
+    CHECK(strcmp(idunn_text_area_text(area), "one\ntwo") == 0);
+    idunn_window_free_widgets(win);
+}
+
 void test_inputs(idunn_context_t *ctx)
 {
+    test_text_before_window(ctx);
     test_edit();
     test_text_field(ctx);
     test_choices(ctx);

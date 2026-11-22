@@ -52,6 +52,7 @@
 #define EAFNOSUPPORT 40 // address family not supported
 #define EPROTONOSUPPORT 41 // protocol not supported
 #define EOPNOTSUPP   42 // operation not supported
+#define ECANCELED    43 // operation cancelled (programs use it; the kernel does not)
 
 #define EWOULDBLOCK EAGAIN
 

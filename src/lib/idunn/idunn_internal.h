@@ -136,6 +136,8 @@ struct idunn_widget
     idunn_anim_t hover;   // 0 to 1: the hover look
     idunn_anim_t press;   // 0 to 1: the pressed look
     char *tooltip;        // shown over it after a while under the pointer, or NULL
+    idunn_callback_t on_menu; // a right click on it that no child used (idunn_on_menu)
+    void *menu_data;
     void *data;           // the class's own state
 };
 
