@@ -93,7 +93,7 @@ static bool touches(const idunn_widget_t *w, gfx_rect_t clip, int32_t overdraw)
 static void draw_tree(idunn_widget_t *w, gfx_buffer_t *buf, gfx_rect_t clip, int32_t overdraw,
                       bool faded)
 {
-    if (!touches(w, clip, overdraw))
+    if ((w->state & IDUNN_HIDDEN) || !touches(w, clip, overdraw))
         return;
 
     // CSS opacity 0.5: draw the widget, then the old pixels over it at half
@@ -112,8 +112,21 @@ static void draw_tree(idunn_widget_t *w, gfx_buffer_t *buf, gfx_rect_t clip, int
 
     if (w->cls->draw)
         w->cls->draw(w, buf);
-    for (int i = 0; i < w->child_count; i++)
-        draw_tree(w->children[i], buf, clip, overdraw, faded);
+    gfx_rect_t inner = clip;
+    if (w->flags & IDUNN_CLIPS)
+    {
+        inner = gfx_rect_intersect(clip, w->rect);
+        gfx_set_clip(buf, inner);
+    }
+    if (!gfx_rect_empty(inner))
+    {
+        for (int i = 0; i < w->child_count; i++)
+            draw_tree(w->children[i], buf, inner, overdraw, faded);
+        if (w->cls->draw_over)
+            w->cls->draw_over(w, buf);
+    }
+    if (w->flags & IDUNN_CLIPS)
+        gfx_set_clip(buf, clip);
 
     if (under)
     {
@@ -270,7 +283,7 @@ static uint32_t transition(const idunn_window_t *win)
  */
 static idunn_widget_t *hit(idunn_widget_t *w, int32_t x, int32_t y)
 {
-    if (!w || (w->state & IDUNN_DISABLED) || !gfx_rect_contains(w->rect, x, y))
+    if (!w || (w->state & (IDUNN_DISABLED | IDUNN_HIDDEN)) || !gfx_rect_contains(w->rect, x, y))
         return NULL;
     for (int i = w->child_count - 1; i >= 0; i--)
     {
@@ -326,6 +339,13 @@ static void set_focus(idunn_window_t *win, idunn_widget_t *w, bool visible)
         idunn_dirty(w);
         idunn_event_t ev = {.type = IDUNN_EV_FOCUS};
         idunn_send(w, &ev);
+        if (visible)
+        {
+            // Tab to a widget out of view scrolls it in, with its ring
+            int32_t m = idunn_overdraw(&win->ctx->theme);
+            idunn_reveal(w, gfx_rect(w->rect.x - m, w->rect.y - m, w->rect.w + 2 * m,
+                                     w->rect.h + 2 * m));
+        }
     }
 }
 
@@ -374,6 +394,11 @@ void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, 
             idunn_event_t ev = {.type = IDUNN_EV_DRAG, .x = x, .y = y, .mods = mods};
             idunn_send(win->pressed, &ev);
         }
+        else if (under && kind == IDUNN_POINTER_MOTION)
+        {
+            idunn_event_t ev = {.type = IDUNN_EV_MOTION, .x = x, .y = y, .mods = mods};
+            idunn_send(under, &ev);
+        }
         break;
     case IDUNN_POINTER_PRESS:
     {
@@ -416,7 +441,7 @@ void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, 
  */
 static void collect(idunn_widget_t *w, idunn_widget_t **list, int *count, int max)
 {
-    if (!w || (w->state & IDUNN_DISABLED))
+    if (!w || (w->state & (IDUNN_DISABLED | IDUNN_HIDDEN)))
         return;
     if ((w->flags & IDUNN_FOCUSABLE) && *count < max)
         list[(*count)++] = w;
@@ -464,10 +489,13 @@ void idunn_window_scroll(idunn_window_t *win, int32_t x, int32_t y, int32_t step
     while (w)
     {
         idunn_widget_t *inner = NULL;
+        if ((w->flags & IDUNN_CLIPS) && !gfx_rect_contains(w->rect, x, y))
+            break;
         for (int i = w->child_count - 1; i >= 0 && !inner; i--)
         {
-            if (gfx_rect_contains(w->children[i]->rect, x, y))
-                inner = w->children[i];
+            idunn_widget_t *c = w->children[i];
+            if (!(c->state & IDUNN_HIDDEN) && gfx_rect_contains(c->rect, x, y))
+                inner = c;
         }
         if (!inner)
             break;

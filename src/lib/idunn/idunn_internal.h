@@ -15,6 +15,7 @@
 #define IDUNN_INTERACTIVE 0x02u // it gets hover, presses and clicks
 #define IDUNN_SHRINKS     0x04u // it can be narrower than it wants (text with "...")
 #define IDUNN_TEXT_INPUT  0x08u // it takes typing: the ring shows after a click too
+#define IDUNN_CLIPS       0x10u // its children are drawn and hit only inside its rect
 
 // widget states
 #define IDUNN_HOVER    0x01u
@@ -22,6 +23,7 @@
 #define IDUNN_FOCUSED  0x04u
 #define IDUNN_DISABLED 0x08u
 #define IDUNN_ERROR    0x10u // a field with a wrong value
+#define IDUNN_HIDDEN   0x20u // not drawn, not laid out in a box, no input
 
 typedef enum
 {
@@ -35,6 +37,7 @@ typedef enum
     IDUNN_EV_BLUR,    // it lost the keyboard
     IDUNN_EV_TIMER,   // the time it asked for with idunn_wake came
     IDUNN_EV_PASTE,   // the clipboard text it asked for with idunn_paste: text, length
+    IDUNN_EV_MOTION,  // the pointer moved over it (no button down): x, y
 } idunn_event_type_t;
 
 typedef struct
@@ -70,8 +73,15 @@ typedef struct
     void (*layout)(idunn_widget_t *w);
     /** draw in w->rect; the children are drawn after it */
     void (*draw)(idunn_widget_t *w, gfx_buffer_t *buf);
+    /** draw over the children (a scroll bar), in the same clip as them */
+    void (*draw_over)(idunn_widget_t *w, gfx_buffer_t *buf);
     /** @return true if the widget used the event */
     bool (*event)(idunn_widget_t *w, const idunn_event_t *ev);
+    /**
+     * scroll so that r (a rect of a widget in w) can be seen.
+     * @return where r is after the scroll.
+     */
+    gfx_rect_t (*reveal)(idunn_widget_t *w, gfx_rect_t r);
     /** free w->data */
     void (*free)(idunn_widget_t *w);
 } idunn_class_t;
@@ -251,6 +261,15 @@ void idunn_option_draw_label(idunn_widget_t *w, gfx_buffer_t *buf, int32_t contr
                              const char *label);
 /** the border of check boxes and radios (firmer than inputs in dark mode) */
 gfx_color_t idunn_option_border(const idunn_theme_t *t);
+
+/**
+ * scroll the views w is in so that r (in the window) can be seen: a
+ * focused widget, the current row of a list.
+ */
+void idunn_reveal(idunn_widget_t *w, gfx_rect_t r);
+
+/** true if w and its parents are not hidden */
+bool idunn_shown(const idunn_widget_t *w);
 
 /** the well of a text input: fill, inset shadow, border and ring (text_field.c) */
 void idunn_draw_well(idunn_widget_t *w, gfx_buffer_t *buf);

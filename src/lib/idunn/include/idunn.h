@@ -139,6 +139,28 @@ void idunn_box_set_padding(idunn_widget_t *box, int vertical, int horizontal);
 void idunn_box_set_background(idunn_widget_t *box, idunn_color_t color);
 
 /**
+ * a card: a column on the card colour with a border, the large radius and
+ * a small shadow, 24 pixels inside.
+ * @param gap the space between its children, in units.
+ */
+idunn_widget_t *idunn_card(int gap);
+
+/**
+ * a title and a muted description (or NULL) at the top of a card.
+ */
+void idunn_card_header(idunn_widget_t *card, const char *title, const char *description);
+
+/**
+ * a scroll view: the child can be taller than the view. the view takes
+ * the height it is given (let it grow, or give it a size), as a CSS box
+ * with min-height 0. the wheel, the keys its children do not use and a
+ * thin scroll bar scroll it; Tab scrolls the focus into view.
+ */
+idunn_widget_t *idunn_scroll_view(idunn_widget_t *child);
+int32_t idunn_scroll_view_offset(const idunn_widget_t *view);
+void idunn_scroll_view_scroll_to(idunn_widget_t *view, int32_t offset);
+
+/**
  * empty space that grows (put it between children to push them apart).
  */
 idunn_widget_t *idunn_spacer(void);
@@ -164,6 +186,11 @@ idunn_widget_t *idunn_grow(idunn_widget_t *w, int weight);
  * a size a widget must have, in design pixels (0: its own size).
  */
 void idunn_set_size(idunn_widget_t *w, int32_t width, int32_t height);
+
+/**
+ * a hidden widget is not drawn, takes no room in its box and gets no input.
+ */
+void idunn_set_hidden(idunn_widget_t *w, bool hidden);
 
 /**
  * a disabled widget is drawn at half opacity and gets no input.

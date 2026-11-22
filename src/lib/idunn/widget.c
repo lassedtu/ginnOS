@@ -184,7 +184,61 @@ void idunn_dirty(idunn_widget_t *w)
         return;
     int32_t m = idunn_overdraw(&win->ctx->theme);
     gfx_rect_t r = gfx_rect(w->rect.x - m, w->rect.y - m, w->rect.w + 2 * m, w->rect.h + 2 * m);
+    // a scroll view shows only what is inside it
+    for (const idunn_widget_t *p = w->parent; p; p = p->parent)
+    {
+        if (p->flags & IDUNN_CLIPS)
+            r = gfx_rect_intersect(r, p->rect);
+    }
+    if (gfx_rect_empty(r))
+        return;
     win->damage = gfx_rect_empty(win->damage) ? r : gfx_rect_union(win->damage, r);
+}
+
+static void forget_tree(idunn_widget_t *w)
+{
+    forget(w);
+    w->state &= ~(IDUNN_HOVER | IDUNN_PRESSED | IDUNN_FOCUSED);
+    for (int i = 0; i < w->child_count; i++)
+        forget_tree(w->children[i]);
+}
+
+void idunn_set_hidden(idunn_widget_t *w, bool hidden)
+{
+    if (hidden == ((w->state & IDUNN_HIDDEN) != 0))
+        return;
+    if (hidden)
+    {
+        idunn_dirty(w);
+        forget_tree(w);
+        w->state |= IDUNN_HIDDEN;
+    }
+    else
+    {
+        w->state &= ~IDUNN_HIDDEN;
+    }
+    if (w->parent)
+        idunn_relayout(w->parent);
+    idunn_dirty(w);
+}
+
+bool idunn_shown(const idunn_widget_t *w)
+{
+    for (; w; w = w->parent)
+    {
+        if (w->state & IDUNN_HIDDEN)
+            return false;
+    }
+    return true;
+}
+
+void idunn_reveal(idunn_widget_t *w, gfx_rect_t r)
+{
+    for (idunn_widget_t *p = w->parent; p; p = p->parent)
+    {
+        if (p->cls->reveal)
+            r = p->cls->reveal(p, r);
+    }
 }
 
 void idunn_relayout(idunn_widget_t *w)
