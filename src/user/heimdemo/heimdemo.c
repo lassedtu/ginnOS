@@ -7,7 +7,9 @@
  * each window shows the last key, the text typed into it, the pointer,
  * and a dot where a button was pressed. Ctrl+C puts the text on the
  * clipboard, Ctrl+V adds the clipboard's text, Backspace removes a
- * character. the windows can be resized; the close button closes one,
+ * character. Ctrl+T sends "settings changed (demo)", and a settings event
+ * (also from conf) shows in every window. the windows can be resized; the
+ * close button closes one,
  * and the program ends with its last window.
  */
 
@@ -178,6 +180,8 @@ int main(int argc, char **argv)
                 paste_to = d;
                 heim_clipboard_request(conn);
             }
+            else if (ctrl && k->code == 20) // T: a test of the settings event
+                heim_settings_changed(conn, "demo");
             else if (k->code == KEY_BACKSPACE && d->text[0])
             {
                 // remove one character (and the continuation bytes before it)
@@ -203,6 +207,20 @@ int main(int argc, char **argv)
                 d = paste_to;
             }
             break;
+        case HEIM_EV_SETTINGS:
+            // not about one window: every window shows it
+            for (int i = 0; i < count; i++)
+            {
+                demo_t *each = &demos[i];
+                if (!each->win)
+                    continue;
+                snprintf(each->last_key, sizeof(each->last_key), "settings changed: %s",
+                         ev.msg.settings.name);
+                each->dirty = true;
+                if (!heim_window_busy(each->win))
+                    draw(each);
+            }
+            continue;
         default:
             continue;
         }
