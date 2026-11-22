@@ -12,6 +12,9 @@
 
 #include "syscall.h"
 
+// POSIX: unistd.h declares intptr_t (as in stdint.h, the same type)
+typedef __INTPTR_TYPE__ intptr_t;
+
 /**
  * write bytes to a file descriptor.
  * @param fd file descriptor (1 = stdout, 2 = stderr).
@@ -62,6 +65,19 @@ pid_t fork(void);
  * @return only on failure: -1 (errno set).
  */
 int execve(const char *path, char *const argv[], char *const envp[]);
+
+/**
+ * execve with the environment of the calling process.
+ * @return only on failure: -1 (errno set).
+ */
+int execv(const char *path, char *const argv[]);
+
+/**
+ * execv, but a file name with no '/' is looked for in the directories of
+ * PATH (/bin when PATH is not set).
+ * @return only on failure: -1 (errno set).
+ */
+int execvp(const char *file, char *const argv[]);
 
 /**
  * terminate the current process.
