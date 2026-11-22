@@ -10,9 +10,14 @@
  *
  * the console settings are restored when doom ends, also after a fatal
  * signal, so the shell works again.
+ *
+ * when the desktop runs, doom uses a window of its own instead
+ * (doomgeneric_ginnos_window.c): the frames go to the window, and the
+ * keys come from the window server as Linux key codes.
  */
 
 #include "doomgeneric.h"
+#include "doomgeneric_ginnos_window.h"
 #include "doomkeys.h"
 
 #include <fcntl.h>
@@ -166,8 +171,15 @@ static uint32_t convert_pixel(uint32_t rgb)
            ((b >> (8 - screen_info.blue.length)) << screen_info.blue.offset);
 }
 
+static int windowed; // the frames go to a window of the desktop
+
 void DG_Init(void)
 {
+    if (doom_window_open(DOOMGENERIC_RESX, DOOMGENERIC_RESY))
+    {
+        windowed = 1;
+        return;
+    }
     int fd = open("/dev/fb0", O_RDWR);
     fb_fix_screeninfo_t fix;
     if (fd < 0 || ioctl(fd, FBIOGET_VSCREENINFO, &screen_info) < 0 ||
@@ -233,6 +245,11 @@ void DG_Init(void)
 
 void DG_DrawFrame(void)
 {
+    if (windowed)
+    {
+        doom_window_frame(DG_ScreenBuffer);
+        return;
+    }
     uint32_t width = DOOMGENERIC_RESX * scale;
     int direct = screen_bpp == 4 && screen_info.red.offset == 16 &&
                   screen_info.green.offset == 8 && screen_info.blue.offset == 0;
@@ -328,8 +345,52 @@ static unsigned char doom_key(unsigned char code)
     return key < sizeof(scancode_keys) ? scancode_keys[key] : 0;
 }
 
+/**
+ * the doom key of a Linux key code. below 0x59 the Linux codes are the
+ * scan codes of the table; the keys after them have numbers of their own.
+ */
+static unsigned char doom_key_of_linux(unsigned code)
+{
+    if (code < sizeof(scancode_keys))
+    {
+        return scancode_keys[code];
+    }
+    switch (code)
+    {
+    case 96: return KEY_ENTER;       // keypad enter
+    case 97: return KEY_FIRE;        // right ctrl
+    case 98: return '/';             // keypad /
+    case 100: return KEY_LALT;       // right alt
+    case 102: return KEY_HOME;
+    case 103: return KEY_UPARROW;
+    case 104: return KEY_PGUP;
+    case 105: return KEY_LEFTARROW;
+    case 106: return KEY_RIGHTARROW;
+    case 107: return KEY_END;
+    case 108: return KEY_DOWNARROW;
+    case 109: return KEY_PGDN;
+    case 110: return KEY_INS;
+    case 111: return KEY_DEL;
+    default: return 0;
+    }
+}
+
 int DG_GetKey(int *pressed, unsigned char *key)
 {
+    if (windowed)
+    {
+        unsigned code;
+        while (doom_window_key(pressed, &code))
+        {
+            unsigned char doom = doom_key_of_linux(code);
+            if (doom != 0)
+            {
+                *key = doom;
+                return 1;
+            }
+        }
+        return 0;
+    }
     ginnos_key_event_t event;
     while (read(0, &event, sizeof(event)) == (ssize_t)sizeof(event))
     {
@@ -350,7 +411,10 @@ int DG_GetKey(int *pressed, unsigned char *key)
 
 void DG_SetWindowTitle(const char *title)
 {
-    (void)title;
+    if (windowed)
+    {
+        doom_window_title(title);
+    }
 }
 
 int main(int argc, char **argv)

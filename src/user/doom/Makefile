@@ -33,12 +33,15 @@ LD      := $(CROSS)ld
 ENGINE_WARNINGS := -w
 CFLAGS  := -std=gnu99 -ffreestanding -O2 $(ARCH_CFLAGS) $(TOOLCHAIN_FLAGS) \
            -fno-pie -fno-stack-protector -nostdlib -fno-builtin-malloc \
-           -I$(DG_SRC) -Iinclude -I$(CHOCO)/opl -I$(LIBC_INC) -MMD -MP -DNORMALUNIX -D_DEFAULT_SOURCE -DFEATURE_SOUND
+           -I$(DG_SRC) -Iinclude -I$(CHOCO)/opl -I$(LIBC_INC) -MMD -MP -DNORMALUNIX -D_DEFAULT_SOURCE -DFEATURE_SOUND \
+           -I$(ROOT)/src/lib/heimdall/include -I$(ROOT)/src/lib/gfx/include
 
 LDFLAGS := -T $(USER_LD_SCRIPT) -nostdlib
 
 CRT0    := $(BUILD)/lib/crt0.o
 LIBC    := $(BUILD_ROOT)/libc/libc.a
+# the window of the desktop (doomgeneric_ginnos_window.c)
+WINDOW_LIBS := $(BUILD_ROOT)/lib/libheimdall.a $(BUILD_ROOT)/lib/libgfx.a
 # gcc's helper functions (64-bit division on i686, for example)
 LIBGCC  := $(shell $(CC) $(ARCH_CFLAGS) -print-libgcc-file-name)
 
@@ -64,7 +67,7 @@ CHOCO_SRCS := src/i_oplmusic.c src/midifile.c opl/opl3.c opl/opl_queue.c
 ENGINE_OBJS := $(patsubst %.c,$(OBJDIR)/engine/%.o,$(ENGINE_SRCS))
 CHOCO_OBJS  := $(patsubst %.c,$(OBJDIR)/choco/%.o,$(CHOCO_SRCS))
 PLAT_OBJS   := $(OBJDIR)/doomgeneric_ginnos.o $(OBJDIR)/doomgeneric_ginnos_sound.o \
-               $(OBJDIR)/doomgeneric_ginnos_opl.o
+               $(OBJDIR)/doomgeneric_ginnos_opl.o $(OBJDIR)/doomgeneric_ginnos_window.o
 OBJS        := $(ENGINE_OBJS) $(CHOCO_OBJS) $(PLAT_OBJS)
 
 DEP_FILES := $(OBJS:.o=.d)
@@ -92,8 +95,8 @@ $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wall -Wextra -c $< -o $@
 
-$(TARGET): $(OBJS) $(CRT0) $(LIBC)
+$(TARGET): $(OBJS) $(CRT0) $(LIBC) $(WINDOW_LIBS)
 	@mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIBC) $(LIBGCC)
+	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(WINDOW_LIBS) $(LIBC) $(LIBGCC)
 
 -include $(DEP_FILES)

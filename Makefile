@@ -648,6 +648,7 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs $(if $(filter 1,$(ICONS)),$(ICONS_P
 		mkdir -p $(ROOTFS_STAGING)/usr/share/wallpapers; \
 		cp $(WALLPAPER_OUT) $(ROOTFS_STAGING)/usr/share/wallpapers/default.png; \
 	fi
+	$(if $(filter 1,$(DOOM)),cp src/user/doom/doom.app $(ROOTFS_STAGING)/usr/share/applications/)
 	@if [ "$(DOOM)" = 1 ] && [ -d "$(DOOM_WAD_DIR)" ]; then \
 		for wad in "$(DOOM_WAD_DIR)"/*.[wW][aA][dD]; do \
 			[ -f "$$wad" ] || continue; \
