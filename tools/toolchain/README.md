@@ -53,6 +53,9 @@ Measured on an 8-core Apple Silicon Mac (2026-11-22), x86_64:
 | GCC, the C and C++ compilers | about 12 minutes |
 | libgcc and the install | about 1 minute |
 
+i686 the same way with `build.sh i686`: about 20 minutes in all, from a
+fresh unpack of the sources.
+
 The GCC log shows thousands of warnings from building GCC itself; they
 are normal. The logs are in `build/gcc-<arch>/`.
 
@@ -63,7 +66,8 @@ x86_64-ginnos-gcc -O2 tools/toolchain/test/hello.c -o hello
 ```
 
 Copy `hello` to `tools/ext2/rootfs/bin/` (not in git), `make ARCH=x86_64`,
-boot, and run `hello one two`. It prints
+boot, and run `hello one two` (`i686-ginnos-gcc` and plain `make` for the
+32-bit system). It prints
 `hello from ginnOS: 3 argument(s), hello, 9223372036854775807`.
 
 ## What the toolchain asked of the libc
@@ -83,7 +87,5 @@ find more; note them here.
   static objects do not run yet (step U5 of `plans/userspace-plan.md`).
 - No libstdc++: `x86_64-ginnos-g++` compiles, but C++ programs that use
   the standard library do not link yet (U5).
-- i686: the script and the patches handle it, but it has not been built
-  yet.
 - Our own programs still build with the bare `x86_64-elf-` compiler
   through `src/user/program.mk`; moving them over comes later.
