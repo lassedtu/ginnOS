@@ -91,8 +91,6 @@ static void lock_init_once(void)
     }
 }
 
-/* ---- objects ------------------------------------------------------------- */
-
 static unix_socket_t *socket_new(void)
 {
     unix_socket_t *s = kmalloc(sizeof(*s));
@@ -179,8 +177,6 @@ static void socket_free(unix_socket_t *s)
     kfree(s->buffer);
     kfree(s);
 }
-
-/* ---- the file ------------------------------------------------------------ */
 
 unix_socket_t *unix_socket_of(file_t *file)
 {
@@ -281,8 +277,6 @@ static const file_ops_t socket_file_ops = {
     .poll = socket_poll,
     .release = socket_release,
 };
-
-/* ---- setup --------------------------------------------------------------- */
 
 kerr_t unix_socket_create(uint32_t flags, file_t **out)
 {
@@ -486,8 +480,6 @@ int32_t unix_socket_accept(file_t *listener, uint32_t new_flags, file_t **out)
     *out = file;
     return 0;
 }
-
-/* ---- data ---------------------------------------------------------------- */
 
 /**
  * wait on a socket's queue with the lock held.

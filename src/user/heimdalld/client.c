@@ -48,8 +48,6 @@ static void kill_client(client_t *c, const char *why)
     c->dead = true;
 }
 
-/* ---- sending -------------------------------------------------------------- */
-
 void client_send(client_t *c, const heim_msg_t *msg, int fd)
 {
     if (c->dead)
@@ -127,8 +125,6 @@ void client_flush(client_t *c)
         }
     }
 }
-
-/* ---- the requests --------------------------------------------------------- */
 
 static int take_fd(client_t *c)
 {

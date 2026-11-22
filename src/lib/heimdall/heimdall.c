@@ -52,8 +52,6 @@ struct heim_conn
     char *clipboard; // the text of the last HEIM_EV_CLIPBOARD
 };
 
-/* ---- sending -------------------------------------------------------------- */
-
 /**
  * send one message, with an fd when fd >= 0.
  */
@@ -113,8 +111,6 @@ static void copy_title(char *out, const char *title)
     }
     memcpy(out, title, len);
 }
-
-/* ---- receiving ------------------------------------------------------------ */
 
 /**
  * read what the socket has (or wait for it).
@@ -246,8 +242,6 @@ int heim_next_event(heim_conn_t *conn, heim_event_t *event, int timeout_ms)
     return 1;
 }
 
-/* ---- the connection ------------------------------------------------------- */
-
 heim_conn_t *heim_connect(void)
 {
     heim_conn_t *conn = calloc(1, sizeof(*conn));
@@ -320,8 +314,6 @@ void heim_screen_size(const heim_conn_t *conn, int32_t *width, int32_t *height)
     *width = conn->screen_width;
     *height = conn->screen_height;
 }
-
-/* ---- windows -------------------------------------------------------------- */
 
 bool heim_window_resize(heim_window_t *win, int32_t width, int32_t height)
 {
@@ -464,8 +456,6 @@ void *heim_window_data(const heim_window_t *win)
 {
     return win->data;
 }
-
-/* ---- the clipboard -------------------------------------------------------- */
 
 void heim_clipboard_set(heim_conn_t *conn, const char *text, size_t length)
 {

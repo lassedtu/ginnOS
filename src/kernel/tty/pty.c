@@ -81,8 +81,6 @@ static device_t ptmx_device;
 static const file_ops_t master_ops;
 static const file_ops_t slave_ops;
 
-/* ---- rings ---------------------------------------------------------------- */
-
 static uint32_t ring_room(const ring_t *ring)
 {
     return RING_SIZE - ring->count;
@@ -105,8 +103,6 @@ static uint32_t ring_take(ring_t *ring, uint8_t *out, uint32_t count)
     ring->count -= n;
     return n;
 }
-
-/* ---- the line discipline (all with the lock held) ------------------------ */
 
 static bool canonical(const pty_t *p)
 {
@@ -317,8 +313,6 @@ static bool slave_readable(const pty_t *p)
     return canonical(p) ? p->line_count > 0 : p->input.count > 0;
 }
 
-/* ---- pairs ---------------------------------------------------------------- */
-
 static void default_termios(struct ktermios *t)
 {
     memset(t, 0, sizeof(*t));
@@ -371,8 +365,6 @@ static int32_t wait_on(pty_t *p, file_t *file)
     wait_queue_block_locked_interruptible(&p->waiters, &lock);
     return 0;
 }
-
-/* ---- the ioctls both sides take ------------------------------------------- */
 
 static bool signal_refused(const process_t *proc, int sig)
 {
@@ -456,8 +448,6 @@ static int32_t common_ioctl(pty_t *p, uint32_t request, void *arg)
         return -ENOTTY;
     }
 }
-
-/* ---- the master ----------------------------------------------------------- */
 
 static int32_t master_read(file_t *file, void *buf, uint32_t count)
 {
@@ -692,8 +682,6 @@ static kerr_t ptmx_open(device_t *dev, uint32_t open_flags, file_t **out)
     *out = file;
     return KERR_OK;
 }
-
-/* ---- the slave ------------------------------------------------------------ */
 
 /**
  * job control: a process of the terminal's session that is not in the
@@ -978,8 +966,6 @@ static kerr_t slave_open(device_t *dev, uint32_t open_flags, file_t **out)
     *out = file;
     return KERR_OK;
 }
-
-/* ---- devices -------------------------------------------------------------- */
 
 static const device_ops_t ptmx_ops = {
     .open = ptmx_open,

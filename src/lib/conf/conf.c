@@ -54,8 +54,6 @@ struct conf
     int bad_lines;
 };
 
-/* ---- strings -------------------------------------------------------------- */
-
 static char *copy_span(const char *start, size_t length)
 {
     char *s = malloc(length + 1);
@@ -82,8 +80,6 @@ static void trim(const char **start, const char **end)
     while (*end > *start && isspace((unsigned char)(*end)[-1]))
         (*end)--;
 }
-
-/* ---- lines ---------------------------------------------------------------- */
 
 static void line_free(line_t *line)
 {
@@ -159,8 +155,6 @@ static bool parse_line(line_t *line, const char *text, size_t length, const char
     line->value = copy_span(value, (size_t)(value_end - value));
     return line->section && line->key && line->value;
 }
-
-/* ---- documents ------------------------------------------------------------ */
 
 static void doc_free(doc_t *doc)
 {
@@ -291,8 +285,6 @@ static int section_end(const doc_t *doc, const char *section)
         return last_key;
     return section[0] == '\0' ? last_text : start;
 }
-
-/* ---- opening -------------------------------------------------------------- */
 
 /**
  * read a whole file.
@@ -451,8 +443,6 @@ void conf_free(conf_t *conf)
     free(conf);
 }
 
-/* ---- reading values ------------------------------------------------------- */
-
 const char *conf_get(const conf_t *conf, const char *section, const char *key,
                      const char *fallback)
 {
@@ -533,8 +523,6 @@ uint32_t conf_get_color(const conf_t *conf, const char *section, const char *key
         return 0xFF000000u | value;
     return value >> 8 | value << 24; // rrggbbaa to aarrggbb
 }
-
-/* ---- changing values ------------------------------------------------------ */
 
 static bool has_line_break(const char *s)
 {
@@ -677,8 +665,6 @@ int conf_unset(conf_t *conf, const char *section, const char *key)
         doc_remove(&conf->user, at);
     return 0;
 }
-
-/* ---- writing -------------------------------------------------------------- */
 
 char *conf_user_text(const conf_t *conf)
 {

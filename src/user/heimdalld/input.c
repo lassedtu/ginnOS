@@ -49,8 +49,6 @@ bool input_init(void)
     return true;
 }
 
-/* ---- the pointer ---------------------------------------------------------- */
-
 static void send_pointer(window_t *w, uint16_t kind, uint16_t button, int32_t value)
 {
     gfx_rect_t c = window_content(w);
@@ -327,8 +325,6 @@ static void scroll(int32_t steps)
         send_pointer(w, HEIM_POINTER_SCROLL, 0, steps);
 }
 
-/* ---- the keyboard --------------------------------------------------------- */
-
 static uint32_t mod_of(uint16_t code)
 {
     switch (code)
@@ -428,8 +424,6 @@ static void key(uint16_t code, int32_t value)
         msg.key.text[0] = key_char(code);
     client_send_window(S.focus, &msg);
 }
-
-/* ---- reading -------------------------------------------------------------- */
 
 static void event(const input_event_t *e)
 {

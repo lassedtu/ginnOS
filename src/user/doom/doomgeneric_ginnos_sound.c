@@ -300,7 +300,7 @@ sound_module_t DG_sound_module = {
     sound_cache,
 };
 
-/* ---- music: Chocolate Doom's OPL music player ------------------------ */
+// music: Chocolate Doom's OPL music player
 
 extern music_module_t music_opl_module;
 

@@ -91,8 +91,6 @@ static struct termios saved_settings;
 static int settings_saved;
 static int console_fd = 1; // the console, after stdout goes to /dev/null
 
-/* ---- the console ---------------------------------------------------------- */
-
 static void restore_console(void)
 {
     if (settings_saved)
@@ -153,8 +151,6 @@ static void setup_console(void)
         close(null_fd);
     }
 }
-
-/* ---- the framebuffer ------------------------------------------------------ */
 
 /**
  * a 0x00RRGGBB pixel in the framebuffer's channel layout.
@@ -269,8 +265,6 @@ void DG_DrawFrame(void)
     }
 }
 
-/* ---- time ----------------------------------------------------------------- */
-
 void DG_SleepMs(uint32_t ms)
 {
     struct timespec span = {(time_t)(ms / 1000), (long)(ms % 1000) * 1000000L};
@@ -283,8 +277,6 @@ uint32_t DG_GetTicksMs(void)
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000);
 }
-
-/* ---- keys ----------------------------------------------------------------- */
 
 // set 1 scan codes (without 0xE0) to doom keys, by the US key positions
 static const unsigned char scancode_keys[0x59] = {
@@ -350,8 +342,6 @@ void DG_SetWindowTitle(const char *title)
 {
     (void)title;
 }
-
-/* ---- main ----------------------------------------------------------------- */
 
 int main(int argc, char **argv)
 {

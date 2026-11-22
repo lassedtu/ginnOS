@@ -65,8 +65,6 @@ static uint32_t volume = DEFAULT_VOLUME;
 static device_t dsp_device;
 static device_t mixer_device;
 
-/* ---- formats ------------------------------------------------------------- */
-
 /**
  * bytes per frame in the program's format.
  */
@@ -115,8 +113,6 @@ static void ring_put_frames(const uint8_t *src, uint32_t frames)
     }
     ring_count += frames * FRAME_BYTES;
 }
-
-/* ---- the device ---------------------------------------------------------- */
 
 /**
  * bytes to queue before the device starts: all its periods and one more.
@@ -235,8 +231,6 @@ uint32_t audio_pull(audio_device_t *dev, void *dst, uint32_t bytes)
     poll_notify();
     return take;
 }
-
-/* ---- /dev/dsp ------------------------------------------------------------ */
 
 static int32_t dsp_write(file_t *file, const void *buf, uint32_t count)
 {
@@ -461,8 +455,6 @@ static const device_ops_t dsp_ops = {
     .open = dsp_open,
 };
 
-/* ---- /dev/mixer ---------------------------------------------------------- */
-
 static void apply_volume(void)
 {
     if (device->ops->set_volume)
@@ -506,8 +498,6 @@ static int32_t mixer_ioctl(device_t *dev, uint32_t request, void *arg)
 static const device_ops_t mixer_ops = {
     .ioctl = mixer_ioctl,
 };
-
-/* ---- registration -------------------------------------------------------- */
 
 static void add_device(device_t *dev, const char *name, const device_ops_t *ops)
 {
