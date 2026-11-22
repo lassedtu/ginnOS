@@ -359,7 +359,7 @@ static void canvas_frame(idunn_widget_t *canvas, void *data)
     if (vt->title_changed)
     {
         vt->title_changed = false;
-        idunn_window_set_title(M.win, vt->title[0] ? vt->title : "Terminal");
+        idunn_window_set_title(M.win, vt->title[0] ? vt->title : "mimir");
     }
     vt->bell = false;
     int scrolled = vt->scrolled;
@@ -962,7 +962,7 @@ int main(int argc, char **argv)
     // 80 by 24 cells, in design pixels
     int32_t width = (80 * M.cw + 2 * M.pad + M.scale - 1) / M.scale;
     int32_t height = (24 * M.ch + 2 * M.pad + M.scale - 1) / M.scale;
-    M.win = idunn_window_new(M.app, "Terminal", width, height);
+    M.win = idunn_window_new(M.app, "mimir", width, height);
     if (!M.win)
         return 1;
     static const idunn_canvas_hooks_t hooks = {canvas_draw, canvas_input, canvas_resize,
