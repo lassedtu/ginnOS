@@ -229,9 +229,11 @@ static void present(idunn_window_t *win, uint32_t now)
     idunn_window_tick(win, now);
     if (heim_window_busy(heim))
         return;
-    gfx_rect_t damage = idunn_window_draw(win);
-    if (!gfx_rect_empty(damage))
-        heim_window_commit(heim, damage);
+    // each part apart, so two far apart changes do not send all between
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX];
+    int count = idunn_window_draw_parts(win, parts);
+    for (int i = 0; i < count; i++)
+        heim_window_commit(heim, parts[i]);
 }
 
 static void pointer(idunn_window_t *win, const heim_event_t *ev)

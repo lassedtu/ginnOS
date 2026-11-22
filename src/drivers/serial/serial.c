@@ -15,7 +15,13 @@ enum
     UART_LINE_CTRL = 3,     // line control (word length, DLAB)
     UART_MODEM_CTRL = 4,    // modem control
     UART_LINE_STATUS = 5,   // line status
+    UART_SCRATCH = 7,       // a byte the UART keeps; no UART, no byte
 };
+
+// many machines have no serial port: then nothing is written, and a port
+// that never says it is ready does not stop the boot
+static bool present;
+#define TX_WAIT_LOOPS 100000
 
 // selected register bit values.
 enum
@@ -30,6 +36,18 @@ enum
 
 void serial_initialize(void)
 {
+    io_outb(COM1_PORT + UART_SCRATCH, 0x5A);
+    if (io_inb(COM1_PORT + UART_SCRATCH) != 0x5A)
+    {
+        return;
+    }
+    io_outb(COM1_PORT + UART_SCRATCH, 0xA5);
+    if (io_inb(COM1_PORT + UART_SCRATCH) != 0xA5)
+    {
+        return;
+    }
+    present = true;
+
     // disable UART interrupts: this driver is polling-only.
     io_outb(COM1_PORT + UART_INT_ENABLE, 0x00);
 
@@ -53,14 +71,21 @@ void serial_initialize(void)
  */
 static void wait_for_tx_ready(void)
 {
-    while ((io_inb(COM1_PORT + UART_LINE_STATUS) & LINE_STATUS_TX_EMPTY) == 0)
+    for (int i = 0; i < TX_WAIT_LOOPS; i++)
     {
-        // busy-wait: transmit is fast and this path is debug-only.
+        if (io_inb(COM1_PORT + UART_LINE_STATUS) & LINE_STATUS_TX_EMPTY)
+        {
+            return;
+        }
     }
 }
 
 void serial_putchar(char c)
 {
+    if (!present)
+    {
+        return;
+    }
     // translate newlines so serial terminals advance and return correctly.
     if (c == '\n')
     {

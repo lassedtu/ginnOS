@@ -24,6 +24,7 @@
 #include "xhci.h"
 
 #include "arch/arch.h"
+#include "arch/x86/cpu/io.h"
 #include "common/memory.h"
 #include "drivers/keyboard/keyboard.h"
 #include "drivers/pci/pci.h"
@@ -36,8 +37,8 @@
 #include "kernel/memory/pmm.h"
 #include "kernel/time/timer.h"
 
-#define MAX_CONTROLLERS 2
-#define MAX_HID_DEVICES   4
+#define MAX_CONTROLLERS 4
+#define MAX_HID_DEVICES   8
 #define RING_TRBS       256 // one page of TRBs; the last one is the link TRB
 #define SPIN_LIMIT      50000000u
 
@@ -72,6 +73,7 @@
 #define PORT_RESET_DONE (1u << 21)
 #define PORT_CHANGE_BITS 0x00FE0000u // the write-1-to-clear change bits
 #define PORT_SPEED(v)   (((v) >> 10) & 0xFu)
+#define HCC1_PORT_POWER (1u << 3) // the ports have power switches (PPC)
 
 #define SPEED_FULL  1
 #define SPEED_LOW   2
@@ -855,10 +857,24 @@ static uint32_t xhci_interval(uint32_t speed, uint8_t interval)
     return n;
 }
 
+static bool setup_steps(xhci_t *hc, uint32_t port, uint32_t speed, const char **step);
+
 static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
+{
+    const char *step = "slot";
+    bool ok = setup_steps(hc, port, speed, &step);
+    if (!ok)
+    {
+        KLOG_WARN("xhci: port %u: not used (%s)", port + 1, step);
+    }
+    return ok;
+}
+
+static bool setup_steps(xhci_t *hc, uint32_t port, uint32_t speed, const char **step)
 {
     if (hid_count >= MAX_HID_DEVICES)
     {
+        *step = "too many input devices";
         return false;
     }
     hid_device_t *hid = &hid_devices[hid_count];
@@ -890,6 +906,7 @@ static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
     ep0[3] = (uint32_t)((uint64_t)hid->ep0.phys >> 32);
     ep0[4] = 8; // average TRB length
 
+    *step = "address";
     if (run_command(hc, hid->page_phys + PAGE_INPUT,
                     TRB_TYPE(TRB_ADDRESS_DEV) | ((uint32_t)hid->slot << 24),
                     NULL) != COMPLETION_SUCCESS)
@@ -900,6 +917,7 @@ static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
     // the first 8 bytes of the device descriptor give the real endpoint 0
     // packet size (full speed devices can have 8 to 64)
     uint8_t *data = hid->page + PAGE_DATA;
+    *step = "device descriptor";
     if (!control(hid, 0x80, 6, 0x0100, 0, 8))
     {
         return false;
@@ -914,7 +932,20 @@ static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
                     TRB_TYPE(TRB_EVALUATE_CTX) | ((uint32_t)hid->slot << 24), NULL);
     }
 
+    // the whole device descriptor, for the log
+    if (control(hid, 0x80, 6, 0x0100, 0, 18))
+    {
+        KLOG_INFO("xhci: port %u: device %04x:%04x, class %u, speed %u", port + 1,
+                  data[8] | (data[9] << 8), data[10] | (data[11] << 8), data[4], speed);
+        if (data[4] == 9)
+        {
+            *step = "a USB hub; hubs are not supported yet";
+            return false;
+        }
+    }
+
     // the configuration descriptor: first its length, then all of it
+    *step = "configuration";
     if (!control(hid, 0x80, 6, 0x0200, 0, 9))
     {
         return false;
@@ -933,8 +964,10 @@ static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
     hid_interface_t found;
     if (!find_hid(data, total, &found))
     {
-        return false; // no HID interface: leave the slot as it is
+        *step = "no keyboard or pointer interface";
+        return false; // leave the slot as it is
     }
+    *step = "HID setup";
     uint8_t interface = found.interface;
     uint8_t endpoint = found.endpoint;
     uint16_t max_packet = found.packet;
@@ -971,6 +1004,7 @@ static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
     }
 
     // configure the interrupt IN endpoint
+    *step = "endpoint";
     if (!ring_init(&hid->interrupt))
     {
         return false;
@@ -1003,6 +1037,18 @@ static bool setup_device(xhci_t *hc, uint32_t port, uint32_t speed)
 }
 
 /**
+ * wait about ms milliseconds. interrupts are off during boot, so the timer
+ * does not run; a write to port 0x80 takes about a microsecond.
+ */
+static void delay_ms(uint32_t ms)
+{
+    for (uint32_t i = 0; i < ms * 1000u; i++)
+    {
+        io_wait();
+    }
+}
+
+/**
  * reset a port with a device so it is enabled. USB 3 ports enable
  * themselves; USB 2 ports need a reset.
  * @return the port speed, or 0 if the port is not usable.
@@ -1026,9 +1072,11 @@ static uint32_t reset_port(xhci_t *hc, uint32_t port)
         }
         value = rd32(hc->op, reg);
         wr32(hc->op, reg, (value & ~(PORT_CHANGE_BITS | PORT_ENABLED)) | PORT_RESET_DONE);
+        delay_ms(20); // the reset recovery time a device may need
         value = rd32(hc->op, reg);
         if (!(value & PORT_ENABLED))
         {
+            KLOG_WARN("xhci: port %u: a device, but the port does not come up", port + 1);
             return 0;
         }
     }
@@ -1199,10 +1247,18 @@ uint32_t xhci_init(void)
         }
         controller_count++;
 
-        // give the ports time to see their devices after the reset
-        for (volatile uint32_t spin = 0; spin < 2000000u; spin++)
+        // ports with power switches are off after the reset: power them,
+        // then give the devices time to connect (power on, debounce)
+        if (rd32(hc->cap, CAP_HCC1) & HCC1_PORT_POWER)
         {
+            for (uint32_t port = 0; port < hc->ports; port++)
+            {
+                uint32_t reg = OP_PORTS + port * 0x10;
+                uint32_t value = rd32(hc->op, reg);
+                wr32(hc->op, reg, (value & ~(PORT_CHANGE_BITS | PORT_ENABLED)) | PORT_POWER);
+            }
         }
+        delay_ms(200);
 
         for (uint32_t port = 0; port < hc->ports; port++)
         {

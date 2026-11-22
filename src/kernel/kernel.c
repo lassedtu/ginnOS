@@ -222,6 +222,7 @@ void kernel_main(boot_info_t *boot)
     device_registry_init();
     null_devices_init();
     input_init();
+    klog_device_init();
     pty_init();
 
     hal_initialize();
@@ -251,6 +252,23 @@ void kernel_main(boot_info_t *boot)
     // likewise the MMIO window (the framebuffer is mapped into it next)
     mmio_init();
 
+    // the screen as early as it can be: the linear framebuffer (if the
+    // bootloader set a graphics mode; it lives above the direct map, so
+    // after paging_init and mmio_init), then the console on it, else the
+    // VGA text buffer. until init starts, the kernel log is shown there
+    // too, so a machine with no serial port shows where a boot stops.
+    fb_init(boot);
+    console_initialize(boot);
+    stdio_set_putchar(console_putchar);
+    klog_set_echo(console_putchar);
+    printf("Kernel: entered C main (%s)\r\n", ARCH_NAME);
+    if (fb_available())
+    {
+        const fb_info_t *info = fb_get_info();
+        KLOG_INFO("fb: %ux%u, %u bpp, at %llx", info->width, info->height, info->bpp,
+                  (unsigned long long)info->phys);
+    }
+
     // the PCI devices, for the drivers of controllers that are not legacy
     // ISA devices (AHCI, NVMe)
     pci_init();
@@ -275,21 +293,10 @@ void kernel_main(boot_info_t *boot)
         ac97_init();
     }
 
-    // bring up the linear framebuffer (if the bootloader set a graphics mode).
-    // must follow paging_init: the LFB lives above identity-mapped RAM.
-    fb_init(boot);
-
-    // a display driver that can change the mode takes over the screen,
-    // at the size the screen wants, before the console sizes its text grid
+    // a display driver that can change the mode takes over the screen, at
+    // the size the screen wants (the console keeps its text grid)
     display_init();
     virtio_gpu_init();
-
-    // bring up the console now that the framebuffer (if any) is mapped. it
-    // picks the framebuffer backend when present, else the VGA text buffer.
-    // serial klog has covered diagnostics up to this point.
-    console_initialize(boot);
-    stdio_set_putchar(console_putchar);
-    printf("Kernel: entered C main (%s)\r\n", ARCH_NAME);
 
     syscall_initialize();
 
@@ -364,6 +371,7 @@ void kernel_main(boot_info_t *boot)
     // start init as PID 1 through the normal scheduler path. it has no
     // parent; if it ever exits, usermode_exit halts the system. without
     // /bin/init, the shell is PID 1 itself.
+    klog_set_echo(NULL); // from here, the screen belongs to the programs
     const char *init_argv[] = {"init", NULL};
     const char *shell_argv[] = {"sh", NULL};
     if (exec_program("/bin/init", init_argv) >= 0)

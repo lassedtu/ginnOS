@@ -149,6 +149,15 @@ static bool near_bar(const idunn_widget_t *w, int32_t x)
     return most(w) > 0 && x >= w->rect.x + w->rect.w - idunn_px(idunn_theme(w), NEAR);
 }
 
+/**
+ * the strip the bar is drawn in, at its widest.
+ */
+static gfx_rect_t bar_strip(idunn_widget_t *w)
+{
+    int32_t width = idunn_px(idunn_theme(w), BAR_NEAR + 2 * INSET);
+    return gfx_rect(w->rect.x + w->rect.w - width, w->rect.y, width, w->rect.h);
+}
+
 static bool scroll_key(idunn_widget_t *w, const idunn_event_t *ev)
 {
     if (ev->mods & (IDUNN_MOD_CTRL | IDUNN_MOD_ALT))
@@ -189,7 +198,7 @@ static bool scroll_event(idunn_widget_t *w, const idunn_event_t *ev)
         if (near_bar(w, ev->x) != s->near)
         {
             s->near = !s->near;
-            idunn_dirty(w);
+            idunn_dirty_rect(w, bar_strip(w));
         }
         return true;
     case IDUNN_EV_PRESS:
@@ -201,7 +210,7 @@ static bool scroll_event(idunn_widget_t *w, const idunn_event_t *ev)
         {
             s->dragging = true;
             s->grab = ev->y - thumb.y;
-            idunn_dirty(w);
+            idunn_dirty_rect(w, bar_strip(w));
         }
         else
         {
@@ -227,7 +236,7 @@ static bool scroll_event(idunn_widget_t *w, const idunn_event_t *ev)
         if (s->dragging)
         {
             s->dragging = false;
-            idunn_dirty(w);
+            idunn_dirty_rect(w, bar_strip(w));
         }
         return true;
     default:
@@ -265,6 +274,7 @@ static const idunn_class_t scroll_class = {
     .draw_over = scroll_draw_over,
     .event = scroll_event,
     .reveal = scroll_reveal,
+    .hover_area = bar_strip,
     .free = scroll_free,
 };
 

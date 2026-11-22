@@ -62,6 +62,9 @@ typedef struct
     uint32_t rsdp_size;
     uint8_t rsdp[36];
 
+    // bits 32 to 63 of the framebuffer address: on UEFI machines it is
+    // often above 4 GiB (only a 64-bit kernel can use that)
+    uint32_t framebuffer_addr_high;
 } boot_info_t;
 
 #define BOOT_PROTOCOL_STAGE2     0 // the custom BIOS bootloader (src/bootloader)

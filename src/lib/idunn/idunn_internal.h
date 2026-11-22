@@ -25,6 +25,17 @@
 #define IDUNN_ERROR    0x10u // a field with a wrong value
 #define IDUNN_HIDDEN   0x20u // not drawn, not laid out in a box, no input
 
+#define IDUNN_DAMAGE_MAX 8 // damaged rects a window keeps apart
+
+/** add a rect of the window that must be drawn again */
+void idunn_window_add_damage(idunn_window_t *win, gfx_rect_t r);
+
+/**
+ * lay out and draw what changed, part by part.
+ * @return how many parts were drawn (in parts).
+ */
+int idunn_window_draw_parts(idunn_window_t *win, gfx_rect_t parts[IDUNN_DAMAGE_MAX]);
+
 typedef enum
 {
     IDUNN_EV_CLICK,   // a press and a release on the widget (or Enter or Space)
@@ -82,6 +93,12 @@ typedef struct
      * @return where r is after the scroll.
      */
     gfx_rect_t (*reveal)(idunn_widget_t *w, gfx_rect_t r);
+    /**
+     * the part of w that looks different when the pointer comes or goes
+     * (optional: all of w). a large widget that shows hover in a small
+     * part (a scroll bar, a list row) is then not drawn again whole.
+     */
+    gfx_rect_t (*hover_area)(idunn_widget_t *w);
     /** free w->data */
     void (*free)(idunn_widget_t *w);
 } idunn_class_t;
@@ -135,7 +152,9 @@ struct idunn_window
     bool focus_visible;      // the focus ring shows (after a key, not a click)
     bool needs_layout;
     bool animating;          // a transition runs: draw the next frame too
-    gfx_rect_t damage;       // what must be drawn again
+    gfx_rect_t damage;       // what must be drawn again: all of it
+    gfx_rect_t damage_list[IDUNN_DAMAGE_MAX]; // and in parts (far apart ones stay apart)
+    int damage_count;
     uint32_t now;            // ms, for transitions
     uint32_t cursor;         // the pointer shape now
 

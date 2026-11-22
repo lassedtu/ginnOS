@@ -148,6 +148,18 @@ typedef struct
     gfx_rect_t damage[DAMAGE_MAX];
     int damage_count;
 
+    // statistics (-s): sent to /dev/kmsg every 2 seconds
+    struct
+    {
+        int fd; // 0: off
+        uint32_t since; // ms
+        uint32_t frames;
+        uint64_t pixels;
+        uint64_t compose_us;
+        uint64_t present_us;
+        uint64_t flush_us;
+    } stats;
+
     // windows and clients
     window_t *bottom;
     window_t *top;

@@ -45,6 +45,18 @@ typedef enum
 void klog_init(void);
 
 /**
+ * register /dev/kmsg: each line a program writes becomes an info line in
+ * the log (on the serial port). call once the device registry is up.
+ */
+void klog_device_init(void);
+
+/**
+ * also write every log line with this function (the console during boot),
+ * or stop with NULL.
+ */
+void klog_set_echo(void (*putchar)(char c));
+
+/**
  * write a level-tagged, formatted log line to the serial port.
  * appends a trailing newline. prefer the KLOG_* macros over this.
  * @param level severity of the message.
