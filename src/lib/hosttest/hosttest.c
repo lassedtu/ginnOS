@@ -128,6 +128,45 @@ void hosttest_golden(const char *name, const uint8_t *rgb, int width, int height
     free(golden);
 }
 
+void hosttest_compare(const char *name, const uint8_t *rgb, const uint8_t *ref, int width,
+                      int height, int limit, double mean_limit)
+{
+    size_t size = (size_t)width * (size_t)height * 3;
+    uint8_t *diff = malloc(size);
+    int largest = 0;
+    long total = 0;
+    for (size_t i = 0; i < size; i++)
+    {
+        int d = rgb[i] > ref[i] ? rgb[i] - ref[i] : ref[i] - rgb[i];
+        if (d > largest)
+            largest = d;
+        total += d;
+        if (diff)
+            diff[i] = (uint8_t)(d * 8 > 255 ? 255 : d * 8);
+    }
+    char path[512];
+    snprintf(path, sizeof(path), "%s.ppm", name);
+    write_ppm(path, rgb, width, height);
+    snprintf(path, sizeof(path), "%s-ref.ppm", name);
+    write_ppm(path, ref, width, height);
+    if (diff)
+    {
+        snprintf(path, sizeof(path), "%s-diff.ppm", name);
+        write_ppm(path, diff, width, height);
+        free(diff);
+    }
+
+    double mean = size ? (double)total / (double)size : 0;
+    printf("  compare %-10s largest %3d (limit %3d), mean %.2f (limit %.2f)\n", name, largest,
+           limit, mean, mean_limit);
+    checks++;
+    if (largest > limit || mean > mean_limit)
+    {
+        failures++;
+        printf("  FAIL compare %s: over the limit\n", name);
+    }
+}
+
 int hosttest_done(const char *suite)
 {
     printf("%s: %d checks, %d failed\n", suite, checks, failures);

@@ -12,6 +12,7 @@
 
 #include "heimdalld.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -46,8 +47,6 @@ static void kill_client(client_t *c, const char *why)
         printf("heimdalld: a client is disconnected: %s\n", why);
     c->dead = true;
 }
-
-/* ---- sending -------------------------------------------------------------- */
 
 void client_send(client_t *c, const heim_msg_t *msg, int fd)
 {
@@ -126,8 +125,6 @@ void client_flush(client_t *c)
         }
     }
 }
-
-/* ---- the requests --------------------------------------------------------- */
 
 static int take_fd(client_t *c)
 {
@@ -286,6 +283,34 @@ static void clip_get(client_t *c)
     client_send(c, &msg, fd);
 }
 
+/**
+ * a settings file changed: tell every client (the one that changed it
+ * too). a name that libconf would not open is a protocol error.
+ */
+static void settings_changed(client_t *c, heim_msg_t *msg)
+{
+    char *name = msg->settings.name;
+    name[HEIM_SETTINGS_MAX - 1] = '\0';
+    bool good = name[0] != '\0';
+    for (const char *p = name; *p; p++)
+        good = good && (isalnum((unsigned char)*p) || *p == '-' || *p == '_');
+    if (!good)
+    {
+        kill_client(c, "a bad settings name");
+        return;
+    }
+    heim_msg_t event = {0};
+    event.type = HEIM_EV_SETTINGS;
+    memcpy(event.settings.name, name, sizeof(event.settings.name));
+    // a client that is killed here (its queue is full) stays on the list
+    // until client_reap, so the walk is safe
+    for (client_t *other = S.clients; other; other = other->next)
+    {
+        if (other->hello)
+            client_send(other, &event, -1);
+    }
+}
+
 static void handle(client_t *c, heim_msg_t *msg)
 {
     if (!c->hello)
@@ -319,6 +344,9 @@ static void handle(client_t *c, heim_msg_t *msg)
         return;
     case HEIM_REQ_CLIP_GET:
         clip_get(c);
+        return;
+    case HEIM_REQ_SETTINGS:
+        settings_changed(c, msg);
         return;
     default:
         break;

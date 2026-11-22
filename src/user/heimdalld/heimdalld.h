@@ -189,13 +189,13 @@ typedef struct
 
 extern server_t S;
 
-/* ---- screen.c ------------------------------------------------------------- */
+// in screen.c
 
 bool screen_init(const char *wallpaper);
 void screen_damage(gfx_rect_t r);
 void screen_compose(void);
 
-/* ---- window.c ------------------------------------------------------------- */
+// in window.c
 
 void window_init(void);
 window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title);
@@ -220,7 +220,7 @@ void window_configure(window_t *w, int32_t width, int32_t height);
 window_t *window_at(int32_t x, int32_t y, part_t *part, uint32_t *edges);
 void window_cycle(void);
 
-/* ---- client.c ------------------------------------------------------------- */
+// in client.c
 
 void client_accept(int listen_fd);
 void client_read(client_t *c);
@@ -229,13 +229,13 @@ void client_send(client_t *c, const heim_msg_t *msg, int fd);
 void client_send_window(window_t *w, heim_msg_t *msg);
 void client_reap(void);
 
-/* ---- input.c -------------------------------------------------------------- */
+// in input.c
 
 bool input_init(void);
 void input_read(void);
 void input_pointer_update(void);
 
-/* ---- cursor.c ------------------------------------------------------------- */
+// in cursor.c
 
 void cursor_init(void);
 gfx_rect_t cursor_rect(uint32_t shape, int32_t x, int32_t y);

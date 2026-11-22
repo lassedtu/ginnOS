@@ -61,8 +61,6 @@ void window_init(void)
     }
 }
 
-/* ---- geometry ------------------------------------------------------------- */
-
 bool window_decorated(const window_t *w)
 {
     return !(w->flags & HEIM_WINDOW_UNDECORATED);
@@ -107,8 +105,6 @@ static bool rounded(const window_t *w)
 {
     return window_decorated(w) && !w->maximized;
 }
-
-/* ---- the title bar -------------------------------------------------------- */
 
 /**
  * where a title bar button is, in the bar (0: close, 1: maximize or
@@ -183,8 +179,6 @@ static void draw_bar(window_t *w)
     draw_button(w, PART_CLOSE, S.icon_close, focused);
     w->bar_dirty = false;
 }
-
-/* ---- drawing -------------------------------------------------------------- */
 
 /**
  * blend a part of the shadow picture over the screen. a part one pixel
@@ -308,8 +302,6 @@ void window_draw(window_t *w, gfx_rect_t clip)
     draw_content(w, clip);
 }
 
-/* ---- the window list ------------------------------------------------------ */
-
 window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title)
 {
     window_t *w = calloc(1, sizeof(*w));
@@ -385,8 +377,6 @@ window_t *window_find(client_t *client, uint32_t id)
             return w;
     return NULL;
 }
-
-/* ---- states --------------------------------------------------------------- */
 
 void window_raise(window_t *w)
 {
@@ -561,8 +551,6 @@ void window_cycle(void)
     window_damage(w);
     input_pointer_update();
 }
-
-/* ---- hit testing ---------------------------------------------------------- */
 
 window_t *window_at(int32_t x, int32_t y, part_t *part, uint32_t *edges)
 {

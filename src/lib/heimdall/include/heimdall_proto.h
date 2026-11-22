@@ -31,10 +31,11 @@
 #define HEIM_SOCKET "/run/heimdall"
 #define HEIM_PROTOCOL_VERSION 1
 #define HEIM_TITLE_MAX 40
+
+// the longest settings name (libconf: /etc/ginnos/<name>.conf), with the 0
+#define HEIM_SETTINGS_MAX 48
 #define HEIM_SIZE_MAX 8192
 #define HEIM_CLIPBOARD_MAX (1024 * 1024)
-
-/* ---- requests, client to server ------------------------------------------- */
 
 #define HEIM_REQ_HELLO    1 // hello: the protocol version
 #define HEIM_REQ_CREATE   2 // create: size, flags, title
@@ -45,8 +46,7 @@
 #define HEIM_REQ_DESTROY  7
 #define HEIM_REQ_CLIP_SET 8 // clip: the length; with an fd of the text when not 0
 #define HEIM_REQ_CLIP_GET 9 // answered with HEIM_EV_CLIPBOARD
-
-/* ---- events, server to client --------------------------------------------- */
+#define HEIM_REQ_SETTINGS 10 // settings: a settings file changed; all clients are told
 
 #define HEIM_EV_WELCOME   64 // size: the screen
 #define HEIM_EV_CONFIGURE 65 // configure: the size the window should get
@@ -56,8 +56,7 @@
 #define HEIM_EV_POINTER   69 // pointer
 #define HEIM_EV_FRAME     70 // the last commit is on the screen
 #define HEIM_EV_CLIPBOARD 71 // clip: the length; with an fd of the text when not 0
-
-/* ---- values --------------------------------------------------------------- */
+#define HEIM_EV_SETTINGS  72 // settings: the settings file that changed (read it again)
 
 // create flags
 #define HEIM_WINDOW_RESIZABLE   0x01 // the user can resize it
@@ -146,6 +145,10 @@ typedef struct
         {
             uint32_t length; // bytes of UTF-8 text
         } clip;
+        struct
+        {
+            char name[HEIM_SETTINGS_MAX]; // "theme"
+        } settings;
         struct
         {
             int32_t width;

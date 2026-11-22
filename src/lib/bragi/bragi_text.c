@@ -76,43 +76,61 @@ static const char *end_of(const char *text, int32_t length)
 }
 
 /**
- * walk a line of text: the pen moves by advances and kerning (1/64 px).
- * with buf, the glyphs are drawn too.
+ * a walk along a line of text: the pen moves by kerning before a glyph,
+ * and by its advance and the tracking after it (all in 1/64 pixels).
+ */
+typedef struct
+{
+    bragi_face_t *face;       // the face asked for
+    int32_t pen;
+    bragi_face_t *glyph_face; // the face and the glyph of the last character
+    int glyph;
+} walk_t;
+
+static void walk_glyph(walk_t *w, uint32_t c)
+{
+    int glyph;
+    bragi_face_t *f = bragi_find_glyph(w->face, c, &glyph);
+    if (f == w->glyph_face)
+        w->pen += bragi_kerning(f, w->glyph, glyph);
+    w->glyph_face = f;
+    w->glyph = glyph;
+}
+
+static void walk_advance(walk_t *w)
+{
+    w->pen += bragi_advance(w->glyph_face, w->glyph) + w->face->tracking;
+}
+
+/**
+ * walk a line of text; with buf, the glyphs are drawn too.
  * @return the pen's end position in 1/64 pixels.
  */
 static int32_t run(gfx_buffer_t *buf, bragi_face_t *face, int32_t pen, int32_t baseline,
                    const char *text, const char *end, gfx_color_t color)
 {
-    bragi_face_t *prev_face = NULL;
-    int prev_glyph = 0;
+    walk_t w = {face, pen, NULL, 0};
     while (text < end)
     {
-        uint32_t c = bragi_utf8_next(&text, end);
-        int glyph;
-        bragi_face_t *f = bragi_find_glyph(face, c, &glyph);
-        if (f == prev_face)
-            pen += bragi_kerning(f, prev_glyph, glyph);
-
+        walk_glyph(&w, bragi_utf8_next(&text, end));
         if (buf)
         {
             // the whole pixel and the nearest quarter
-            int32_t px = pen >> 6;
-            int32_t sub = ((pen & 63) * BRAGI_SUBPIXELS + 32) >> 6;
+            int32_t px = w.pen >> 6;
+            int32_t sub = ((w.pen & 63) * BRAGI_SUBPIXELS + 32) >> 6;
             if (sub == BRAGI_SUBPIXELS)
             {
                 px++;
                 sub = 0;
             }
-            const bragi_glyph_t *g = bragi_glyph(f, glyph, sub);
+            const bragi_glyph_t *g = bragi_glyph(w.glyph_face, w.glyph, sub);
             if (g && g->mask)
                 bragi_blend_mask(buf, px + g->left, baseline + g->top, g->mask, g->width,
                                  g->height, g->width, color);
         }
-        pen += bragi_advance(f, glyph);
-        prev_face = f;
-        prev_glyph = glyph;
+        walk_advance(&w);
     }
-    return pen;
+    return w.pen;
 }
 
 static int32_t units_to_pixels(int32_t units)
@@ -132,7 +150,33 @@ int32_t bragi_draw(gfx_buffer_t *buf, bragi_face_t *face, int32_t x, int32_t bas
     return units_to_pixels(pen - x * BRAGI_UNITS);
 }
 
-/* ---- layout --------------------------------------------------------------- */
+int32_t bragi_caret_x(bragi_face_t *face, const char *text, int32_t length, int32_t offset)
+{
+    const char *end = end_of(text, length);
+    if (offset < 0)
+        offset = 0;
+    if (offset > end - text)
+        offset = (int32_t)(end - text);
+    return (run(NULL, face, 0, 0, text, text + offset, 0) + BRAGI_UNITS / 2) >> 6;
+}
+
+int32_t bragi_offset_at(bragi_face_t *face, const char *text, int32_t length, int32_t x)
+{
+    const char *end = end_of(text, length);
+    const char *s = text;
+    walk_t w = {face, 0, NULL, 0};
+    while (s < end)
+    {
+        const char *start = s;
+        walk_glyph(&w, bragi_utf8_next(&s, end));
+        int32_t before = w.pen;
+        walk_advance(&w);
+        // the caret goes before a character when x is on its left half
+        if (x * BRAGI_UNITS < (before + w.pen) / 2)
+            return (int32_t)(start - text);
+    }
+    return (int32_t)(end - text);
+}
 
 int32_t bragi_wrap(bragi_face_t *face, const char *text, int32_t width, const char **next)
 {

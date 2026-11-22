@@ -187,8 +187,6 @@ static uint32_t controller_count;
 static hid_device_t hid_devices[MAX_HID_DEVICES];
 static uint32_t hid_count;
 
-/* ---- registers and memory ---------------------------------------------- */
-
 static uint32_t rd32(volatile uint8_t *base, uint32_t off)
 {
     return mmio_read32(base + off);
@@ -269,8 +267,6 @@ static phys_addr_t ring_push(ring_t *ring, uint64_t param, uint32_t status, uint
     return phys;
 }
 
-/* ---- events -------------------------------------------------------------- */
-
 /**
  * the next event, or NULL if there is none. the event stays valid until
  * the next call.
@@ -346,8 +342,6 @@ static uint32_t run_command(xhci_t *hc, uint64_t param, uint32_t control, uint8_
     return wait_for(hc, TRB_COMMAND_EVT, trb, slot);
 }
 
-/* ---- contexts ------------------------------------------------------------ */
-
 // the device page: the input context at 0, the output context at 0x800,
 // the data buffer at 0xC00 (up to 1 KiB)
 #define PAGE_INPUT   0x000
@@ -380,8 +374,6 @@ static uint32_t ep0_packet_size(uint32_t speed)
     }
 }
 
-/* ---- control transfers --------------------------------------------------- */
-
 /**
  * a control transfer on endpoint 0. data goes to or comes from the data
  * area of the device page.
@@ -411,8 +403,6 @@ static bool control(hid_device_t *hid, uint8_t request_type, uint8_t request, ui
     uint32_t code = wait_for(hid->hc, TRB_TRANSFER_EVT, status, NULL);
     return code == COMPLETION_SUCCESS || code == COMPLETION_SHORT;
 }
-
-/* ---- keyboard reports ---------------------------------------------------- */
 
 // HID usage (0x04 to 0x64) to PS/2 set 1 scan code; 0x100 marks an 0xE0
 // code, 0 a key the kernel does not use
@@ -527,8 +517,6 @@ static void queue_report(hid_device_t *hid)
               TRB_TYPE(TRB_NORMAL) | TRB_IOC);
     mmio_write32(&hid->hc->doorbells[hid->slot], hid->dci);
 }
-
-/* ---- pointer reports ----------------------------------------------------- */
 
 static const uint16_t button_codes[3] = {BTN_LEFT, BTN_RIGHT, BTN_MIDDLE};
 
@@ -771,8 +759,6 @@ static void xhci_poll(uint64_t now)
         }
     }
 }
-
-/* ---- device setup -------------------------------------------------------- */
 
 typedef struct
 {

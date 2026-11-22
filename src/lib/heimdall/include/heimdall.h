@@ -65,8 +65,6 @@ void heim_screen_size(const heim_conn_t *conn, int32_t *width, int32_t *height);
  */
 int heim_next_event(heim_conn_t *conn, heim_event_t *event, int timeout_ms);
 
-/* ---- windows -------------------------------------------------------------- */
-
 /**
  * make a window with a buffer of that size (its content, without the
  * title bar). it shows after the first heim_window_commit.
@@ -114,8 +112,6 @@ void heim_window_set_cursor(heim_window_t *win, uint32_t shape);
 void heim_window_set_data(heim_window_t *win, void *data);
 void *heim_window_data(const heim_window_t *win);
 
-/* ---- the clipboard -------------------------------------------------------- */
-
 /**
  * put text on the clipboard (length 0 empties it).
  */
@@ -125,3 +121,10 @@ void heim_clipboard_set(heim_conn_t *conn, const char *text, size_t length);
  * ask for the clipboard's text: it comes as a HEIM_EV_CLIPBOARD event.
  */
 void heim_clipboard_request(heim_conn_t *conn);
+
+/**
+ * tell all clients that the settings file name changed (after conf_save):
+ * each gets a HEIM_EV_SETTINGS event with the name, also this one.
+ * @param name the libconf name, "theme".
+ */
+void heim_settings_changed(heim_conn_t *conn, const char *name);

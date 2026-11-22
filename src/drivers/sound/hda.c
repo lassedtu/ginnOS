@@ -37,8 +37,6 @@
 #include "kernel/memory/pmm.h"
 #include "kernel/time/timer.h"
 
-/* ---- controller registers ------------------------------------------------ */
-
 #define GCAP      0x00 // 16 bits
 #define GCTL      0x08
 #define STATESTS  0x0E // 16 bits
@@ -84,8 +82,6 @@
 #define SD_IOCE   0x04u
 #define SD_BCIS   0x04u // status: buffer completed
 #define SD_STS_CLEAR 0x1Cu // BCIS, FIFOE, DESE
-
-/* ---- codec verbs and parameters ------------------------------------------ */
 
 #define VERB_GET_PARAM      0xF00
 #define VERB_GET_CONN       0xF02
@@ -137,8 +133,6 @@
 #define AMP_IN            0x4000u
 #define AMP_LEFT_RIGHT    0x3000u
 #define AMP_MUTE          0x0080u
-
-/* ---- driver limits ------------------------------------------------------- */
 
 #define MAX_NODES   128u
 #define MAX_CONN    16u
@@ -195,8 +189,6 @@ static audio_device_t audio;
 #define DMA_BUFFERS 0x2000u
 #define DMA_PAGES   ((DMA_BUFFERS + PERIODS * PERIOD_BYTES + PAGE_SIZE - 1) / PAGE_SIZE)
 
-/* ---- register access ----------------------------------------------------- */
-
 static uint32_t rd32(uint32_t reg)
 {
     return mmio_read32(regs + reg);
@@ -237,8 +229,6 @@ static void delay_us(uint32_t us)
         io_outb(0x80, 0);
     }
 }
-
-/* ---- commands ------------------------------------------------------------ */
 
 /**
  * send one verb and wait for its answer.
@@ -293,8 +283,6 @@ static uint32_t param(uint32_t node, uint32_t which)
 {
     return verb12(node, VERB_GET_PARAM, which);
 }
-
-/* ---- controller setup ---------------------------------------------------- */
 
 static bool reset_controller(void)
 {
@@ -380,8 +368,6 @@ static bool setup_rings(void)
     wr8(RIRBCTL, RING_RUN);
     return true;
 }
-
-/* ---- codec discovery ----------------------------------------------------- */
 
 /**
  * read the connection list of a node (the inputs of a mixer or selector,
@@ -519,8 +505,6 @@ static bool find_codec(void)
     return false;
 }
 
-/* ---- path setup ---------------------------------------------------------- */
-
 static uint32_t out_amp_caps(uint32_t node)
 {
     if (widget_caps[node] & CAPS_AMP_OVERRIDE)
@@ -626,8 +610,6 @@ static void setup_path(const path_t *path)
     verb12(dac, VERB_SET_STREAM, STREAM_TAG << 4);
 }
 
-/* ---- rates --------------------------------------------------------------- */
-
 static const struct
 {
     uint32_t rate;
@@ -665,8 +647,6 @@ static uint32_t hda_set_rate(audio_device_t *dev, uint32_t rate)
     stream_format = rates[best].format | FORMAT_16BIT_STEREO;
     return rates[best].rate;
 }
-
-/* ---- playback ------------------------------------------------------------ */
 
 static uint8_t *period(uint32_t index)
 {
@@ -777,8 +757,6 @@ static const audio_ops_t hda_ops = {
     .set_rate = hda_set_rate,
     .set_volume = hda_set_volume,
 };
-
-/* ---- init ---------------------------------------------------------------- */
 
 /**
  * a short name for the outputs in use, for /proc/audio.

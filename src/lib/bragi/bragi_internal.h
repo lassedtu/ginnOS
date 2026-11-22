@@ -46,6 +46,8 @@ struct bragi_face
     bragi_font_t *font;
     bragi_face_t *fallback;
     float scale;           // font units to pixels
+    float size;            // the pixel size it was made with
+    int32_t tracking;      // added after each character, 1/64 pixels
     int32_t ascent;        // pixels
     int32_t descent;
     int32_t line_height;
@@ -82,7 +84,7 @@ int32_t bragi_kerning(const bragi_face_t *face, int left, int right);
 const bragi_glyph_t *bragi_glyph(bragi_face_t *face, int glyph, int subpixel);
 
 /**
- * blend a coverage mask in a colour over buf, in linear light.
+ * blend a coverage mask in a colour over buf (in sRGB, as browsers do).
  * @param color premultiplied; its alpha scales the coverage.
  */
 void bragi_blend_mask(gfx_buffer_t *buf, int32_t x, int32_t y, const uint8_t *mask,

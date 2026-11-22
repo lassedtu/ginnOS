@@ -101,8 +101,6 @@ bool input_keyboard_grabbed(void)
     return grabs > 0;
 }
 
-/* ---- the /dev/input file ------------------------------------------------- */
-
 static reader_t *reader_of(file_t *file)
 {
     return file->device_data;

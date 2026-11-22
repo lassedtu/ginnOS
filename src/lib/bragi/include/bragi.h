@@ -9,8 +9,8 @@
  *
  * glyphs are anti-aliased (8-bit coverage, from stb_truetype) and placed
  * at quarter pixels, so the spacing of text stays even. the coverage is
- * blended in linear light, so light text on a dark background has the
- * same weight as dark text on a light one.
+ * blended in sRGB, as browsers do, so text has the same weight as in the
+ * idunn reference.
  *
  * a face can have a fallback face: a character the font does not have
  * comes from the fallback (and from its fallback, and so on). with none,
@@ -27,8 +27,6 @@ typedef struct bragi_face bragi_face_t;
 
 // the default memory for one face's glyph cache
 #define BRAGI_CACHE_BUDGET (1024 * 1024)
-
-/* ---- fonts and faces ------------------------------------------------------ */
 
 /**
  * load a TrueType file.
@@ -63,6 +61,20 @@ void bragi_face_free(bragi_face_t *face);
 void bragi_face_set_fallback(bragi_face_t *face, bragi_face_t *fallback);
 
 /**
+ * letter spacing, as CSS letter-spacing: added after every character, so
+ * measuring, wrapping and drawing all include it.
+ * @param em in ems (-0.006 for Inter body text in idunn).
+ */
+void bragi_face_set_tracking(bragi_face_t *face, float em);
+
+/**
+ * where the baseline is in a line of text line_height pixels high, from
+ * its top: as CSS places text in a line box (the font's ascent and
+ * descent, with half of the rest above them).
+ */
+int32_t bragi_line_baseline(const bragi_face_t *face, int32_t line_height);
+
+/**
  * the vertical metrics in whole pixels: from the baseline up to the top
  * of the highest letters (ascent), down to the bottom of the lowest
  * (descent, a positive number), and the distance from one baseline to
@@ -76,8 +88,6 @@ int32_t bragi_line_height(const bragi_face_t *face);
  * true if the font (not a fallback) has a glyph for the character.
  */
 bool bragi_has_char(const bragi_face_t *face, uint32_t codepoint);
-
-/* ---- text ----------------------------------------------------------------- */
 
 /**
  * decode one character of UTF-8.
@@ -103,7 +113,20 @@ int32_t bragi_measure(bragi_face_t *face, const char *text, int32_t length);
 int32_t bragi_draw(gfx_buffer_t *buf, bragi_face_t *face, int32_t x, int32_t baseline,
                    const char *text, int32_t length, gfx_color_t color);
 
-/* ---- layout --------------------------------------------------------------- */
+/**
+ * where a caret before the byte at offset goes, in pixels from the start
+ * of the line (rounded to the nearest pixel).
+ * @param offset a byte offset at the start of a character; it is cut to
+ *        the text.
+ */
+int32_t bragi_caret_x(bragi_face_t *face, const char *text, int32_t length, int32_t offset);
+
+/**
+ * the caret place nearest to x (pixels from the start of the line), for
+ * a click in a text field.
+ * @return a byte offset at the start of a character, or the length.
+ */
+int32_t bragi_offset_at(bragi_face_t *face, const char *text, int32_t length, int32_t x);
 
 typedef enum
 {
@@ -136,8 +159,6 @@ int32_t bragi_draw_box(gfx_buffer_t *buf, bragi_face_t *face, gfx_rect_t box, co
  */
 int32_t bragi_measure_box(bragi_face_t *face, const char *text, int32_t width);
 
-/* ---- the terminal grid ---------------------------------------------------- */
-
 /**
  * the cell of a monospace face, in whole pixels: the advance of "M" and
  * the line height.
@@ -152,8 +173,6 @@ void bragi_cell_size(bragi_face_t *face, int32_t *width, int32_t *height);
  */
 void bragi_draw_cell(gfx_buffer_t *buf, bragi_face_t *face, int32_t x, int32_t y,
                      uint32_t codepoint, gfx_color_t color);
-
-/* ---- statistics ----------------------------------------------------------- */
 
 typedef struct
 {
