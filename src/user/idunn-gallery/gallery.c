@@ -7,6 +7,7 @@
 
 #include <idunn.h>
 #include <stdio.h>
+#include <string.h>
 
 typedef struct
 {
@@ -17,11 +18,13 @@ typedef struct
 } page_t;
 
 static idunn_widget_t *buttons_page(void);
+static idunn_widget_t *inputs_page(void);
 static idunn_widget_t *text_page(void);
 
 static const page_t pages[] = {
     {"Buttons", "layout-grid", "Actions in six variants, three sizes, with icons and without.",
      buttons_page},
+    {"Inputs", "pencil", "Text fields, choices and sliders, with help and errors.", inputs_page},
     {"Text", "type", "The text styles: Inter in three weights, and JetBrains Mono.", text_page},
 };
 #define PAGE_COUNT (int)(sizeof(pages) / sizeof(pages[0]))
@@ -137,6 +140,75 @@ static idunn_widget_t *buttons_page(void)
     idunn_widget_t *rule = idunn_add(page, idunn_separator());
     (void)rule;
     G.status = idunn_add(page, muted("Click a button, or use Tab and Enter.", IDUNN_TEXT_BODY));
+    return page;
+}
+
+static void check_email(idunn_widget_t *input, void *data)
+{
+    idunn_widget_t *field = data;
+    const char *text = idunn_text_field_text(input);
+    idunn_field_set_error(field, *text && !strchr(text, '@') ? "An email address has an @ in it."
+                                                             : NULL);
+}
+
+static void show_speed(idunn_widget_t *slider, void *data)
+{
+    char text[32];
+    snprintf(text, sizeof(text), "%d", (int)idunn_slider_value(slider));
+    idunn_label_set_text(data, text);
+}
+
+static idunn_widget_t *inputs_page(void)
+{
+    idunn_widget_t *page = idunn_row(8, 0);
+
+    idunn_widget_t *left = idunn_grow(idunn_add(page, idunn_column(5, 0)), 1);
+    idunn_add(left, idunn_field("Name", idunn_text_field("Ada Lovelace"),
+                                "As it is shown to other people."));
+    idunn_widget_t *email = idunn_text_field("you@example.com");
+    idunn_widget_t *email_field = idunn_add(left, idunn_field("Email", email, NULL));
+    idunn_text_field_on_change(email, check_email, email_field);
+    idunn_widget_t *search = idunn_text_field("Search files");
+    idunn_text_field_set_icon(search, "search");
+    idunn_add(left, idunn_field("Search", search, NULL));
+    idunn_add(left, idunn_field("Notes", idunn_text_area("Write something...", 4),
+                                "Enter makes a new line."));
+    idunn_widget_t *off = idunn_text_field("Not now");
+    idunn_set_disabled(off, true);
+    idunn_add(left, idunn_field("Disabled", off, NULL));
+
+    idunn_widget_t *right = idunn_grow(idunn_add(page, idunn_column(6, 0)), 1);
+    idunn_widget_t *checks = idunn_column(2, 0);
+    idunn_box_set_align(checks, IDUNN_START, IDUNN_START);
+    idunn_add(checks, idunn_check_box("Show hidden files", true, NULL, NULL));
+    idunn_add(checks, idunn_check_box("Ask before deleting", false, NULL, NULL));
+    idunn_check_box_set_state(idunn_add(checks, idunn_check_box("Some selected", false, NULL, NULL)),
+                              IDUNN_MIXED);
+    section(right, "Check boxes", "Space or a click; a dash for some.", checks);
+
+    static const char *const sizes[] = {"Small", "Medium", "Large"};
+    idunn_widget_t *radios = idunn_radio_group(sizes, 3, 1, NULL, NULL);
+    idunn_box_set_align(radios, IDUNN_START, IDUNN_START);
+    section(right, "Radio group", "One Tab stop; the arrows choose.", radios);
+    static const char *const scales[] = {"1x", "2x"};
+    idunn_widget_t *row_radios = idunn_radio_group(scales, 2, 0, NULL, NULL);
+    idunn_radio_group_set_row(row_radios, true);
+    idunn_widget_t *in_row = idunn_row(0, 0);
+    idunn_add(in_row, row_radios);
+    idunn_add(right, in_row);
+
+    idunn_widget_t *switches = idunn_column(2, 0);
+    idunn_box_set_align(switches, IDUNN_START, IDUNN_START);
+    idunn_add(switches, idunn_switch("Natural scrolling", true, NULL, NULL));
+    idunn_add(switches, idunn_switch("Reduce motion", false, NULL, NULL));
+    section(right, "Switches", "They slide in 120 ms.", switches);
+
+    idunn_widget_t *speed = idunn_row(3, 0);
+    idunn_box_set_align(speed, IDUNN_CENTER, IDUNN_START);
+    idunn_widget_t *value = idunn_label("6", IDUNN_TEXT_LABEL);
+    idunn_grow(idunn_add(speed, idunn_slider(0, 10, 1, 6, show_speed, value)), 1);
+    idunn_set_size(idunn_add(speed, value), 20, 0);
+    section(right, "Slider", "Drag it, or use the arrows and Page Up/Down.", speed);
     return page;
 }
 

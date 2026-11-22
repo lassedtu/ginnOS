@@ -12,6 +12,8 @@
 #include <stdlib.h>
 
 void test_widgets(void);
+void compare_reference(const char *name, const gfx_buffer_t *buf, double mean_limit);
+void test_inputs(idunn_context_t *ctx);
 
 static idunn_context_t *ctx;
 static int clicks;
@@ -148,11 +150,11 @@ static void test_input(void)
 
     // hover, then a click
     clicks = 0;
-    idunn_window_pointer(win, IDUNN_POINTER_MOTION, r.x + 4, r.y + 4);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, r.x + 4, r.y + 4, 0);
     CHECK(one->state & IDUNN_HOVER);
-    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 4, r.y + 4);
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 4, r.y + 4, 0);
     CHECK(one->state & IDUNN_PRESSED);
-    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, r.x + 4, r.y + 4);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, r.x + 4, r.y + 4, 0);
     CHECK_EQ(clicks, 1);
     CHECK(!(one->state & IDUNN_PRESSED));
 
@@ -161,15 +163,15 @@ static void test_input(void)
     CHECK(!idunn_ring_visible(one));
 
     // pressed, then let go somewhere else: no click
-    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 4, r.y + 4);
-    idunn_window_pointer(win, IDUNN_POINTER_MOTION, 299, 99);
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 4, r.y + 4, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, 299, 99, 0);
     CHECK(!(one->state & IDUNN_HOVER));
-    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, 299, 99);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, 299, 99, 0);
     CHECK_EQ(clicks, 1);
 
     // a disabled button gets nothing
-    idunn_window_pointer(win, IDUNN_POINTER_PRESS, off->rect.x + 4, off->rect.y + 4);
-    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, off->rect.x + 4, off->rect.y + 4);
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, off->rect.x + 4, off->rect.y + 4, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, off->rect.x + 4, off->rect.y + 4, 0);
     CHECK_EQ(clicks, 1);
     CHECK(!(off->state & IDUNN_HOVER));
     CHECK(idunn_window_focus(win) == NULL);
@@ -193,9 +195,9 @@ static void test_input(void)
     CHECK_EQ(clicks, 3);
 
     // the pointer leaves the window
-    idunn_window_pointer(win, IDUNN_POINTER_MOTION, two->rect.x + 2, two->rect.y + 2);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, two->rect.x + 2, two->rect.y + 2, 0);
     CHECK(two->state & IDUNN_HOVER);
-    idunn_window_pointer(win, IDUNN_POINTER_LEAVE, 0, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_LEAVE, 0, 0, 0);
     CHECK(!(two->state & IDUNN_HOVER));
 
     // freeing the focused widget forgets it
@@ -221,7 +223,7 @@ static void test_drawing(void)
     // around the button
     idunn_window_tick(win, 1000);
     gfx_color_t before = *gfx_pixel_at(win->buffer, b->rect.x + 8, b->rect.y + 20);
-    idunn_window_pointer(win, IDUNN_POINTER_MOTION, b->rect.x + 2, b->rect.y + 2);
+    idunn_window_pointer(win, IDUNN_POINTER_MOTION, b->rect.x + 2, b->rect.y + 2, 0);
     gfx_rect_t damage = idunn_window_draw(win);
     CHECK(damage.w < 300 && damage.w >= b->rect.w);
     idunn_window_tick(win, 1050);
@@ -240,7 +242,7 @@ static void test_drawing(void)
     idunn_theme_t theme = ctx->theme;
     theme.motion = false;
     idunn_context_set_theme(ctx, &theme);
-    idunn_window_pointer(win, IDUNN_POINTER_LEAVE, 0, 0);
+    idunn_window_pointer(win, IDUNN_POINTER_LEAVE, 0, 0, 0);
     idunn_window_draw(win);
     CHECK(!idunn_window_tick(win, 1101));
     CHECK_EQ(*gfx_pixel_at(win->buffer, b->rect.x + 8, b->rect.y + 20), before);
@@ -265,6 +267,28 @@ static uint8_t *rgb_of(const gfx_buffer_t *buf)
 }
 
 /**
+ * compare a drawing with its reference cell (test/reference/<name>.png,
+ * the preview's CSS drawn by Chrome: tools/idunn-ref/spec.py).
+ */
+void compare_reference(const char *name, const gfx_buffer_t *buf, double mean_limit)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/reference/%s.png", TEST_DIR, name);
+    gfx_buffer_t *ref = image_load(path, NULL);
+    bool same_size = ref && ref->width == buf->width && ref->height == buf->height;
+    CHECK(same_size);
+    if (same_size)
+    {
+        uint8_t *got = rgb_of(buf);
+        uint8_t *want = rgb_of(ref);
+        hosttest_compare(name, got, want, buf->width, buf->height, 255, mean_limit);
+        free(got);
+        free(want);
+    }
+    gfx_buffer_free(ref);
+}
+
+/**
  * the button variants in one mode, compared with the preview's CSS drawn
  * by Chrome (test/reference, tools/idunn-ref/spec.py).
  */
@@ -286,20 +310,7 @@ static void reference_buttons(const char *name, idunn_mode_t mode, double mean_l
     idunn_add(row, idunn_button("Link", IDUNN_LINK, NULL, NULL));
     idunn_window_set_root(win, row);
     idunn_window_draw(win);
-
-    char path[512];
-    snprintf(path, sizeof(path), "%s/reference/%s.png", TEST_DIR, name);
-    gfx_buffer_t *ref = image_load(path, NULL);
-    CHECK(ref != NULL && ref->width == 520 && ref->height == 64);
-    if (ref && ref->width == 520 && ref->height == 64)
-    {
-        uint8_t *got = rgb_of(win->buffer);
-        uint8_t *want = rgb_of(ref);
-        hosttest_compare(name, got, want, 520, 64, 255, mean_limit);
-        free(got);
-        free(want);
-    }
-    gfx_buffer_free(ref);
+    compare_reference(name, win->buffer, mean_limit);
     idunn_window_free_widgets(win);
     free(win);
 }
@@ -316,6 +327,7 @@ void test_widgets(void)
     test_layout();
     test_input();
     test_drawing();
+    test_inputs(ctx);
     reference_buttons("buttons-dark", IDUNN_DARK, 5.0);
     reference_buttons("buttons-light", IDUNN_LIGHT, 5.0);
     idunn_context_free(ctx);

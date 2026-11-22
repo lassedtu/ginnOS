@@ -44,6 +44,10 @@ bool input_init(void)
     if (kbd >= 0)
     {
         S.have_keymap = ioctl(kbd, KBD_IOC_GET_KEYMAP, &S.keymap) == 0;
+        struct kbd_layout_name name = {0};
+        if (ioctl(kbd, KBD_IOC_GET_LAYOUT, &name.index) == 0 &&
+            ioctl(kbd, KBD_IOC_LAYOUT_NAME, &name) == 0)
+            keytext_init(name.name);
         close(kbd);
     }
     return true;
@@ -348,28 +352,6 @@ static uint32_t mod_of(uint16_t code)
 }
 
 /**
- * the character a key types with the modifiers held, as the text console
- * does it: either Alt key picks the AltGr table; with Ctrl, or with Alt
- * and no AltGr character, it types nothing.
- */
-static char key_char(uint16_t code)
-{
-    if (!S.have_keymap || code >= KBD_KEYMAP_KEYS || (S.mods & HEIM_MOD_CTRL))
-        return 0;
-    bool shift = S.mods & HEIM_MOD_SHIFT;
-    char c;
-    if (S.mods & (HEIM_MOD_ALT | HEIM_MOD_ALTGR))
-    {
-        c = shift ? S.keymap.altgr_shift[code] : 0;
-        if (!c)
-            c = S.keymap.altgr[code];
-    }
-    else
-        c = shift ? S.keymap.shift[code] : S.keymap.normal[code];
-    return (unsigned char)c >= 0x20 && c != 0x7F ? c : 0;
-}
-
-/**
  * the server's own keys.
  * @return true if the key was one of them.
  */
@@ -421,7 +403,7 @@ static void key(uint16_t code, int32_t value)
     msg.key.value = (uint16_t)value;
     msg.key.mods = S.mods;
     if (value)
-        msg.key.text[0] = key_char(code);
+        keytext_of(code, S.mods, msg.key.text);
     client_send_window(S.focus, &msg);
 }
 

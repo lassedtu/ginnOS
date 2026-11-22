@@ -14,25 +14,40 @@
 #define IDUNN_FOCUSABLE   0x01u // Tab and a click give it the keyboard
 #define IDUNN_INTERACTIVE 0x02u // it gets hover, presses and clicks
 #define IDUNN_SHRINKS     0x04u // it can be narrower than it wants (text with "...")
+#define IDUNN_TEXT_INPUT  0x08u // it takes typing: the ring shows after a click too
 
 // widget states
 #define IDUNN_HOVER    0x01u
 #define IDUNN_PRESSED  0x02u
 #define IDUNN_FOCUSED  0x04u
 #define IDUNN_DISABLED 0x08u
+#define IDUNN_ERROR    0x10u // a field with a wrong value
 
 typedef enum
 {
-    IDUNN_EV_CLICK, // a press and a release on the widget, or Enter or Space
-    IDUNN_EV_KEY,   // a key press for the focused widget (and then its parents)
+    IDUNN_EV_CLICK,   // a press and a release on the widget (or Enter or Space)
+    IDUNN_EV_KEY,     // a key press for the focused widget (and then its parents)
+    IDUNN_EV_PRESS,   // the left button went down on it: x, y, mods, clicks
+    IDUNN_EV_DRAG,    // the pointer moved with the button down after a press on it: x, y
+    IDUNN_EV_RELEASE, // the button went up after a press on it: x, y
+    IDUNN_EV_SCROLL,  // the wheel over it (then its parents): steps, up is positive
+    IDUNN_EV_FOCUS,   // it got the keyboard
+    IDUNN_EV_BLUR,    // it lost the keyboard
+    IDUNN_EV_TIMER,   // the time it asked for with idunn_wake came
+    IDUNN_EV_PASTE,   // the clipboard text it asked for with idunn_paste: text, length
 } idunn_event_type_t;
 
 typedef struct
 {
     idunn_event_type_t type;
     uint16_t code;    // KEY: the Linux key code
-    uint32_t mods;    // KEY: IDUNN_MOD_
-    const char *text; // KEY: the characters it types (UTF-8), or ""
+    uint32_t mods;    // KEY, PRESS: IDUNN_MOD_
+    const char *text; // KEY: the characters it types (UTF-8), or ""; PASTE: the text
+    size_t length;    // PASTE: the bytes of text
+    int32_t x;        // PRESS, DRAG, RELEASE: the pointer in the window
+    int32_t y;
+    int clicks;       // PRESS: 1, 2 (a double click) or 3
+    int32_t steps;    // SCROLL
 } idunn_event_t;
 
 /**
@@ -106,6 +121,27 @@ struct idunn_window
     uint32_t now;            // ms, for transitions
     uint32_t cursor;         // the pointer shape now
 
+    // a double click: the last press
+    uint32_t press_time;
+    int32_t press_x;
+    int32_t press_y;
+    int clicks;
+
+    // times widgets asked to be woken at (idunn_wake)
+    struct
+    {
+        idunn_widget_t *widget;
+        uint32_t at;
+    } timers[8];
+
+    // the clipboard: the window server's (app.c sets these), or a string
+    // of the window's own
+    void (*clipboard_set)(idunn_window_t *win, const char *text, size_t length);
+    void (*clipboard_get)(idunn_window_t *win);
+    char *clipboard;
+    size_t clipboard_length;
+    idunn_widget_t *paste_to;
+
     // for app.c
     idunn_app_t *app;
     void *heim;
@@ -157,6 +193,71 @@ bool idunn_anim_running(const idunn_anim_t *a, uint32_t now);
  */
 void idunn_draw_text(idunn_context_t *ctx, gfx_buffer_t *buf, idunn_text_t style, int32_t x,
                      int32_t y, int32_t max_width, const char *text, gfx_color_t color);
+
+/** send an event to a widget: true if it used it */
+bool idunn_send(idunn_widget_t *w, const idunn_event_t *ev);
+
+/** a TIMER event for w at a time (ms, as window->now); one time per widget */
+void idunn_wake(idunn_widget_t *w, uint32_t at);
+
+/** put text on the clipboard; ask for its text (a PASTE event comes) */
+void idunn_copy(idunn_widget_t *w, const char *text, size_t length);
+void idunn_paste(idunn_widget_t *w);
+
+// editable text (text_edit.c)
+
+typedef struct
+{
+    char *text; // zero-terminated
+    size_t length;
+    size_t capacity;
+    size_t caret;  // byte offsets
+    size_t anchor; // the other end of the selection
+} idunn_edit_t;
+
+typedef enum
+{
+    IDUNN_EDIT_IGNORED, // not a key for editing
+    IDUNN_EDIT_USED,    // used, nothing changed (a copy)
+    IDUNN_EDIT_MOVED,   // the caret or the selection moved
+    IDUNN_EDIT_CHANGED, // the text changed
+} idunn_edit_result_t;
+
+bool idunn_edit_set(idunn_edit_t *e, const char *text, size_t length);
+void idunn_edit_free(idunn_edit_t *e);
+size_t idunn_edit_start(const idunn_edit_t *e);
+size_t idunn_edit_end(const idunn_edit_t *e);
+size_t idunn_edit_prev(const idunn_edit_t *e, size_t pos);
+size_t idunn_edit_next(const idunn_edit_t *e, size_t pos);
+size_t idunn_edit_word_left(const idunn_edit_t *e, size_t pos);
+size_t idunn_edit_word_right(const idunn_edit_t *e, size_t pos);
+void idunn_edit_move(idunn_edit_t *e, size_t pos, bool extend);
+void idunn_edit_select_word(idunn_edit_t *e, size_t pos);
+/** replace the selection with text */
+bool idunn_edit_insert(idunn_edit_t *e, const char *text, size_t length);
+/** delete the selection, or a character or a word before or after the caret */
+void idunn_edit_delete(idunn_edit_t *e, bool forward, bool word);
+/** the keys of editing: arrows, Home, End, Backspace, Delete, Ctrl+A/C/X/V, typing */
+idunn_edit_result_t idunn_edit_key(idunn_widget_t *w, idunn_edit_t *e, const idunn_event_t *ev,
+                                   bool multiline);
+/** insert clipboard text (a single line keeps one line) */
+bool idunn_edit_paste(idunn_edit_t *e, const char *text, size_t length, bool multiline);
+
+// options: a small control with a label to its right (option.c)
+void idunn_option_measure(idunn_widget_t *w, int32_t control_w, int32_t control_h,
+                          const char *label, int32_t *width, int32_t *height);
+gfx_rect_t idunn_option_control(const idunn_widget_t *w, int32_t control_w, int32_t control_h);
+void idunn_option_draw_label(idunn_widget_t *w, gfx_buffer_t *buf, int32_t control_w,
+                             const char *label);
+/** the border of check boxes and radios (firmer than inputs in dark mode) */
+gfx_color_t idunn_option_border(const idunn_theme_t *t);
+
+/** the well of a text input: fill, inset shadow, border and ring (text_field.c) */
+void idunn_draw_well(idunn_widget_t *w, gfx_buffer_t *buf);
+
+/** all the layers of a shadow token around a round box */
+void idunn_draw_shadow(const idunn_theme_t *t, gfx_buffer_t *buf, gfx_rect_t box, int32_t radius,
+                       idunn_shadow_t which);
 
 /** the 3 px focus ring around a round box */
 void idunn_draw_ring(const idunn_widget_t *w, gfx_buffer_t *buf, gfx_rect_t box, int32_t radius);
