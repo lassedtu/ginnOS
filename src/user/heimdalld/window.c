@@ -716,6 +716,32 @@ void window_toggle_maximize(window_t *w)
     window_damage(w);
 }
 
+void window_screen_changed(void)
+{
+    window_close_popups();
+    for (window_t *w = S.bottom; w; w = w->above)
+    {
+        if (w->parent)
+            continue;
+        if (w->maximized)
+        {
+            window_configure(w, S.width, S.height - TITLE_HEIGHT);
+            continue;
+        }
+        // on the screen if it fits, else at the left; the title bar stays
+        // where the pointer can reach it
+        gfx_rect_t f = window_frame(w);
+        if (f.x + f.w > S.width)
+            w->x -= f.x + f.w - S.width;
+        if (f.y + TITLE_HEIGHT > S.height)
+            w->y -= f.y + TITLE_HEIGHT - S.height;
+        w->x = w->x < 0 ? 0 : w->x;
+        w->y = w->y < 0 ? 0 : w->y;
+        w->bar_dirty = true;
+    }
+    screen_damage(gfx_rect(0, 0, S.width, S.height));
+}
+
 void window_minimize(window_t *w)
 {
     window_close_popups();

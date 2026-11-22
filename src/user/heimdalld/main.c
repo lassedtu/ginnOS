@@ -102,6 +102,7 @@ static void loop(void)
         int n = 0;
         fds[n++] = (struct pollfd){S.listen_fd, POLLIN, 0};
         fds[n++] = (struct pollfd){S.input_fd, POLLIN, 0};
+        fds[n++] = (struct pollfd){S.display_fd, POLLIN, 0}; // poll skips -1
         for (client_t *c = S.clients; c && n < POLL_MAX; c = c->next)
         {
             owners[n] = c;
@@ -119,7 +120,9 @@ static void loop(void)
 
         if (fds[1].revents)
             input_read();
-        for (int i = 2; i < n; i++)
+        if (fds[2].revents & POLLIN)
+            screen_display_events();
+        for (int i = 3; i < n; i++)
         {
             client_t *c = owners[i];
             if (fds[i].revents & (POLLIN | POLLHUP | POLLERR))
