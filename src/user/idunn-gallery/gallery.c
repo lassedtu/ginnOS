@@ -532,10 +532,9 @@ static void show_page(idunn_widget_t *button, void *data)
 static void switch_mode(idunn_widget_t *button, void *data)
 {
     (void)data;
-    idunn_theme_t theme = *idunn_app_theme(G.app);
-    theme.mode = theme.mode == IDUNN_DARK ? IDUNN_LIGHT : IDUNN_DARK;
-    idunn_button_set_icon(button, theme.mode == IDUNN_DARK ? "sun" : "moon");
-    idunn_app_set_theme(G.app, &theme);
+    bool dark = idunn_app_theme(G.app)->mode != IDUNN_DARK;
+    idunn_button_set_icon(button, dark ? "sun" : "moon");
+    idunn_app_save_theme(G.app, "mode", dark ? "dark" : "light");
 }
 
 static idunn_widget_t *side_bar(void)

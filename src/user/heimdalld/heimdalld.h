@@ -20,15 +20,13 @@
 #include <gfx.h>
 #include <heimdall_proto.h>
 #include <icon.h>
+#include <idunn_theme.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/kbd.h>
 
 #define TITLE_HEIGHT 36
-#define CORNER_RADIUS 10
-#define SHADOW_PAD 14  // the shadow reaches this far out at the sides and the top
-#define SHADOW_DROP 6  // and this much farther at the bottom
 #define RESIZE_BAND 6  // the band outside a window that resizes it
 #define BUTTON_WIDTH 28
 #define BUTTON_HEIGHT 24
@@ -173,6 +171,7 @@ typedef struct
     window_t *last_click_window;
 
     // the look
+    idunn_theme_t theme; // the colours, the radius and the shadows of the decorations
     bragi_face_t *title_face;
     icon_t *icon_minimize;
     icon_t *icon_maximize;
@@ -201,7 +200,8 @@ void screen_compose(void);
 
 // in window.c
 
-void window_init(void);
+/** make the shadow, the corners and the title bars from S.theme (again) */
+void window_look(void);
 window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title,
                      window_t *parent);
 bool window_is_popup(const window_t *w);

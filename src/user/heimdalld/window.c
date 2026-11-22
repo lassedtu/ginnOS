@@ -15,50 +15,95 @@
 #include <string.h>
 #include <sys/mman.h>
 
-// the shadow picture: a window of TPL_W x TPL_H at (SHADOW_PAD, SHADOW_PAD).
-// TPL_H is tall enough that one row is straight for the window's rim and
-// for the shadow below it (the shadow is SHADOW_DROP lower)
-#define TPL_W (2 * CORNER_RADIUS + 2)
-#define TPL_H (2 * CORNER_RADIUS + SHADOW_DROP + 2)
-#define TPL_STRETCH_X (SHADOW_PAD + CORNER_RADIUS + 1)
-#define TPL_STRETCH_Y (SHADOW_PAD + CORNER_RADIUS + SHADOW_DROP + 1)
-
-static gfx_buffer_t *shadow;
-static uint8_t corner[CORNER_RADIUS * CORNER_RADIUS]; // the bottom left corner's coverage
-
-static const gfx_color_t bar_focused = 0xFFE6E8EEu;
-static const gfx_color_t bar_unfocused = 0xFFF4F4F6u;
-
-void window_init(void)
+// the look, made from the theme by window_look
+static gfx_buffer_t *shadow; // the shadow of a small window, stretched to each window
+static struct
 {
-    // the shadow: rings of faint black, and a thin rim around the window
-    int32_t w = TPL_W + 2 * SHADOW_PAD;
-    int32_t h = TPL_H + 2 * SHADOW_PAD + SHADOW_DROP;
-    shadow = gfx_buffer_new(w, h);
+    int32_t left; // how far the shadow reaches out from the frame
+    int32_t top;
+    int32_t right;
+    int32_t bottom;
+    int32_t x; // the column and the row of the picture that are stretched
+    int32_t y;
+} reach;
+static uint8_t *corner; // the coverage of a round bottom left corner
+static int32_t radius;  // of the window corners
+
+/** the colour of a theme token */
+static gfx_color_t token(idunn_color_t which)
+{
+    return idunn_color(&S.theme, which);
+}
+
+void window_look(void)
+{
+    radius = idunn_radius_lg(&S.theme);
+
+    // the shadow: the theme's window shadow around a window large enough
+    // that its middle row and column are straight
+    gfx_shadow_t layers[IDUNN_SHADOW_LAYERS];
+    int count = idunn_shadow(&S.theme, IDUNN_SHADOW_WINDOW, layers);
+    reach.left = reach.top = reach.right = reach.bottom = 0;
+    int32_t most = 0;
+    for (int i = 0; i < count; i++)
+    {
+        // a blur reaches its radius and a little more (the blur's tail)
+        int32_t r = layers[i].blur + layers[i].blur / 4 + layers[i].spread;
+        reach.left = r - layers[i].x > reach.left ? r - layers[i].x : reach.left;
+        reach.right = r + layers[i].x > reach.right ? r + layers[i].x : reach.right;
+        reach.top = r - layers[i].y > reach.top ? r - layers[i].y : reach.top;
+        reach.bottom = r + layers[i].y > reach.bottom ? r + layers[i].y : reach.bottom;
+        most = layers[i].blur + layers[i].spread > most ? layers[i].blur + layers[i].spread : most;
+    }
+    int32_t side = 2 * (radius + most) + 2;
+    gfx_buffer_free(shadow);
+    shadow = gfx_buffer_new(reach.left + side + reach.right, reach.top + side + reach.bottom);
     if (shadow)
     {
-        for (int32_t i = 12; i > 0; i--)
-            gfx_fill_round_rect(shadow,
-                                gfx_rect(SHADOW_PAD - i, SHADOW_PAD - i + SHADOW_DROP,
-                                         TPL_W + 2 * i, TPL_H + 2 * i),
-                                CORNER_RADIUS + i, gfx_rgba(0, 0, 0, 6));
-        gfx_fill_round_rect(shadow,
-                            gfx_rect(SHADOW_PAD - 1, SHADOW_PAD - 1, TPL_W + 2, TPL_H + 2),
-                            CORNER_RADIUS + 1, gfx_rgba(0, 0, 0, 46));
+        gfx_rect_t box = gfx_rect(reach.left, reach.top, side, side);
+        for (int i = 0; i < count; i++)
+            gfx_box_shadow(shadow, box, radius, &layers[i]);
+        // nothing under the window itself (an ALPHA window shows what is below)
+        gfx_buffer_t *hole = gfx_buffer_new(side, side);
+        if (hole)
+        {
+            gfx_fill_round_rect(hole, gfx_rect(0, 0, side, side), radius, gfx_rgb(255, 255, 255));
+            for (int32_t y = 0; y < side; y++)
+                for (int32_t x = 0; x < side; x++)
+                {
+                    uint32_t *p = gfx_pixel_at(shadow, reach.left + x, reach.top + y);
+                    *p = gfx_fade(*p, (uint8_t)(255 - gfx_alpha(*gfx_pixel_at(hole, x, y))));
+                }
+            gfx_buffer_free(hole);
+        }
     }
+    reach.x = reach.left + side / 2;
+    reach.y = reach.top + side / 2;
 
     // the coverage of a round corner
-    gfx_buffer_t *disc = gfx_buffer_new(2 * CORNER_RADIUS, 2 * CORNER_RADIUS);
+    free(corner);
+    corner = radius > 0 ? malloc((size_t)(radius * radius)) : NULL;
+    gfx_buffer_t *disc = corner ? gfx_buffer_new(2 * radius, 2 * radius) : NULL;
     if (disc)
     {
-        gfx_fill_round_rect(disc, gfx_rect(0, 0, 2 * CORNER_RADIUS, 2 * CORNER_RADIUS),
-                            CORNER_RADIUS, gfx_rgb(255, 255, 255));
-        for (int32_t y = 0; y < CORNER_RADIUS; y++)
-            for (int32_t x = 0; x < CORNER_RADIUS; x++)
-                corner[y * CORNER_RADIUS + x] =
-                    gfx_alpha(*gfx_pixel_at(disc, x, CORNER_RADIUS + y));
+        gfx_fill_round_rect(disc, gfx_rect(0, 0, 2 * radius, 2 * radius), radius,
+                            gfx_rgb(255, 255, 255));
+        for (int32_t y = 0; y < radius; y++)
+            for (int32_t x = 0; x < radius; x++)
+                corner[y * radius + x] = gfx_alpha(*gfx_pixel_at(disc, x, radius + y));
         gfx_buffer_free(disc);
     }
+    else
+    {
+        free(corner);
+        corner = NULL;
+        radius = 0;
+    }
+
+    // every title bar again
+    for (window_t *w = S.bottom; w; w = w->above)
+        w->bar_dirty = true;
+    screen_damage(gfx_rect(0, 0, S.width, S.height));
 }
 
 bool window_decorated(const window_t *w)
@@ -86,8 +131,11 @@ gfx_rect_t window_bounds(const window_t *w)
     gfx_rect_t f = window_frame(w);
     if (!window_decorated(w))
         return f;
-    int32_t pad = SHADOW_PAD > RESIZE_BAND ? SHADOW_PAD : RESIZE_BAND;
-    return gfx_rect(f.x - pad, f.y - pad, f.w + 2 * pad, f.h + 2 * pad + SHADOW_DROP);
+    int32_t left = reach.left > RESIZE_BAND ? reach.left : RESIZE_BAND;
+    int32_t top = reach.top > RESIZE_BAND ? reach.top : RESIZE_BAND;
+    int32_t right = reach.right > RESIZE_BAND ? reach.right : RESIZE_BAND;
+    int32_t bottom = reach.bottom > RESIZE_BAND ? reach.bottom : RESIZE_BAND;
+    return gfx_rect(f.x - left, f.y - top, f.w + left + right, f.h + top + bottom);
 }
 
 bool window_visible(const window_t *w)
@@ -140,19 +188,25 @@ static bool has_button(const window_t *w, part_t part)
     return part != PART_MAXIMIZE || (w->flags & HEIM_WINDOW_RESIZABLE);
 }
 
+/**
+ * a window button as a ghost button: the muted colour, the hover colour
+ * under the pointer (the destructive colour for close), a little darker
+ * while pressed.
+ */
 static void draw_button(window_t *w, part_t part, const icon_t *icon, bool focused)
 {
     gfx_rect_t r = button_rect(w, part);
-    gfx_color_t ink = focused ? gfx_rgb(60, 64, 76) : gfx_rgb(150, 152, 160);
+    gfx_color_t ink = token(IDUNN_COLOR_MUTED_FOREGROUND);
+    if (!focused)
+        ink = gfx_fade(ink, 160);
     if (w->hover == part || w->pressed == part)
     {
         bool close = part == PART_CLOSE;
-        gfx_color_t back = close ? gfx_rgb(226, 72, 72) : gfx_rgba(0, 0, 0, 22);
+        gfx_color_t back = token(close ? IDUNN_COLOR_DESTRUCTIVE : IDUNN_COLOR_HOVER);
         if (w->pressed == part)
-            back = close ? gfx_rgb(190, 50, 50) : gfx_rgba(0, 0, 0, 44);
-        gfx_fill_round_rect(w->bar, r, 6, back);
-        if (close)
-            ink = gfx_rgb(255, 255, 255);
+            back = gfx_mix(back, close ? gfx_rgb(0, 0, 0) : token(IDUNN_COLOR_FOREGROUND), 36);
+        gfx_fill_round_rect(w->bar, r, idunn_radius_sm(&S.theme), back);
+        ink = close ? gfx_rgb(255, 255, 255) : token(IDUNN_COLOR_FOREGROUND);
     }
     if (icon)
         icon_draw_mask(w->bar, icon, r.x + (r.w - icon->width) / 2,
@@ -172,9 +226,17 @@ static void draw_bar(window_t *w)
     // a window with a menu open looks focused
     bool focused = S.focus && window_root(S.focus) == w;
     gfx_clear(w->bar, GFX_TRANSPARENT);
-    gfx_fill_round_rect(w->bar, gfx_rect(0, 0, width, TITLE_HEIGHT + CORNER_RADIUS),
-                        rounded(w) ? CORNER_RADIUS : 0, focused ? bar_focused : bar_unfocused);
-    gfx_fill_rect(w->bar, gfx_rect(0, TITLE_HEIGHT - 1, width, 1), gfx_rgba(0, 0, 0, 40));
+    // the preview's bar: a soft gradient, a light line at the top, the
+    // border colour below
+    int32_t r = rounded(w) ? radius : 0;
+    gfx_fill_round_rect_gradient(w->bar, gfx_rect(0, 0, width, TITLE_HEIGHT + r), r,
+                                 token(IDUNN_COLOR_TITLE_TOP), token(IDUNN_COLOR_TITLE_BOTTOM));
+    gfx_rect_t clip = w->bar->clip;
+    gfx_set_clip(w->bar, gfx_rect(0, 0, width, 1));
+    gfx_border_round_rect(w->bar, gfx_rect(0, 0, width, TITLE_HEIGHT + r), r, 1,
+                          token(IDUNN_COLOR_TOP_LIGHT));
+    gfx_set_clip(w->bar, clip);
+    gfx_fill_rect(w->bar, gfx_rect(0, TITLE_HEIGHT - 1, width, 1), token(IDUNN_COLOR_BORDER));
 
     // the title, in the middle, between the buttons
     int32_t buttons = 6 + 3 * BUTTON_WIDTH + 8;
@@ -184,7 +246,7 @@ static void draw_bar(window_t *w)
         int32_t lh = bragi_line_height(f);
         gfx_rect_t box = gfx_rect(buttons, (TITLE_HEIGHT - lh) / 2 + 1, width - 2 * buttons, lh);
         bragi_draw_box(w->bar, f, box, w->title, BRAGI_ALIGN_CENTER,
-                       focused ? gfx_rgb(40, 42, 50) : gfx_rgb(140, 142, 150));
+                       token(focused ? IDUNN_COLOR_FOREGROUND : IDUNN_COLOR_MUTED_FOREGROUND));
     }
 
     draw_button(w, PART_MINIMIZE, S.icon_minimize, focused);
@@ -219,14 +281,14 @@ static void draw_shadow(gfx_rect_t f, gfx_rect_t clip)
 {
     if (!shadow)
         return;
-    const int32_t left = TPL_STRETCH_X;                  // columns before the stretched one
-    const int32_t right = shadow->width - left - 1;      // columns after it
-    const int32_t top = TPL_STRETCH_Y;
+    const int32_t left = reach.x;                   // columns before the stretched one
+    const int32_t right = shadow->width - left - 1; // columns after it
+    const int32_t top = reach.y;
     const int32_t bottom = shadow->height - top - 1;
-    int32_t x0 = f.x - SHADOW_PAD;
-    int32_t y0 = f.y - SHADOW_PAD;
-    int32_t x1 = f.x + f.w + SHADOW_PAD; // the right end
-    int32_t y1 = f.y + f.h + SHADOW_PAD + SHADOW_DROP;
+    int32_t x0 = f.x - reach.left;
+    int32_t y0 = f.y - reach.top;
+    int32_t x1 = f.x + f.w + reach.right; // the right end
+    int32_t y1 = f.y + f.h + reach.bottom;
     int32_t mid_w = (x1 - right) - (x0 + left);
     int32_t mid_h = (y1 - bottom) - (y0 + top);
     if (mid_w < 0 || mid_h < 0)
@@ -257,8 +319,7 @@ static void draw_content(window_t *w, gfx_rect_t clip)
 {
     gfx_rect_t c = window_content(w);
     bool alpha = w->flags & HEIM_WINDOW_ALPHA;
-    int32_t r = rounded(w) && c.w >= 2 * CORNER_RADIUS && c.h >= CORNER_RADIUS ? CORNER_RADIUS
-                                                                                : 0;
+    int32_t r = rounded(w) && corner && c.w >= 2 * radius && c.h >= radius ? radius : 0;
     gfx_rect_t body = gfx_rect(0, 0, c.w, c.h - r);
     gfx_rect_t middle = gfx_rect(r, c.h - r, c.w - 2 * r, r);
     if (alpha)

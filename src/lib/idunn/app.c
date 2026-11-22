@@ -72,6 +72,31 @@ void idunn_app_set_theme(idunn_app_t *app, const idunn_theme_t *theme)
     }
 }
 
+bool idunn_app_save_theme(idunn_app_t *app, const char *key, const char *value)
+{
+    conf_t *conf = conf_open("theme");
+    if (!conf || conf_set(conf, "theme", key, value) != 0)
+    {
+        conf_free(conf);
+        return false;
+    }
+    bool saved = conf_save(conf) == 0;
+    if (saved)
+    {
+        // every app and the server load it again, this one too
+        heim_settings_changed(app->conn, "theme");
+    }
+    else
+    {
+        // it cannot be saved: this app shows it at least
+        idunn_theme_t theme;
+        idunn_theme_from_conf(&theme, conf);
+        idunn_app_set_theme(app, &theme);
+    }
+    conf_free(conf);
+    return saved;
+}
+
 static void clipboard_set(idunn_window_t *win, const char *text, size_t length)
 {
     heim_clipboard_set(win->app->conn, text, length);
