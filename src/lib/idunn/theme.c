@@ -13,74 +13,74 @@
 #include <string.h>
 
 static const char *const names[IDUNN_COLOR_COUNT] = {
-    [IDUNN_BACKGROUND] = "background",
-    [IDUNN_FOREGROUND] = "foreground",
-    [IDUNN_SURFACE] = "surface",
-    [IDUNN_SIDEBAR] = "sidebar",
-    [IDUNN_CARD] = "card",
-    [IDUNN_CARD_FOREGROUND] = "card-foreground",
-    [IDUNN_MUTED] = "muted",
-    [IDUNN_MUTED_FOREGROUND] = "muted-foreground",
-    [IDUNN_BORDER] = "border",
-    [IDUNN_INPUT] = "input",
-    [IDUNN_PRIMARY] = "primary",
-    [IDUNN_PRIMARY_FOREGROUND] = "primary-foreground",
-    [IDUNN_SECONDARY] = "secondary",
-    [IDUNN_SECONDARY_FOREGROUND] = "secondary-foreground",
-    [IDUNN_HOVER] = "hover",
-    [IDUNN_ACCENT] = "accent",
-    [IDUNN_ACCENT_FOREGROUND] = "accent-foreground",
-    [IDUNN_SELECTION] = "selection",
-    [IDUNN_DESTRUCTIVE] = "destructive",
-    [IDUNN_RING] = "ring",
-    [IDUNN_OVERLAY] = "overlay",
-    [IDUNN_TITLE_TOP] = "title-top",
-    [IDUNN_TITLE_BOTTOM] = "title-bottom",
-    [IDUNN_TOP_LIGHT] = "top-light",
+    [IDUNN_COLOR_BACKGROUND] = "background",
+    [IDUNN_COLOR_FOREGROUND] = "foreground",
+    [IDUNN_COLOR_SURFACE] = "surface",
+    [IDUNN_COLOR_SIDEBAR] = "sidebar",
+    [IDUNN_COLOR_CARD] = "card",
+    [IDUNN_COLOR_CARD_FOREGROUND] = "card-foreground",
+    [IDUNN_COLOR_MUTED] = "muted",
+    [IDUNN_COLOR_MUTED_FOREGROUND] = "muted-foreground",
+    [IDUNN_COLOR_BORDER] = "border",
+    [IDUNN_COLOR_INPUT] = "input",
+    [IDUNN_COLOR_PRIMARY] = "primary",
+    [IDUNN_COLOR_PRIMARY_FOREGROUND] = "primary-foreground",
+    [IDUNN_COLOR_SECONDARY] = "secondary",
+    [IDUNN_COLOR_SECONDARY_FOREGROUND] = "secondary-foreground",
+    [IDUNN_COLOR_HOVER] = "hover",
+    [IDUNN_COLOR_ACCENT] = "accent",
+    [IDUNN_COLOR_ACCENT_FOREGROUND] = "accent-foreground",
+    [IDUNN_COLOR_SELECTION] = "selection",
+    [IDUNN_COLOR_DESTRUCTIVE] = "destructive",
+    [IDUNN_COLOR_RING] = "ring",
+    [IDUNN_COLOR_OVERLAY] = "overlay",
+    [IDUNN_COLOR_TITLE_TOP] = "title-top",
+    [IDUNN_COLOR_TITLE_BOTTOM] = "title-bottom",
+    [IDUNN_COLOR_TOP_LIGHT] = "top-light",
 };
 
 // 0xAARRGGBB, not premultiplied; the accent and the tokens made from it
 // are set later
 static const uint32_t light[IDUNN_COLOR_COUNT] = {
-    [IDUNN_BACKGROUND] = 0xFFFFFFFF,
-    [IDUNN_FOREGROUND] = 0xFF09090B,
-    [IDUNN_SURFACE] = 0xFFFBFBFB,
-    [IDUNN_SIDEBAR] = 0xFFF6F6F7,
-    [IDUNN_CARD] = 0xFFFFFFFF,
-    [IDUNN_CARD_FOREGROUND] = 0xFF09090B,
-    [IDUNN_MUTED] = 0xFFF4F4F5,
-    [IDUNN_MUTED_FOREGROUND] = 0xFF71717A,
-    [IDUNN_BORDER] = 0xFFE4E4E7,
-    [IDUNN_INPUT] = 0xFFE4E4E7,
-    [IDUNN_SECONDARY] = 0xFFF4F4F5,
-    [IDUNN_SECONDARY_FOREGROUND] = 0xFF18181B,
-    [IDUNN_HOVER] = 0xFFF4F4F5,
-    [IDUNN_DESTRUCTIVE] = 0xFFDC2626,
-    [IDUNN_OVERLAY] = 0x66000000,
-    [IDUNN_TITLE_TOP] = 0xFFFDFDFD,
-    [IDUNN_TITLE_BOTTOM] = 0xFFF7F7F8,
-    [IDUNN_TOP_LIGHT] = 0xE6FFFFFF,
+    [IDUNN_COLOR_BACKGROUND] = 0xFFFFFFFF,
+    [IDUNN_COLOR_FOREGROUND] = 0xFF09090B,
+    [IDUNN_COLOR_SURFACE] = 0xFFFBFBFB,
+    [IDUNN_COLOR_SIDEBAR] = 0xFFF6F6F7,
+    [IDUNN_COLOR_CARD] = 0xFFFFFFFF,
+    [IDUNN_COLOR_CARD_FOREGROUND] = 0xFF09090B,
+    [IDUNN_COLOR_MUTED] = 0xFFF4F4F5,
+    [IDUNN_COLOR_MUTED_FOREGROUND] = 0xFF71717A,
+    [IDUNN_COLOR_BORDER] = 0xFFE4E4E7,
+    [IDUNN_COLOR_INPUT] = 0xFFE4E4E7,
+    [IDUNN_COLOR_SECONDARY] = 0xFFF4F4F5,
+    [IDUNN_COLOR_SECONDARY_FOREGROUND] = 0xFF18181B,
+    [IDUNN_COLOR_HOVER] = 0xFFF4F4F5,
+    [IDUNN_COLOR_DESTRUCTIVE] = 0xFFDC2626,
+    [IDUNN_COLOR_OVERLAY] = 0x66000000,
+    [IDUNN_COLOR_TITLE_TOP] = 0xFFFDFDFD,
+    [IDUNN_COLOR_TITLE_BOTTOM] = 0xFFF7F7F8,
+    [IDUNN_COLOR_TOP_LIGHT] = 0xE6FFFFFF,
 };
 
 static const uint32_t dark[IDUNN_COLOR_COUNT] = {
-    [IDUNN_BACKGROUND] = 0xFF09090B,
-    [IDUNN_FOREGROUND] = 0xFFFAFAFA,
-    [IDUNN_SURFACE] = 0xFF0E0E10,
-    [IDUNN_SIDEBAR] = 0xFF0B0B0D,
-    [IDUNN_CARD] = 0xFF18181B,
-    [IDUNN_CARD_FOREGROUND] = 0xFFFAFAFA,
-    [IDUNN_MUTED] = 0xFF27272A,
-    [IDUNN_MUTED_FOREGROUND] = 0xFFA1A1AA,
-    [IDUNN_BORDER] = 0x1AFFFFFF,
-    [IDUNN_INPUT] = 0x26FFFFFF,
-    [IDUNN_SECONDARY] = 0xFF27272A,
-    [IDUNN_SECONDARY_FOREGROUND] = 0xFFFAFAFA,
-    [IDUNN_HOVER] = 0xFF27272A,
-    [IDUNN_DESTRUCTIVE] = 0xFFEF4444,
-    [IDUNN_OVERLAY] = 0x99000000,
-    [IDUNN_TITLE_TOP] = 0xFF18181B,
-    [IDUNN_TITLE_BOTTOM] = 0xFF131315,
-    [IDUNN_TOP_LIGHT] = 0x12FFFFFF,
+    [IDUNN_COLOR_BACKGROUND] = 0xFF09090B,
+    [IDUNN_COLOR_FOREGROUND] = 0xFFFAFAFA,
+    [IDUNN_COLOR_SURFACE] = 0xFF0E0E10,
+    [IDUNN_COLOR_SIDEBAR] = 0xFF0B0B0D,
+    [IDUNN_COLOR_CARD] = 0xFF18181B,
+    [IDUNN_COLOR_CARD_FOREGROUND] = 0xFFFAFAFA,
+    [IDUNN_COLOR_MUTED] = 0xFF27272A,
+    [IDUNN_COLOR_MUTED_FOREGROUND] = 0xFFA1A1AA,
+    [IDUNN_COLOR_BORDER] = 0x1AFFFFFF,
+    [IDUNN_COLOR_INPUT] = 0x26FFFFFF,
+    [IDUNN_COLOR_SECONDARY] = 0xFF27272A,
+    [IDUNN_COLOR_SECONDARY_FOREGROUND] = 0xFFFAFAFA,
+    [IDUNN_COLOR_HOVER] = 0xFF27272A,
+    [IDUNN_COLOR_DESTRUCTIVE] = 0xFFEF4444,
+    [IDUNN_COLOR_OVERLAY] = 0x99000000,
+    [IDUNN_COLOR_TITLE_TOP] = 0xFF18181B,
+    [IDUNN_COLOR_TITLE_BOTTOM] = 0xFF131315,
+    [IDUNN_COLOR_TOP_LIGHT] = 0x12FFFFFF,
 };
 
 typedef struct
@@ -164,18 +164,19 @@ static long clamp(long value, long low, long high)
  * fill the colours of a mode with an accent (light and dark values and
  * the text on them), then the theme file's changes for the mode.
  */
-static void make_colors(idunn_theme_t *theme, const accent_t *accent, const conf_t *conf)
+static void make_mode(idunn_theme_t *theme, idunn_mode_t mode, const accent_t *accent,
+                      const conf_t *conf)
 {
-    bool is_dark = theme->mode == IDUNN_DARK;
+    bool is_dark = mode == IDUNN_DARK;
     uint32_t argb[IDUNN_COLOR_COUNT];
     memcpy(argb, is_dark ? dark : light, sizeof(argb));
 
-    argb[IDUNN_ACCENT] = is_dark ? accent->dark : accent->light;
-    argb[IDUNN_ACCENT_FOREGROUND] = is_dark ? accent->dark_text : accent->light_text;
-    argb[IDUNN_PRIMARY] = argb[IDUNN_ACCENT];
-    argb[IDUNN_PRIMARY_FOREGROUND] = argb[IDUNN_ACCENT_FOREGROUND];
-    argb[IDUNN_SELECTION] = at_percent(argb[IDUNN_ACCENT], is_dark ? 30 : 20);
-    argb[IDUNN_RING] = at_percent(argb[IDUNN_ACCENT], 50);
+    argb[IDUNN_COLOR_ACCENT] = is_dark ? accent->dark : accent->light;
+    argb[IDUNN_COLOR_ACCENT_FOREGROUND] = is_dark ? accent->dark_text : accent->light_text;
+    argb[IDUNN_COLOR_PRIMARY] = argb[IDUNN_COLOR_ACCENT];
+    argb[IDUNN_COLOR_PRIMARY_FOREGROUND] = argb[IDUNN_COLOR_ACCENT_FOREGROUND];
+    argb[IDUNN_COLOR_SELECTION] = at_percent(argb[IDUNN_COLOR_ACCENT], is_dark ? 30 : 20);
+    argb[IDUNN_COLOR_RING] = at_percent(argb[IDUNN_COLOR_ACCENT], 50);
 
     if (conf)
     {
@@ -184,7 +185,13 @@ static void make_colors(idunn_theme_t *theme, const accent_t *accent, const conf
             argb[i] = conf_get_color(conf, section, names[i], argb[i]);
     }
     for (int i = 0; i < IDUNN_COLOR_COUNT; i++)
-        theme->colors[i] = premultiplied(argb[i]);
+        theme->colors[mode][i] = premultiplied(argb[i]);
+}
+
+static void make_colors(idunn_theme_t *theme, const accent_t *accent, const conf_t *conf)
+{
+    make_mode(theme, IDUNN_LIGHT, accent, conf);
+    make_mode(theme, IDUNN_DARK, accent, conf);
 }
 
 void idunn_theme_default(idunn_theme_t *theme)

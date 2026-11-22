@@ -7,6 +7,8 @@
 #include "idunn_theme.h"
 
 #include <stdlib.h>
+
+void test_widgets(void);
 #include <string.h>
 
 static void test_defaults(void)
@@ -18,16 +20,16 @@ static void test_defaults(void)
     CHECK_EQ(idunn_radius(&t), 6);
     CHECK_EQ(idunn_radius_sm(&t), 3);
     CHECK_EQ(idunn_radius_lg(&t), 10);
-    CHECK_EQ(idunn_color(&t, IDUNN_BACKGROUND), gfx_rgb(0x09, 0x09, 0x0b));
-    CHECK_EQ(idunn_color(&t, IDUNN_ACCENT), gfx_rgb(0xf4, 0x3f, 0x5e));
-    CHECK_EQ(idunn_color(&t, IDUNN_PRIMARY), idunn_color(&t, IDUNN_ACCENT));
-    CHECK_EQ(idunn_color(&t, IDUNN_RING), gfx_rgba(0xf4, 0x3f, 0x5e, 127));
-    CHECK_EQ(idunn_color(&t, IDUNN_BORDER), gfx_rgba(255, 255, 255, 26));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_BACKGROUND), gfx_rgb(0x09, 0x09, 0x0b));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_ACCENT), gfx_rgb(0xf4, 0x3f, 0x5e));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_PRIMARY), idunn_color(&t, IDUNN_COLOR_ACCENT));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_RING), gfx_rgba(0xf4, 0x3f, 0x5e, 127));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_BORDER), gfx_rgba(255, 255, 255, 26));
 
     // every token has a name
     for (int i = 0; i < IDUNN_COLOR_COUNT; i++)
         CHECK(idunn_color_name(i) != NULL);
-    CHECK(strcmp(idunn_color_name(IDUNN_MUTED_FOREGROUND), "muted-foreground") == 0);
+    CHECK(strcmp(idunn_color_name(IDUNN_COLOR_MUTED_FOREGROUND), "muted-foreground") == 0);
     CHECK(idunn_color_name(IDUNN_COLOR_COUNT) == NULL);
 }
 
@@ -41,9 +43,9 @@ static void test_file(void)
     idunn_theme_t t;
     idunn_theme_from_conf(&t, conf);
     CHECK(t.mode == IDUNN_LIGHT);
-    CHECK_EQ(idunn_color(&t, IDUNN_ACCENT), gfx_rgb(0x25, 0x63, 0xeb));
-    CHECK_EQ(idunn_color(&t, IDUNN_SELECTION), gfx_rgba(0x25, 0x63, 0xeb, 51));
-    CHECK_EQ(idunn_color(&t, IDUNN_BORDER), gfx_rgb(0xd4, 0xd4, 0xd8));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_ACCENT), gfx_rgb(0x25, 0x63, 0xeb));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_SELECTION), gfx_rgba(0x25, 0x63, 0xeb, 51));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_BORDER), gfx_rgb(0xd4, 0xd4, 0xd8));
     CHECK_EQ(idunn_radius_lg(&t), 12);
     CHECK_EQ(idunn_text_style(&t, IDUNN_TEXT_BODY).size, 14);
     conf_free(conf);
@@ -51,15 +53,15 @@ static void test_file(void)
     // any colour as the accent; values out of range are made to fit
     conf = conf_from_text("[theme]\naccent = #123456\nradius = 40\nscale = 2\n", NULL);
     idunn_theme_from_conf(&t, conf);
-    CHECK_EQ(idunn_color(&t, IDUNN_ACCENT), gfx_rgb(0x12, 0x34, 0x56));
-    CHECK_EQ(idunn_color(&t, IDUNN_ACCENT_FOREGROUND), gfx_rgb(255, 255, 255));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_ACCENT), gfx_rgb(0x12, 0x34, 0x56));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_ACCENT_FOREGROUND), gfx_rgb(255, 255, 255));
     CHECK_EQ(idunn_radius(&t), 24); // 12 at scale 2
     conf_free(conf);
 
     // an unknown accent and no file: the defaults
     conf = conf_from_text("[theme]\naccent = sparkly\n", NULL);
     idunn_theme_from_conf(&t, conf);
-    CHECK_EQ(idunn_color(&t, IDUNN_ACCENT), gfx_rgb(0xf4, 0x3f, 0x5e));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_ACCENT), gfx_rgb(0xf4, 0x3f, 0x5e));
     conf_free(conf);
     idunn_theme_from_conf(&t, NULL);
     CHECK(t.mode == IDUNN_DARK);
@@ -67,7 +69,7 @@ static void test_file(void)
     // the neutral accent has dark text in dark mode
     conf = conf_from_text("[theme]\naccent = neutral\n", NULL);
     idunn_theme_from_conf(&t, conf);
-    CHECK_EQ(idunn_color(&t, IDUNN_PRIMARY_FOREGROUND), gfx_rgb(0x18, 0x18, 0x1b));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_PRIMARY_FOREGROUND), gfx_rgb(0x18, 0x18, 0x1b));
     conf_free(conf);
 }
 
@@ -109,6 +111,9 @@ static void test_shadows(void)
 
     t.mode = IDUNN_LIGHT;
     CHECK_EQ(idunn_shadow(&t, IDUNN_SHADOW_XS, layers), 1);
+    // both palettes are there: a mode change is all it takes
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_ACCENT), gfx_rgb(0xe1, 0x1d, 0x48));
+    CHECK_EQ(idunn_color(&t, IDUNN_COLOR_BACKGROUND), gfx_rgb(255, 255, 255));
     CHECK_EQ(layers[0].y, 1);
     CHECK_EQ(idunn_shadow(&t, IDUNN_SHADOW_COUNT, layers), 0);
 }
@@ -119,5 +124,6 @@ int main(void)
     test_file();
     test_text_styles();
     test_shadows();
+    test_widgets();
     return hosttest_done("idunn");
 }

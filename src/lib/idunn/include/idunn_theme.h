@@ -31,30 +31,30 @@ typedef enum
 
 typedef enum
 {
-    IDUNN_BACKGROUND,           // the content of a plain window
-    IDUNN_FOREGROUND,           // normal text
-    IDUNN_SURFACE,              // the window content, a little off the background
-    IDUNN_SIDEBAR,              // a side bar, one step more
-    IDUNN_CARD,                 // cards, fields, menus, dialogs
-    IDUNN_CARD_FOREGROUND,
-    IDUNN_MUTED,                // quiet backgrounds: tab lists, code, empty states
-    IDUNN_MUTED_FOREGROUND,     // help text, placeholders, inactive things
-    IDUNN_BORDER,
-    IDUNN_INPUT,                // the border of inputs
-    IDUNN_PRIMARY,              // the main button: the accent
-    IDUNN_PRIMARY_FOREGROUND,
-    IDUNN_SECONDARY,
-    IDUNN_SECONDARY_FOREGROUND,
-    IDUNN_HOVER,                // ghost buttons, menu items and rows under the pointer
-    IDUNN_ACCENT,               // the user's colour
-    IDUNN_ACCENT_FOREGROUND,
-    IDUNN_SELECTION,            // selected text and rows: the accent, faint
-    IDUNN_DESTRUCTIVE,          // delete buttons, errors
-    IDUNN_RING,                 // the focus ring: the accent at half
-    IDUNN_OVERLAY,              // behind a dialog
-    IDUNN_TITLE_TOP,            // the title bar's gradient
-    IDUNN_TITLE_BOTTOM,
-    IDUNN_TOP_LIGHT,            // the light line at the top edge of a title bar
+    IDUNN_COLOR_BACKGROUND,           // the content of a plain window
+    IDUNN_COLOR_FOREGROUND,           // normal text
+    IDUNN_COLOR_SURFACE,              // the window content, a little off the background
+    IDUNN_COLOR_SIDEBAR,              // a side bar, one step more
+    IDUNN_COLOR_CARD,                 // cards, fields, menus, dialogs
+    IDUNN_COLOR_CARD_FOREGROUND,
+    IDUNN_COLOR_MUTED,                // quiet backgrounds: tab lists, code, empty states
+    IDUNN_COLOR_MUTED_FOREGROUND,     // help text, placeholders, inactive things
+    IDUNN_COLOR_BORDER,
+    IDUNN_COLOR_INPUT,                // the border of inputs
+    IDUNN_COLOR_PRIMARY,              // the main button: the accent
+    IDUNN_COLOR_PRIMARY_FOREGROUND,
+    IDUNN_COLOR_SECONDARY,
+    IDUNN_COLOR_SECONDARY_FOREGROUND,
+    IDUNN_COLOR_HOVER,                // ghost buttons, menu items and rows under the pointer
+    IDUNN_COLOR_ACCENT,               // the user's colour
+    IDUNN_COLOR_ACCENT_FOREGROUND,
+    IDUNN_COLOR_SELECTION,            // selected text and rows: the accent, faint
+    IDUNN_COLOR_DESTRUCTIVE,          // delete buttons, errors
+    IDUNN_COLOR_RING,                 // the focus ring: the accent at half
+    IDUNN_COLOR_OVERLAY,              // behind a dialog
+    IDUNN_COLOR_TITLE_TOP,            // the title bar's gradient
+    IDUNN_COLOR_TITLE_BOTTOM,
+    IDUNN_COLOR_TOP_LIGHT,            // the light line at the top edge of a title bar
     IDUNN_COLOR_COUNT
 } idunn_color_t;
 
@@ -92,7 +92,7 @@ typedef enum
 typedef struct
 {
     idunn_mode_t mode;
-    gfx_color_t colors[IDUNN_COLOR_COUNT];
+    gfx_color_t colors[2][IDUNN_COLOR_COUNT]; // by mode: changing mode needs nothing else
     int32_t radius;    // the base radius at scale 1
     int32_t font_size; // the body text size at scale 1
     int32_t scale;
@@ -117,7 +117,7 @@ void idunn_theme_load(idunn_theme_t *theme);
 
 static inline gfx_color_t idunn_color(const idunn_theme_t *theme, idunn_color_t which)
 {
-    return theme->colors[which];
+    return theme->colors[theme->mode][which];
 }
 
 /**
