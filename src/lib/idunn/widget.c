@@ -112,6 +112,7 @@ void idunn_widget_free(idunn_widget_t *w)
 {
     if (!w)
         return;
+    idunn_dirty(w); // the place it had is drawn again
     idunn_widget_t *parent = w->parent;
     if (parent)
     {
@@ -206,6 +207,16 @@ void idunn_measure(idunn_widget_t *w, int32_t max_width, int32_t *width, int32_t
 
 void idunn_place(idunn_widget_t *w, gfx_rect_t rect)
 {
+    // in a layout, only what moved is drawn again: where it was and where
+    // it is (a scroll view moves its content's pixels itself)
+    gfx_rect_t was = w->rect;
+    if (w->window && w->window->laying_out &&
+        (was.x != rect.x || was.y != rect.y || was.w != rect.w || was.h != rect.h))
+    {
+        idunn_dirty_rect(w, was);
+        w->rect = rect;
+        idunn_dirty_rect(w, rect);
+    }
     w->rect = rect;
     if (w->cls->layout)
         w->cls->layout(w);
@@ -219,13 +230,15 @@ void idunn_dirty(idunn_widget_t *w)
 void idunn_dirty_rect(idunn_widget_t *w, gfx_rect_t rect)
 {
     idunn_window_t *win = w->window;
-    if (!win || gfx_rect_empty(rect))
+    if (!win || gfx_rect_empty(rect) || (w->state & IDUNN_HIDDEN))
         return;
     int32_t m = idunn_overdraw(&win->ctx->theme);
     gfx_rect_t r = gfx_rect(rect.x - m, rect.y - m, rect.w + 2 * m, rect.h + 2 * m);
-    // a scroll view shows only what is inside it
+    // a scroll view shows only what is inside it; a hidden box nothing
     for (const idunn_widget_t *p = w->parent; p; p = p->parent)
     {
+        if (p->state & IDUNN_HIDDEN)
+            return;
         if (p->flags & IDUNN_CLIPS)
             r = gfx_rect_intersect(r, p->rect);
     }
@@ -255,6 +268,8 @@ void idunn_set_hidden(idunn_widget_t *w, bool hidden)
     else
     {
         w->state &= ~IDUNN_HIDDEN;
+        // no place yet: the next layout draws it where it goes
+        w->rect = gfx_rect(0, 0, 0, 0);
     }
     if (w->parent)
         idunn_relayout(w->parent);
@@ -282,8 +297,10 @@ void idunn_reveal(idunn_widget_t *w, gfx_rect_t r)
 
 void idunn_relayout(idunn_widget_t *w)
 {
-    if (w->window)
-        w->window->needs_layout = true;
+    if (!w->window)
+        return;
+    w->window->needs_layout = true;
+    idunn_dirty(w); // what it shows changed (when it does not move, too)
 }
 
 bool idunn_ring_visible(const idunn_widget_t *w)

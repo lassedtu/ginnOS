@@ -521,6 +521,12 @@ typedef void (*idunn_edit_done_t)(idunn_widget_t *list, int item, const char *te
  */
 bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t end,
                           idunn_edit_done_t done, void *data);
+/**
+ * columns at the right of the rows: an item's detail is split at tabs,
+ * and each part is drawn at the right of its column (numbers line up).
+ * @param widths the columns' widths in design pixels, left to right.
+ */
+void idunn_list_view_set_columns(idunn_widget_t *list, const int32_t *widths, int count);
 /** true while an item is edited in place */
 bool idunn_list_view_editing(const idunn_widget_t *list);
 /** one click activates an item (a launcher); the arrow keys only move */
