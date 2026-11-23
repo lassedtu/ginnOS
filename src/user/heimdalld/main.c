@@ -82,6 +82,10 @@ static void start(char **argv)
     program = pid > 0 ? pid : 0;
     if (pid == 0)
     {
+        // heimdalld ignores SIGPIPE (a client can go away while it writes),
+        // and an ignored signal stays ignored through execve: give the
+        // program, and so every program of the desktop, the default back
+        signal(SIGPIPE, SIG_DFL);
         execve(argv[0], argv, environ);
         // a name without a path is in /bin
         char path[128];
