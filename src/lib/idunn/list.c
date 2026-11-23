@@ -54,6 +54,7 @@ typedef struct
     bool framed;
     bool grid;
     bool pictures; // rows have Tela icons, not Lucide ones
+    bool single_click; // one click activates (a launcher)
     char find[FIND_MAX];
     uint32_t find_at;
     idunn_callback_t on_select;
@@ -517,6 +518,8 @@ static bool list_event(idunn_widget_t *w, const idunn_event_t *ev)
             select_only(w, i);
         }
         selection_changed(w);
+        if (l->single_click && !(ev->mods & (IDUNN_MOD_CTRL | IDUNN_MOD_SHIFT)) && l->on_activate)
+            l->on_activate(w, l->activate_data);
         return true;
     }
     case IDUNN_EV_MENU:
@@ -717,6 +720,13 @@ void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activ
         return;
     l->on_activate = on_activate;
     l->activate_data = data;
+}
+
+void idunn_list_view_set_single_click(idunn_widget_t *list, bool single)
+{
+    list_t *l = as_list(list);
+    if (l)
+        l->single_click = single;
 }
 
 void idunn_list_view_on_menu(idunn_widget_t *list, idunn_callback_t on_menu, void *data)

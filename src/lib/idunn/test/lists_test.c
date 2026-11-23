@@ -239,6 +239,68 @@ static bool window_key(idunn_window_t *win, uint16_t code, uint32_t mods, const 
  * beside the items nothing stays selected. keys the list does not use go
  * to the window's hook.
  */
+static int middles;
+static idunn_widget_t *middle_on;
+
+static void count_middle(idunn_widget_t *w, void *data)
+{
+    (void)data;
+    middles++;
+    middle_on = w;
+}
+
+/** a single-click list (a launcher): a click activates, the keys only move */
+static void test_single_click(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 400);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_widget_t *list = idunn_grow(idunn_add(col, idunn_list_view()), 1);
+    for (int i = 0; i < 3; i++)
+        idunn_list_view_add(list, "file", "name", NULL);
+    idunn_list_view_set_single_click(list, true);
+    idunn_list_view_on_activate(list, count_activate, NULL);
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+
+    activations = 0;
+    click_at(win, 50, 4 + 33 + 10, 0);
+    CHECK_EQ(activations, 1);
+    CHECK_EQ(idunn_list_view_current(list), 1);
+    key(win, IDUNN_KEY_DOWN, 0);
+    CHECK_EQ(activations, 1);
+    CHECK_EQ(idunn_list_view_current(list), 2);
+    key(win, IDUNN_KEY_ENTER, 0);
+    CHECK_EQ(activations, 2);
+    idunn_window_free_widgets(win);
+}
+
+/** a middle click goes to the nearest widget with a hook (a task button) */
+static void test_middle_click(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 100);
+    idunn_widget_t *row = idunn_row(0, 0);
+    idunn_box_set_align(row, IDUNN_START, IDUNN_START);
+    idunn_widget_t *a = idunn_add(row, idunn_button("A", IDUNN_GHOST, NULL, NULL));
+    idunn_widget_t *b = idunn_add(row, idunn_button("B", IDUNN_GHOST, NULL, NULL));
+    idunn_button_set_picture(b, "text-editor");
+    idunn_button_set_active(b, true);
+    idunn_button_set_dim(a, true);
+    idunn_on_middle_click(b, count_middle, NULL);
+    idunn_on_middle_click(row, count_middle, NULL);
+    idunn_window_set_root(win, row);
+    idunn_window_draw(win);
+
+    middles = 0;
+    idunn_window_pointer(win, IDUNN_POINTER_MIDDLE, b->rect.x + 4, b->rect.y + 4, 0);
+    CHECK_EQ(middles, 1);
+    CHECK(middle_on == b);
+    // on a, which has none: the row's
+    idunn_window_pointer(win, IDUNN_POINTER_MIDDLE, a->rect.x + 4, a->rect.y + 4, 0);
+    CHECK_EQ(middles, 2);
+    CHECK(middle_on == row);
+    idunn_window_free_widgets(win);
+}
+
 static void test_list_menu(idunn_context_t *ctx)
 {
     idunn_window_t *win = idunn_window_offscreen(ctx, 300, 400);
@@ -418,6 +480,8 @@ void test_lists(idunn_context_t *ctx)
     test_tabs(ctx);
     test_list(ctx);
     test_list_menu(ctx);
+    test_middle_click(ctx);
+    test_single_click(ctx);
     test_keep_end(ctx);
     test_grid(ctx);
 }

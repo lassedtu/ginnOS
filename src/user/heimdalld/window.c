@@ -796,6 +796,7 @@ void window_show(window_t *w)
     window_focus(w);
     window_damage(w);
     shell_window(w);
+    shell_window_app(w); // its program came before it showed (it was not listed yet)
 }
 
 void window_activate(window_t *w)

@@ -338,6 +338,14 @@ bool idunn_anim_running(const idunn_anim_t *a, uint32_t now)
     return a->duration != 0 && now - a->start < a->duration && a->from != a->to;
 }
 
+void idunn_on_middle_click(idunn_widget_t *w, idunn_callback_t on_middle, void *data)
+{
+    if (!w)
+        return;
+    w->on_middle = on_middle;
+    w->middle_data = data;
+}
+
 void idunn_on_menu(idunn_widget_t *w, idunn_callback_t on_menu, void *data)
 {
     if (!w)

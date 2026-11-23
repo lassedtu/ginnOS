@@ -684,6 +684,20 @@ void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, 
         }
         break;
     }
+    case IDUNN_POINTER_MIDDLE:
+        close_tooltip(win);
+        win->tip_widget = NULL;
+        for (idunn_widget_t *w = deepest(top, x, y); w; w = w->parent)
+        {
+            if (w->state & IDUNN_DISABLED)
+                continue;
+            if (w->on_middle)
+            {
+                w->on_middle(w, w->middle_data);
+                break;
+            }
+        }
+        break;
     }
 }
 

@@ -379,6 +379,8 @@ static void pointer(idunn_window_t *win, const heim_event_t *ev)
                                  p->x, p->y, p->mods);
         else if (p->button == BTN_RIGHT && p->kind == HEIM_POINTER_PRESS)
             idunn_window_pointer(win, IDUNN_POINTER_MENU, p->x, p->y, p->mods);
+        else if (p->button == BTN_MIDDLE && p->kind == HEIM_POINTER_PRESS)
+            idunn_window_pointer(win, IDUNN_POINTER_MIDDLE, p->x, p->y, p->mods);
         break;
     case HEIM_POINTER_SCROLL:
         idunn_window_scroll(win, p->x, p->y, p->value);

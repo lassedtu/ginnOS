@@ -287,6 +287,12 @@ void idunn_set_disabled(idunn_widget_t *w, bool disabled);
 void idunn_on_menu(idunn_widget_t *w, idunn_callback_t on_menu, void *data);
 
 /**
+ * on_middle on a press of the middle button on the widget or in it (the
+ * nearest widget that has one): a task button closes its window.
+ */
+void idunn_on_middle_click(idunn_widget_t *w, idunn_callback_t on_middle, void *data);
+
+/**
  * a control with a wrong value: its border and ring are red (a field
  * sets this on its control with idunn_field_set_error).
  */
@@ -336,6 +342,18 @@ idunn_widget_t *idunn_icon_button(const char *icon, idunn_variant_t variant,
  * an icon (a Lucide name) before the text.
  */
 void idunn_button_set_icon(idunn_widget_t *button, const char *icon);
+
+/** a picture in its own colours (a Tela name, an app's icon) before the text */
+void idunn_button_set_picture(idunn_widget_t *button, const char *picture);
+
+/**
+ * the button is on (a task's window is active, a toggle is on): a
+ * filled look with a short accent line under it.
+ */
+void idunn_button_set_active(idunn_widget_t *button, bool active);
+
+/** the content muted (a task whose window is minimized) */
+void idunn_button_set_dim(idunn_widget_t *button, bool dim);
 void idunn_button_set_size(idunn_widget_t *button, idunn_size_t size);
 void idunn_button_set_text(idunn_widget_t *button, const char *text);
 void idunn_button_set_variant(idunn_widget_t *button, idunn_variant_t variant);
@@ -488,6 +506,8 @@ int idunn_list_view_current(const idunn_widget_t *list);
 /** on_select after the selection changes; on_activate on a double click or Enter */
 void idunn_list_view_on_select(idunn_widget_t *list, idunn_callback_t on_select, void *data);
 void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activate, void *data);
+/** one click activates an item (a launcher); the arrow keys only move */
+void idunn_list_view_set_single_click(idunn_widget_t *list, bool single);
 /**
  * on_menu on a right click: on an item that is not selected, it selects
  * only that item first; on no item, nothing stays selected. open a menu
@@ -543,7 +563,8 @@ void idunn_set_tooltip(idunn_widget_t *w, const char *text);
 
 /**
  * a popover: content in a card under owner; a press outside it or Escape
- * closes it. the popover owns content.
+ * closes it. the popover owns content. it is 288 wide, or as wide as
+ * content when content has a larger width (idunn_set_size).
  */
 void idunn_popover(idunn_widget_t *owner, idunn_widget_t *content);
 /** close the popover a widget is in */
@@ -620,6 +641,7 @@ typedef enum
     IDUNN_POINTER_RELEASE,
     IDUNN_POINTER_LEAVE,
     IDUNN_POINTER_MENU,    // the right button went down: a context menu
+    IDUNN_POINTER_MIDDLE,  // the middle button went down
 } idunn_pointer_t;
 
 /**

@@ -138,6 +138,8 @@ struct idunn_widget
     char *tooltip;        // shown over it after a while under the pointer, or NULL
     idunn_callback_t on_menu; // a right click on it that no child used (idunn_on_menu)
     void *menu_data;
+    idunn_callback_t on_middle; // a middle click on it (idunn_on_middle_click)
+    void *middle_data;
     void *data;           // the class's own state
 };
 
