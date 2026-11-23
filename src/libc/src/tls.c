@@ -136,5 +136,6 @@ void __init_tls(void)
         _syscall(SYS_EXIT_GROUP, 127, 0, 0, 0, 0); // no memory before main
     }
     struct thread *self = __tls_setup(area);
+    self->tid = (int)_syscall(SYS_GETTID, 0, 0, 0, 0, 0);
     _syscall(SYS_SET_TLS, (long)self, 0, 0, 0, 0);
 }

@@ -336,6 +336,7 @@ int main(void)
     test_regex();
     test_posix();
     test_files();
+    test_threads();
 
     if (failures)
         printf("libctest: %d of %d checks failed\n", failures, checks);

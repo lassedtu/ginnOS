@@ -61,6 +61,8 @@ const char *strerror(int errnum)
     case EPROTONOSUPPORT: return "protocol not supported";
     case EOPNOTSUPP: return "operation not supported";
     case ECANCELED: return "cancelled";
+    case EDEADLK: return "resource deadlock would occur";
+    case EOVERFLOW: return "value too large";
     }
     return "unknown error";
 }

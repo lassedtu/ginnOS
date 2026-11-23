@@ -49,3 +49,8 @@
 #define _POSIX_PATH_MAX      256
 #define _POSIX_HOST_NAME_MAX 255
 #define _POSIX2_LINE_MAX     2048
+
+// threads (pthread.h)
+#define PTHREAD_KEYS_MAX              128
+#define PTHREAD_DESTRUCTOR_ITERATIONS 4
+#define PTHREAD_STACK_MIN             16384

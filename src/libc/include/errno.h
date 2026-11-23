@@ -57,6 +57,10 @@
 #define EFBIG  46 /* a file would be too large */
 #define ENOLCK 47 /* no locks left */
 #define ENXIO  48 /* no such device or address */
+#define EDEADLK 49 /* the lock would never be free (pthreads, from the libc) */
+#define EOVERFLOW 50 /* a value would be too large for its type */
+
+#define ENOTSUP EOPNOTSUPP
 
 #define EWOULDBLOCK EAGAIN
 

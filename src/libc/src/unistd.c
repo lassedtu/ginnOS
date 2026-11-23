@@ -1,3 +1,4 @@
+#include "thread.h"
 #include "unistd.h"
 #include "sys/time.h"
 #include "utime.h"
@@ -89,6 +90,10 @@ pid_t fork(void)
     {
         errno = -ret;
         return -1;
+    }
+    if (ret == 0)
+    {
+        __thread_after_fork(); // the child has this thread only
     }
     return (pid_t)ret;
 }
