@@ -139,3 +139,6 @@ int strcoll(const char *a, const char *b);
 void *memchr(const void *s, int c, size_t n);
 const char *strerror(int errnum);
 
+/** a description of a signal ("Terminated"), or "Unknown signal N" */
+char *strsignal(int sig);
+

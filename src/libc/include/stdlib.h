@@ -178,3 +178,13 @@ int mblen(const char *s, size_t n);
 int mbtowc(wchar_t *wc, const char *s, size_t n);
 /** wc as UTF-8 at s: the bytes, or -1 */
 int wctomb(char *s, wchar_t wc);
+
+/**
+ * the absolute path of path, with no "." or ".." and no double slashes,
+ * into resolved (PATH_MAX bytes), or into new memory when resolved is
+ * NULL. the file must exist. (ginnOS has no symbolic links yet.)
+ * @return resolved, or NULL with errno.
+ */
+char *realpath(const char *restrict path, char *restrict resolved);
+/** make a new folder (0700) named template with its six X's replaced */
+char *mkdtemp(char *template);

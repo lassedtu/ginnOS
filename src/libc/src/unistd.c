@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include "errno.h"
 #include <limits.h>
+#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/reboot.h>
@@ -544,4 +545,57 @@ int reboot(int how)
 int uname(struct utsname *name)
 {
     return check(_syscall(SYS_UNAME, (long)name, 0, 0, 0, 0));
+}
+
+long sysconf(int name)
+{
+    switch (name)
+    {
+    case _SC_ARG_MAX:
+        return ARG_MAX;
+    case _SC_CHILD_MAX:
+        return 64; // the kernel's PROCESS_MAX
+    case _SC_CLK_TCK:
+        return 100; // times() counts in hundredths of a second
+    case _SC_OPEN_MAX:
+        return 16; // the kernel's FD_MAX
+    case _SC_PAGESIZE:
+        return 4096;
+    case _SC_NPROCESSORS_CONF:
+    case _SC_NPROCESSORS_ONLN:
+        return 1;
+    case _SC_LINE_MAX:
+        return LINE_MAX;
+    case _SC_HOST_NAME_MAX:
+        return HOST_NAME_MAX;
+    case _SC_LOGIN_NAME_MAX:
+        return 32;
+    default:
+        errno = EINVAL;
+        return -1;
+    }
+}
+
+int gethostname(char *name, size_t length)
+{
+    struct utsname u;
+    if (uname(&u) < 0)
+        return -1;
+    if (strlen(u.nodename) >= length)
+    {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    strcpy(name, u.nodename);
+    return 0;
+}
+
+char *getlogin(void)
+{
+    static char name[33];
+    struct passwd *pw = getpwuid(getuid());
+    if (!pw)
+        return NULL;
+    snprintf(name, sizeof(name), "%s", pw->pw_name);
+    return name;
 }

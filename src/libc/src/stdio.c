@@ -33,20 +33,91 @@ struct stdio_file
     int owns_buffer;
     struct stdio_file *next; // every open stream, for fflush(NULL)
     pid_t pid;               // popen: the command at the other end, else 0
+    // fmemopen: the stream is this memory, not a file (fd is -1)
+    char *memory;
+    size_t memory_size; // the bytes it has
+    size_t memory_len;  // the bytes of content (reads stop here)
+    size_t memory_pos;
+    int owns_memory;    // allocated by fmemopen: freed by fclose
 };
 
 static char stdin_buffer[BUFSIZ];
 static char stdout_buffer[BUFSIZ];
 
-static FILE stdin_file = {0, STREAM_READ, _IOLBF, stdin_buffer, BUFSIZ, 0, 0, 0, EOF, 0, NULL, 0};
-static FILE stdout_file = {1, STREAM_WRITE, _IOLBF, stdout_buffer, BUFSIZ, 0, 0, 0, EOF, 0, NULL, 0};
-static FILE stderr_file = {2, STREAM_WRITE, _IONBF, NULL, 0, 0, 0, 0, EOF, 0, NULL, 0};
+static FILE stdin_file = {.fd = 0, .flags = STREAM_READ, .mode = _IOLBF,
+                          .buffer = stdin_buffer, .size = BUFSIZ, .unget = EOF};
+static FILE stdout_file = {.fd = 1, .flags = STREAM_WRITE, .mode = _IOLBF,
+                           .buffer = stdout_buffer, .size = BUFSIZ, .unget = EOF};
+static FILE stderr_file = {.fd = 2, .flags = STREAM_WRITE, .mode = _IONBF, .unget = EOF};
 
 FILE *stdin = &stdin_file;
 FILE *stdout = &stdout_file;
 FILE *stderr = &stderr_file;
 
 static FILE *open_streams;
+
+/**
+ * the reads, writes, seeks and closes of a stream, from its file or from
+ * its memory (fmemopen).
+ */
+static ssize_t raw_read(FILE *stream, void *buffer, size_t n)
+{
+    if (!stream->memory)
+        return read(stream->fd, buffer, n);
+    size_t left = stream->memory_len - stream->memory_pos;
+    n = n < left ? n : left;
+    memcpy(buffer, stream->memory + stream->memory_pos, n);
+    stream->memory_pos += n;
+    return (ssize_t)n;
+}
+
+static ssize_t raw_write(FILE *stream, const void *data, size_t n)
+{
+    if (!stream->memory)
+        return write(stream->fd, data, n);
+    size_t room = stream->memory_size - stream->memory_pos;
+    if (room == 0)
+    {
+        errno = ENOSPC;
+        return -1;
+    }
+    n = n < room ? n : room;
+    memcpy(stream->memory + stream->memory_pos, data, n);
+    stream->memory_pos += n;
+    if (stream->memory_pos > stream->memory_len)
+        stream->memory_len = stream->memory_pos;
+    // the content stays a string while there is room for the null byte
+    if (stream->memory_len < stream->memory_size)
+        stream->memory[stream->memory_len] = '\0';
+    return (ssize_t)n;
+}
+
+static long raw_seek(FILE *stream, long offset, int whence)
+{
+    if (!stream->memory)
+        return lseek(stream->fd, (int)offset, whence);
+    long base = whence == SEEK_SET   ? 0
+                : whence == SEEK_CUR ? (long)stream->memory_pos
+                                     : (long)stream->memory_len;
+    long position = base + offset;
+    if (whence < SEEK_SET || whence > SEEK_END || position < 0 ||
+        position > (long)stream->memory_size)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    stream->memory_pos = (size_t)position;
+    return position;
+}
+
+static int raw_close(FILE *stream)
+{
+    if (!stream->memory)
+        return close(stream->fd);
+    if (stream->owns_memory)
+        free(stream->memory);
+    return 0;
+}
 static int std_streams_ready;
 
 /**
@@ -79,7 +150,7 @@ static int flush_stream(FILE *stream)
     size_t done = 0;
     while (done < stream->write_len)
     {
-        ssize_t n = write(stream->fd, stream->buffer + done, stream->write_len - done);
+        ssize_t n = raw_write(stream, stream->buffer + done, stream->write_len - done);
         if (n <= 0)
         {
             stream->flags |= STREAM_ERROR;
@@ -99,7 +170,7 @@ static void drop_read_buffer(FILE *stream)
 {
     size_t unread = stream->read_len - stream->read_pos;
     if (unread > 0)
-        lseek(stream->fd, -(int)unread, SEEK_CUR);
+        raw_seek(stream, -(long)unread, SEEK_CUR);
     stream->read_pos = stream->read_len = 0;
     stream->unget = EOF;
 }
@@ -150,7 +221,7 @@ static size_t put_bytes(FILE *stream, const char *data, size_t len)
         size_t done = 0;
         while (done < len)
         {
-            ssize_t n = write(stream->fd, data + done, len - done);
+            ssize_t n = raw_write(stream, data + done, len - done);
             if (n <= 0)
             {
                 stream->flags |= STREAM_ERROR;
@@ -198,7 +269,7 @@ static int fill(FILE *stream)
         room = 1;
     }
 
-    ssize_t n = read(stream->fd, target, room);
+    ssize_t n = raw_read(stream, target, room);
     if (n <= 0)
     {
         stream->flags |= n == 0 ? STREAM_EOF : STREAM_ERROR;
@@ -387,6 +458,53 @@ FILE *fdopen(int fd, const char *mode)
     return stream;
 }
 
+FILE *fmemopen(void *memory, size_t size, const char *mode)
+{
+    int flags;
+    if (size == 0 || parse_mode(mode, &flags) < 0)
+    {
+        errno = EINVAL;
+        return NULL;
+    }
+    ready_std_streams();
+    FILE *stream = calloc(1, sizeof(FILE));
+    char *buffer = malloc(BUFSIZ);
+    char *own = memory ? NULL : calloc(1, size);
+    if (!stream || !buffer || (!memory && !own))
+    {
+        free(stream);
+        free(buffer);
+        free(own);
+        errno = ENOMEM;
+        return NULL;
+    }
+    stream->fd = -1;
+    stream->flags = flags;
+    stream->mode = _IOFBF;
+    stream->buffer = buffer;
+    stream->size = BUFSIZ;
+    stream->unget = EOF;
+    stream->owns_buffer = 1;
+    stream->memory = memory ? memory : own;
+    stream->owns_memory = own != NULL;
+    stream->memory_size = size;
+    // "r": all of it is content; "w": none (an empty string); "a": up to
+    // the first null byte, where writing starts
+    if (mode[0] == 'r')
+        stream->memory_len = size;
+    else if (mode[0] == 'w')
+        stream->memory[0] = '\0';
+    else
+    {
+        char *end = memchr(stream->memory, '\0', size);
+        stream->memory_len = end ? (size_t)(end - stream->memory) : size;
+        stream->memory_pos = stream->memory_len;
+    }
+    stream->next = open_streams;
+    open_streams = stream;
+    return stream;
+}
+
 FILE *fopen(const char *path, const char *mode)
 {
     int stream_flags;
@@ -420,7 +538,7 @@ int fclose(FILE *stream)
         }
     }
 
-    if (close(stream->fd) < 0)
+    if (raw_close(stream) < 0)
         result = EOF;
     if (stream == stdin || stream == stdout || stream == stderr)
         return result;
@@ -595,7 +713,7 @@ int fseek(FILE *stream, long offset, int whence)
 {
     fflush(stream);
     stream->unget = EOF;
-    if (lseek(stream->fd, (int)offset, whence) < 0)
+    if (raw_seek(stream, offset, whence) < 0)
         return -1;
     stream->flags &= ~STREAM_EOF;
     return 0;
@@ -603,7 +721,7 @@ int fseek(FILE *stream, long offset, int whence)
 
 long ftell(FILE *stream)
 {
-    long position = lseek(stream->fd, 0, SEEK_CUR);
+    long position = raw_seek(stream, 0, SEEK_CUR);
     if (position < 0)
         return -1;
     position += (long)stream->write_len;

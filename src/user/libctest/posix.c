@@ -2,7 +2,8 @@
  * @file posix.c
  * @brief libctest: the POSIX parts the Unix tools need: getline, the
  *        parts of a path, device numbers, the time zone fields, shell
- *        patterns and search trees.
+ *        patterns, search trees, memory streams, strptime, realpath,
+ *        mkdtemp, sysconf and the names of signals and users.
  */
 
 #include "libctest.h"
@@ -10,9 +11,12 @@
 #include <fnmatch.h>
 #include <inttypes.h>
 #include <libgen.h>
+#include <limits.h>
 #include <search.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <time.h>
 #include <unistd.h>
@@ -149,6 +153,87 @@ static void test_tree(void)
     CHECK(lsearch(&four, table, &count, sizeof(int), compare_ints) == &table[2] && count == 3);
 }
 
+static void test_memory_stream(void)
+{
+    char memory[16] = "hello world";
+    FILE *f = fmemopen(memory, sizeof(memory), "r");
+    CHECK(f != NULL);
+    char word[8];
+    CHECK(fgets(word, 6, f) && strcmp(word, "hello") == 0);
+    fclose(f);
+
+    f = fmemopen(memory, sizeof(memory), "w");
+    CHECK(memory[0] == '\0');
+    fprintf(f, "n=%d", 42);
+    fflush(f);
+    CHECK(strcmp(memory, "n=42") == 0);
+    CHECK(ftell(f) == 4);
+    fseek(f, 0, SEEK_SET);
+    fputc('m', f);
+    fclose(f);
+    CHECK(strcmp(memory, "m=42") == 0);
+
+    // writing stops at the end of the memory
+    char small[4];
+    f = fmemopen(small, sizeof(small), "w");
+    fputs("abcdef", f);
+    fclose(f);
+    CHECK(memcmp(small, "abcd", 4) == 0);
+
+    // no memory given: the stream has its own
+    f = fmemopen(NULL, 32, "w+");
+    fputs("own", f);
+    rewind(f);
+    char back[8] = {0};
+    CHECK(fgets(back, sizeof(back), f) && strcmp(back, "own") == 0);
+    fclose(f);
+}
+
+static void test_strptime(void)
+{
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    char *end = strptime("2026-11-23T13:45:07rest", "%Y-%m-%dT%H:%M:%S", &tm);
+    CHECK(end && strcmp(end, "rest") == 0);
+    CHECK(tm.tm_year == 126 && tm.tm_mon == 10 && tm.tm_mday == 23);
+    CHECK(tm.tm_hour == 13 && tm.tm_min == 45 && tm.tm_sec == 7);
+    memset(&tm, 0, sizeof(tm));
+    CHECK(strptime("Mon  23 nov 98 1:05 pm", "%a %d %b %y %I:%M %p", &tm) != NULL);
+    CHECK(tm.tm_wday == 1 && tm.tm_mon == 10 && tm.tm_year == 98 && tm.tm_hour == 13);
+    CHECK(strptime("12/31/05", "%D", &tm) && tm.tm_year == 105 && tm.tm_mday == 31);
+    CHECK(strptime("+0130", "%z", &tm) && tm.tm_gmtoff == 5400);
+    CHECK(strptime("13:61", "%H:%M", &tm) == NULL); // no minute 61
+    CHECK(strptime("x", "%d", &tm) == NULL);
+}
+
+static void test_files(void)
+{
+    char path[] = "/tmp/libctest.XXXXXX";
+    CHECK(mkdtemp(path) != NULL);
+    struct stat st;
+    CHECK(stat(path, &st) == 0 && S_ISDIR(st.st_mode) && (st.st_mode & 0777) == 0700);
+    char inside[64];
+    snprintf(inside, sizeof(inside), "%s/../%s/.", path, path + 5);
+    char resolved[PATH_MAX];
+    CHECK(realpath(inside, resolved) && strcmp(resolved, path) == 0);
+    CHECK(realpath("/tmp/no-such-file", resolved) == NULL);
+    char *made = realpath("/", NULL);
+    CHECK(made && strcmp(made, "/") == 0);
+    free(made);
+    rmdir(path);
+}
+
+static void test_system(void)
+{
+    CHECK(sysconf(_SC_CLK_TCK) == 100 && sysconf(_SC_PAGESIZE) == 4096);
+    CHECK(sysconf(-5) == -1);
+    char host[HOST_NAME_MAX + 1];
+    CHECK(gethostname(host, sizeof(host)) == 0 && host[0]);
+    CHECK(getlogin() != NULL);
+    CHECK(strcmp(strsignal(SIGTERM), "Terminated") == 0);
+    CHECK(strcmp(strsignal(99), "Unknown signal 99") == 0);
+}
+
 void test_posix(void)
 {
     test_getline();
@@ -157,4 +242,8 @@ void test_posix(void)
     test_zone();
     test_fnmatch();
     test_tree();
+    test_memory_stream();
+    test_strptime();
+    test_files();
+    test_system();
 }

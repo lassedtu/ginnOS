@@ -159,3 +159,10 @@ int putchar_unlocked(int c);
 ssize_t getline(char **line, size_t *size, FILE *stream);
 /** as getline, up to and with delimiter instead of a newline */
 ssize_t getdelim(char **line, size_t *size, int delimiter, FILE *stream);
+
+/**
+ * a stream on size bytes of memory (or on new memory, freed by fclose,
+ * when memory is NULL). reads stop at the content's end; writes stop at
+ * size and keep a null byte after the content while there is room.
+ */
+FILE *fmemopen(void *memory, size_t size, const char *mode);

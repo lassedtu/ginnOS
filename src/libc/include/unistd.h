@@ -365,3 +365,24 @@ int ftruncate(int fd);
  * @return new cursor position, or -1 on error.
  */
 int lseek(int fd, int offset, int whence);
+
+// sysconf names
+#define _SC_ARG_MAX          0
+#define _SC_CHILD_MAX        1
+#define _SC_CLK_TCK          2
+#define _SC_OPEN_MAX         4
+#define _SC_PAGESIZE         30
+#define _SC_PAGE_SIZE        _SC_PAGESIZE
+#define _SC_NPROCESSORS_CONF 83
+#define _SC_NPROCESSORS_ONLN 84
+#define _SC_LINE_MAX         43
+#define _SC_HOST_NAME_MAX    180
+#define _SC_LOGIN_NAME_MAX   71
+#define _SC_PHYS_PAGES       85
+
+/** a limit of the system (a _SC_ name), or -1 with EINVAL */
+long sysconf(int name);
+/** the name of this computer (uname's nodename) into name */
+int gethostname(char *name, size_t length);
+/** the name of the user who runs the program (from the password file), or NULL */
+char *getlogin(void);
