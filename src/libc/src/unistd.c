@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include "errno.h"
+#include <dirent.h>
 #include <limits.h>
 #include <pwd.h>
 #include <stdlib.h>
@@ -729,4 +730,96 @@ int utimes(const char *path, const struct timeval times[2])
     struct timespec both[2] = {{times[0].tv_sec, times[0].tv_usec * 1000},
                                {times[1].tv_sec, times[1].tv_usec * 1000}};
     return utimensat(AT_FDCWD, path, both, 0);
+}
+
+int clock_settime(clockid_t id, const struct timespec *when)
+{
+    return check(_syscall(SYS_CLOCK_SETTIME, id, (long)when, 0, 0, 0));
+}
+
+int sethostname(const char *name, size_t length)
+{
+    return check(_syscall(SYS_SETHOSTNAME, (long)name, (long)length, 0, 0, 0));
+}
+
+void sync(void)
+{
+    // the block cache writes through: the disk is never behind
+}
+
+int daemon(int keep_dir, int keep_files)
+{
+    pid_t pid = fork();
+    if (pid < 0)
+        return -1;
+    if (pid > 0)
+        _exit(0);
+    if (setsid() < 0)
+        return -1;
+    if (!keep_dir && chdir("/") < 0)
+        return -1;
+    if (!keep_files)
+    {
+        int fd = open("/dev/null", O_RDWR);
+        if (fd < 0)
+            return -1;
+        dup2(fd, 0);
+        dup2(fd, 1);
+        dup2(fd, 2);
+        if (fd > 2)
+            close(fd);
+    }
+    return 0;
+}
+
+/** find the character device numbered rdev in dir; its path into buffer */
+static int find_device(const char *dir, dev_t rdev, char *buffer, size_t size)
+{
+    DIR *d = opendir(dir);
+    if (!d)
+        return -1;
+    struct dirent *entry;
+    int found = -1;
+    while (found < 0 && (entry = readdir(d)))
+    {
+        char path[64];
+        struct stat st;
+        if (entry->d_name[0] == '.')
+            continue;
+        if (snprintf(path, sizeof(path), "%s/%s", dir, entry->d_name) >= (int)sizeof(path))
+            continue;
+        if (stat(path, &st) == 0 && S_ISCHR(st.st_mode) && st.st_rdev == rdev)
+        {
+            found = strlen(path) < size ? 0 : ERANGE;
+            if (found == 0)
+                strcpy(buffer, path);
+        }
+    }
+    closedir(d);
+    return found;
+}
+
+int ttyname_r(int fd, char *buffer, size_t size)
+{
+    struct stat st;
+    if (fstat(fd, &st) < 0)
+        return errno;
+    if (!S_ISCHR(st.st_mode) || st.st_rdev == 0 || !isatty(fd))
+        return ENOTTY;
+    int found = find_device("/dev/pts", st.st_rdev, buffer, size);
+    if (found < 0)
+        found = find_device("/dev", st.st_rdev, buffer, size);
+    return found < 0 ? ENOTTY : found;
+}
+
+char *ttyname(int fd)
+{
+    static char name[64];
+    int err = ttyname_r(fd, name, sizeof(name));
+    if (err)
+    {
+        errno = err;
+        return NULL;
+    }
+    return name;
 }

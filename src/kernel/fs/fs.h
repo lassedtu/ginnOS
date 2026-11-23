@@ -149,6 +149,7 @@ struct fs_stat
     uint32_t ctime;
     uint16_t uid;
     uint16_t gid;
+    uint32_t rdev; // a device node's device number (DEVICE_NUMBER), or 0
 };
 
 /**

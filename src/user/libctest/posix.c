@@ -6,7 +6,9 @@
  *        mkdtemp, sysconf and the names of signals and users.
  */
 
+#define SYSLOG_NAMES
 #include "libctest.h"
+#include <syslog.h>
 
 #include <fnmatch.h>
 #include <inttypes.h>
@@ -14,6 +16,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <pty.h>
 #include <search.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -21,6 +24,7 @@
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/wait.h>
+#include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -294,6 +298,63 @@ static void test_many_files(void)
     CHECK(sysconf(_SC_OPEN_MAX) == 64);
 }
 
+/** sethostname, clock_settime, ttyname, the syslog names (as root) */
+static void test_system_calls(void)
+{
+    char name[65];
+    CHECK(gethostname(name, sizeof(name)) == 0);
+    char old[65];
+    strcpy(old, name);
+    CHECK(sethostname("libctest-host", 13) == 0);
+    struct utsname u;
+    CHECK(uname(&u) == 0 && strcmp(u.nodename, "libctest-host") == 0);
+    CHECK(sethostname(old, strlen(old)) == 0);
+    char long_name[80];
+    memset(long_name, 'x', sizeof(long_name));
+    CHECK(sethostname(long_name, sizeof(long_name)) == -1 && errno == EINVAL);
+
+    // a minute on, then back
+    struct timespec now;
+    CHECK(clock_gettime(CLOCK_REALTIME, &now) == 0);
+    struct timespec later = {now.tv_sec + 60, 0};
+    CHECK(clock_settime(CLOCK_REALTIME, &later) == 0);
+    struct timespec read_back;
+    CHECK(clock_gettime(CLOCK_REALTIME, &read_back) == 0);
+    CHECK(read_back.tv_sec >= now.tv_sec + 59 && read_back.tv_sec <= now.tv_sec + 62);
+    later.tv_sec = read_back.tv_sec - 60;
+    CHECK(clock_settime(CLOCK_REALTIME, &later) == 0);
+    CHECK(clock_settime(CLOCK_MONOTONIC, &later) == -1 && errno == EINVAL);
+
+    // libctest runs on the console (tty0, 4:0)
+    char *tty = ttyname(0);
+    CHECK(tty != NULL && strcmp(tty, "/dev/tty0") == 0);
+    int pipe_fds[2];
+    CHECK(pipe(pipe_fds) == 0);
+    CHECK(ttyname(pipe_fds[0]) == NULL && errno == ENOTTY);
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
+    struct stat st;
+    CHECK(stat("/dev/tty0", &st) == 0 && major(st.st_rdev) == 4 && minor(st.st_rdev) == 0);
+
+    // a pseudo-terminal: the slave's name is in /dev/pts
+    int master;
+    int slave;
+    char pts[32];
+    CHECK(openpty(&master, &slave, pts, NULL, NULL) == 0);
+    tty = ttyname(slave);
+    CHECK(tty != NULL && strcmp(tty, pts) == 0);
+    close(slave);
+    close(master);
+
+    CHECK(LOG_FAC(LOG_LOCAL3) == 19 && (LOG_MAKEPRI(LOG_DAEMON, LOG_ERR) & LOG_FACMASK) ==
+                                           LOG_DAEMON);
+    int found = 0;
+    for (CODE *c = facilitynames; c->c_name; c++)
+        found += strcmp(c->c_name, "cron") == 0 && c->c_val == LOG_CRON;
+    CHECK(found == 1);
+    sync();
+}
+
 void test_posix(void)
 {
     test_getline();
@@ -308,4 +369,5 @@ void test_posix(void)
     test_system();
     test_exec_args();
     test_many_files();
+    test_system_calls();
 }

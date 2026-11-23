@@ -116,7 +116,16 @@ struct device
     device_type_t type;         // device class
     const device_ops_t *ops;    // optional lifecycle ops (may be NULL)
     void *driver_data;          // the concrete device the driver owns
+    uint32_t number;            // the device number st_rdev shows (DEVICE_NUMBER), or 0
 };
+
+/**
+ * a device number from its major and minor numbers, packed as Linux and
+ * the libc's makedev (sys/sysmacros.h) pack them. ginnOS uses Linux's
+ * numbers for the terminals: tty0 4:0, ptmx 5:2, pts/N 136:N.
+ */
+#define DEVICE_NUMBER(major, minor) \
+    ((((major) & 0xfffu) << 8) | ((minor) & 0xffu) | (((minor) & 0xfff00u) << 12))
 
 /**
  * reset the device registry. call once during early boot.

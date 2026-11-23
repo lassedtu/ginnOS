@@ -326,7 +326,9 @@ syscall_ret_t sys_symlinkat(struct registers *regs)
                                        (const char *)syscall_arg(regs, 2), resolved,
                                        sizeof(resolved), false);
     if (err == 0)
+    {
         err = permission_check_parent(resolved, false);
+    }
     if (err < 0)
         return err;
 
@@ -370,7 +372,9 @@ syscall_ret_t sys_readlinkat(struct registers *regs)
 
     uint32_t length = (uint32_t)strlen(target);
     if (length > size)
+    {
         length = size;
+    }
     kerr_t copied = copy_to_user(user_buffer, target, length);
     return kerr_failed(copied) ? kerr_to_errno(copied) : (syscall_ret_t)length;
 }
@@ -394,9 +398,11 @@ syscall_ret_t sys_linkat(struct registers *regs)
                                        (const char *)syscall_arg(regs, 1), old_path,
                                        sizeof(old_path), (flags & AT_SYMLINK_FOLLOW) != 0);
     if (err == 0)
+    {
         err = resolve_user_path_at((int32_t)syscall_arg(regs, 2),
                                    (const char *)syscall_arg(regs, 3), new_path,
                                    sizeof(new_path), false);
+    }
     if (err < 0)
         return err;
 
@@ -434,13 +440,17 @@ static int32_t times_to_attr(const struct ktimespec times[2], fs_attr_t *attr, b
     {
         long nsec = times[i].tv_nsec;
         if (nsec == UTIME_OMIT)
+        {
             continue;
+        }
         if (nsec != UTIME_NOW && (nsec < 0 || nsec > 999999999l))
             return -EINVAL;
         attr->what |= bits[i];
         *fields[i] = nsec == UTIME_NOW ? now : (uint32_t)times[i].tv_sec;
         if (nsec != UTIME_NOW)
+        {
             *explicit_out = true;
+        }
     }
     return 0;
 }

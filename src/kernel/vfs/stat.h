@@ -56,7 +56,7 @@ static inline void stat_from_fs(const fs_stat_t *fs, struct kstat *out)
     out->st_nlink = fs->links_count;
     out->st_uid = fs->uid;
     out->st_gid = fs->gid;
-    out->st_rdev = 0;
+    out->st_rdev = fs->rdev;
     out->st_size = (int32_t)fs->size;
     out->st_blksize = 1024;
     out->st_blocks = fs->blocks;

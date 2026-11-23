@@ -944,7 +944,9 @@ static bool trim_table(ext2_volume_t *volume, uint32_t table, uint32_t level, ui
     uint32_t per_block = volume->block_size / sizeof(uint32_t);
     uint32_t span = 1; // the blocks one entry covers
     for (uint32_t l = 1; l < level; l++)
+    {
         span *= per_block;
+    }
 
     uint32_t *entries = table_buffer(volume, level);
     if (!read_block(volume, table, entries))
@@ -955,7 +957,9 @@ static bool trim_table(ext2_volume_t *volume, uint32_t table, uint32_t level, ui
     for (uint32_t j = 0; j < per_block; j++)
     {
         if (entries[j] == 0)
+        {
             continue;
+        }
         uint32_t start = base + j * span;
         if (start + span <= first)
         {
@@ -1004,7 +1008,9 @@ static bool free_blocks_from(ext2_volume_t *volume, ext2_inode_t *inode, uint32_
     for (uint32_t i = first; i < EXT2_NDIR_BLOCKS; i++)
     {
         if (inode->i_block[i] == 0)
+        {
             continue;
+        }
         if (!free_block(volume, inode->i_block[i]))
             return false;
         inode->i_block[i] = 0;

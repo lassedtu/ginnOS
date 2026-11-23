@@ -404,5 +404,29 @@ int lseek(int fd, int offset, int whence);
 long sysconf(int name);
 /** the name of this computer (uname's nodename) into name */
 int gethostname(char *name, size_t length);
+/** set the host name (root only; at most 64 bytes) */
+int sethostname(const char *name, size_t length);
+
+/**
+ * the name of the terminal open as fd (as "/dev/pts/0").
+ * @return the name in a static buffer, or NULL (errno: ENOTTY, EBADF).
+ */
+char *ttyname(int fd);
+int ttyname_r(int fd, char *buffer, size_t size);
+
+/**
+ * make every write reach the disk. ginnOS writes through its cache at
+ * once, so there is nothing to wait for.
+ */
+void sync(void);
+
+/**
+ * go on in the background: a new process in a new session, with no
+ * terminal.
+ * @param keep_dir 0: change to "/".
+ * @param keep_files 0: read and write /dev/null on 0, 1 and 2.
+ * @return 0 in the new process, or -1 (errno set).
+ */
+int daemon(int keep_dir, int keep_files);
 /** the name of the user who runs the program (from the password file), or NULL */
 char *getlogin(void);

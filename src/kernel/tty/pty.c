@@ -593,13 +593,27 @@ static uint32_t master_poll(file_t *file)
     return events;
 }
 
-static int32_t tty_stat(file_t *file, struct kstat *st)
+// Linux's device numbers: /dev/ptmx, and the major of /dev/pts/N
+#define PTMX_NUMBER DEVICE_NUMBER(5, 2)
+#define PTS_MAJOR   136
+
+/** the stat of the master side: /dev/ptmx */
+static int32_t master_stat(file_t *file, struct kstat *st)
 {
     (void)file;
     memset(st, 0, sizeof(*st));
     st->st_mode = S_IFCHR | 0620;
     st->st_nlink = 1;
+    st->st_rdev = PTMX_NUMBER;
     st->st_blksize = CHUNK;
+    return 0;
+}
+
+/** the stat of the slave side: /dev/pts/N (ttyname looks for it) */
+static int32_t slave_stat(file_t *file, struct kstat *st)
+{
+    master_stat(file, st);
+    st->st_rdev = DEVICE_NUMBER(PTS_MAJOR, pty_of(file)->index);
     return 0;
 }
 
@@ -634,7 +648,7 @@ static const file_ops_t master_ops = {
     .read = master_read,
     .write = master_write,
     .ioctl = master_ioctl,
-    .stat = tty_stat,
+    .stat = master_stat,
     .poll = master_poll,
     .release = master_release,
 };
@@ -925,7 +939,7 @@ static const file_ops_t slave_ops = {
     .read = slave_read,
     .write = slave_write,
     .ioctl = slave_ioctl,
-    .stat = tty_stat,
+    .stat = slave_stat,
     .poll = slave_poll,
     .release = slave_release,
 };
@@ -992,11 +1006,13 @@ void pty_init(void)
         dev->type = DEVICE_TYPE_CHAR;
         dev->ops = &slave_device_ops;
         dev->driver_data = (void *)(uintptr_t)i;
+        dev->number = DEVICE_NUMBER(PTS_MAJOR, i);
     }
 
     strncpy(ptmx_device.name, "ptmx", DEVICE_NAME_MAX - 1);
     ptmx_device.type = DEVICE_TYPE_CHAR;
     ptmx_device.ops = &ptmx_ops;
+    ptmx_device.number = PTMX_NUMBER;
     device_register(&ptmx_device);
 }
 

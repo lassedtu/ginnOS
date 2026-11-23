@@ -148,6 +148,7 @@ syscall_ret_t sys_umask(struct registers *regs);
 
 /* kernel/time/clock.c */
 syscall_ret_t sys_clock_gettime(struct registers *regs);
+syscall_ret_t sys_clock_settime(struct registers *regs);
 syscall_ret_t sys_nanosleep(struct registers *regs);
 syscall_ret_t sys_times(struct registers *regs);
 
@@ -198,6 +199,7 @@ syscall_ret_t sys_fsync(struct registers *regs);
 /* sys_misc.c */
 syscall_ret_t sys_reboot(struct registers *regs);
 syscall_ret_t sys_uname(struct registers *regs);
+syscall_ret_t sys_sethostname(struct registers *regs);
 syscall_ret_t sys_shm_create(struct registers *regs);
 syscall_ret_t sys_getcwd(struct registers *regs);
 syscall_ret_t sys_chdir(struct registers *regs);

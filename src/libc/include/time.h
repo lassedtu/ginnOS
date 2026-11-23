@@ -45,6 +45,8 @@ struct tm
 
 time_t time(time_t *out);
 int clock_gettime(clockid_t id, struct timespec *out);
+/** set the realtime clock (root only; whole seconds) */
+int clock_settime(clockid_t id, const struct timespec *when);
 int nanosleep(const struct timespec *span, struct timespec *left);
 clock_t clock(void);
 double difftime(time_t end, time_t start);
