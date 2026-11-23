@@ -382,6 +382,12 @@ void idunn_button_set_active(idunn_widget_t *button, bool active);
 
 /** the content muted (a task whose window is minimized) */
 void idunn_button_set_dim(idunn_widget_t *button, bool dim);
+/** round ends: the radius is half the height */
+void idunn_button_set_pill(idunn_widget_t *button, bool pill);
+/** see-through, lighter than what is under it (over a picture) */
+void idunn_button_set_glass(idunn_widget_t *button, bool glass);
+/** a tile: the icon larger, over the text in small type (Restart, Power off) */
+void idunn_button_set_tile(idunn_widget_t *button, bool tile);
 void idunn_button_set_size(idunn_widget_t *button, idunn_size_t size);
 void idunn_button_set_text(idunn_widget_t *button, const char *text);
 void idunn_button_set_variant(idunn_widget_t *button, idunn_variant_t variant);
@@ -415,6 +421,11 @@ void idunn_text_field_set_text(idunn_widget_t *field, const char *text);
  * ring (a name that is changed in place, as in a file list).
  */
 void idunn_text_field_set_plain(idunn_widget_t *field, bool plain);
+/**
+ * a pill: round ends, see-through (over a picture, as on a login screen),
+ * no border, the text in the middle while it fits.
+ */
+void idunn_text_field_set_pill(idunn_widget_t *field, bool pill);
 /** a password field: a bullet for each character, and no Copy or Cut */
 void idunn_text_field_set_secret(idunn_widget_t *field, bool secret);
 /** the width of the field's text in pixels (0 before it is in a window) */

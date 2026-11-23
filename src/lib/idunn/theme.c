@@ -309,6 +309,9 @@ idunn_text_style_t idunn_text_style(const idunn_theme_t *theme, idunn_text_t whi
     case IDUNN_TEXT_CAPTION:
         style = (idunn_text_style_t){small, small + 4, 500, 0.0f, false};
         break;
+    case IDUNN_TEXT_HERO:
+        style = (idunn_text_style_t){fs * 7, fs * 7 + 4, 600, -0.04f, false};
+        break;
     default:
         style = (idunn_text_style_t){fs, fs + 5, 400, -0.006f, false};
         break;

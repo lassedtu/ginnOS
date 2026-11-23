@@ -12,6 +12,7 @@
 #include <string.h>
 
 #define HEIGHT    32
+#define PILL_H    40 // a pill field
 #define PADDING   12 // inside the 1 px border
 #define PLAIN_PAD 3  // the same, for a plain field
 #define ICON_SIZE 16
@@ -34,6 +35,7 @@ typedef struct
     void *blur_data;
     bool plain;  // a thin box around the text (idunn_text_field_set_plain)
     bool secret; // a bullet for each character (idunn_text_field_set_secret)
+    bool pill;   // see-through, round ends, the text centred (set_pill)
 } field_t;
 
 #define BULLET       "\xe2\x80\xa2" // U+2022
@@ -140,6 +142,16 @@ static void keep_caret_visible(idunn_widget_t *w)
         f->scroll = end - width;
     if (f->scroll < 0)
         f->scroll = 0;
+    // a pill: text that fits is in the middle (a scroll below 0 moves it
+    // right); when it is empty, the caret is before the placeholder
+    if (f->pill && end <= width)
+    {
+        bragi_face_t *face = idunn_face(idunn_ctx(w), IDUNN_TEXT_BODY);
+        int32_t shown = f->edit.length == 0 && f->placeholder && face
+                            ? bragi_measure(face, f->placeholder, -1)
+                            : end;
+        f->scroll = -(width - (shown < width ? shown : width)) / 2;
+    }
 }
 
 /** the caret shows again at once and starts blinking */
@@ -167,9 +179,10 @@ static void field_measure(idunn_widget_t *w, int32_t max_width, int32_t *width, 
     const field_t *f = w->data;
     const idunn_theme_t *t = idunn_theme(w);
     *width = idunn_px(t, WIDTH);
-    *height = f->plain ? idunn_text_style(t, IDUNN_TEXT_BODY).line_height +
-                             2 * idunn_px(t, PLAIN_PAD + 1)
-                       : idunn_px(t, HEIGHT);
+    *height = f->plain  ? idunn_text_style(t, IDUNN_TEXT_BODY).line_height +
+                              2 * idunn_px(t, PLAIN_PAD + 1)
+              : f->pill ? idunn_px(t, PILL_H)
+                        : idunn_px(t, HEIGHT);
 }
 
 static void field_layout(idunn_widget_t *w)
@@ -219,7 +232,22 @@ static void field_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     field_t *f = w->data;
     idunn_context_t *ctx = idunn_ctx(w);
     const idunn_theme_t *t = &ctx->theme;
-    if (f->plain)
+    if (f->pill)
+    {
+        // white (dark) or black (light) over what is under it; more when it
+        // is under the pointer or has the keyboard; a red edge for an error
+        int32_t radius = w->rect.h / 2;
+        bool dark = t->mode == IDUNN_DARK;
+        bool focused = w->state & IDUNN_FOCUSED;
+        uint8_t amount = (uint8_t)(focused ? 30 : 18 + 8 * idunn_hover_amount(w) / 255);
+        gfx_color_t tint = dark ? gfx_rgba(255, 255, 255, amount)
+                                : gfx_rgba(0, 0, 0, (uint8_t)(amount / 2));
+        gfx_fill_round_rect(buf, w->rect, radius, tint); // no ring: the fill shows the focus
+        if (w->state & IDUNN_ERROR)
+            gfx_border_round_rect(buf, w->rect, radius, idunn_px(t, 1),
+                                  idunn_color(t, IDUNN_COLOR_DESTRUCTIVE));
+    }
+    else if (f->plain)
     {
         // a thin box in the accent, as a name that is being changed in place
         int32_t radius = idunn_px(t, 2);
@@ -266,8 +294,13 @@ static void field_draw(idunn_widget_t *w, gfx_buffer_t *buf)
                         idunn_color(t, IDUNN_COLOR_FOREGROUND));
     }
     else if (f->placeholder)
-        idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, x, top, 0, f->placeholder,
+    {
+        bragi_face_t *face = idunn_face(ctx, IDUNN_TEXT_BODY);
+        int32_t px = f->pill && face ? box.x + (box.w - bragi_measure(face, f->placeholder, -1)) / 2
+                                     : x;
+        idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, px, top, 0, f->placeholder,
                         idunn_color(t, IDUNN_COLOR_MUTED_FOREGROUND));
+    }
 
     bool shown = ((w->window->now - f->blink_from) / BLINK_MS) % 2 == 0;
     if (focused && shown && !(w->state & IDUNN_DISABLED))
@@ -428,6 +461,16 @@ void idunn_text_field_set_plain(idunn_widget_t *field, bool plain)
     if (!f)
         return;
     f->plain = plain;
+    idunn_relayout(field);
+}
+
+void idunn_text_field_set_pill(idunn_widget_t *field, bool pill)
+{
+    field_t *f = as_field(field);
+    if (!f)
+        return;
+    f->pill = pill;
+    keep_caret_visible(field);
     idunn_relayout(field);
 }
 
