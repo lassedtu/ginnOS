@@ -235,6 +235,19 @@ int chdir(const char *path);
  * @return 0 on success, -1 on failure.
  */
 int unlink(const char *path);
+
+/** make a symbolic link at path that points at target */
+int symlink(const char *target, const char *path);
+int symlinkat(const char *target, int dirfd, const char *path);
+/**
+ * read a symbolic link's target (no NUL; a longer target is cut).
+ * @return the bytes put in buffer, or -1 (EINVAL: path is not a link).
+ */
+ssize_t readlink(const char *restrict path, char *restrict buffer, size_t size);
+ssize_t readlinkat(int dirfd, const char *restrict path, char *restrict buffer, size_t size);
+/** give a file one more name (a hard link) */
+int link(const char *old_path, const char *new_path);
+int linkat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path, int flags);
 /** remove a file, or with AT_REMOVEDIR a directory, relative to dirfd */
 int unlinkat(int dirfd, const char *path, int flags);
 

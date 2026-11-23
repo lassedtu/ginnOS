@@ -47,6 +47,11 @@ uint8_t inode_to_file_type(const ext2_inode_t *inode)
         return EXT2_FT_REG_FILE;
     }
 
+    if (inode_is_symlink(inode))
+    {
+        return EXT2_FT_SYMLINK;
+    }
+
     return 0;
 }
 

@@ -12,9 +12,12 @@
 
 #define EXT2_FT_REG_FILE 1u // file type value for regular files in directory entries
 #define EXT2_FT_DIR 2u      // file type value for directories in directory entries
+#define EXT2_FT_SYMLINK 7u  // file type value for symbolic links in directory entries
 
 #define EXT2_S_IFREG 0x8000u // file type value for regular files in inode mode field
 #define EXT2_S_IFDIR 0x4000u // file type value for directories in inode mode field
+#define EXT2_S_IFLNK 0xA000u // file type value for symbolic links in inode mode field
+#define EXT2_LINK_MAX 32000u // the most names (hard links) an inode may have
 #define EXT2_S_IFMT 0xF000u  // bitmask for extracting file type from inode mode field
 
 #define EXT2_FEATURE_INCOMPAT_COMPRESSION 0x0001u // incompatible feature set flag for compression support
@@ -245,6 +248,38 @@ kerr_t ext2_rename(ext2_volume_t *volume, const char *old_path, const char *new_
  * @return KERR_OK on success, or an error code on failure.
  */
 kerr_t ext2_lookup_path(ext2_volume_t *volume, const char *path, uint32_t *inode_out);
+
+/**
+ * find the first symbolic link along a path.
+ * @param follow_last also the last name of the path, when it is a link.
+ * @param target gets the link's target, with a NUL.
+ * @param end_out gets the length of the path up to and with the link's
+ *        name, or 0 when there is no link (or a name is missing).
+ * @return KERR_OK, KERR_RANGE (the target is longer than size), KERR_IO.
+ */
+kerr_t ext2_find_link(ext2_volume_t *volume, const char *path, bool follow_last, char *target,
+                      uint32_t size, uint32_t *end_out);
+
+/**
+ * read a symbolic link's target, with a NUL.
+ * @return KERR_OK, KERR_INVAL (not a link), KERR_RANGE (too long for size),
+ *         KERR_NOTFOUND.
+ */
+kerr_t ext2_readlink(ext2_volume_t *volume, const char *path, char *target, uint32_t size);
+
+/**
+ * make a symbolic link at path that points at target.
+ * @return KERR_OK, KERR_EXIST, KERR_RANGE (the target is not shorter than
+ *         a block), KERR_NOTFOUND (no parent), KERR_NOSPC.
+ */
+kerr_t ext2_symlink(ext2_volume_t *volume, const char *path, const char *target);
+
+/**
+ * give the file at old_path one more name, new_path.
+ * @return KERR_OK, KERR_ISDIR (a directory), KERR_EXIST, KERR_RANGE (too
+ *         many links), KERR_NOTFOUND, KERR_NOSPC.
+ */
+kerr_t ext2_link(ext2_volume_t *volume, const char *old_path, const char *new_path);
 
 /**
  * open a file or directory by absolute path.

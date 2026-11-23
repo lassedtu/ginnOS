@@ -82,11 +82,15 @@ int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size);
 
 /**
  * as resolve_user_path, with a relative path taken in the directory open
- * as dirfd (AT_FDCWD: the working directory).
+ * as dirfd (AT_FDCWD: the working directory). the symbolic links along the
+ * path are replaced by their targets.
+ * @param follow also the last name, when it is a link (stat, open); not for
+ *        the calls that act on the name itself (unlink, rename, lstat).
  * @return 0, or -EFAULT, -ENAMETOOLONG, -ENOENT (an empty path), -EBADF,
- *         or -ENOTDIR (dirfd is no directory).
+ *         -ENOTDIR (dirfd is no directory), or -ELOOP.
  */
-int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolved, uint32_t size);
+int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolved, uint32_t size,
+                             bool follow);
 
 /**
  * give a file the caller has just created its mode (taken through the
@@ -118,6 +122,9 @@ syscall_ret_t sys_renameat(struct registers *regs);
 syscall_ret_t sys_faccessat(struct registers *regs);
 syscall_ret_t sys_mkdirat(struct registers *regs);
 syscall_ret_t sys_unlinkat(struct registers *regs);
+syscall_ret_t sys_symlinkat(struct registers *regs);
+syscall_ret_t sys_readlinkat(struct registers *regs);
+syscall_ret_t sys_linkat(struct registers *regs);
 syscall_ret_t sys_getdents(struct registers *regs);
 syscall_ret_t sys_poll(struct registers *regs);
 

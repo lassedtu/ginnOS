@@ -419,7 +419,7 @@ int stat(const char *path, struct stat *st)
 
 int lstat(const char *path, struct stat *st)
 {
-    return stat(path, st);
+    return fstatat(AT_FDCWD, path, st, AT_SYMLINK_NOFOLLOW);
 }
 
 int fstat(int fd, struct stat *st)
@@ -652,4 +652,34 @@ int fchown(int fd, uid_t uid, gid_t gid)
 int lchown(const char *path, uid_t uid, gid_t gid)
 {
     return fchownat(AT_FDCWD, path, uid, gid, AT_SYMLINK_NOFOLLOW);
+}
+
+int symlinkat(const char *target, int dirfd, const char *path)
+{
+    return check(_syscall(SYS_SYMLINKAT, (long)target, dirfd, (long)path, 0, 0));
+}
+
+int symlink(const char *target, const char *path)
+{
+    return symlinkat(target, AT_FDCWD, path);
+}
+
+ssize_t readlinkat(int dirfd, const char *restrict path, char *restrict buffer, size_t size)
+{
+    return check(_syscall(SYS_READLINKAT, dirfd, (long)path, (long)buffer, (long)size, 0));
+}
+
+ssize_t readlink(const char *restrict path, char *restrict buffer, size_t size)
+{
+    return readlinkat(AT_FDCWD, path, buffer, size);
+}
+
+int linkat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path, int flags)
+{
+    return check(_syscall(SYS_LINKAT, old_dirfd, (long)old_path, new_dirfd, (long)new_path, flags));
+}
+
+int link(const char *old_path, const char *new_path)
+{
+    return linkat(AT_FDCWD, old_path, AT_FDCWD, new_path, 0);
 }

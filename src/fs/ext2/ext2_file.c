@@ -474,9 +474,19 @@ kerr_t ext2_remove_file(ext2_volume_t *volume, const char *path)
     }
 
     name_len = (uint32_t)strlen(name);
-    if (!lookup_child_type(volume, parent_inode_number, name, name_len, &child_inode_number, &child_type) || child_type != EXT2_FT_REG_FILE)
+    if (!lookup_child_type(volume, parent_inode_number, name, name_len, &child_inode_number, &child_type))
     {
         return KERR_NOTFOUND;
+    }
+    if (child_type == EXT2_FT_DIR)
+    {
+        return KERR_ISDIR;
+    }
+
+    ext2_inode_t child;
+    if (kerr_failed(ext2_read_inode(volume, child_inode_number, &child)))
+    {
+        return KERR_IO;
     }
 
     if (!remove_directory_entry(volume, parent_inode_number, name, name_len))
@@ -484,7 +494,15 @@ kerr_t ext2_remove_file(ext2_volume_t *volume, const char *path)
         return KERR_IO;
     }
 
-    if (!free_inode_and_blocks(volume, child_inode_number, 0))
+    // the data stays while the file has other names (hard links)
+    if (child.i_links_count > 1)
+    {
+        child.i_links_count--;
+        child.i_ctime = ext2_now();
+        return write_inode(volume, child_inode_number, &child) ? KERR_OK : KERR_IO;
+    }
+
+    if (!free_inode_and_blocks(volume, child_inode_number, &child))
     {
         return KERR_IO;
     }

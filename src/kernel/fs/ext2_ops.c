@@ -29,6 +29,11 @@ static uint8_t map_ext2_file_type(uint8_t ext2_type)
         return FS_TYPE_DIR;
     }
 
+    if (ext2_type == EXT2_FT_SYMLINK)
+    {
+        return FS_TYPE_SYMLINK;
+    }
+
     return FS_TYPE_UNKNOWN;
 }
 
@@ -45,6 +50,11 @@ static uint8_t map_inode_type(uint16_t mode)
     if ((mode & EXT2_S_IFMT) == EXT2_S_IFDIR)
     {
         return FS_TYPE_DIR;
+    }
+
+    if ((mode & EXT2_S_IFMT) == EXT2_S_IFLNK)
+    {
+        return FS_TYPE_SYMLINK;
     }
 
     return FS_TYPE_UNKNOWN;
@@ -333,6 +343,39 @@ static void locked_close(fs_file_t *file)
     mutex_unlock(&ext2_lock);
 }
 
+static kerr_t locked_find_link(fs_mount_t *mount, const char *path, bool follow_last,
+                               char *target, uint32_t size, uint32_t *end_out)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_find_link(&mount->ext2, path, follow_last, target, size, end_out);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
+static kerr_t locked_readlink(fs_mount_t *mount, const char *path, char *target, uint32_t size)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_readlink(&mount->ext2, path, target, size);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
+static kerr_t locked_symlink(fs_mount_t *mount, const char *path, const char *target)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_symlink(&mount->ext2, path, target);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
+static kerr_t locked_link(fs_mount_t *mount, const char *old_path, const char *new_path)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_link(&mount->ext2, old_path, new_path);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
 // the ext2 operations table handed to the generic fs layer at mount time.
 static const fs_ops_t ext2_ops = {
     .open = locked_open,
@@ -349,6 +392,10 @@ static const fs_ops_t ext2_ops = {
     .fstat = locked_fstat,
     .setattr = locked_setattr,
     .close = locked_close,
+    .find_link = locked_find_link,
+    .readlink = locked_readlink,
+    .symlink = locked_symlink,
+    .link = locked_link,
 };
 
 kerr_t ext2_ops_mount(fs_mount_t *mount, block_device_t *device)

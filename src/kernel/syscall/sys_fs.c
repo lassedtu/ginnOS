@@ -15,10 +15,11 @@
 
 int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size)
 {
-    return resolve_user_path_at(AT_FDCWD, user_path, resolved, size);
+    return resolve_user_path_at(AT_FDCWD, user_path, resolved, size, true);
 }
 
-int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolved, uint32_t size)
+int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolved, uint32_t size,
+                             bool follow)
 {
     char path[PATH_MAX];
     int32_t len = strncpy_from_user(path, user_path, sizeof(path));
@@ -49,7 +50,10 @@ int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolve
     if (!vfs_resolve_path(base, path, resolved, size))
         return -ENAMETOOLONG;
 
-    return 0;
+    kerr_t err = vfs_follow(resolved, size, follow);
+    if (err == KERR_RANGE)
+        return -ENAMETOOLONG;
+    return kerr_to_errno(err);
 }
 
 int32_t set_new_owner(const char *path, uint32_t mode)
@@ -68,10 +72,10 @@ int32_t set_new_owner(const char *path, uint32_t mode)
 }
 
 /** stat a path relative to dirfd into user memory */
-static int32_t stat_at(int32_t dirfd, const char *path, struct kstat *user_stat)
+static int32_t stat_at(int32_t dirfd, const char *path, struct kstat *user_stat, bool follow)
 {
     char resolved[PATH_MAX];
-    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), follow);
     if (err < 0)
         return err;
 
@@ -93,7 +97,7 @@ static int32_t stat_at(int32_t dirfd, const char *path, struct kstat *user_stat)
 syscall_ret_t sys_stat(struct registers *regs)
 {
     return stat_at(AT_FDCWD, (const char *)syscall_arg(regs, 0),
-                   (struct kstat *)syscall_arg(regs, 1));
+                   (struct kstat *)syscall_arg(regs, 1), true);
 }
 
 /**
@@ -106,7 +110,7 @@ syscall_ret_t sys_fstatat(struct registers *regs)
     if (flags & ~(uint32_t)AT_SYMLINK_NOFOLLOW)
         return -EINVAL;
     return stat_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
-                   (struct kstat *)syscall_arg(regs, 2));
+                   (struct kstat *)syscall_arg(regs, 2), !(flags & AT_SYMLINK_NOFOLLOW));
 }
 
 static int32_t rename_at(int32_t old_dirfd, const char *old_user, int32_t new_dirfd,
@@ -115,9 +119,9 @@ static int32_t rename_at(int32_t old_dirfd, const char *old_user, int32_t new_di
     char old_path[PATH_MAX];
     char new_path[PATH_MAX];
 
-    int32_t err = resolve_user_path_at(old_dirfd, old_user, old_path, sizeof(old_path));
+    int32_t err = resolve_user_path_at(old_dirfd, old_user, old_path, sizeof(old_path), false);
     if (err == 0)
-        err = resolve_user_path_at(new_dirfd, new_user, new_path, sizeof(new_path));
+        err = resolve_user_path_at(new_dirfd, new_user, new_path, sizeof(new_path), false);
     if (err < 0)
         return err;
 
@@ -171,7 +175,8 @@ static int32_t access_at(int32_t dirfd, const char *path, uint32_t mode, uint32_
         return -EINVAL;
 
     char resolved[PATH_MAX];
-    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved),
+                                       !(flags & AT_SYMLINK_NOFOLLOW));
     if (err < 0)
         return err;
 
@@ -215,7 +220,7 @@ syscall_ret_t sys_faccessat(struct registers *regs)
 static int32_t mkdir_at(int32_t dirfd, const char *path, uint32_t mode)
 {
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), false);
     if (ret < 0)
         return ret;
 
@@ -258,7 +263,7 @@ static int32_t unlink_at(int32_t dirfd, const char *path, uint32_t flags)
         return -EINVAL;
 
     char resolved[PATH_MAX];
-    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), false);
     if (err < 0)
         return err;
 
@@ -301,6 +306,118 @@ syscall_ret_t sys_unlinkat(struct registers *regs)
                      (uint32_t)syscall_arg(regs, 2));
 }
 
+/**
+ * SYS_symlinkat: make a symbolic link.
+ * args: target (the path the link points at; it need not exist), dirfd,
+ *       path of the new link.
+ * the link belongs to the caller's effective user and group.
+ * returns 0, or a negative errno (EEXIST, ENOENT, EACCES, ENAMETOOLONG).
+ */
+syscall_ret_t sys_symlinkat(struct registers *regs)
+{
+    char target[PATH_MAX];
+    int32_t length = strncpy_from_user(target, (const char *)syscall_arg(regs, 0), sizeof(target));
+    if (length == KERR_FAULT)
+        return -EFAULT;
+    if (length < 0)
+        return -ENAMETOOLONG;
+    if (length == 0)
+        return -ENOENT;
+
+    char resolved[PATH_MAX];
+    int32_t err = resolve_user_path_at((int32_t)syscall_arg(regs, 1),
+                                       (const char *)syscall_arg(regs, 2), resolved,
+                                       sizeof(resolved), false);
+    if (err == 0)
+        err = permission_check_parent(resolved, false);
+    if (err < 0)
+        return err;
+
+    kerr_t made = vfs_symlink(resolved, target);
+    if (made == KERR_RANGE)
+        return -ENAMETOOLONG;
+    if (kerr_failed(made))
+        return kerr_to_errno(made);
+
+    // the owner only: a link's mode is always 0777
+    process_t *proc = process_current();
+    fs_attr_t attr = {.what = FS_ATTR_OWNER, .uid = proc->euid, .gid = proc->egid};
+    kerr_t owned = vfs_setattr(resolved, &attr);
+    return owned == KERR_PERM ? 0 : kerr_to_errno(owned);
+}
+
+/**
+ * SYS_readlinkat: read the target of a symbolic link.
+ * args: dirfd, path, buffer, buffer size.
+ * returns the bytes put in the buffer (no NUL; a longer target is cut),
+ * or a negative errno (EINVAL: not a link).
+ */
+syscall_ret_t sys_readlinkat(struct registers *regs)
+{
+    char *user_buffer = (char *)syscall_arg(regs, 2);
+    uint32_t size = (uint32_t)syscall_arg(regs, 3);
+    if (size == 0)
+        return -EINVAL;
+
+    char resolved[PATH_MAX];
+    int32_t err = resolve_user_path_at((int32_t)syscall_arg(regs, 0),
+                                       (const char *)syscall_arg(regs, 1), resolved,
+                                       sizeof(resolved), false);
+    if (err < 0)
+        return err;
+
+    char target[PATH_MAX];
+    kerr_t found = vfs_readlink(resolved, target, sizeof(target));
+    if (kerr_failed(found))
+        return kerr_to_errno(found);
+
+    uint32_t length = (uint32_t)strlen(target);
+    if (length > size)
+        length = size;
+    kerr_t copied = copy_to_user(user_buffer, target, length);
+    return kerr_failed(copied) ? kerr_to_errno(copied) : (syscall_ret_t)length;
+}
+
+/**
+ * SYS_linkat: give a file one more name (a hard link).
+ * args: old dirfd, old path, new dirfd, new path, flags (AT_SYMLINK_FOLLOW:
+ *       link to what a symbolic link points at, not the link itself).
+ * returns 0, or a negative errno (EXDEV across mounts, EPERM for a
+ * directory, EEXIST, EMLINK).
+ */
+syscall_ret_t sys_linkat(struct registers *regs)
+{
+    uint32_t flags = (uint32_t)syscall_arg(regs, 4);
+    if (flags & ~(uint32_t)AT_SYMLINK_FOLLOW)
+        return -EINVAL;
+
+    char old_path[PATH_MAX];
+    char new_path[PATH_MAX];
+    int32_t err = resolve_user_path_at((int32_t)syscall_arg(regs, 0),
+                                       (const char *)syscall_arg(regs, 1), old_path,
+                                       sizeof(old_path), (flags & AT_SYMLINK_FOLLOW) != 0);
+    if (err == 0)
+        err = resolve_user_path_at((int32_t)syscall_arg(regs, 2),
+                                   (const char *)syscall_arg(regs, 3), new_path,
+                                   sizeof(new_path), false);
+    if (err < 0)
+        return err;
+
+    if (vfs_resolve_mount_path(old_path, NULL) != vfs_resolve_mount_path(new_path, NULL))
+        return -EXDEV;
+    err = permission_check_parent(new_path, false);
+    if (err < 0)
+        return err;
+
+    // KERR_PERM: a filesystem with no hard links (tmpfs)
+    kerr_t linked = vfs_link(old_path, new_path);
+    if (linked == KERR_ISDIR || linked == KERR_PERM)
+        return -EPERM;
+    if (linked == KERR_RANGE)
+        return -EMLINK;
+    return kerr_to_errno(linked);
+}
+
 // the size of a record with the longest name (a name has at most
 // EXT2_NAME_MAX - 1 characters and its NUL)
 #define DIRENT_RECORD_MAX ((KDIRENT_HEADER + EXT2_NAME_MAX + 3) & ~3u)
@@ -316,6 +433,8 @@ static uint8_t dirent_type(const fs_dirent_t *entry)
         return DT_DIR;
     case FS_TYPE_FILE:
         return DT_REG;
+    case FS_TYPE_SYMLINK:
+        return DT_LNK;
     default:
         return DT_UNKNOWN;
     }

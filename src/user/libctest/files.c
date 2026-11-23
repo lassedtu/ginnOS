@@ -1,7 +1,8 @@
 /**
  * @file files.c
  * @brief libctest: the calls that name a file relative to an open
- *        directory (openat and the other *at calls), and fdopendir.
+ *        directory (openat and the other *at calls), fdopendir, and
+ *        hard and symbolic links.
  */
 
 #include "libctest.h"
@@ -96,7 +97,129 @@ static void test_at_calls(void)
     CHECK(rmdir(top) == 0);
 }
 
+/** the contents of a small file, or "" */
+static const char *read_all(const char *path)
+{
+    static char text[64];
+    text[0] = '\0';
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return text;
+    ssize_t n = read(fd, text, sizeof(text) - 1);
+    text[n > 0 ? n : 0] = '\0';
+    close(fd);
+    return text;
+}
+
+/** links on the disk (ext2): hard and symbolic */
+static void test_links(void)
+{
+    char top[] = "/libctest-ln.XXXXXX";
+    CHECK(mkdtemp(top) != NULL);
+    CHECK(chdir(top) == 0);
+    mkdir("dir", 0755);
+    int fd = open("dir/file", O_WRONLY | O_CREAT, 0644);
+    CHECK(fd >= 0 && write(fd, "abc", 3) == 3);
+    close(fd);
+
+    // hard links: one file, two names
+    struct stat st;
+    CHECK(link("dir/file", "hard") == 0);
+    CHECK(stat("hard", &st) == 0 && st.st_nlink == 2);
+    struct stat st2;
+    CHECK(stat("dir/file", &st2) == 0 && st2.st_ino == st.st_ino);
+    CHECK(link("dir", "dirlink") == -1 && errno == EPERM);
+    CHECK(link("hard", "dir/file") == -1 && errno == EEXIST);
+
+    // symbolic links: to a file, to a directory, dangling, to itself
+    CHECK(symlink("dir/file", "soft") == 0);
+    CHECK(symlink("dir", "dirsoft") == 0);
+    CHECK(symlink("nowhere", "dangling") == 0);
+    CHECK(symlink("self", "self") == 0);
+    CHECK(symlink("x", "soft") == -1 && errno == EEXIST);
+
+    char buffer[64];
+    ssize_t n = readlink("soft", buffer, sizeof(buffer));
+    CHECK(n == 8 && memcmp(buffer, "dir/file", 8) == 0);
+    CHECK(readlink("soft", buffer, 3) == 3); // cut, with no NUL
+    CHECK(readlink("hard", buffer, sizeof(buffer)) == -1 && errno == EINVAL);
+
+    CHECK(lstat("soft", &st) == 0 && S_ISLNK(st.st_mode) && st.st_size == 8);
+    CHECK(stat("soft", &st) == 0 && S_ISREG(st.st_mode) && st.st_size == 3);
+    CHECK(strcmp(read_all("soft"), "abc") == 0);
+    CHECK(strcmp(read_all("dirsoft/file"), "abc") == 0);
+    CHECK(stat("dangling", &st) == -1 && errno == ENOENT);
+    CHECK(lstat("dangling", &st) == 0);
+    CHECK(stat("self", &st) == -1 && errno == ELOOP);
+
+    // a directory through a link, and readdir's type
+    int found = 0;
+    DIR *dir = opendir("dirsoft");
+    CHECK(dir != NULL);
+    if (dir)
+    {
+        CHECK(count_entries(dir, "file", &found) == 3);
+        closedir(dir);
+    }
+    CHECK(found);
+    dir = opendir(".");
+    int link_type = 0;
+    struct dirent *d;
+    while (dir && (d = readdir(dir)))
+        if (strcmp(d->d_name, "soft") == 0)
+            link_type = d->d_type == DT_LNK;
+    if (dir)
+        closedir(dir);
+    CHECK(link_type);
+
+    // writing through a link changes the target; unlink removes the link
+    fd = open("soft", O_WRONLY | O_TRUNC);
+    CHECK(fd >= 0 && write(fd, "xyz", 3) == 3);
+    close(fd);
+    CHECK(strcmp(read_all("hard"), "xyz") == 0);
+    CHECK(unlink("soft") == 0);
+    CHECK(stat("dir/file", &st) == 0 && st.st_nlink == 2);
+    CHECK(unlink("dir/file") == 0);
+    CHECK(stat("hard", &st) == 0 && st.st_nlink == 1);
+    CHECK(strcmp(read_all("hard"), "xyz") == 0);
+
+    // a target as long as a block can hold, nearly (not kept in the inode)
+    char long_target[200];
+    memset(long_target, 'a', sizeof(long_target) - 1);
+    long_target[sizeof(long_target) - 1] = '\0';
+    CHECK(symlink(long_target, "long") == 0);
+    CHECK(readlink("long", buffer, sizeof(buffer)) == (ssize_t)sizeof(buffer));
+    CHECK(lstat("long", &st) == 0 && st.st_size == 199);
+
+    unlink("long");
+    unlink("self");
+    unlink("dangling");
+    unlink("dirsoft");
+    unlink("hard");
+    CHECK(rmdir("dir") == 0);
+    CHECK(chdir("/") == 0);
+    CHECK(rmdir(top) == 0);
+}
+
+/** symbolic links in memory (tmpfs), which has no hard links */
+static void test_tmpfs_links(void)
+{
+    char buffer[16];
+    struct stat st;
+    unlink("/tmp/libctest-soft");
+    CHECK(symlink("/etc/passwd", "/tmp/libctest-soft") == 0);
+    CHECK(readlink("/tmp/libctest-soft", buffer, sizeof(buffer)) == 11);
+    CHECK(lstat("/tmp/libctest-soft", &st) == 0 && S_ISLNK(st.st_mode));
+    // the target is on another filesystem
+    CHECK(stat("/tmp/libctest-soft", &st) == 0 && S_ISREG(st.st_mode));
+    CHECK(strncmp(read_all("/tmp/libctest-soft"), "root:", 5) == 0);
+    CHECK(link("/tmp/libctest-soft", "/tmp/libctest-hard") == -1 && errno == EPERM);
+    CHECK(unlink("/tmp/libctest-soft") == 0);
+}
+
 void test_files(void)
 {
     test_at_calls();
+    test_links();
+    test_tmpfs_links();
 }

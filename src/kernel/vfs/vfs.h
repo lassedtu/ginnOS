@@ -65,6 +65,32 @@ kerr_t vfs_umount(const char *prefix);
 fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out);
 
 /**
+ * replace the symbolic links along a canonical absolute path by their
+ * targets (vfs_link.c).
+ * @param path the path, changed in place.
+ * @param size the size of the path buffer.
+ * @param follow_last also the last name, when it is a link.
+ * @return KERR_OK (a missing name is left for the operation to report),
+ *         KERR_LOOP (too many links), KERR_RANGE (the path got too long).
+ */
+kerr_t vfs_follow(char *path, uint32_t size, bool follow_last);
+
+/**
+ * read the target of the symbolic link at path, with a NUL.
+ * @return KERR_OK, KERR_INVAL (not a link), KERR_RANGE, KERR_NOTFOUND.
+ */
+kerr_t vfs_readlink(const char *path, char *target, uint32_t size);
+
+/** make a symbolic link at path to target. */
+kerr_t vfs_symlink(const char *path, const char *target);
+
+/**
+ * give a file one more name (both paths on one mount, else KERR_INVAL).
+ * @return KERR_OK, KERR_ISDIR, KERR_EXIST, KERR_RANGE, KERR_NOTFOUND.
+ */
+kerr_t vfs_link(const char *old_path, const char *new_path);
+
+/**
  * open a file or directory by absolute path in the virtual file system.
  * @param path absolute path to the file or directory.
  * @param file pointer to a vfs_file_t structure that will be initialized with the opened file

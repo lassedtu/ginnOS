@@ -92,9 +92,12 @@
 #define SYS_FCHMODAT 83
 #define SYS_FCHOWNAT 84
 #define SYS_FCHOWN 85
+#define SYS_SYMLINKAT 86  // links: a symbolic link, its target, a hard link
+#define SYS_READLINKAT 87
+#define SYS_LINKAT 88
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 86
+#define SYSCALL_COUNT 89
 
 /**
  * initialize the system call interface.

@@ -115,7 +115,7 @@ static int32_t may_change_mode(const fs_stat_t *st)
 static int32_t chmod_at(int32_t dirfd, const char *path, uint32_t mode)
 {
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), true);
     if (ret < 0)
         return ret;
 
@@ -208,10 +208,10 @@ static int32_t owner_change(const vfs_stat_t *st, uint32_t uid, uint32_t gid, fs
     return 0;
 }
 
-static int32_t chown_at(int32_t dirfd, const char *path, uint32_t uid, uint32_t gid)
+static int32_t chown_at(int32_t dirfd, const char *path, uint32_t uid, uint32_t gid, bool follow)
 {
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), follow);
     if (ret < 0)
         return ret;
 
@@ -234,7 +234,7 @@ static int32_t chown_at(int32_t dirfd, const char *path, uint32_t uid, uint32_t 
 syscall_ret_t sys_chown(struct registers *regs)
 {
     return chown_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), (uint32_t)syscall_arg(regs, 1),
-                    (uint32_t)syscall_arg(regs, 2));
+                    (uint32_t)syscall_arg(regs, 2), true);
 }
 
 /**
@@ -242,10 +242,12 @@ syscall_ret_t sys_chown(struct registers *regs)
  */
 syscall_ret_t sys_fchownat(struct registers *regs)
 {
-    if ((uint32_t)syscall_arg(regs, 4) & ~(uint32_t)AT_SYMLINK_NOFOLLOW)
+    uint32_t flags = (uint32_t)syscall_arg(regs, 4);
+    if (flags & ~(uint32_t)AT_SYMLINK_NOFOLLOW)
         return -EINVAL;
     return chown_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
-                    (uint32_t)syscall_arg(regs, 2), (uint32_t)syscall_arg(regs, 3));
+                    (uint32_t)syscall_arg(regs, 2), (uint32_t)syscall_arg(regs, 3),
+                    !(flags & AT_SYMLINK_NOFOLLOW));
 }
 
 /**

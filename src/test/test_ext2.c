@@ -181,3 +181,96 @@ KTEST(ext2_file_times)
     KEXPECT(st.ctime >= st.mtime);
     KEXPECT(kerr_ok(vfs_remove(TEST_FILE)));
 }
+
+KTEST(ext2_hard_link)
+{
+    vfs_stat_t st;
+    vfs_remove(TEST_FILE "2");
+    KEXPECT(make_file(TEST_FILE, "shared"));
+    KEXPECT(kerr_ok(vfs_link(TEST_FILE, TEST_FILE "2")));
+    KEXPECT_EQ(vfs_link(TEST_FILE, TEST_FILE "2"), KERR_EXIST);
+    KEXPECT(kerr_ok(vfs_stat(TEST_FILE "2", &st)));
+    KEXPECT_EQ(st.links_count, 2);
+    KEXPECT_EQ(st.size, 6);
+
+    // the data stays until the last name goes
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE)));
+    KEXPECT(kerr_ok(vfs_stat(TEST_FILE "2", &st)));
+    KEXPECT_EQ(st.links_count, 1);
+    KEXPECT_EQ(st.size, 6);
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE "2")));
+
+    // a directory has one name only
+    vfs_rmdir(TEST_DIR);
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR)));
+    KEXPECT_EQ(vfs_link(TEST_DIR, TEST_FILE), KERR_ISDIR);
+    KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR)));
+}
+
+// a target longer than the 60 bytes an inode keeps: it takes a block
+#define LONG_TARGET "/a/target/that/is/longer/than/the/sixty/bytes/of/i_block/in/an/inode"
+
+KTEST(ext2_symbolic_links)
+{
+    char target[VFS_PATH_MAX];
+    char path[VFS_PATH_MAX];
+    vfs_stat_t st;
+
+    vfs_remove(TEST_FILE "l");
+    vfs_remove(TEST_FILE "L");
+    KEXPECT(make_file(TEST_FILE, "data"));
+    KEXPECT(kerr_ok(vfs_symlink(TEST_FILE "l", "ktest.tmp")));
+    KEXPECT(kerr_ok(vfs_symlink(TEST_FILE "L", LONG_TARGET)));
+
+    KEXPECT(kerr_ok(vfs_readlink(TEST_FILE "l", target, sizeof(target))));
+    KEXPECT(strcmp(target, "ktest.tmp") == 0);
+    KEXPECT(kerr_ok(vfs_readlink(TEST_FILE "L", target, sizeof(target))));
+    KEXPECT(strcmp(target, LONG_TARGET) == 0);
+    KEXPECT_EQ(vfs_readlink(TEST_FILE, target, sizeof(target)), KERR_INVAL);
+
+    // a link is its own file; following it reaches the target
+    KEXPECT(kerr_ok(vfs_stat(TEST_FILE "l", &st)));
+    KEXPECT_EQ(st.file_type, FS_TYPE_SYMLINK);
+    strcpy(path, TEST_FILE "l");
+    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), true)));
+    KEXPECT(strcmp(path, TEST_FILE) == 0);
+    strcpy(path, TEST_FILE "l");
+    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), false)));
+    KEXPECT(strcmp(path, TEST_FILE "l") == 0);
+
+    // removing a link leaves the target; the long one frees its block
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE "l")));
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE "L")));
+    KEXPECT(kerr_ok(vfs_stat(TEST_FILE, &st)));
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE)));
+}
+
+KTEST(ext2_follow_directory_links)
+{
+    char path[VFS_PATH_MAX];
+    vfs_remove(TEST_DIR "/in/file");
+    vfs_rmdir(TEST_DIR "/in");
+    vfs_remove(TEST_DIR "/up");
+    vfs_remove(TEST_DIR "/loop");
+    vfs_rmdir(TEST_DIR);
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR)));
+    KEXPECT(kerr_ok(vfs_mkdir(TEST_DIR "/in")));
+    KEXPECT(make_file(TEST_DIR "/in/file", "x"));
+
+    // a relative link to a directory, in the middle of a path
+    KEXPECT(kerr_ok(vfs_symlink(TEST_DIR "/up", "in/../in")));
+    strcpy(path, TEST_DIR "/up/file");
+    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), false)));
+    KEXPECT(strcmp(path, TEST_DIR "/in/file") == 0);
+
+    // a link to itself
+    KEXPECT(kerr_ok(vfs_symlink(TEST_DIR "/loop", "loop")));
+    strcpy(path, TEST_DIR "/loop");
+    KEXPECT_EQ(vfs_follow(path, sizeof(path), true), KERR_LOOP);
+
+    KEXPECT(kerr_ok(vfs_remove(TEST_DIR "/loop")));
+    KEXPECT(kerr_ok(vfs_remove(TEST_DIR "/up")));
+    KEXPECT(kerr_ok(vfs_remove(TEST_DIR "/in/file")));
+    KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR "/in")));
+    KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR)));
+}

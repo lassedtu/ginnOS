@@ -104,7 +104,7 @@ static int32_t open_at(int32_t dirfd, const char *path, uint32_t flags, uint32_t
 
     // copy the path in from user memory, resolved against the cwd or dirfd
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), true);
     if (ret < 0)
         return ret;
 

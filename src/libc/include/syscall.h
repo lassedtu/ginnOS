@@ -92,6 +92,9 @@
 #define SYS_FCHMODAT 83
 #define SYS_FCHOWNAT 84
 #define SYS_FCHOWN 85
+#define SYS_SYMLINKAT 86  // links: a symbolic link, its target, a hard link
+#define SYS_READLINKAT 87
+#define SYS_LINKAT 88
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

@@ -14,6 +14,7 @@ enum
     FS_TYPE_UNKNOWN = 0, // unknown or unsupported file type
     FS_TYPE_FILE = 1,    // regular file
     FS_TYPE_DIR = 2,     // directory
+    FS_TYPE_SYMLINK = 3, // symbolic link
 };
 
 /**
@@ -92,6 +93,18 @@ typedef struct
      * @return the new absolute position, or a negative errno.
      */
     int32_t (*seek)(fs_file_t *file, int32_t offset, int whence);
+
+    /**
+     * links (all optional; NULL means the filesystem has none). find_link
+     * reports the first symbolic link along a path (see ext2_find_link);
+     * readlink reads one's target; symlink makes one; link gives a file
+     * one more name.
+     */
+    kerr_t (*find_link)(fs_mount_t *mount, const char *path, bool follow_last, char *target,
+                        uint32_t size, uint32_t *end_out);
+    kerr_t (*readlink)(fs_mount_t *mount, const char *path, char *target, uint32_t size);
+    kerr_t (*symlink)(fs_mount_t *mount, const char *path, const char *target);
+    kerr_t (*link)(fs_mount_t *mount, const char *old_path, const char *new_path);
 } fs_ops_t;
 
 /**
@@ -213,6 +226,17 @@ kerr_t fs_rename(fs_mount_t *mount, const char *old_path, const char *new_path);
  * @return KERR_OK on success, or an error code on failure.
  */
 kerr_t fs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out);
+
+/**
+ * the link operations (see fs_ops_t). with no such operation: find_link
+ * finds none, readlink is KERR_INVAL (not a link), symlink and link are
+ * KERR_PERM.
+ */
+kerr_t fs_find_link(fs_mount_t *mount, const char *path, bool follow_last, char *target,
+                    uint32_t size, uint32_t *end_out);
+kerr_t fs_readlink(fs_mount_t *mount, const char *path, char *target, uint32_t size);
+kerr_t fs_symlink(fs_mount_t *mount, const char *path, const char *target);
+kerr_t fs_link(fs_mount_t *mount, const char *old_path, const char *new_path);
 
 /**
  * read bytes from an open file into a buffer.

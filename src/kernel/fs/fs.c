@@ -102,6 +102,56 @@ kerr_t fs_rename(fs_mount_t *mount, const char *old_path, const char *new_path)
     return mount->ops->rename(mount, old_path, new_path);
 }
 
+kerr_t fs_find_link(fs_mount_t *mount, const char *path, bool follow_last, char *target,
+                    uint32_t size, uint32_t *end_out)
+{
+    *end_out = 0;
+    if (!mount || !path || !mount->is_mounted)
+    {
+        return KERR_INVAL;
+    }
+    if (!mount->ops->find_link)
+    {
+        return KERR_OK;
+    }
+    return mount->ops->find_link(mount, path, follow_last, target, size, end_out);
+}
+
+kerr_t fs_readlink(fs_mount_t *mount, const char *path, char *target, uint32_t size)
+{
+    if (!mount || !path || !mount->is_mounted || !mount->ops->readlink)
+    {
+        return KERR_INVAL;
+    }
+    return mount->ops->readlink(mount, path, target, size);
+}
+
+kerr_t fs_symlink(fs_mount_t *mount, const char *path, const char *target)
+{
+    if (!mount || !path || !target || !mount->is_mounted)
+    {
+        return KERR_INVAL;
+    }
+    if (!mount->ops->symlink)
+    {
+        return KERR_PERM;
+    }
+    return mount->ops->symlink(mount, path, target);
+}
+
+kerr_t fs_link(fs_mount_t *mount, const char *old_path, const char *new_path)
+{
+    if (!mount || !old_path || !new_path || !mount->is_mounted)
+    {
+        return KERR_INVAL;
+    }
+    if (!mount->ops->link)
+    {
+        return KERR_PERM;
+    }
+    return mount->ops->link(mount, old_path, new_path);
+}
+
 kerr_t fs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
 {
     if (!mount || !path || !stat_out || !mount->is_mounted)
