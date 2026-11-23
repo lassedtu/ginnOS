@@ -47,6 +47,7 @@ const char *strerror(int errnum)
     case ECONNREFUSED: return "connection refused";
     case EISCONN: return "already connected";
     case ENOTCONN: return "not connected";
+    case EILSEQ:  return "invalid or incomplete multibyte character";
     case EAFNOSUPPORT: return "address family not supported";
     case EPROTONOSUPPORT: return "protocol not supported";
     case EOPNOTSUPP: return "operation not supported";

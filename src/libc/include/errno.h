@@ -52,6 +52,7 @@
 #define EPROTONOSUPPORT 41 /* protocol not supported */
 #define EOPNOTSUPP 42 /* operation not supported */
 #define ECANCELED 43 /* operation cancelled (by the program, not the kernel) */
+#define EILSEQ 44 /* bytes that are not a character (UTF-8), from the libc */
 
 #define EWOULDBLOCK EAGAIN
 

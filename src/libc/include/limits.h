@@ -29,3 +29,5 @@
 
 // largest pipe write that is never split (the kernel's PIPE_BUF)
 #define PIPE_BUF 4096
+
+#define MB_LEN_MAX 4 // the longest UTF-8 character

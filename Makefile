@@ -614,7 +614,7 @@ user-programs: $(USER_CRT0) $(LIBC_A) user-libs
 # library and program tests on the host, with the host compiler
 # (src/lib/host-test.mk).
 # GOLDEN=update writes the golden images again.
-HOST_TEST_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/test/Makefile \
+HOST_TEST_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/test/Makefile src/libc/test/*/Makefile \
                                                              src/user/*/test/Makefile)))
 
 host-test:

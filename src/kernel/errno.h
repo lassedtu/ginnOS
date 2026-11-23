@@ -53,6 +53,7 @@
 #define EPROTONOSUPPORT 41 // protocol not supported
 #define EOPNOTSUPP   42 // operation not supported
 #define ECANCELED    43 // operation cancelled (programs use it; the kernel does not)
+#define EILSEQ       44 // not a character in UTF-8 (programs use it; the kernel does not)
 
 #define EWOULDBLOCK EAGAIN
 

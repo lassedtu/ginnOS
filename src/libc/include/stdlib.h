@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <sys/types.h>
 
 /**
@@ -167,3 +168,13 @@ void abort(void) __attribute__((noreturn));
  * @param status exit code.
  */
 void exit(int status) __attribute__((noreturn));
+
+// characters of more than one byte: UTF-8 (see <wchar.h>)
+#define MB_CUR_MAX ((size_t)4)
+
+/** the bytes of the character at s (at most n), 0 for "\0", or -1 */
+int mblen(const char *s, size_t n);
+/** the character at s (at most n bytes) into *wc: its bytes, 0 or -1 */
+int mbtowc(wchar_t *wc, const char *s, size_t n);
+/** wc as UTF-8 at s: the bytes, or -1 */
+int wctomb(char *s, wchar_t wc);
