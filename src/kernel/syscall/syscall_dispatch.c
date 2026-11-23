@@ -103,6 +103,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_EXIT_GROUP] = sys_exit_group,
     [SYS_GETTID] = sys_gettid,
     [SYS_TGKILL] = sys_tgkill,
+    [SYS_SET_TLS] = sys_set_tls,
     [SYS_SHM_CREATE] = sys_shm_create,
     [SYS_SOCKET] = sys_socket,
     [SYS_BIND] = sys_bind,

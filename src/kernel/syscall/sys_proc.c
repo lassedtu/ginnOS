@@ -296,7 +296,8 @@ syscall_ret_t sys_exit_group(struct registers *regs)
  * args: flags, the new thread's user stack pointer, parent_tid,
  *       child_tid, tls.
  * only a thread can be made: flags must have CLONE_VM, FS, FILES, SIGHAND
- * and THREAD (fork makes a process). PARENT_SETTID and CHILD_SETTID write
+ * and THREAD (fork makes a process). SETTLS gives the thread tls as its
+ * thread pointer (else it has the caller's). PARENT_SETTID and CHILD_SETTID write
  * the new thread's id to parent_tid and child_tid; CHILD_CLEARTID makes
  * the kernel write 0 there when the thread ends. SYSVSEM is accepted and
  * has no effect.
@@ -312,8 +313,8 @@ syscall_ret_t sys_clone(struct registers *regs)
     uint32_t *child_tid = (uint32_t *)syscall_arg(regs, 3);
 
     const uint32_t thread = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD;
-    const uint32_t extra = CLONE_SYSVSEM | CLONE_PARENT_SETTID | CLONE_CHILD_SETTID |
-                           CLONE_CHILD_CLEARTID;
+    const uint32_t extra = CLONE_SYSVSEM | CLONE_SETTLS | CLONE_PARENT_SETTID |
+                           CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID;
     if ((flags & thread) != thread || (flags & ~(thread | extra)) || !stack)
     {
         return -EINVAL;
@@ -347,8 +348,25 @@ syscall_ret_t sys_clone(struct registers *regs)
     {
         child->clear_tid = (uintptr_t)child_tid;
     }
+    if (flags & CLONE_SETTLS)
+    {
+        child->tls = syscall_arg(regs, 4);
+    }
     scheduler_ready(child);
     return (syscall_ret_t)tid;
+}
+
+/**
+ * SYS_set_tls: set the calling thread's thread pointer, which user code
+ * reaches its thread-local storage through (%fs:0 on x86_64, %gs:0 on
+ * i686). arg: the address. returns 0.
+ */
+syscall_ret_t sys_set_tls(struct registers *regs)
+{
+    process_t *proc = process_current();
+    proc->tls = syscall_arg(regs, 0);
+    arch_set_tls(proc->tls);
+    return 0;
 }
 
 /**

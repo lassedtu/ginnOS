@@ -107,6 +107,7 @@
 #define SYS_EXIT_GROUP 98    // end every thread of the process
 #define SYS_GETTID 99        // the calling thread's id
 #define SYS_TGKILL 100       // send a signal to one thread
+#define SYS_SET_TLS 101      // set the thread pointer (thread-local storage)
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

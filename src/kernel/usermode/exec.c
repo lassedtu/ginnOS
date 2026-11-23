@@ -249,6 +249,7 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     // the new program starts with one thread: the caller
     end_other_threads(proc);
     proc->clear_tid = 0;
+    proc->tls = 0; // the new program sets up its own
 
     // no way back from here: swap in the new image. masked, so the process
     // is never scheduled with a half-changed address space.
@@ -263,6 +264,7 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     arch_fpu_clean(proc->fpu_state);
     arch_fpu_restore(proc->fpu_state);
     arch_switch_address_space(as);
+    arch_set_tls(0);
     arch_irq_restore(flags);
 
     user_space_put(old);

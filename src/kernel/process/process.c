@@ -188,6 +188,7 @@ process_t *process_clone_thread(const struct registers *regs, uintptr_t stack)
     process_copy_credentials(thread, parent);
     memcpy(thread->name, parent->name, sizeof(thread->name));
     thread->signals.blocked = parent->signals.blocked;
+    thread->tls = parent->tls; // CLONE_SETTLS gives it its own
     arch_fpu_save(thread->fpu_state);
 
     // the thread returns from the same syscall with 0, on its own stack
@@ -239,6 +240,9 @@ process_t *process_fork(const struct registers *regs)
         fd_close_entry(&child->files->fd[i]);
         fd_copy_entry(&child->files->fd[i], &parent->files->fd[i]);
     }
+
+    // the same thread pointer: the child's memory is a copy
+    child->tls = parent->tls;
 
     // the child's FPU registers are the parent's, as they are now in the CPU
     arch_fpu_save(child->fpu_state);

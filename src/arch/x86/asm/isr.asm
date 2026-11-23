@@ -53,7 +53,8 @@ isr_common:
     mov ds, ax
     mov es, ax
     mov fs, ax
-    mov gs, ax
+    ; GS is left alone: it holds the user's TLS segment (gdt_set_tls),
+    ; and the kernel does not use it
 
     push esp            ; pass pointer to registers struct as argument
     call isr_handler
@@ -67,7 +68,6 @@ isr_exit:
     mov ds, ax
     mov es, ax
     mov fs, ax
-    mov gs, ax
 
     popa                ; restore general-purpose registers
     add esp, 8          ; remove interrupt number and error code from stack

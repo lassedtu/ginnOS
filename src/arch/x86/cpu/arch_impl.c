@@ -232,6 +232,17 @@ phys_addr_t arch_translate_in(addr_space_t as, uintptr_t virt)
     return paging_get_physical_in(as, virt);
 }
 
+void arch_set_tls(uintptr_t base)
+{
+#ifdef __x86_64__
+    // IA32_FS_BASE: the kernel never loads FS, so the base stays
+    __asm__ volatile("wrmsr" : : "c"(0xC0000100u), "a"((uint32_t)base),
+                     "d"((uint32_t)((uint64_t)base >> 32)));
+#else
+    gdt_set_tls((uint32_t)base);
+#endif
+}
+
 void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp)
 {
 #ifdef __x86_64__
@@ -260,6 +271,7 @@ void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp)
         "mov %%ax, %%ds\n"
         "mov %%ax, %%es\n"
         "mov %%ax, %%fs\n"
+        "mov %4, %%ax\n" /* GS: thread-local storage */
         "mov %%ax, %%gs\n"
         "\n"
         "push %0\n" /* SS */
@@ -275,7 +287,8 @@ void arch_jump_to_usermode(uintptr_t entry, uintptr_t user_esp)
         : "i"(GDT_USER_DATA),
           "r"(user_esp),
           "i"(GDT_USER_CODE),
-          "r"(entry)
+          "r"(entry),
+          "i"(GDT_USER_TLS)
         : "eax", "memory");
 #endif
 

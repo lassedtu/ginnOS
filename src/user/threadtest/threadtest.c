@@ -17,6 +17,8 @@
  *   signal  kill reaches the thread that does not block the signal
  *   tgkill  tgkill reaches the thread it names
  *   stop    SIGSTOP stops every thread, reported once; SIGCONT, SIGKILL
+ *   tls     a thread made with CLONE_SETTLS has its own __thread variables,
+ *           which start as the program's values
  *   all     every mode above
  *
  * each mode prints "threadtest <mode>: ok" when it passes. a thread does
@@ -42,6 +44,7 @@
 #define CLONE_SIGHAND        0x00000800
 #define CLONE_THREAD         0x00010000
 #define CLONE_SYSVSEM        0x00040000
+#define CLONE_SETTLS         0x00080000
 #define CLONE_PARENT_SETTID  0x00100000
 #define CLONE_CHILD_CLEARTID 0x00200000
 
@@ -547,6 +550,61 @@ static int test_stop(void)
     return ok();
 }
 
+// libc's thread-local storage (src/libc/src/tls.c)
+size_t __tls_area_size(void);
+void *__tls_setup(void *area);
+
+static __thread int tls_value = 42;
+static __thread char tls_zeroes[64];
+static int *volatile thread_value_at;
+static volatile int thread_saw;
+
+static int use_tls(void *arg)
+{
+    (void)arg;
+    bool zeroed = true;
+    for (size_t i = 0; i < sizeof(tls_zeroes); i++)
+    {
+        zeroed = zeroed && tls_zeroes[i] == 0;
+    }
+    thread_saw = zeroed ? tls_value : -1;
+    tls_value = 7;
+    thread_value_at = &tls_value;
+    return 0;
+}
+
+static int test_tls(void)
+{
+    tls_value = 99;
+    tls_zeroes[0] = 1;
+    void *area = malloc(__tls_area_size());
+    char *stack = malloc(STACK_SIZE);
+    if (!area || !stack)
+    {
+        return failed("malloc");
+    }
+    void *tp = __tls_setup(area);
+    volatile pid_t tid = 0;
+    int flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM |
+                CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+    if (__clone(use_tls, stack + STACK_SIZE, flags, NULL, (pid_t *)&tid, tp, (pid_t *)&tid) <= 0)
+    {
+        return failed("clone with CLONE_SETTLS");
+    }
+    join(&tid);
+    if (thread_saw != 42)
+    {
+        printf("threadtest tls: the thread saw %d, not 42\n", thread_saw);
+        return 1;
+    }
+    if (tls_value != 99 || thread_value_at == &tls_value || *thread_value_at != 7)
+    {
+        return failed("a copy for each thread");
+    }
+    tls_zeroes[0] = 0;
+    return ok();
+}
+
 static const struct
 {
     const char *name;
@@ -556,6 +614,7 @@ static const struct
     {"group", test_group},   {"leader", test_leader}, {"fault", test_fault},
     {"sleep", test_sleep},   {"fork", test_fork},     {"exec", test_exec},
     {"signal", test_signal}, {"tgkill", test_tgkill}, {"stop", test_stop},
+    {"tls", test_tls},
 };
 
 #define MODE_COUNT (sizeof(modes) / sizeof(modes[0]))
@@ -582,6 +641,6 @@ int main(int argc, char **argv)
         }
     }
     printf("usage: threadtest ids|many|share|group|leader|fault|sleep|fork|exec|signal|tgkill|"
-           "stop|all\n");
+           "stop|tls|all\n");
     return 2;
 }

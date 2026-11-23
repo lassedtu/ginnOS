@@ -78,6 +78,7 @@ typedef struct process
     struct process *exec_thread; // in the leader: the thread in execve,
                                  // which ends the others; or NULL
     int32_t group_status;   // in the leader: the wait status they end with
+    uintptr_t tls;          // the thread pointer (arch_set_tls), or 0
     uintptr_t clear_tid;    // a user address set to 0 when the thread ends
                             // (CLONE_CHILD_CLEARTID), or 0
     uint32_t parent_pid;    // the parent group's tgid; PID_NONE for PID 1 (and

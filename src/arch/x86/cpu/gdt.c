@@ -62,7 +62,7 @@ struct tss_entry
 extern void gdt_flush(uint32_t);
 extern void tss_flush(void);
 
-static struct gdt_entry gdt[7];
+static struct gdt_entry gdt[8];
 static struct gdt_ptr gp;
 static struct tss_entry tss;
 
@@ -120,8 +120,19 @@ void gdt_initialize(void)
     /* index 5: TSS */
     tss_install(5);
 
+    /* index 7: user thread-local storage in GS (gdt_set_tls) */
+    gdt_set_entry(7, 0, 0xFFFFF, 0xF2, 0xCF);
+
     gdt_flush((uint32_t)(uintptr_t)&gp);
     tss_flush();
+}
+
+void gdt_set_tls(uint32_t base)
+{
+    // a new base takes effect when GS is loaded again; the kernel does not
+    // use GS, so the user's stays loaded with this selector
+    gdt_set_entry(7, base, 0xFFFFF, 0xF2, 0xCF);
+    __asm__ volatile("mov %0, %%gs" : : "r"((uint16_t)GDT_USER_TLS) : "memory");
 }
 
 void tss_set_kernel_stack(uintptr_t esp0)
