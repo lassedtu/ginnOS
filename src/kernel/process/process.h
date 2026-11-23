@@ -230,6 +230,10 @@ typedef struct
     uint32_t areas;    // memory areas (VMAs)
     uint32_t open_fds;
     uintptr_t brk;
+    uint32_t uid;
+    uint32_t utime;    // timer ticks in user code
+    uint32_t stime;    // timer ticks in the kernel for it
+    uint32_t pages;    // pages of RAM it has mapped (its resident memory)
 } process_info_t;
 
 /**
@@ -254,6 +258,11 @@ bool process_info(uint32_t pid, process_info_t *info);
  * @param path the program's path.
  */
 void process_set_name(process_t *proc, const char *path);
+
+/**
+ * the timer ticks the CPU spent in the idle loop since boot.
+ */
+uint64_t process_idle_ticks(void);
 
 /**
  * charge one timer tick to the current process (timer interrupt).

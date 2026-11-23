@@ -448,6 +448,33 @@ bool paging_map_in(phys_addr_t pd_phys, uintptr_t virt, phys_addr_t phys, uint32
     return true;
 }
 
+uint32_t paging_count_user(phys_addr_t pd_phys)
+{
+    if (pd_phys == 0 || pd_phys == kernel_directory_phys)
+    {
+        return 0;
+    }
+    pte_t *dir = (pte_t *)phys_to_virt(pd_phys);
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < KERNEL_PDE_START; i++)
+    {
+        if (!(dir[i] & PDE_PRESENT))
+        {
+            continue;
+        }
+        pte_t *table = entry_table(dir[i]);
+        for (uint32_t j = 0; j < PAGE_ENTRIES; j++)
+        {
+            // RAM only: a device mapping (a framebuffer) is not the process's memory
+            if ((table[j] & PTE_PRESENT) && pmm_owns(PAGE_FRAME(table[j])))
+            {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
 bool paging_copy_user(phys_addr_t dst_phys, phys_addr_t src_phys)
 {
     pte_t *src = (pte_t *)phys_to_virt(src_phys);

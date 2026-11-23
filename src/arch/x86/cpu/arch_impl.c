@@ -142,6 +142,11 @@ bool arch_copy_user_space(addr_space_t dst, addr_space_t src)
     return paging_copy_user(dst, src);
 }
 
+uint32_t arch_count_user_pages(addr_space_t as)
+{
+    return paging_count_user(as);
+}
+
 void arch_destroy_address_space(addr_space_t as)
 {
     paging_free_directory(as);

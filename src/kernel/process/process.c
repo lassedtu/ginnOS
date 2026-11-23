@@ -442,6 +442,10 @@ bool process_info(uint32_t pid, process_info_t *info)
             info->open_fds += proc->fds[fd].file != NULL;
         }
         info->brk = proc->brk;
+        info->uid = proc->uid;
+        info->utime = proc->utime;
+        info->stime = proc->stime;
+        info->pages = arch_count_user_pages(proc->page_directory);
         found = true;
         break;
     }
@@ -468,12 +472,20 @@ void process_set_name(process_t *proc, const char *path)
     proc->name[i] = '\0';
 }
 
+static uint64_t idle_ticks;
+
+uint64_t process_idle_ticks(void)
+{
+    return idle_ticks;
+}
+
 void process_account_tick(bool user)
 {
     process_t *proc = current_process;
     if (!proc || proc->pid == PID_NONE)
     {
-        return; // the idle loop
+        idle_ticks++; // the idle loop
+        return;
     }
     if (user)
     {

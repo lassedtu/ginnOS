@@ -110,10 +110,11 @@ static bool make_text(procfs_node_t *node, const char *name, uint32_t pid)
 
     if (pid != 0)
     {
-        FORMAT("Name:\t%s\nState:\t%s\nPid:\t%u\nPPid:\t%u\nAreas:\t%u\nFds:\t%u\n"
-               "Brk:\t0x%lx\n",
-               info.name, state_name(info.state), info.pid, info.parent_pid, info.areas,
-               info.open_fds, (unsigned long)info.brk);
+        FORMAT("Name:\t%s\nState:\t%s\nPid:\t%u\nPPid:\t%u\nUid:\t%u\nAreas:\t%u\n"
+               "Fds:\t%u\nBrk:\t0x%lx\nVmRSS:\t%u kB\nUtime:\t%u\nStime:\t%u\n",
+               info.name, state_name(info.state), info.pid, info.parent_pid, info.uid,
+               info.areas, info.open_fds, (unsigned long)info.brk, info.pages * 4, info.utime,
+               info.stime);
     }
     else if (strcmp(name, "meminfo") == 0)
     {
@@ -168,10 +169,14 @@ static bool make_text(procfs_node_t *node, const char *name, uint32_t pid)
     }
     else
     {
-        uint64_t ticks = timer_now();
-        uint32_t seconds = (uint32_t)(ticks / TIMER_HZ);
-        uint32_t hundredths = (uint32_t)(ticks % TIMER_HZ) * (100 / TIMER_HZ);
-        FORMAT("%u.%u%u\n", seconds, hundredths / 10, hundredths % 10);
+        // the time since boot, and the part of it the CPU was idle (as Linux)
+        uint64_t times[2] = {timer_now(), process_idle_ticks()};
+        for (int i = 0; i < 2; i++)
+        {
+            uint32_t seconds = (uint32_t)(times[i] / TIMER_HZ);
+            uint32_t hundredths = (uint32_t)(times[i] % TIMER_HZ) * (100 / TIMER_HZ);
+            FORMAT("%u.%u%u%s", seconds, hundredths / 10, hundredths % 10, i ? "\n" : " ");
+        }
     }
 
     node->size = format_used;
