@@ -84,6 +84,8 @@ static void release_slot(process_t *proc)
 {
     fd_table_put(proc->files); // a process that failed before it ran
     proc->files = NULL;
+    signal_handlers_put(proc->handlers); // a zombie can still get signals
+    proc->handlers = NULL;
     uint32_t flags = spin_lock_irqsave(&table_lock);
     proc->pid = PID_NONE;
     proc->state = PROC_STATE_UNUSED;
@@ -144,6 +146,13 @@ process_t *process_create(void)
     for (int fd = 0; fd < FD_STDIO_COUNT; fd++)
     {
         proc->files->fd[fd].file = file_console();
+    }
+
+    proc->handlers = signal_handlers_create();
+    if (!proc->handlers)
+    {
+        process_destroy(proc);
+        return NULL;
     }
 
     // the working and the root directory are "/"

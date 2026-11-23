@@ -368,7 +368,7 @@ static int32_t wait_on(pty_t *p, file_t *file)
 
 static bool signal_refused(const process_t *proc, int sig)
 {
-    return proc->signals.actions[sig].handler == SIG_IGN ||
+    return proc->handlers->actions[sig].handler == SIG_IGN ||
            (proc->signals.blocked & SIG_BIT(sig));
 }
 

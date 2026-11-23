@@ -104,7 +104,7 @@ void console_terminal_init(uint32_t init_pid)
  */
 static bool signal_refused(const process_t *proc, int sig)
 {
-    return proc->signals.actions[sig].handler == SIG_IGN ||
+    return proc->handlers->actions[sig].handler == SIG_IGN ||
            (proc->signals.blocked & SIG_BIT(sig));
 }
 

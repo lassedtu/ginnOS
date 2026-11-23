@@ -78,8 +78,35 @@ typedef struct
     uint32_t blocked;        // signals held back
     uint32_t saved_blocked;  // the mask to restore after sigsuspend
     bool restore_blocked;    // saved_blocked is set
-    ksigaction_t actions[NSIG];
 } signal_state_t;
+
+/**
+ * what a process does with each signal. the threads of a process use one
+ * together; it is freed when the last of them lets it go.
+ */
+typedef struct signal_handlers
+{
+    uint32_t users; // the processes (threads) that use it
+    ksigaction_t actions[NSIG];
+} signal_handlers_t;
+
+/**
+ * make a set of handlers, all SIG_DFL, with one user.
+ * @return the set, or NULL if there is no memory.
+ */
+signal_handlers_t *signal_handlers_create(void);
+
+/**
+ * add a user to a set of handlers (a new thread that shares it).
+ * @return handlers.
+ */
+signal_handlers_t *signal_handlers_get(signal_handlers_t *handlers);
+
+/**
+ * remove a user from a set of handlers; the last user frees it.
+ * @param handlers the set, or NULL (nothing is done).
+ */
+void signal_handlers_put(signal_handlers_t *handlers);
 
 struct process;
 struct registers;
@@ -126,8 +153,8 @@ bool signal_pending(const struct process *proc);
 void signal_deliver(struct registers *regs);
 
 /**
- * the signal state of a forked child: the parent's actions and mask, no
- * pending signals.
+ * the signal state of a forked child: the parent's mask, no pending
+ * signals. the child's handlers (its own set) are copied from the parent's.
  */
 void signal_fork(struct process *child, const struct process *parent);
 

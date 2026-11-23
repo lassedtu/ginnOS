@@ -97,7 +97,9 @@ typedef struct process
     wait_queue_t *waiting_on; // the queue it sleeps on (BLOCKED), or NULL
     bool interruptible;       // a signal may end the sleep
 
-    signal_state_t signals;   // pending, blocked, and the handlers
+    signal_state_t signals;   // pending and blocked
+    signal_handlers_t *handlers; // what each signal does (shared by threads);
+                                 // kept until the slot is freed
     uint32_t syscall_nr;      // the syscall in progress (for a restart)
     uint64_t alarm_deadline;  // tick of the SIGALRM alarm, 0 for none
     uint8_t stop_signal;      // the signal that stopped it (STOPPED)

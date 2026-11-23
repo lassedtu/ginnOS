@@ -7,6 +7,7 @@
 #include "common/stdio.h"
 #include "kernel/errno.h"
 #include "kernel/klog/klog.h"
+#include "kernel/memory/heap.h"
 #include "kernel/process/process.h"
 #include "kernel/process/wait_status.h"
 #include "kernel/scheduler/scheduler.h"
@@ -82,7 +83,7 @@ static bool valid_signal(int sig)
  */
 static bool ignores(const process_t *proc, int sig)
 {
-    uintptr_t handler = proc->signals.actions[sig].handler;
+    uintptr_t handler = proc->handlers->actions[sig].handler;
     return handler == SIG_IGN || (handler == SIG_DFL && (IGNORE_SIGNALS & SIG_BIT(sig)));
 }
 
@@ -97,7 +98,7 @@ static void notify_parent(process_t *child)
     {
         return;
     }
-    if (!(parent->signals.actions[SIGCHLD].flags & SA_NOCLDSTOP))
+    if (!(parent->handlers->actions[SIGCHLD].flags & SA_NOCLDSTOP))
     {
         signal_send(parent, SIGCHLD);
     }
@@ -128,7 +129,8 @@ void signal_send(process_t *proc, int sig)
     uint32_t flags = arch_irq_save();
     signal_state_t *state = &proc->signals;
 
-    if (proc->state == PROC_STATE_UNUSED || proc->state == PROC_STATE_ZOMBIE)
+    // a new process has no handlers until process_create has made them
+    if (proc->state == PROC_STATE_UNUSED || proc->state == PROC_STATE_ZOMBIE || !proc->handlers)
     {
         arch_irq_restore(flags);
         return;
@@ -153,7 +155,7 @@ void signal_send(process_t *proc, int sig)
     }
 
     // init takes only the signals it handles; others would end the system
-    bool dropped = proc->pid == PID_INIT && state->actions[sig].handler == SIG_DFL;
+    bool dropped = proc->pid == PID_INIT && proc->handlers->actions[sig].handler == SIG_DFL;
 
     // an ignored signal is dropped, unless it is blocked (the action may
     // change before it is unblocked)
@@ -180,10 +182,10 @@ void signal_force(process_t *proc, int sig)
     signal_state_t *state = &proc->signals;
 
     // a fault that cannot be handled ends the process
-    if ((state->blocked & SIG_BIT(sig)) || state->actions[sig].handler == SIG_IGN)
+    if ((state->blocked & SIG_BIT(sig)) || proc->handlers->actions[sig].handler == SIG_IGN)
     {
         state->blocked &= ~SIG_BIT(sig);
-        state->actions[sig].handler = SIG_DFL;
+        proc->handlers->actions[sig].handler = SIG_DFL;
     }
     state->pending |= SIG_BIT(sig);
 
@@ -280,7 +282,7 @@ static void restart_syscall(process_t *proc, struct registers *regs)
  */
 static bool enter_handler(process_t *proc, struct registers *regs, int sig)
 {
-    ksigaction_t *action = &proc->signals.actions[sig];
+    ksigaction_t *action = &proc->handlers->actions[sig];
 
     // the FPU registers go through the process's own aligned save area:
     // FXSAVE needs 16-byte alignment, which the kernel stack does not have
@@ -347,7 +349,7 @@ void signal_deliver(struct registers *regs)
     int sig;
     while ((sig = take_signal(proc)) != 0)
     {
-        ksigaction_t *action = &proc->signals.actions[sig];
+        ksigaction_t *action = &proc->handlers->actions[sig];
 
         if (action->handler == SIG_IGN)
         {
@@ -419,16 +421,50 @@ void signal_deliver(struct registers *regs)
 void signal_fork(process_t *child, const process_t *parent)
 {
     child->signals = parent->signals;
+    memcpy(child->handlers->actions, parent->handlers->actions, sizeof(child->handlers->actions));
     child->signals.pending = 0;
     child->signals.restore_blocked = false;
     child->alarm_deadline = 0;
+}
+
+signal_handlers_t *signal_handlers_create(void)
+{
+    signal_handlers_t *handlers = kcalloc(1, sizeof(signal_handlers_t));
+    if (handlers)
+    {
+        handlers->users = 1; // SIG_DFL is 0
+    }
+    return handlers;
+}
+
+signal_handlers_t *signal_handlers_get(signal_handlers_t *handlers)
+{
+    uint32_t flags = arch_irq_save();
+    handlers->users++;
+    arch_irq_restore(flags);
+    return handlers;
+}
+
+void signal_handlers_put(signal_handlers_t *handlers)
+{
+    if (!handlers)
+    {
+        return;
+    }
+    uint32_t flags = arch_irq_save();
+    bool last = --handlers->users == 0;
+    arch_irq_restore(flags);
+    if (last)
+    {
+        kfree(handlers);
+    }
 }
 
 void signal_exec(process_t *proc)
 {
     for (int sig = 1; sig < NSIG; sig++)
     {
-        ksigaction_t *action = &proc->signals.actions[sig];
+        ksigaction_t *action = &proc->handlers->actions[sig];
         if (action->handler != SIG_IGN)
         {
             action->handler = SIG_DFL;
@@ -555,7 +591,7 @@ syscall_ret_t sys_sigaction(struct registers *regs)
     if (!valid_signal(sig) || (user_new && (SIG_UNBLOCKABLE & SIG_BIT(sig))))
         return -EINVAL;
 
-    ksigaction_t old = proc->signals.actions[sig];
+    ksigaction_t old = proc->handlers->actions[sig];
     ksigaction_t new_action;
     if (user_new && kerr_failed(copy_from_user(&new_action, user_new, sizeof(new_action))))
         return -EFAULT;
@@ -566,7 +602,7 @@ syscall_ret_t sys_sigaction(struct registers *regs)
     {
         new_action.mask &= ~SIG_UNBLOCKABLE;
         uint32_t flags = arch_irq_save();
-        proc->signals.actions[sig] = new_action;
+        proc->handlers->actions[sig] = new_action;
         // a pending signal that is now ignored is dropped
         if (ignores(proc, sig))
             proc->signals.pending &= ~SIG_BIT(sig);
