@@ -149,66 +149,32 @@ void actions_paste(void)
     idunn_app_paste(Y.app, pasted, NULL);
 }
 
-/** a dialog with a text field; on_done gets the name */
-static struct
-{
-    idunn_widget_t *dialog;
-    idunn_widget_t *field;
-    void (*done)(const char *name);
-} ask;
-
-/** check the typed name, and hand it on */
-static void ask_finish(const char *name)
+/** false (with a message) when a typed name cannot be a file's name */
+static bool good_name(const char *name)
 {
     if (name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0 ||
         strchr(name, '/'))
     {
         show_message("Not a name", "A name cannot be empty, . or .., or have a / in it.");
-        return;
+        return false;
     }
-    ask.done(name);
+    return true;
 }
 
-static void ask_ok(idunn_widget_t *w, void *data)
+/** the item of the view that shows a name, or -1 */
+static int item_of(const char *name)
 {
-    (void)w;
-    (void)data;
-    // the dialog is closed already (a dialog button closes it first)
-    char name[256];
-    snprintf(name, sizeof(name), "%s", idunn_text_field_text(ask.field));
-    ask.dialog = NULL;
-    ask_finish(name);
+    for (int i = 0; i < Y.folder.count; i++)
+        if (strcmp(Y.folder.entries[i].name, name) == 0)
+            return i;
+    return -1;
 }
 
-static void ask_submit(idunn_widget_t *field, void *data)
+/** the bytes of a name to select for a new one: all but the extension */
+static size_t name_part(const char *name, bool folder)
 {
-    (void)data;
-    // Enter: close the dialog first, so a message can open after it
-    char name[256];
-    snprintf(name, sizeof(name), "%s", idunn_text_field_text(field));
-    idunn_dialog_close(ask.dialog);
-    ask.dialog = NULL;
-    ask_finish(name);
-}
-
-/**
- * ask for a name in a dialog, with name filled in and its first
- * selected bytes selected (typing replaces them).
- */
-static void ask_name(const char *title, const char *button, const char *name, size_t selected,
-                     void (*done)(const char *name))
-{
-    ask.done = done;
-    ask.dialog = idunn_dialog(title, NULL);
-    ask.field = idunn_text_field(NULL);
-    idunn_text_field_set_text(ask.field, name);
-    idunn_text_field_on_submit(ask.field, ask_submit, NULL);
-    idunn_add(idunn_dialog_content(ask.dialog), ask.field);
-    idunn_dialog_add_button(ask.dialog, "Cancel", IDUNN_OUTLINE, NULL, NULL);
-    idunn_dialog_add_button(ask.dialog, button, IDUNN_PRIMARY, ask_ok, NULL);
-    idunn_dialog_open(view_widget(), ask.dialog);
-    idunn_set_focus(ask.field);
-    idunn_text_field_select(ask.field, 0, selected);
+    const char *dot = strrchr(name, '.');
+    return dot && dot != name && !folder ? (size_t)(dot - name) : strlen(name);
 }
 
 static void report_error(const char *what, const char *name, int error)
@@ -220,15 +186,27 @@ static void report_error(const char *what, const char *name, int error)
 
 static char renaming[256];
 
-static void rename_done(const char *name)
+/** after a rename: the new name selected, and the list has the keyboard */
+static void select_only_name(const char *name)
 {
+    for (int i = 0; Y.list && i < Y.folder.count; i++)
+        idunn_list_view_select(Y.list, i, false);
+    view_select_name(name);
+}
+
+/** the name field of the list is done: rename to the typed name */
+static void rename_edited(idunn_widget_t *list, int item, const char *name, void *data)
+{
+    (void)list;
+    (void)item;
+    (void)data;
+    if (!name || strcmp(name, renaming) == 0 || !good_name(name))
+        return;
     char from[PATH_LEN];
     char to[PATH_LEN];
     path_join(Y.folder.path, renaming, from, sizeof(from));
     path_join(Y.folder.path, name, to, sizeof(to));
     struct stat st;
-    if (strcmp(from, to) == 0)
-        return;
     if (lstat(to, &st) == 0)
     {
         report_error("Cannot rename", name, EEXIST);
@@ -240,61 +218,49 @@ static void rename_done(const char *name)
         return;
     }
     view_refresh();
-    for (int i = 0; Y.list && i < Y.folder.count; i++)
-        idunn_list_view_select(Y.list, i, false);
-    view_select_name(name);
+    select_only_name(name);
+}
+
+/** the name of an item becomes a text field in the view (F2) */
+static void edit_name(const char *name, bool folder)
+{
+    int item = item_of(name);
+    if (item < 0 || !Y.list)
+        return;
+    snprintf(renaming, sizeof(renaming), "%s", name);
+    select_only_name(name);
+    // the name without its extension is selected, so a new name keeps it
+    idunn_list_view_edit(Y.list, item, 0, name_part(name, folder), rename_edited, NULL);
 }
 
 void actions_rename(void)
 {
     const entry_t *e = one_chosen();
-    if (!e)
-        return;
-    snprintf(renaming, sizeof(renaming), "%s", e->name);
-    // the name without its extension, so a new name keeps it
-    const char *dot = strrchr(e->name, '.');
-    size_t selected = dot && dot != e->name && !S_ISDIR(e->mode) ? (size_t)(dot - e->name)
-                                                                 : strlen(e->name);
-    ask_name("Rename", "Rename", e->name, selected, rename_done);
+    if (e)
+        edit_name(e->name, S_ISDIR(e->mode));
 }
 
-static bool new_is_folder;
-
-static void new_done(const char *name)
+/**
+ * a new folder or file is made at once with a free name ("New folder 2"),
+ * and its name is then a text field, as a rename.
+ */
+void actions_new(bool folder)
 {
-    char path[PATH_LEN];
-    path_join(Y.folder.path, name, path, sizeof(path));
-    struct stat st;
-    if (lstat(path, &st) == 0)
-    {
-        report_error(new_is_folder ? "Cannot make the folder" : "Cannot make the file", name,
-                     EEXIST);
+    if (view_in_trash())
         return;
-    }
+    char path[PATH_LEN];
+    fileops_unique(Y.folder.path, folder ? "New folder" : "New file", path, sizeof(path));
     int fd = -1;
-    if (new_is_folder ? mkdir(path, 0755) != 0
-                      : (fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644)) < 0)
+    if (folder ? mkdir(path, 0755) != 0 : (fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644)) < 0)
     {
-        report_error(new_is_folder ? "Cannot make the folder" : "Cannot make the file", name,
+        report_error(folder ? "Cannot make the folder" : "Cannot make the file", path_name(path),
                      errno);
         return;
     }
     if (fd >= 0)
         close(fd);
     view_refresh();
-    for (int i = 0; Y.list && i < Y.folder.count; i++)
-        idunn_list_view_select(Y.list, i, false);
-    view_select_name(name);
-}
-
-void actions_new(bool folder)
-{
-    if (view_in_trash())
-        return;
-    new_is_folder = folder;
-    char path[PATH_LEN];
-    fileops_unique(Y.folder.path, folder ? "New folder" : "New file", path, sizeof(path));
-    ask_name(folder ? "New folder" : "New file", "Make", path_name(path), (size_t)-1, new_done);
+    edit_name(path_name(path), folder);
 }
 
 static char **delete_paths;
@@ -656,7 +622,7 @@ void actions_item_menu(void)
         idunn_menu_add(menu, "scissors", "Cut", "Ctrl+X", do_cut, NULL);
         idunn_menu_add(menu, "copy", "Copy", "Ctrl+C", do_copy, NULL);
         if (e)
-            idunn_menu_add(menu, "pencil", "Rename...", "F2", do_rename, NULL);
+            idunn_menu_add(menu, "pencil", "Rename", "F2", do_rename, NULL);
         idunn_menu_add_separator(menu);
         idunn_menu_add(menu, "trash", "Move to the trash", "Delete", do_trash, NULL);
         idunn_menu_add(menu, NULL, "Delete for good...", "Shift+Delete", do_delete, NULL);
@@ -668,8 +634,8 @@ void actions_item_menu(void)
     }
     else
     {
-        idunn_menu_add(menu, "folder-plus", "New folder...", "Ctrl+Shift+N", do_new, (void *)1);
-        idunn_menu_add(menu, "file-plus", "New file...", NULL, do_new, NULL);
+        idunn_menu_add(menu, "folder-plus", "New folder", "Ctrl+Shift+N", do_new, (void *)1);
+        idunn_menu_add(menu, "file-plus", "New file", NULL, do_new, NULL);
         idunn_menu_add(menu, "clipboard-paste", "Paste", "Ctrl+V", do_paste, NULL);
         idunn_menu_add_separator(menu);
         idunn_menu_add(menu, "square-terminal", "Open in Mimir", NULL, do_mimir, NULL);

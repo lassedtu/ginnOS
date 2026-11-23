@@ -13,6 +13,11 @@
  * finds the next row that starts with what was typed. the mouse: a press
  * selects, Ctrl toggles a row, Shift selects a range, a double click
  * activates.
+ *
+ * idunn_list_view_edit puts a text field over an item's name (a rename in
+ * place). Enter or a press elsewhere keeps the text, Escape takes it
+ * back. the result comes from a timer, after the event, so the program
+ * can make the list again in it.
  */
 
 #include "idunn_internal.h"
@@ -33,6 +38,15 @@
 #define TILE_GAP 4
 #define FIND_MS  1000 // typed letters are one search for this long
 #define FIND_MAX 32
+#define EDIT_TILE_W 150 // the name field of a tile: wider than the tile
+#define EDIT_ROW_W  360 // the name field of a row, at most
+
+enum
+{
+    EDIT_OPEN,   // the field is there
+    EDIT_KEEP,   // Enter, or the keyboard went elsewhere
+    EDIT_CANCEL, // Escape
+};
 
 typedef struct
 {
@@ -63,6 +77,11 @@ typedef struct
     void *activate_data;
     idunn_callback_t on_menu;
     void *menu_data;
+    idunn_widget_t *editor; // the name field of idunn_list_view_edit, or NULL
+    int editing;            // its item
+    int edit_state;         // EDIT_
+    idunn_edit_done_t edit_done;
+    void *edit_data;
 } list_t;
 
 static int32_t pad_of(const idunn_widget_t *w)
@@ -181,8 +200,10 @@ static void draw_tile(idunn_widget_t *w, gfx_buffer_t *buf, int i)
     int32_t room = r.w - idunn_px(t, 8);
     int32_t tw = face ? bragi_measure(face, it->text, -1) : 0;
     tw = tw < room ? tw : room;
-    idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, r.x + (r.w - tw) / 2, top + size + idunn_px(t, 6),
-                    room, it->text, idunn_color(t, IDUNN_COLOR_FOREGROUND));
+    if (!l->editor || l->editing != i)
+        idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, r.x + (r.w - tw) / 2,
+                        top + size + idunn_px(t, 6), room, it->text,
+                        idunn_color(t, IDUNN_COLOR_FOREGROUND));
 }
 
 static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
@@ -225,8 +246,85 @@ static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
         right -= dw + idunn_px(t, ICON_GAP);
     }
     int32_t line = idunn_text_style(t, IDUNN_TEXT_BODY).line_height;
-    idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, x, r.y + (r.h - line) / 2, right - x, it->text,
-                    idunn_color(t, IDUNN_COLOR_FOREGROUND));
+    if (!l->editor || l->editing != i)
+        idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, x, r.y + (r.h - line) / 2, right - x, it->text,
+                        idunn_color(t, IDUNN_COLOR_FOREGROUND));
+}
+
+/** where the name field of an item goes */
+static gfx_rect_t edit_rect(idunn_widget_t *w, int i)
+{
+    const list_t *l = w->data;
+    const idunn_theme_t *t = idunn_theme(w);
+    gfx_rect_t r = item_rect(w, i);
+    if (l->grid)
+    {
+        int32_t width = idunn_px(t, EDIT_TILE_W);
+        int32_t top = r.y + idunn_px(t, 8 + PICTURE + 2);
+        return gfx_rect(r.x + (r.w - width) / 2, top, width, idunn_px(t, 28));
+    }
+    // over the text: where it starts, less the field's own padding
+    int32_t x = r.x + idunn_px(t, ROW_PAD);
+    if (l->items[i].icon)
+        x += idunn_px(t, (l->pictures ? ROW_PICTURE : ICON) + ICON_GAP);
+    x -= idunn_px(t, 8);
+    // to the row's end, but not over the detail of a wide row
+    int32_t width = r.x + r.w - x - idunn_px(t, 4);
+    if (width > idunn_px(t, EDIT_ROW_W))
+        width = idunn_px(t, EDIT_ROW_W);
+    return gfx_rect(x, r.y, width, r.h);
+}
+
+static void list_layout(idunn_widget_t *w)
+{
+    const list_t *l = w->data;
+    if (l->editor && l->editing < l->count)
+        idunn_place(l->editor, edit_rect(w, l->editing));
+}
+
+/** the name field is done: the result comes in a moment (a timer) */
+static void edit_end(idunn_widget_t *w, int state)
+{
+    list_t *l = w->data;
+    if (!l->editor || l->edit_state != EDIT_OPEN)
+        return;
+    l->edit_state = state;
+    if (w->window)
+        idunn_wake(w, w->window->now);
+}
+
+static void editor_submitted(idunn_widget_t *field, void *data)
+{
+    (void)field;
+    edit_end(data, EDIT_KEEP);
+}
+
+static void editor_blurred(idunn_widget_t *field, void *data)
+{
+    (void)field;
+    edit_end(data, EDIT_KEEP);
+}
+
+/** drop the name field; with call, tell the program (which may free w) */
+static void edit_finish(idunn_widget_t *w, bool call)
+{
+    list_t *l = w->data;
+    idunn_widget_t *editor = l->editor;
+    if (!editor)
+        return;
+    bool focused = editor->state & IDUNN_FOCUSED;
+    char *text = l->edit_state == EDIT_KEEP ? strdup(idunn_text_field_text(editor)) : NULL;
+    idunn_edit_done_t done = l->edit_done;
+    void *data = l->edit_data;
+    int item = l->editing;
+    l->editor = NULL;
+    idunn_widget_free(editor);
+    idunn_dirty(w);
+    if (focused)
+        idunn_set_focus(w);
+    if (call && done)
+        done(w, item, text, data); // the list may be gone after this
+    free(text);
 }
 
 static void list_draw(idunn_widget_t *w, gfx_buffer_t *buf)
@@ -389,6 +487,14 @@ static void find(idunn_widget_t *w, const char *typed)
 static bool list_key(idunn_widget_t *w, const idunn_event_t *ev)
 {
     list_t *l = w->data;
+    if (l->editor)
+    {
+        // the keys the name field does not use: Escape takes it back
+        if (ev->code != IDUNN_KEY_ESCAPE)
+            return true;
+        edit_end(w, EDIT_CANCEL);
+        return true;
+    }
     bool shift = ev->mods & IDUNN_MOD_SHIFT;
     bool ctrl = ev->mods & IDUNN_MOD_CTRL;
     // a page: the rows the scroll view it is in can show (or 10)
@@ -471,6 +577,10 @@ static bool list_event(idunn_widget_t *w, const idunn_event_t *ev)
     {
     case IDUNN_EV_KEY:
         return list_key(w, ev);
+    case IDUNN_EV_TIMER:
+        if (l->editor && l->edit_state != EDIT_OPEN)
+            edit_finish(w, true);
+        return true;
     case IDUNN_EV_MOTION:
     {
         int hover = item_at(w, ev->x, ev->y);
@@ -577,6 +687,7 @@ static gfx_rect_t list_hover_area(idunn_widget_t *w)
 static const idunn_class_t list_class = {
     .name = "list view",
     .measure = list_measure,
+    .layout = list_layout,
     .draw = list_draw,
     .event = list_event,
     .hover_area = list_hover_area,
@@ -645,6 +756,7 @@ void idunn_list_view_clear(idunn_widget_t *list)
     list_t *l = as_list(list);
     if (!l)
         return;
+    edit_finish(list, false);
     free_items(l);
     l->current = -1;
     l->anchor = 0;
@@ -743,6 +855,38 @@ int idunn_list_view_item_at(const idunn_widget_t *list, int32_t x, int32_t y)
     if (!as_list(list))
         return -1;
     return item_at(list, x, y);
+}
+
+bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t end,
+                          idunn_edit_done_t done, void *data)
+{
+    list_t *l = as_list(list);
+    if (!l || item < 0 || item >= l->count || !list->window)
+        return false;
+    edit_finish(list, false);
+    idunn_widget_t *field = idunn_text_field(NULL);
+    if (!field)
+        return false;
+    l->editing = item;
+    l->edit_state = EDIT_OPEN;
+    l->edit_done = done;
+    l->edit_data = data;
+    l->editor = idunn_add(list, field);
+    idunn_text_field_set_text(field, l->items[item].text);
+    idunn_text_field_on_submit(field, editor_submitted, list);
+    idunn_text_field_on_blur(field, editor_blurred, list);
+    idunn_place(field, edit_rect(list, item));
+    idunn_reveal(list, item_rect(list, item));
+    idunn_set_focus(field);
+    idunn_text_field_select(field, start, end);
+    idunn_dirty(list);
+    return true;
+}
+
+bool idunn_list_view_editing(const idunn_widget_t *list)
+{
+    const list_t *l = as_list(list);
+    return l && l->editor;
 }
 
 void idunn_list_view_set_pictures(idunn_widget_t *list, bool pictures)

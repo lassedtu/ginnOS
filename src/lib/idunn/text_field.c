@@ -29,6 +29,8 @@ typedef struct
     void *change_data;
     idunn_callback_t on_submit;
     void *submit_data;
+    idunn_callback_t on_blur;
+    void *blur_data;
 } field_t;
 
 /** where the text goes: the rect inside the padding, after the icon */
@@ -252,6 +254,8 @@ static bool field_event(idunn_widget_t *w, const idunn_event_t *ev)
         return true;
     case IDUNN_EV_BLUR:
         idunn_dirty(w);
+        if (f->on_blur)
+            f->on_blur(w, f->blur_data);
         return true;
     case IDUNN_EV_TIMER:
         if (w->state & IDUNN_FOCUSED)
@@ -342,6 +346,15 @@ void idunn_text_field_on_change(idunn_widget_t *field, idunn_callback_t on_chang
         return;
     f->on_change = on_change;
     f->change_data = data;
+}
+
+void idunn_text_field_on_blur(idunn_widget_t *field, idunn_callback_t on_blur, void *data)
+{
+    field_t *f = as_field(field);
+    if (!f)
+        return;
+    f->on_blur = on_blur;
+    f->blur_data = data;
 }
 
 void idunn_text_field_on_submit(idunn_widget_t *field, idunn_callback_t on_submit, void *data)

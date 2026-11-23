@@ -390,6 +390,8 @@ void idunn_text_field_set_icon(idunn_widget_t *field, const char *icon);
 /** on_change after every change of the text; on_submit on Enter */
 void idunn_text_field_on_change(idunn_widget_t *field, idunn_callback_t on_change, void *data);
 void idunn_text_field_on_submit(idunn_widget_t *field, idunn_callback_t on_submit, void *data);
+/** on_blur when the field loses the keyboard */
+void idunn_text_field_on_blur(idunn_widget_t *field, idunn_callback_t on_blur, void *data);
 
 /**
  * a text area: lines that wrap, Enter for a new line; it scrolls.
@@ -506,6 +508,21 @@ int idunn_list_view_current(const idunn_widget_t *list);
 /** on_select after the selection changes; on_activate on a double click or Enter */
 void idunn_list_view_on_select(idunn_widget_t *list, idunn_callback_t on_select, void *data);
 void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activate, void *data);
+/**
+ * what an edit in place gives: the new text, or NULL when it was taken
+ * back (Escape). it comes after the event, so the list can be made again.
+ */
+typedef void (*idunn_edit_done_t)(idunn_widget_t *list, int item, const char *text, void *data);
+/**
+ * edit an item's text in place (a rename): a text field over it with the
+ * bytes start to end selected ((size_t)-1: to the end). Enter, or the
+ * keyboard going elsewhere, keeps the text; Escape takes it back.
+ * @return false when the item is not there or the list is not shown.
+ */
+bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t end,
+                          idunn_edit_done_t done, void *data);
+/** true while an item is edited in place */
+bool idunn_list_view_editing(const idunn_widget_t *list);
 /** one click activates an item (a launcher); the arrow keys only move */
 void idunn_list_view_set_single_click(idunn_widget_t *list, bool single);
 /**

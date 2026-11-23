@@ -8,6 +8,7 @@
 #include "hosttest.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 void test_lists(idunn_context_t *ctx);
@@ -249,6 +250,74 @@ static void count_middle(idunn_widget_t *w, void *data)
     middle_on = w;
 }
 
+static char edited[64];
+static int edits;
+static int edited_item;
+
+static void edit_done(idunn_widget_t *list, int item, const char *text, void *data)
+{
+    (void)list;
+    (void)data;
+    edits++;
+    edited_item = item;
+    snprintf(edited, sizeof(edited), "%s", text ? text : "(none)");
+}
+
+/** a rename in place: Enter keeps, Escape takes back, a press elsewhere keeps */
+static void test_edit_in_place(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 400);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_widget_t *list = idunn_grow(idunn_add(col, idunn_list_view()), 1);
+    idunn_list_view_add(list, "file", "notes.txt", NULL);
+    idunn_list_view_add(list, "file", "photo.png", NULL);
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+    uint32_t now = 1000;
+    idunn_window_tick(win, now);
+
+    // the name without its extension is selected: typing replaces it
+    edits = 0;
+    CHECK(idunn_list_view_edit(list, 0, 0, 5, edit_done, NULL));
+    CHECK(idunn_list_view_editing(list));
+    idunn_window_draw(win);
+    idunn_window_key(win, IDUNN_KEY_A, 0, "a");
+    idunn_window_key(win, IDUNN_KEY_A, 0, "b");
+    key(win, IDUNN_KEY_ENTER, 0);
+    CHECK_EQ(edits, 0); // not in the event: on the timer
+    idunn_window_tick(win, now += 10);
+    CHECK_EQ(edits, 1);
+    CHECK(strcmp(edited, "ab.txt") == 0);
+    CHECK(!idunn_list_view_editing(list));
+    CHECK(idunn_window_focus(win) == list);
+
+    // Escape takes it back
+    CHECK(idunn_list_view_edit(list, 1, 0, (size_t)-1, edit_done, NULL));
+    idunn_window_key(win, IDUNN_KEY_X, 0, "x");
+    key(win, IDUNN_KEY_ESCAPE, 0);
+    idunn_window_tick(win, now += 10);
+    CHECK_EQ(edits, 2);
+    CHECK_EQ(edited_item, 1);
+    CHECK(strcmp(edited, "(none)") == 0);
+
+    // a press on another item keeps the text
+    CHECK(idunn_list_view_edit(list, 1, 0, (size_t)-1, edit_done, NULL));
+    idunn_window_draw(win);
+    idunn_window_key(win, IDUNN_KEY_A, 0, "y");
+    click_at(win, 50, 4 + 10, 0);
+    idunn_window_tick(win, now += 10);
+    CHECK_EQ(edits, 3);
+    CHECK(strcmp(edited, "y") == 0);
+
+    // clearing the list drops the field, with no result
+    CHECK(idunn_list_view_edit(list, 0, 0, 0, edit_done, NULL));
+    idunn_list_view_clear(list);
+    idunn_window_tick(win, now += 10);
+    CHECK_EQ(edits, 3);
+    CHECK(!idunn_list_view_editing(list));
+    idunn_window_free_widgets(win);
+}
+
 /** a single-click list (a launcher): a click activates, the keys only move */
 static void test_single_click(idunn_context_t *ctx)
 {
@@ -482,6 +551,7 @@ void test_lists(idunn_context_t *ctx)
     test_list_menu(ctx);
     test_middle_click(ctx);
     test_single_click(ctx);
+    test_edit_in_place(ctx);
     test_keep_end(ctx);
     test_grid(ctx);
 }
