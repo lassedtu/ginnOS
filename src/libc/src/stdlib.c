@@ -1,4 +1,5 @@
 #include "stdlib.h"
+#include "inttypes.h"
 #include "unistd.h"
 #include "string.h"
 #include "stdio.h"
@@ -820,4 +821,14 @@ int mkstemp(char *template)
     }
     errno = EEXIST;
     return -1;
+}
+
+intmax_t strtoimax(const char *s, char **end, int base)
+{
+    return strtoll(s, end, base);
+}
+
+uintmax_t strtoumax(const char *s, char **end, int base)
+{
+    return strtoull(s, end, base);
 }

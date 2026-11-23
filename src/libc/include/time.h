@@ -39,6 +39,8 @@ struct tm
     int tm_wday;  // 0-6, Sunday = 0
     int tm_yday;  // 0-365
     int tm_isdst; // always 0
+    long tm_gmtoff;      // seconds east of UTC: always 0 (ginnOS keeps UTC)
+    const char *tm_zone; // "UTC"
 };
 
 time_t time(time_t *out);

@@ -101,6 +101,10 @@ void _exit(int status) __attribute__((noreturn));
 int dup(int fd);
 
 // access() modes
+#define STDIN_FILENO  0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
+
 #define F_OK 0 // the file exists
 #define X_OK 1
 #define W_OK 2

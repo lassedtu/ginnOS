@@ -25,3 +25,5 @@ extern int failures;
 void test_wide(void);
 // regex.c
 void test_regex(void);
+// posix.c
+void test_posix(void);

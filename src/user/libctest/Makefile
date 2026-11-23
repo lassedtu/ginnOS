@@ -1,3 +1,3 @@
 PROG := libctest
-SRCS := libctest.c regex.c wide.c
+SRCS := libctest.c posix.c regex.c wide.c
 include ../program.mk

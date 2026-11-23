@@ -35,3 +35,16 @@
 // regular expressions (regex.h)
 #define RE_DUP_MAX         255 // the most a {m,n} can repeat
 #define CHARCLASS_NAME_MAX 14  // the longest name in [[:name:]]
+
+#define NAME_MAX      255 // the longest name in a folder (ext2)
+#define HOST_NAME_MAX 64
+#define SSIZE_MAX     __PTRDIFF_MAX__
+#define ARG_MAX       131072 // bytes of arguments and environment (the kernel's)
+#define LINE_MAX      2048
+
+// the least values POSIX allows (programs use them as fallbacks)
+#define _POSIX_ARG_MAX       4096
+#define _POSIX_NAME_MAX      14
+#define _POSIX_PATH_MAX      256
+#define _POSIX_HOST_NAME_MAX 255
+#define _POSIX2_LINE_MAX     2048

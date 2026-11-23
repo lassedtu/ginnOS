@@ -1419,3 +1419,44 @@ int sscanf(const char *str, const char *fmt, ...)
     va_end(ap);
     return stored;
 }
+
+ssize_t getdelim(char **line, size_t *size, int delimiter, FILE *stream)
+{
+    if (!line || !size || !stream)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    size_t length = 0;
+    for (;;)
+    {
+        int c = fgetc(stream);
+        if (c == EOF)
+            break;
+        // room for this byte and the null byte
+        if (length + 2 > *size || !*line)
+        {
+            size_t bigger = *size < 64 ? 128 : *size * 2;
+            char *grown = realloc(*line, bigger);
+            if (!grown)
+            {
+                errno = ENOMEM;
+                return -1;
+            }
+            *line = grown;
+            *size = bigger;
+        }
+        (*line)[length++] = (char)c;
+        if (c == delimiter)
+            break;
+    }
+    if (length == 0)
+        return -1;
+    (*line)[length] = '\0';
+    return (ssize_t)length;
+}
+
+ssize_t getline(char **line, size_t *size, FILE *stream)
+{
+    return getdelim(line, size, '\n', stream);
+}

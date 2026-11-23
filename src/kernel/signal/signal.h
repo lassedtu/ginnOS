@@ -27,6 +27,7 @@
 #define SIGTSTP   20
 #define SIGTTIN   21
 #define SIGTTOU   22
+#define SIGURG    23 // urgent data on a socket (ignored by default)
 #define SIGWINCH  28 // the terminal's window size changed (ignored by default)
 
 // signals are numbered 1 to NSIG - 1

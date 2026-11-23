@@ -108,6 +108,8 @@ struct tm *gmtime_r(const time_t *t, struct tm *out)
     out->tm_sec = (int)(seconds % 60);
     out->tm_wday = (int)((days % 7 + 11) % 7); // 1970-01-01 was a Thursday
     out->tm_isdst = 0;
+    out->tm_gmtoff = 0;
+    out->tm_zone = "UTC";
 
     long year = 1970;
     for (;;)
