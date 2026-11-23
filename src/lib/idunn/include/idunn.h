@@ -382,6 +382,13 @@ void idunn_text_field_set_text(idunn_widget_t *field, const char *text);
  * select bytes start to end (the caret at end); typing replaces them.
  * (size_t)-1 is the end of the text.
  */
+/**
+ * a plain field: a thin box around the text, with little padding and no
+ * ring (a name that is changed in place, as in a file list).
+ */
+void idunn_text_field_set_plain(idunn_widget_t *field, bool plain);
+/** the width of the field's text in pixels (0 before it is in a window) */
+int32_t idunn_text_field_text_width(idunn_widget_t *field);
 void idunn_text_field_select(idunn_widget_t *field, size_t start, size_t end);
 
 /** an icon (a Lucide name) at the start, as in a search field */

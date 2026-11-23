@@ -13,6 +13,7 @@
 
 #define HEIGHT    32
 #define PADDING   12 // inside the 1 px border
+#define PLAIN_PAD 3  // the same, for a plain field
 #define ICON_SIZE 16
 #define ICON_GAP  8
 #define WIDTH     240 // when nothing else gives it a width
@@ -31,6 +32,7 @@ typedef struct
     void *submit_data;
     idunn_callback_t on_blur;
     void *blur_data;
+    bool plain; // a thin box around the text (idunn_text_field_set_plain)
 } field_t;
 
 /** where the text goes: the rect inside the padding, after the icon */
@@ -38,8 +40,9 @@ static gfx_rect_t text_box(idunn_widget_t *w)
 {
     const field_t *f = w->data;
     const idunn_theme_t *t = idunn_theme(w);
-    int32_t left = idunn_px(t, PADDING + 1) + (f->icon ? idunn_px(t, ICON_SIZE + ICON_GAP) : 0);
-    int32_t right = idunn_px(t, PADDING + 1);
+    int32_t pad = f->plain ? PLAIN_PAD : PADDING;
+    int32_t left = idunn_px(t, pad + 1) + (f->icon ? idunn_px(t, ICON_SIZE + ICON_GAP) : 0);
+    int32_t right = idunn_px(t, pad + 1);
     return gfx_rect(w->rect.x + left, w->rect.y, w->rect.w - left - right, w->rect.h);
 }
 
@@ -104,9 +107,12 @@ static void changed(idunn_widget_t *w, bool text_changed)
 static void field_measure(idunn_widget_t *w, int32_t max_width, int32_t *width, int32_t *height)
 {
     (void)max_width;
+    const field_t *f = w->data;
     const idunn_theme_t *t = idunn_theme(w);
     *width = idunn_px(t, WIDTH);
-    *height = idunn_px(t, HEIGHT);
+    *height = f->plain ? idunn_text_style(t, IDUNN_TEXT_BODY).line_height +
+                             2 * idunn_px(t, PLAIN_PAD + 1)
+                       : idunn_px(t, HEIGHT);
 }
 
 static void field_layout(idunn_widget_t *w)
@@ -156,7 +162,16 @@ static void field_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     field_t *f = w->data;
     idunn_context_t *ctx = idunn_ctx(w);
     const idunn_theme_t *t = &ctx->theme;
-    idunn_draw_well(w, buf);
+    if (f->plain)
+    {
+        // a thin box in the accent, as a name that is being changed in place
+        int32_t radius = idunn_px(t, 2);
+        gfx_fill_round_rect(buf, w->rect, radius, idunn_color(t, IDUNN_COLOR_FIELD));
+        gfx_border_round_rect(buf, w->rect, radius, idunn_px(t, 1),
+                              idunn_color(t, IDUNN_COLOR_ACCENT));
+    }
+    else
+        idunn_draw_well(w, buf);
 
     if (f->icon)
     {
@@ -337,6 +352,23 @@ void idunn_text_field_set_icon(idunn_widget_t *field, const char *icon)
     free(f->icon);
     f->icon = icon ? strdup(icon) : NULL;
     idunn_dirty(field);
+}
+
+void idunn_text_field_set_plain(idunn_widget_t *field, bool plain)
+{
+    field_t *f = as_field(field);
+    if (!f)
+        return;
+    f->plain = plain;
+    idunn_relayout(field);
+}
+
+int32_t idunn_text_field_text_width(idunn_widget_t *field)
+{
+    field_t *f = as_field(field);
+    if (!f || !field->window)
+        return 0;
+    return x_of(field, f->edit.length);
 }
 
 void idunn_text_field_on_change(idunn_widget_t *field, idunn_callback_t on_change, void *data)

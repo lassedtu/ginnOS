@@ -286,28 +286,38 @@ static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
                         idunn_color(t, IDUNN_COLOR_FOREGROUND));
 }
 
-/** where the name field of an item goes */
+/**
+ * where the name field of an item goes: a thin box just around the name,
+ * as wide as the text (it grows while the name is typed, to a limit)
+ */
 static gfx_rect_t edit_rect(idunn_widget_t *w, int i)
 {
     const list_t *l = w->data;
     const idunn_theme_t *t = idunn_theme(w);
     gfx_rect_t r = item_rect(w, i);
+    int32_t edge = idunn_px(t, 4); // the field's padding and border
+    int32_t line = idunn_text_style(t, IDUNN_TEXT_BODY).line_height;
+    int32_t height = line + 2 * edge;
+    int32_t want = (l->editor ? idunn_text_field_text_width(l->editor) : 0) + 2 * edge +
+                   idunn_px(t, 12); // room for the caret and the next letter
+    if (want < idunn_px(t, 40))
+        want = idunn_px(t, 40);
     if (l->grid)
     {
-        int32_t width = idunn_px(t, EDIT_TILE_W);
-        int32_t top = r.y + idunn_px(t, 8 + PICTURE + 2);
-        return gfx_rect(r.x + (r.w - width) / 2, top, width, idunn_px(t, 28));
+        int32_t width = want < idunn_px(t, EDIT_TILE_W) ? want : idunn_px(t, EDIT_TILE_W);
+        int32_t top = r.y + idunn_px(t, 8 + PICTURE + 6) - edge;
+        return gfx_rect(r.x + (r.w - width) / 2, top, width, height);
     }
-    // over the text: where it starts, less the field's own padding
+    // over the name: where it starts, less the field's padding
     int32_t x = r.x + idunn_px(t, ROW_PAD);
     if (l->items[i].icon)
         x += idunn_px(t, (l->pictures ? ROW_PICTURE : ICON) + ICON_GAP);
-    x -= idunn_px(t, 8);
-    // to the row's end, but not over the detail of a wide row
-    int32_t width = r.x + r.w - x - idunn_px(t, 4);
-    if (width > idunn_px(t, EDIT_ROW_W))
-        width = idunn_px(t, EDIT_ROW_W);
-    return gfx_rect(x, r.y, width, r.h);
+    x -= edge;
+    // to the row's end at most, and not over the detail of a wide row
+    int32_t room = r.x + r.w - x - idunn_px(t, 4);
+    if (room > idunn_px(t, EDIT_ROW_W))
+        room = idunn_px(t, EDIT_ROW_W);
+    return gfx_rect(x, r.y + (r.h - height) / 2, want < room ? want : room, height);
 }
 
 static void list_layout(idunn_widget_t *w)
@@ -332,6 +342,12 @@ static void editor_submitted(idunn_widget_t *field, void *data)
 {
     (void)field;
     edit_end(data, EDIT_KEEP);
+}
+
+static void editor_changed(idunn_widget_t *field, void *data)
+{
+    (void)field;
+    idunn_relayout(data); // the box follows the width of the name
 }
 
 static void editor_blurred(idunn_widget_t *field, void *data)
@@ -963,7 +979,9 @@ bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t e
     l->edit_done = done;
     l->edit_data = data;
     l->editor = idunn_add(list, field);
+    idunn_text_field_set_plain(field, true);
     idunn_text_field_set_text(field, l->items[item].text);
+    idunn_text_field_on_change(field, editor_changed, list);
     idunn_text_field_on_submit(field, editor_submitted, list);
     idunn_text_field_on_blur(field, editor_blurred, list);
     idunn_place(field, edit_rect(list, item));
