@@ -1,6 +1,7 @@
 #include "fs.h"
 #include "ext2_ops.h"
 #include "kernel/sync/mutex.h"
+#include "kernel/device/device.h"
 
 #include "common/memory.h"
 
@@ -29,9 +30,18 @@ static uint8_t map_ext2_file_type(uint8_t ext2_type)
         return FS_TYPE_DIR;
     }
 
-    if (ext2_type == EXT2_FT_SYMLINK)
+    switch (ext2_type)
     {
+    case EXT2_FT_SYMLINK:
         return FS_TYPE_SYMLINK;
+    case EXT2_FT_FIFO:
+        return FS_TYPE_FIFO;
+    case EXT2_FT_CHRDEV:
+        return FS_TYPE_CHAR;
+    case EXT2_FT_BLKDEV:
+        return FS_TYPE_BLOCK;
+    default:
+        break;
     }
 
     return FS_TYPE_UNKNOWN;
@@ -52,9 +62,18 @@ static uint8_t map_inode_type(uint16_t mode)
         return FS_TYPE_DIR;
     }
 
-    if ((mode & EXT2_S_IFMT) == EXT2_S_IFLNK)
+    switch (mode & EXT2_S_IFMT)
     {
+    case EXT2_S_IFLNK:
         return FS_TYPE_SYMLINK;
+    case EXT2_S_IFIFO:
+        return FS_TYPE_FIFO;
+    case EXT2_S_IFCHR:
+        return FS_TYPE_CHAR;
+    case EXT2_S_IFBLK:
+        return FS_TYPE_BLOCK;
+    default:
+        break;
     }
 
     return FS_TYPE_UNKNOWN;
@@ -113,6 +132,15 @@ static void fill_stat(uint32_t inode_number, const ext2_inode_t *inode, fs_stat_
     stat_out->ctime = inode->i_ctime;
     stat_out->uid = inode->i_uid;
     stat_out->gid = inode->i_gid;
+    stat_out->rdev = 0;
+    uint32_t type = inode->i_mode & EXT2_S_IFMT;
+    if (type == EXT2_S_IFCHR || type == EXT2_S_IFBLK)
+    {
+        uint32_t major;
+        uint32_t minor;
+        ext2_device_numbers(inode, &major, &minor);
+        stat_out->rdev = DEVICE_NUMBER(major, minor);
+    }
 }
 
 static kerr_t ext2_ops_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
@@ -383,6 +411,17 @@ static kerr_t locked_link(fs_mount_t *mount, const char *old_path, const char *n
     return err;
 }
 
+static kerr_t locked_mknod(fs_mount_t *mount, const char *path, uint32_t mode, uint32_t rdev)
+{
+    // unpack as DEVICE_NUMBER packs
+    uint32_t major = (rdev >> 8) & 0xfffu;
+    uint32_t minor = (rdev & 0xffu) | ((rdev >> 12) & 0xfff00u);
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_mknod(&mount->ext2, path, mode, major, minor);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
 // the ext2 operations table handed to the generic fs layer at mount time.
 static const fs_ops_t ext2_ops = {
     .open = locked_open,
@@ -403,6 +442,7 @@ static const fs_ops_t ext2_ops = {
     .readlink = locked_readlink,
     .symlink = locked_symlink,
     .link = locked_link,
+    .mknod = locked_mknod,
 };
 
 kerr_t ext2_ops_mount(fs_mount_t *mount, block_device_t *device)

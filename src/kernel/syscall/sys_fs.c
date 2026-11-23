@@ -421,6 +421,50 @@ syscall_ret_t sys_linkat(struct registers *regs)
     return kerr_to_errno(linked);
 }
 
+/**
+ * SYS_mknodat: make a named pipe, a device node or an empty file.
+ * args: dirfd, path, mode (S_IFIFO, S_IFCHR, S_IFBLK or S_IFREG, with the
+ *       permission bits, taken through the umask), the device number.
+ * a device node needs root. it opens with ENXIO: the devices are in /dev.
+ * returns 0, or a negative errno (EEXIST, EPERM, EINVAL, EACCES).
+ */
+syscall_ret_t sys_mknodat(struct registers *regs)
+{
+    uint32_t mode = (uint32_t)syscall_arg(regs, 2);
+    uint32_t rdev = (uint32_t)syscall_arg(regs, 3);
+    uint32_t type = mode & S_IFMT;
+    if (type != 0 && type != S_IFREG && type != S_IFIFO && type != S_IFCHR && type != S_IFBLK)
+        return -EINVAL;
+    if ((type == S_IFCHR || type == S_IFBLK) && process_current()->euid != 0)
+        return -EPERM;
+
+    char resolved[PATH_MAX];
+    int32_t err = resolve_user_path_at((int32_t)syscall_arg(regs, 0),
+                                       (const char *)syscall_arg(regs, 1), resolved,
+                                       sizeof(resolved), false);
+    if (err == 0)
+    {
+        err = permission_check_parent(resolved, false);
+    }
+    if (err < 0)
+        return err;
+
+    kerr_t made;
+    if (type == 0 || type == S_IFREG)
+    {
+        made = vfs_create(resolved);
+    }
+    else
+    {
+        made = vfs_mknod(resolved, type | (mode & 07777u), rdev);
+    }
+    if (made == KERR_PERM)
+        return -EPERM; // a filesystem with no such nodes (devfs, procfs)
+    if (kerr_failed(made))
+        return kerr_to_errno(made);
+    return set_new_owner(resolved, mode);
+}
+
 // utimensat: a tv_nsec that asks for the time now, or no change
 #define UTIME_NOW  ((1l << 30) - 1)
 #define UTIME_OMIT ((1l << 30) - 2)
@@ -543,6 +587,12 @@ static uint8_t dirent_type(const fs_dirent_t *entry)
         return DT_REG;
     case FS_TYPE_SYMLINK:
         return DT_LNK;
+    case FS_TYPE_FIFO:
+        return DT_FIFO;
+    case FS_TYPE_CHAR:
+        return DT_CHR;
+    case FS_TYPE_BLOCK:
+        return DT_BLK;
     default:
         return DT_UNKNOWN;
     }

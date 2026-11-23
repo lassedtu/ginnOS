@@ -4,6 +4,7 @@
 
 #include "kernel/vfs/file.h"
 #include "kernel/vfs/flock.h"
+#include "kernel/vfs/fifo.h"
 #include "kernel/vfs/poll.h"
 #include "kernel/vfs/permission.h"
 #include "kernel/time/timer.h"
@@ -146,6 +147,26 @@ static int32_t open_at(int32_t dirfd, const char *path, uint32_t flags, uint32_t
 
     // a device with its own stream (a terminal) has no filesystem file
     uint8_t type = file_is_vfs(file) ? vfs_file_type(&file->vfs) : FS_TYPE_UNKNOWN;
+
+    // a named pipe opens as a pipe; a device node outside /dev has no
+    // device behind it (the devices are in devfs)
+    if (type == FS_TYPE_FIFO)
+    {
+        vfs_stat_t st;
+        fs_mount_t *mount = file->vfs.mount;
+        kerr_t found = vfs_fstat(&file->vfs, &st);
+        file_unref(file);
+        if (kerr_failed(found))
+            return kerr_to_errno(found);
+        ret = fifo_open(mount, st.inode, flags & (O_ACCMODE | O_NONBLOCK), &file);
+        if (ret < 0)
+            return ret;
+    }
+    else if (type == FS_TYPE_CHAR || type == FS_TYPE_BLOCK)
+    {
+        file_unref(file);
+        return -ENXIO;
+    }
     if ((flags & O_DIRECTORY) && type != FS_TYPE_DIR)
         ret = -ENOTDIR;
     else if (type == FS_TYPE_DIR && access != O_RDONLY)

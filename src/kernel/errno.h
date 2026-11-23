@@ -57,6 +57,7 @@
 #define EMLINK       45 // too many links to a file
 #define EFBIG        46 // a file would be too large
 #define ENOLCK       47 // no locks left (flock)
+#define ENXIO        48 // no such device (a device node with none behind it)
 
 #define EWOULDBLOCK EAGAIN
 

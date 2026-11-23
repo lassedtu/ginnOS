@@ -152,6 +152,19 @@ kerr_t fs_link(fs_mount_t *mount, const char *old_path, const char *new_path)
     return mount->ops->link(mount, old_path, new_path);
 }
 
+kerr_t fs_mknod(fs_mount_t *mount, const char *path, uint32_t mode, uint32_t rdev)
+{
+    if (!mount || !path || !mount->is_mounted)
+    {
+        return KERR_INVAL;
+    }
+    if (!mount->ops->mknod)
+    {
+        return KERR_PERM;
+    }
+    return mount->ops->mknod(mount, path, mode, rdev);
+}
+
 kerr_t fs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
 {
     if (!mount || !path || !stat_out || !mount->is_mounted)

@@ -861,3 +861,23 @@ int flock(int fd, int operation)
 {
     return check(_syscall(SYS_FLOCK, fd, operation, 0, 0, 0));
 }
+
+int mknodat(int dirfd, const char *path, mode_t mode, dev_t dev)
+{
+    return check(_syscall(SYS_MKNODAT, dirfd, (long)path, (long)mode, (long)dev, 0));
+}
+
+int mknod(const char *path, mode_t mode, dev_t dev)
+{
+    return mknodat(AT_FDCWD, path, mode, dev);
+}
+
+int mkfifoat(int dirfd, const char *path, mode_t mode)
+{
+    return mknodat(dirfd, path, S_IFIFO | (mode & 07777), 0);
+}
+
+int mkfifo(const char *path, mode_t mode)
+{
+    return mkfifoat(AT_FDCWD, path, mode);
+}

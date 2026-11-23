@@ -117,3 +117,19 @@ mode_t umask(mode_t mask);
  */
 int utimensat(int dirfd, const char *path, const struct timespec times[2], int flags);
 int futimens(int fd, const struct timespec times[2]);
+
+/**
+ * make a named pipe (a FIFO): processes that open it share one pipe.
+ * @return 0, or -1 (errno set).
+ */
+int mkfifo(const char *path, mode_t mode);
+int mkfifoat(int dirfd, const char *path, mode_t mode);
+
+/**
+ * make a named pipe (S_IFIFO), an empty file (S_IFREG) or, as root, a
+ * device node (S_IFCHR, S_IFBLK with makedev's number). a device node
+ * outside /dev opens with ENXIO: ginnOS's devices are in /dev.
+ * @return 0, or -1 (errno set).
+ */
+int mknod(const char *path, mode_t mode, dev_t dev);
+int mknodat(int dirfd, const char *path, mode_t mode, dev_t dev);

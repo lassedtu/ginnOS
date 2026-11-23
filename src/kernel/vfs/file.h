@@ -89,6 +89,14 @@ struct file
 kerr_t file_open(const char *path, uint32_t flags, file_t **out);
 
 /**
+ * a new end of a named pipe, not yet joined to one (kernel/vfs/fifo.c
+ * joins it). its release leaves the named pipe.
+ * @param flags the open flags.
+ * @return the file, or NULL (no memory).
+ */
+file_t *file_new_fifo_end(uint32_t flags);
+
+/**
  * make the two ends of a new pipe.
  * @param read_end receives the read end (one reference).
  * @param write_end receives the write end (one reference).

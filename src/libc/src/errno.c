@@ -51,6 +51,7 @@ const char *strerror(int errnum)
     case EMLINK:  return "too many links";
     case EFBIG:   return "file too large";
     case ENOLCK:  return "no locks available";
+    case ENXIO:   return "no such device or address";
     case EAFNOSUPPORT: return "address family not supported";
     case EPROTONOSUPPORT: return "protocol not supported";
     case EOPNOTSUPP: return "operation not supported";

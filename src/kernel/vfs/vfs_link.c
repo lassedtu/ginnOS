@@ -122,3 +122,14 @@ kerr_t vfs_link(const char *old_path, const char *new_path)
     }
     return fs_link(mount, old_rel, new_rel);
 }
+
+kerr_t vfs_mknod(const char *path, uint32_t mode, uint32_t rdev)
+{
+    const char *rel = NULL;
+    fs_mount_t *mount = vfs_resolve_mount_path(path, &rel);
+    if (!mount)
+    {
+        return KERR_INVAL;
+    }
+    return fs_mknod(mount, rel, mode, rdev);
+}

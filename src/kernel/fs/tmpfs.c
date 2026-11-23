@@ -34,7 +34,7 @@
 typedef struct tmpfs_node
 {
     char name[TMPFS_NAME_MAX];
-    uint8_t type;               // FS_TYPE_FILE, FS_TYPE_DIR or FS_TYPE_SYMLINK
+    uint8_t type;               // FS_TYPE_FILE, _DIR, _SYMLINK, _FIFO, _CHAR or _BLOCK
     uint32_t inode;
     struct tmpfs_node *parent;  // the root's parent is the root
     struct tmpfs_node *children; // first entry of a directory
@@ -50,6 +50,7 @@ typedef struct tmpfs_node
     uint32_t atime;             // seconds since 1970
     uint32_t mtime;
     uint32_t ctime;
+    uint32_t rdev;              // a device node's number
 } tmpfs_node_t;
 
 static mutex_t tmpfs_lock = MUTEX_INIT;
@@ -293,15 +294,29 @@ static void fill_stat(const tmpfs_node_t *node, fs_stat_t *stat_out)
     memset(stat_out, 0, sizeof(*stat_out));
     stat_out->inode = node->inode;
     stat_out->file_type = node->type;
-    uint32_t kind = S_IFREG;
-    if (node->type == FS_TYPE_DIR)
+    uint32_t kind;
+    switch (node->type)
     {
+    case FS_TYPE_DIR:
         kind = S_IFDIR;
-    }
-    else if (node->type == FS_TYPE_SYMLINK)
-    {
+        break;
+    case FS_TYPE_SYMLINK:
         kind = S_IFLNK;
+        break;
+    case FS_TYPE_FIFO:
+        kind = S_IFIFO;
+        break;
+    case FS_TYPE_CHAR:
+        kind = S_IFCHR;
+        break;
+    case FS_TYPE_BLOCK:
+        kind = S_IFBLK;
+        break;
+    default:
+        kind = S_IFREG;
+        break;
     }
+    stat_out->rdev = node->rdev;
     stat_out->mode = kind | node->mode;
     stat_out->uid = (uint16_t)node->uid;
     stat_out->gid = (uint16_t)node->gid;
@@ -785,6 +800,36 @@ static kerr_t tmpfs_symlink(fs_mount_t *mount, const char *path, const char *tar
     return err;
 }
 
+static kerr_t tmpfs_mknod(fs_mount_t *mount, const char *path, uint32_t mode, uint32_t rdev)
+{
+    (void)mount;
+    uint8_t type;
+    switch (mode & S_IFMT)
+    {
+    case S_IFIFO:
+        type = FS_TYPE_FIFO;
+        break;
+    case S_IFCHR:
+        type = FS_TYPE_CHAR;
+        break;
+    case S_IFBLK:
+        type = FS_TYPE_BLOCK;
+        break;
+    default:
+        return KERR_INVAL;
+    }
+    mutex_lock(&tmpfs_lock);
+    kerr_t err = make_node(path, type);
+    if (kerr_ok(err))
+    {
+        tmpfs_node_t *node = lookup(path);
+        node->mode = mode & 07777u;
+        node->rdev = type == FS_TYPE_FIFO ? 0 : rdev;
+    }
+    mutex_unlock(&tmpfs_lock);
+    return err;
+}
+
 static const fs_ops_t tmpfs_ops = {
     .open = tmpfs_open,
     .create = tmpfs_create,
@@ -804,6 +849,7 @@ static const fs_ops_t tmpfs_ops = {
     .find_link = tmpfs_find_link,
     .readlink = tmpfs_readlink,
     .symlink = tmpfs_symlink,
+    .mknod = tmpfs_mknod,
 };
 
 kerr_t tmpfs_mount(fs_mount_t *mount)

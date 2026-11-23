@@ -5,6 +5,7 @@
 #include "kernel/device/device.h"
 #include "kernel/fs/devfs.h"
 #include "kernel/vfs/flock.h"
+#include "kernel/vfs/fifo.h"
 #include "kernel/memory/heap.h"
 #include "kernel/sync/spinlock.h"
 #include "kernel/assert.h"
@@ -372,6 +373,26 @@ static const file_ops_t pipe_file_ops = {
     .poll = pipe_kind_poll,
     .release = pipe_kind_release,
 };
+
+static void fifo_kind_release(file_t *file)
+{
+    fifo_close(file);
+    kfree(file);
+}
+
+// a named pipe's end: a pipe end that leaves the named pipe on release
+static const file_ops_t fifo_file_ops = {
+    .read = pipe_kind_read,
+    .write = pipe_kind_write,
+    .stat = pipe_kind_stat,
+    .poll = pipe_kind_poll,
+    .release = fifo_kind_release,
+};
+
+file_t *file_new_fifo_end(uint32_t flags)
+{
+    return file_alloc(&fifo_file_ops, flags);
+}
 
 kerr_t file_open_pipe(file_t **read_end, file_t **write_end)
 {

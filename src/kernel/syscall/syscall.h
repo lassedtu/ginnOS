@@ -101,9 +101,10 @@
 #define SYS_GETPRIORITY 92   // the nice value of processes
 #define SYS_SETPRIORITY 93
 #define SYS_FLOCK 94         // an advisory lock on a whole file
+#define SYS_MKNODAT 95       // a named pipe or a device node
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 95
+#define SYSCALL_COUNT 96
 
 /**
  * initialize the system call interface.

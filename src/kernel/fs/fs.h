@@ -15,6 +15,9 @@ enum
     FS_TYPE_FILE = 1,    // regular file
     FS_TYPE_DIR = 2,     // directory
     FS_TYPE_SYMLINK = 3, // symbolic link
+    FS_TYPE_FIFO = 4,    // named pipe
+    FS_TYPE_CHAR = 5,    // character device node (outside devfs)
+    FS_TYPE_BLOCK = 6,   // block device node (outside devfs)
 };
 
 /**
@@ -109,6 +112,13 @@ typedef struct
     kerr_t (*readlink)(fs_mount_t *mount, const char *path, char *target, uint32_t size);
     kerr_t (*symlink)(fs_mount_t *mount, const char *path, const char *target);
     kerr_t (*link)(fs_mount_t *mount, const char *old_path, const char *new_path);
+
+    /**
+     * make a named pipe or a device node (optional: KERR_PERM).
+     * @param mode S_IFIFO, S_IFCHR or S_IFBLK with the permission bits.
+     * @param rdev a device node's number (DEVICE_NUMBER packing).
+     */
+    kerr_t (*mknod)(fs_mount_t *mount, const char *path, uint32_t mode, uint32_t rdev);
 } fs_ops_t;
 
 /**
@@ -242,6 +252,7 @@ kerr_t fs_find_link(fs_mount_t *mount, const char *path, bool follow_last, char 
 kerr_t fs_readlink(fs_mount_t *mount, const char *path, char *target, uint32_t size);
 kerr_t fs_symlink(fs_mount_t *mount, const char *path, const char *target);
 kerr_t fs_link(fs_mount_t *mount, const char *old_path, const char *new_path);
+kerr_t fs_mknod(fs_mount_t *mount, const char *path, uint32_t mode, uint32_t rdev);
 
 /**
  * read bytes from an open file into a buffer.

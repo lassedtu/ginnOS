@@ -12,11 +12,17 @@
 
 #define EXT2_FT_REG_FILE 1u // file type value for regular files in directory entries
 #define EXT2_FT_DIR 2u      // file type value for directories in directory entries
+#define EXT2_FT_CHRDEV 3u   // file type value for character devices in directory entries
+#define EXT2_FT_BLKDEV 4u   // file type value for block devices in directory entries
+#define EXT2_FT_FIFO 5u     // file type value for named pipes in directory entries
 #define EXT2_FT_SYMLINK 7u  // file type value for symbolic links in directory entries
 
 #define EXT2_S_IFREG 0x8000u // file type value for regular files in inode mode field
 #define EXT2_S_IFDIR 0x4000u // file type value for directories in inode mode field
 #define EXT2_S_IFLNK 0xA000u // file type value for symbolic links in inode mode field
+#define EXT2_S_IFIFO 0x1000u // file type value for named pipes in inode mode field
+#define EXT2_S_IFCHR 0x2000u // file type value for character devices in inode mode field
+#define EXT2_S_IFBLK 0x6000u // file type value for block devices in inode mode field
 #define EXT2_LINK_MAX 32000u // the most names (hard links) an inode may have
 #define EXT2_S_IFMT 0xF000u  // bitmask for extracting file type from inode mode field
 
@@ -280,6 +286,22 @@ kerr_t ext2_symlink(ext2_volume_t *volume, const char *path, const char *target)
  *         many links), KERR_NOTFOUND, KERR_NOSPC.
  */
 kerr_t ext2_link(ext2_volume_t *volume, const char *old_path, const char *new_path);
+
+/**
+ * make a named pipe or a device node.
+ * @param mode the type (EXT2_S_IFIFO, EXT2_S_IFCHR, EXT2_S_IFBLK) and the
+ *        permission bits.
+ * @param major the device's numbers (a device node only).
+ * @return KERR_OK, KERR_EXIST, KERR_NOTFOUND (no parent), KERR_NOSPC,
+ *         KERR_INVAL (another type).
+ */
+kerr_t ext2_mknod(ext2_volume_t *volume, const char *path, uint32_t mode, uint32_t major,
+                  uint32_t minor);
+
+/**
+ * the numbers of a device node, as ext2_mknod stored them.
+ */
+void ext2_device_numbers(const ext2_inode_t *inode, uint32_t *major, uint32_t *minor);
 
 /**
  * open a file or directory by absolute path.

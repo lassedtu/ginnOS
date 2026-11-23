@@ -5,7 +5,8 @@
 
 /**
  * @file ext2_link.c
- * @brief hard links and symbolic links.
+ * @brief hard links, symbolic links, and the inodes with no data: named
+ *        pipes and device nodes.
  *
  * a hard link is one more directory entry for an inode: the inode counts
  * its names in i_links_count, and its data stays until the last name goes.
@@ -319,4 +320,94 @@ kerr_t ext2_link(ext2_volume_t *volume, const char *old_path, const char *new_pa
     inode.i_links_count++;
     inode.i_ctime = ext2_now();
     return write_inode(volume, inode_number, &inode) ? KERR_OK : KERR_IO;
+}
+
+kerr_t ext2_mknod(ext2_volume_t *volume, const char *path, uint32_t mode, uint32_t major,
+                  uint32_t minor)
+{
+    char name[EXT2_NAME_MAX];
+    uint32_t parent_number;
+    uint32_t inode_number;
+    ext2_inode_t inode;
+    uint8_t file_type;
+
+    switch (mode & EXT2_S_IFMT)
+    {
+    case EXT2_S_IFIFO:
+        file_type = EXT2_FT_FIFO;
+        break;
+    case EXT2_S_IFCHR:
+        file_type = EXT2_FT_CHRDEV;
+        break;
+    case EXT2_S_IFBLK:
+        file_type = EXT2_FT_BLKDEV;
+        break;
+    default:
+        return KERR_INVAL;
+    }
+
+    kerr_t err = new_name(volume, path, &parent_number, name, sizeof(name));
+    if (kerr_failed(err))
+    {
+        return err;
+    }
+    if (!alloc_inode(volume, &inode_number))
+    {
+        return KERR_NOSPC;
+    }
+
+    memset(&inode, 0, sizeof(inode));
+    inode.i_mode = (uint16_t)(mode & (EXT2_S_IFMT | 07777u));
+    inode.i_links_count = 1;
+    inode.i_atime = inode.i_ctime = inode.i_mtime = ext2_now();
+    if (file_type != EXT2_FT_FIFO)
+    {
+        // as Linux keeps them: the old 16-bit form in i_block[0] when the
+        // numbers fit, else the new form in i_block[1]
+        if (major < 256 && minor < 256)
+        {
+            inode.i_block[0] = (major << 8) | minor;
+        }
+        else
+        {
+            inode.i_block[1] = (minor & 0xffu) | ((major & 0xfffu) << 8) | ((minor & ~0xffu) << 12);
+        }
+    }
+
+    if (!write_inode(volume, inode_number, &inode))
+    {
+        err = KERR_IO;
+    }
+    else
+    {
+        err = add_entry(volume, parent_number, name, inode_number, file_type);
+    }
+    if (kerr_failed(err))
+    {
+        free_inode(volume, inode_number);
+    }
+    return err;
+}
+
+void ext2_device_numbers(const ext2_inode_t *inode, uint32_t *major, uint32_t *minor)
+{
+    uint32_t old = inode->i_block[0];
+    uint32_t packed = inode->i_block[1];
+    if (old)
+    {
+        *major = (old >> 8) & 0xffu;
+        *minor = old & 0xffu;
+    }
+    else
+    {
+        *major = (packed >> 8) & 0xfffu;
+        *minor = (packed & 0xffu) | ((packed >> 12) & 0xfff00u);
+    }
+}
+
+bool inode_has_no_blocks(const ext2_inode_t *inode)
+{
+    uint32_t type = inode->i_mode & EXT2_S_IFMT;
+    return inode_is_fast_symlink(inode) || type == EXT2_S_IFIFO || type == EXT2_S_IFCHR ||
+           type == EXT2_S_IFBLK;
 }

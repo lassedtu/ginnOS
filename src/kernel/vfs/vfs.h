@@ -91,6 +91,11 @@ kerr_t vfs_symlink(const char *path, const char *target);
 kerr_t vfs_link(const char *old_path, const char *new_path);
 
 /**
+ * make a named pipe or a device node (fs_ops_t mknod).
+ */
+kerr_t vfs_mknod(const char *path, uint32_t mode, uint32_t rdev);
+
+/**
  * open a file or directory by absolute path in the virtual file system.
  * @param path absolute path to the file or directory.
  * @param file pointer to a vfs_file_t structure that will be initialized with the opened file

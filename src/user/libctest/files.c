@@ -14,6 +14,7 @@
 #include <string.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <time.h>
@@ -347,8 +348,86 @@ static void test_flock(void)
     close(fds[1]);
 }
 
+/** a named pipe in dir: a child writes, the parent reads */
+static void check_fifo(const char *dir)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "%s/libctest-fifo", dir);
+    unlink(path);
+    CHECK(mkfifo(path, 0600) == 0);
+    struct stat st;
+    CHECK(stat(path, &st) == 0 && S_ISFIFO(st.st_mode) && (st.st_mode & 0777) == 0600);
+    CHECK(mkfifo(path, 0600) == -1 && errno == EEXIST);
+
+    // the writer's open waits for the reader's
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        int fd = open(path, O_WRONLY);
+        _exit(fd >= 0 && write(fd, "hello", 5) == 5 ? 0 : 1);
+    }
+    int fd = open(path, O_RDONLY);
+    CHECK(fd >= 0);
+    char buffer[16];
+    ssize_t total = 0;
+    ssize_t n;
+    while ((n = read(fd, buffer + total, sizeof(buffer) - (size_t)total)) > 0)
+        total += n;
+    CHECK(total == 5 && memcmp(buffer, "hello", 5) == 0); // then the end
+    close(fd);
+    int status;
+    CHECK(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+    // no reader: a non-blocking writer fails; a non-blocking reader opens
+    CHECK(open(path, O_WRONLY | O_NONBLOCK) == -1 && errno == ENXIO);
+    int reader = open(path, O_RDONLY | O_NONBLOCK);
+    CHECK(reader >= 0);
+    int writer = open(path, O_WRONLY | O_NONBLOCK);
+    CHECK(writer >= 0 && write(writer, "ab", 2) == 2);
+    CHECK(read(reader, buffer, sizeof(buffer)) == 2);
+    close(writer);
+    close(reader);
+
+    // both ends at once: no wait
+    fd = open(path, O_RDWR);
+    CHECK(fd >= 0 && write(fd, "xy", 2) == 2 && read(fd, buffer, 2) == 2);
+    close(fd);
+    CHECK(unlink(path) == 0);
+}
+
+/** device nodes: root makes them; outside /dev they have no device */
+static void check_device_node(const char *dir)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "%s/libctest-dev", dir);
+    unlink(path);
+    CHECK(mknod(path, S_IFCHR | 0600, makedev(300, 70000)) == 0);
+    struct stat st;
+    CHECK(stat(path, &st) == 0 && S_ISCHR(st.st_mode));
+    CHECK(major(st.st_rdev) == 300 && minor(st.st_rdev) == 70000);
+    CHECK(open(path, O_RDONLY) == -1 && errno == ENXIO);
+    CHECK(unlink(path) == 0);
+    CHECK(mknod(path, S_IFBLK | 0600, makedev(8, 1)) == 0);
+    CHECK(stat(path, &st) == 0 && S_ISBLK(st.st_mode) && st.st_rdev == makedev(8, 1));
+    CHECK(unlink(path) == 0);
+    CHECK(mknod(path, S_IFDIR | 0700, 0) == -1 && errno == EINVAL);
+
+    pid_t pid = fork();
+    if (pid == 0)
+        _exit(setuid(1000) == 0 && mknod("/tmp/libctest-u", S_IFCHR | 0600, 0) == -1 &&
+                      errno == EPERM
+                  ? 0
+                  : 1);
+    int status;
+    CHECK(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
 void test_files(void)
 {
+    check_fifo("");
+    check_fifo("/tmp");
+    check_device_node("");
+    check_device_node("/tmp");
     test_flock();
     check_truncate("");
     check_truncate("/tmp");

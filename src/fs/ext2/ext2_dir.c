@@ -643,8 +643,9 @@ bool free_inode_and_blocks(ext2_volume_t *volume, uint32_t inode_number, ext2_in
         return false;
     }
 
-    // a fast symbolic link keeps its target in i_block: there are no blocks
-    if (!inode_is_fast_symlink(&cache) && !free_inode_block_chain(volume, &cache))
+    // a fast symbolic link keeps its target in i_block, a device its
+    // numbers: there are no blocks
+    if (!inode_has_no_blocks(&cache) && !free_inode_block_chain(volume, &cache))
     {
         return false;
     }
