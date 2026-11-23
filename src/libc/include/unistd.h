@@ -164,6 +164,12 @@ int setpgid(pid_t pid, pid_t pgid);
 pid_t getpgid(pid_t pid);
 pid_t getpgrp(void);
 pid_t setsid(void);
+
+/**
+ * add increment to the caller's nice value (see sys/resource.h).
+ * @return the new value, or -1 (errno set).
+ */
+int nice(int increment);
 pid_t getsid(pid_t pid);
 
 /**

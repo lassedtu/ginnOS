@@ -715,3 +715,117 @@ syscall_ret_t sys_getsid(struct registers *regs)
     process_t *target = target_process((int32_t)syscall_arg(regs, 0));
     return target ? (syscall_ret_t)target->sid : -ESRCH;
 }
+
+// getpriority and setpriority: which processes "who" names
+#define PRIO_PROCESS 0 // one process (0: the caller)
+#define PRIO_PGRP    1 // a process group (0: the caller's)
+#define PRIO_USER    2 // the processes of a user (0: the caller's)
+#define NICE_MIN     (-20)
+#define NICE_MAX     19
+
+typedef struct
+{
+    uint32_t which;
+    uint32_t who;
+    bool set;         // change the nice value (else read it)
+    int32_t nice;     // the value to set; or the lowest found
+    uint32_t matched; // processes named
+    int32_t error;    // the first refusal
+} priority_walk_t;
+
+static bool priority_names(const process_t *proc, const priority_walk_t *w)
+{
+    if (proc->state == PROC_STATE_ZOMBIE)
+    {
+        return false;
+    }
+    switch (w->which)
+    {
+    case PRIO_PROCESS:
+        return proc->pid == w->who;
+    case PRIO_PGRP:
+        return proc->pgid == w->who;
+    default:
+        return proc->uid == w->who;
+    }
+}
+
+/** read or change the nice value of each process the walk names */
+static void priority_visit(process_t *proc, void *ctx)
+{
+    priority_walk_t *w = ctx;
+    if (!priority_names(proc, w))
+    {
+        return;
+    }
+    w->matched++;
+    if (!w->set)
+    {
+        if (w->matched == 1 || proc->nice < w->nice)
+        {
+            w->nice = proc->nice;
+        }
+        return;
+    }
+
+    // anyone but root: only its own processes, and only less CPU
+    process_t *caller = process_current();
+    if (caller->euid != 0 && caller->euid != proc->uid && caller->uid != proc->uid)
+    {
+        w->error = w->error ? w->error : -EPERM;
+        return;
+    }
+    if (caller->euid != 0 && w->nice < proc->nice)
+    {
+        w->error = w->error ? w->error : -EACCES;
+        return;
+    }
+    proc->nice = w->nice;
+}
+
+/** fill a walk for which and who (0: the caller's) */
+static int32_t priority_walk(struct registers *regs, priority_walk_t *w)
+{
+    process_t *caller = process_current();
+    w->which = (uint32_t)syscall_arg(regs, 0);
+    w->who = (uint32_t)syscall_arg(regs, 1);
+    if (w->which > PRIO_USER)
+        return -EINVAL;
+    if (w->who == 0)
+    {
+        w->who = w->which == PRIO_PROCESS ? caller->pid
+                 : w->which == PRIO_PGRP  ? caller->pgid
+                                          : caller->uid;
+    }
+    process_for_each(priority_visit, w);
+    if (w->matched == 0)
+        return -ESRCH;
+    return w->error;
+}
+
+/**
+ * SYS_getpriority: the nice value of processes.
+ * args: which (PRIO_PROCESS, PRIO_PGRP, PRIO_USER), who (0: the caller's).
+ * returns 20 - nice of the one with the most CPU (1 to 40, never
+ * negative), or a negative errno (ESRCH: none, EINVAL).
+ */
+syscall_ret_t sys_getpriority(struct registers *regs)
+{
+    priority_walk_t w = {0};
+    int32_t err = priority_walk(regs, &w);
+    return err < 0 ? err : (syscall_ret_t)(20 - w.nice);
+}
+
+/**
+ * SYS_setpriority: set the nice value (-20 to 19) of processes; it sets
+ * the length of their time slice. only root may lower it.
+ * args: which, who (as getpriority), the nice value.
+ * returns 0, or a negative errno (ESRCH, EPERM, EACCES, EINVAL).
+ */
+syscall_ret_t sys_setpriority(struct registers *regs)
+{
+    priority_walk_t w = {.set = true};
+    int32_t nice = (int32_t)syscall_arg(regs, 2);
+    w.nice = nice < NICE_MIN ? NICE_MIN : nice > NICE_MAX ? NICE_MAX : nice;
+    return priority_walk(regs, &w);
+}

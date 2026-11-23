@@ -23,4 +23,5 @@ typedef unsigned int nlink_t;
 typedef unsigned int blksize_t;
 typedef unsigned int blkcnt_t;
 typedef long time_t;
+typedef unsigned int id_t; // a pid, group or user id (getpriority)
 typedef long clock_t;

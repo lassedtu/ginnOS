@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/reboot.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <stdio.h>
@@ -822,4 +823,35 @@ char *ttyname(int fd)
         return NULL;
     }
     return name;
+}
+
+int getpriority(int which, id_t who)
+{
+    int ret = _syscall(SYS_GETPRIORITY, which, (long)who, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return 20 - ret; // the kernel gives 20 - nice, never negative
+}
+
+int setpriority(int which, id_t who, int value)
+{
+    return check(_syscall(SYS_SETPRIORITY, which, (long)who, value, 0, 0));
+}
+
+int nice(int increment)
+{
+    errno = 0;
+    int now = getpriority(PRIO_PROCESS, 0);
+    if (now == -1 && errno)
+        return -1;
+    if (setpriority(PRIO_PROCESS, 0, now + increment) < 0)
+    {
+        if (errno == EACCES)
+            errno = EPERM;
+        return -1;
+    }
+    return getpriority(PRIO_PROCESS, 0);
 }

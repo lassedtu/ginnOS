@@ -568,6 +568,7 @@ void process_copy_credentials(process_t *child, const process_t *parent)
     child->egid = parent->egid;
     child->sgid = parent->sgid;
     child->umask = parent->umask;
+    child->nice = parent->nice;
 }
 
 process_t *process_get(uint32_t pid)

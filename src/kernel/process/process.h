@@ -62,6 +62,7 @@ typedef struct process
     uint32_t uid, euid, suid; // real, effective and saved user id
     uint32_t gid, egid, sgid; // real, effective and saved group id
     uint32_t umask;         // permission bits taken off new files
+    int32_t nice;           // -20 (most CPU) to 19 (least): the time slice length
     process_state_t state;  // current state
     uintptr_t brk;          // program break (for sbrk)
     vma_table_t vmas;       // what is mapped in the user half (vma.h)

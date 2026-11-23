@@ -98,6 +98,8 @@
 #define SYS_UTIMENSAT 89  // set a file's times
 #define SYS_CLOCK_SETTIME 90 // set the realtime clock (root)
 #define SYS_SETHOSTNAME 91   // set the host name (root)
+#define SYS_GETPRIORITY 92   // the nice value of processes
+#define SYS_SETPRIORITY 93
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

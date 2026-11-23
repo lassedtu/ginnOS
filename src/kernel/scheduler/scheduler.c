@@ -195,6 +195,16 @@ void scheduler_remove(process_t *proc)
 }
 
 /**
+ * the ticks a process runs before the next one: SCHED_TIME_SLICE at nice
+ * 0, up to twice that at -20, and one tick from nice 1 on.
+ */
+static uint32_t slice_for(const process_t *proc)
+{
+    int32_t ticks = (20 - proc->nice) * (int32_t)SCHED_TIME_SLICE / 20;
+    return ticks < 1 ? 1u : (uint32_t)ticks;
+}
+
+/**
  * perform the actual context switch to the next ready process.
  */
 static void schedule(void)
@@ -209,7 +219,7 @@ static void schedule(void)
         if (current && current != &idle_proc && current->state == PROC_STATE_RUNNING)
         {
             // current is the only runnable process, keep it running
-            ticks_remaining = SCHED_TIME_SLICE;
+            ticks_remaining = slice_for(current);
             return;
         }
 
@@ -228,7 +238,7 @@ static void schedule(void)
     {
         // popped ourselves, no actual switch needed
         next->state = PROC_STATE_RUNNING;
-        ticks_remaining = SCHED_TIME_SLICE;
+        ticks_remaining = slice_for(next);
         return;
     }
 
@@ -246,7 +256,7 @@ static void schedule(void)
                                                    : arch_kernel_address_space());
 
     // reset time slice
-    ticks_remaining = SCHED_TIME_SLICE;
+    ticks_remaining = slice_for(next);
 
     // the FPU/SSE registers follow the process: the kernel does not use
     // them, so the outgoing program's are still in the CPU here

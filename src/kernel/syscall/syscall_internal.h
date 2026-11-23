@@ -187,6 +187,8 @@ syscall_ret_t sys_sched_yield(struct registers *regs);
 syscall_ret_t sys_setpgid(struct registers *regs);
 syscall_ret_t sys_getpgid(struct registers *regs);
 syscall_ret_t sys_setsid(struct registers *regs);
+syscall_ret_t sys_getpriority(struct registers *regs);
+syscall_ret_t sys_setpriority(struct registers *regs);
 syscall_ret_t sys_getsid(struct registers *regs);
 syscall_ret_t sys_fcntl(struct registers *regs);
 syscall_ret_t sys_fstat(struct registers *regs);

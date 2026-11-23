@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/wait.h>
@@ -355,6 +356,30 @@ static void test_system_calls(void)
     sync();
 }
 
+/** nice values: root may raise and lower them; a user only raise */
+static void test_priorities(void)
+{
+    errno = 0;
+    CHECK(getpriority(PRIO_PROCESS, 0) == 0 && errno == 0);
+    CHECK(nice(5) == 5);
+    CHECK(getpriority(PRIO_PROCESS, (id_t)getpid()) == 5);
+    CHECK(setpriority(PRIO_PROCESS, 0, 100) == 0 && getpriority(PRIO_PROCESS, 0) == 19);
+    CHECK(setpriority(PRIO_PROCESS, 0, 0) == 0 && getpriority(PRIO_PROCESS, 0) == 0);
+    CHECK(getpriority(PRIO_PROCESS, 99999) == -1 && errno == ESRCH);
+    CHECK(getpriority(7, 0) == -1 && errno == EINVAL);
+
+    // a child that becomes a plain user: it may go to 10, not back to 0
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        int ok = setuid(1000) == 0 && nice(10) == 10 && nice(-5) == -1 && errno == EPERM &&
+                 setpriority(PRIO_PROCESS, 1, 5) == -1 && errno == EPERM;
+        _exit(ok ? 0 : 1);
+    }
+    int status;
+    CHECK(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
 void test_posix(void)
 {
     test_getline();
@@ -370,4 +395,5 @@ void test_posix(void)
     test_exec_args();
     test_many_files();
     test_system_calls();
+    test_priorities();
 }
