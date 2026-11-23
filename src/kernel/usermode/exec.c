@@ -178,6 +178,43 @@ int exec_program(const char *path, const char **argv)
     return (int)child->pid;
 }
 
+/**
+ * end every thread of the current process but the caller (execve). they
+ * get SIGKILL and end on their way back to user mode, without ending the
+ * process; the caller waits for them. a caller that is not the leader
+ * then takes the leader's place and pid. if another thread is already
+ * ending the process, the caller ends too.
+ */
+static void end_other_threads(process_t *proc)
+{
+    process_t *leader = proc->leader;
+    uint32_t flags = arch_irq_save();
+    bool others_first = leader->group_exiting || (leader->exec_thread && leader->exec_thread != proc);
+    if (!others_first)
+    {
+        leader->exec_thread = proc;
+    }
+    arch_irq_restore(flags);
+    if (others_first)
+    {
+        usermode_end_thread();
+    }
+
+    if (leader->threads > 1)
+    {
+        process_signal_threads(proc->tgid, proc, SIGKILL);
+        while (leader->threads > 1)
+        {
+            scheduler_yield();
+        }
+    }
+    leader->exec_thread = NULL;
+    if (proc != leader)
+    {
+        process_take_leader(proc);
+    }
+}
+
 kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
                     const char **envp)
 {
@@ -208,6 +245,10 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
         return KERR_NOENT;
     }
     space->brk = elf.brk;
+
+    // the new program starts with one thread: the caller
+    end_other_threads(proc);
+    proc->clear_tid = 0;
 
     // no way back from here: swap in the new image. masked, so the process
     // is never scheduled with a half-changed address space.
@@ -326,7 +367,7 @@ static void thread_exit(int32_t status)
         if (parent)
         {
             // a parent in waitpid sleeps on its leader's child_exit queue
-            signal_send(parent, SIGCHLD);
+            signal_send_process(parent, SIGCHLD);
             wait_queue_wake_all(&parent->child_exit);
         }
         else
@@ -365,7 +406,7 @@ static void group_exit(int32_t status)
 
     if (leader->threads > 1)
     {
-        process_signal_threads(proc, SIGKILL);
+        process_signal_threads(proc->tgid, proc, SIGKILL);
     }
     thread_exit(status);
 }

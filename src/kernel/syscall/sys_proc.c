@@ -732,13 +732,15 @@ syscall_ret_t sys_mprotect(struct registers *regs)
 }
 
 /**
- * the process a pid names for setpgid and friends: 0 is the caller.
+ * the process a pid names for setpgid and friends: 0 is the caller. the
+ * id of a thread that is not a leader names no process.
  */
 static process_t *target_process(int32_t pid)
 {
     if (pid < 0)
         return NULL;
-    return pid == 0 ? process_current() : process_get((uint32_t)pid);
+    process_t *proc = pid == 0 ? process_current() : process_get((uint32_t)pid);
+    return proc && (pid == 0 || proc->pid == proc->tgid) ? proc : NULL;
 }
 
 /**
@@ -758,17 +760,18 @@ syscall_ret_t sys_setpgid(struct registers *regs)
         return -EINVAL;
 
     process_t *target = target_process(pid);
-    if (!target || (target != caller && target->parent_pid != caller->pid) ||
-        target->state == PROC_STATE_ZOMBIE)
+    if (!target || (target->tgid != caller->tgid && target->parent_pid != caller->tgid) ||
+        target->leader->threads == 0)
         return -ESRCH;
-    if (target->sid != caller->sid || target->sid == target->pid)
+    if (target->sid != caller->sid || target->sid == target->tgid)
         return -EPERM; // another session, or a session leader
 
-    uint32_t group = pgid == 0 ? target->pid : (uint32_t)pgid;
-    if (group != target->pid && !process_group_exists(group, caller->sid))
+    uint32_t group = pgid == 0 ? target->tgid : (uint32_t)pgid;
+    if (group != target->tgid && !process_group_exists(group, caller->sid))
         return -EPERM;
 
     target->pgid = group;
+    process_sync_threads(target);
     return 0;
 }
 
@@ -791,11 +794,12 @@ syscall_ret_t sys_setsid(struct registers *regs)
     (void)regs;
     process_t *caller = process_current();
 
-    if (caller->pgid == caller->pid || process_group_exists(caller->pid, caller->sid))
+    if (caller->pgid == caller->tgid || process_group_exists(caller->tgid, caller->sid))
         return -EPERM;
 
-    caller->sid = caller->pid;
-    caller->pgid = caller->pid;
+    caller->sid = caller->tgid;
+    caller->pgid = caller->tgid;
+    process_sync_threads(caller);
     return (syscall_ret_t)caller->sid;
 }
 
@@ -834,7 +838,7 @@ static bool priority_names(const process_t *proc, const priority_walk_t *w)
     switch (w->which)
     {
     case PRIO_PROCESS:
-        return proc->pid == w->who;
+        return proc->tgid == w->who; // every thread of the process
     case PRIO_PGRP:
         return proc->pgid == w->who;
     default:
@@ -885,7 +889,7 @@ static int32_t priority_walk(struct registers *regs, priority_walk_t *w)
         return -EINVAL;
     if (w->who == 0)
     {
-        w->who = w->which == PRIO_PROCESS ? caller->pid
+        w->who = w->which == PRIO_PROCESS ? caller->tgid
                  : w->which == PRIO_PGRP  ? caller->pgid
                                           : caller->uid;
     }

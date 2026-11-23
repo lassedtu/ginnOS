@@ -106,6 +106,7 @@
 #define SYS_CLONE 97         // make a thread (the Linux flags for one)
 #define SYS_EXIT_GROUP 98    // end every thread of the process
 #define SYS_GETTID 99        // the calling thread's id
+#define SYS_TGKILL 100       // send a signal to one thread
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

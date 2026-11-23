@@ -12,6 +12,11 @@
  *   fault   a bad memory access in a thread kills the whole process
  *   sleep   a thread asleep in a read ends when another calls _exit
  *   fork    a thread forks; the first thread waits for that child
+ *   exec    execve in a thread that is not the first, and in the first
+ *           with another running: the program runs alone, with the pid
+ *   signal  kill reaches the thread that does not block the signal
+ *   tgkill  tgkill reaches the thread it names
+ *   stop    SIGSTOP stops every thread, reported once; SIGCONT, SIGKILL
  *   all     every mode above
  *
  * each mode prints "threadtest <mode>: ok" when it passes. a thread does
@@ -370,6 +375,178 @@ static int test_fork(void)
     return ok();
 }
 
+extern char **environ;
+
+static int run_true(void *arg)
+{
+    (void)arg;
+    char *argv[] = {"true", NULL};
+    execve("/bin/true", argv, environ);
+    return 50; // the exec failed
+}
+
+static void spin_forever(void)
+{
+    for (;;)
+    {
+        sched_yield();
+    }
+}
+
+static int spin_thread(void *arg)
+{
+    (void)arg;
+    spin_forever();
+    return 0;
+}
+
+static void exec_from_thread(void)
+{
+    volatile pid_t tid = 0;
+    start(run_true, NULL, &tid);
+    spin_forever();
+}
+
+static void exec_from_leader(void)
+{
+    volatile pid_t tid = 0;
+    start(spin_thread, NULL, &tid);
+    spin(5);
+    run_true(NULL);
+}
+
+static int test_exec(void)
+{
+    int status = child_status(exec_from_thread);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+    {
+        return failed("execve in a thread");
+    }
+    status = child_status(exec_from_leader);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+    {
+        return failed("execve with a thread running");
+    }
+    return ok();
+}
+
+static volatile pid_t handled_by;
+static volatile int go_on;
+
+static void record_handler(int sig)
+{
+    (void)sig;
+    handled_by = gettid_raw();
+}
+
+static int wait_for_go(void *arg)
+{
+    (void)arg;
+    while (!go_on)
+    {
+        sched_yield();
+    }
+    return 0;
+}
+
+static int test_signal(void)
+{
+    signal(SIGUSR1, record_handler);
+    go_on = 0;
+    handled_by = 0;
+    volatile pid_t tid = 0;
+    pid_t thread = start(wait_for_go, NULL, &tid);
+
+    // the first thread blocks SIGUSR1 (the other was made before)
+    sigset_t block;
+    sigemptyset(&block);
+    sigaddset(&block, SIGUSR1);
+    sigprocmask(SIG_BLOCK, &block, NULL);
+    kill(getpid(), SIGUSR1);
+    for (int i = 0; i < 1000 && !handled_by; i++)
+    {
+        sched_yield();
+    }
+    go_on = 1;
+    join(&tid);
+    sigprocmask(SIG_UNBLOCK, &block, NULL);
+    if (handled_by != thread)
+    {
+        printf("threadtest signal: handled by %d, not %d\n", (int)handled_by, (int)thread);
+        return 1;
+    }
+    return ok();
+}
+
+static int test_tgkill(void)
+{
+    signal(SIGUSR2, record_handler);
+    go_on = 0;
+    handled_by = 0;
+    volatile pid_t tid = 0;
+    pid_t thread = start(wait_for_go, NULL, &tid);
+    if (_syscall(SYS_TGKILL, getpid(), thread, SIGUSR2, 0, 0) != 0)
+    {
+        return failed("tgkill");
+    }
+    for (int i = 0; i < 1000 && !handled_by; i++)
+    {
+        sched_yield();
+    }
+    go_on = 1;
+    join(&tid);
+    if (handled_by != thread)
+    {
+        printf("threadtest tgkill: handled by %d, not %d\n", (int)handled_by, (int)thread);
+        return 1;
+    }
+    if (_syscall(SYS_TGKILL, getpid(), thread, 0, 0, 0) != -ESRCH)
+    {
+        return failed("tgkill to a thread that ended");
+    }
+    return ok();
+}
+
+static void two_spinners(void)
+{
+    volatile pid_t tid = 0;
+    start(spin_thread, NULL, &tid);
+    spin_forever();
+}
+
+static int test_stop(void)
+{
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        two_spinners();
+    }
+    spin(10);
+    int status = 0;
+    kill(pid, SIGSTOP);
+    if (waitpid(pid, &status, WUNTRACED) != pid || !WIFSTOPPED(status) ||
+        WSTOPSIG(status) != SIGSTOP)
+    {
+        return failed("the stop report");
+    }
+    spin(10);
+    if (waitpid(pid, &status, WUNTRACED | WNOHANG) != 0)
+    {
+        return failed("one stop report, not one for each thread");
+    }
+    kill(pid, SIGCONT);
+    if (waitpid(pid, &status, WCONTINUED) != pid || !WIFCONTINUED(status))
+    {
+        return failed("the continue report");
+    }
+    kill(pid, SIGKILL);
+    if (waitpid(pid, &status, 0) != pid || !WIFSIGNALED(status) || WTERMSIG(status) != SIGKILL)
+    {
+        return failed("SIGKILL");
+    }
+    return ok();
+}
+
 static const struct
 {
     const char *name;
@@ -377,7 +554,8 @@ static const struct
 } modes[] = {
     {"ids", test_ids},       {"many", test_many},   {"share", test_share},
     {"group", test_group},   {"leader", test_leader}, {"fault", test_fault},
-    {"sleep", test_sleep},   {"fork", test_fork},
+    {"sleep", test_sleep},   {"fork", test_fork},     {"exec", test_exec},
+    {"signal", test_signal}, {"tgkill", test_tgkill}, {"stop", test_stop},
 };
 
 #define MODE_COUNT (sizeof(modes) / sizeof(modes[0]))
@@ -403,6 +581,7 @@ int main(int argc, char **argv)
             return result;
         }
     }
-    printf("usage: threadtest ids|many|share|group|leader|fault|sleep|fork|all\n");
+    printf("usage: threadtest ids|many|share|group|leader|fault|sleep|fork|exec|signal|tgkill|"
+           "stop|all\n");
     return 2;
 }

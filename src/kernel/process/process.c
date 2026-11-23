@@ -479,7 +479,8 @@ uint32_t process_list_group(uint32_t pgid, uint32_t *pids, uint32_t max)
         {
             continue;
         }
-        if (proc->state != PROC_STATE_UNUSED && proc->state != PROC_STATE_ZOMBIE &&
+        // a process is its leader, alive while one of its threads is
+        if (proc->state != PROC_STATE_UNUSED && proc->pid == proc->tgid && proc->threads > 0 &&
             proc->pgid == pgid)
         {
             pids[count++] = proc->pid;
@@ -526,9 +527,11 @@ uint32_t process_list_pids(uint32_t *pids, uint32_t max)
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX && count < max; i++)
     {
-        if (proc_table[i] && proc_table[i]->state != PROC_STATE_UNUSED)
+        // processes, not threads: a leader stands for its group
+        process_t *proc = proc_table[i];
+        if (proc && proc->state != PROC_STATE_UNUSED && proc->pid == proc->tgid)
         {
-            pids[count++] = proc_table[i]->pid;
+            pids[count++] = proc->pid;
         }
     }
     spin_unlock_irqrestore(&table_lock, flags);
@@ -654,7 +657,7 @@ process_t *process_get(uint32_t pid)
     return found;
 }
 
-void process_signal_threads(process_t *proc, int sig)
+void process_signal_threads(uint32_t tgid, process_t *except, int sig)
 {
     process_t *threads[PROCESS_MAX];
     uint32_t count = 0;
@@ -662,8 +665,9 @@ void process_signal_threads(process_t *proc, int sig)
     for (int i = 0; i < PROCESS_MAX; i++)
     {
         process_t *other = proc_table[i];
-        if (other && other != proc && other->tgid == proc->tgid &&
-            other->state != PROC_STATE_UNUSED && other->state != PROC_STATE_ZOMBIE)
+        if (other && other != except && other->tgid == tgid &&
+            other->state != PROC_STATE_UNUSED && other->state != PROC_STATE_NEW &&
+            other->state != PROC_STATE_ZOMBIE)
         {
             threads[count++] = other;
         }
@@ -676,4 +680,84 @@ void process_signal_threads(process_t *proc, int sig)
     {
         signal_send(threads[i], sig);
     }
+}
+
+process_t *process_pick_thread(uint32_t tgid, uint32_t mask)
+{
+    process_t *any = NULL;
+    process_t *pick = NULL;
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX; i++)
+    {
+        process_t *proc = proc_table[i];
+        if (!proc || proc->tgid != tgid || proc->state == PROC_STATE_UNUSED ||
+            proc->state == PROC_STATE_NEW || proc->state == PROC_STATE_ZOMBIE)
+        {
+            continue;
+        }
+        bool leader = proc->pid == tgid;
+        if (!any || leader)
+        {
+            any = proc;
+        }
+        if (!(proc->signals.blocked & mask) && (!pick || leader))
+        {
+            pick = proc;
+        }
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+    return pick ? pick : any;
+}
+
+void process_sync_threads(process_t *proc)
+{
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX; i++)
+    {
+        process_t *other = proc_table[i];
+        if (!other || other == proc || other->tgid != proc->tgid ||
+            other->state == PROC_STATE_UNUSED)
+        {
+            continue;
+        }
+        other->uid = proc->uid;
+        other->euid = proc->euid;
+        other->suid = proc->suid;
+        other->gid = proc->gid;
+        other->egid = proc->egid;
+        other->sgid = proc->sgid;
+        other->pgid = proc->pgid;
+        other->sid = proc->sid;
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+}
+
+void process_take_leader(process_t *proc)
+{
+    process_t *old = proc->leader;
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+
+    // the pids change places: the thread is the process now
+    uint32_t tid = proc->pid;
+    proc->pid = old->pid;
+    old->pid = tid;
+    old->tgid = tid;
+    old->leader = old;
+    old->threads = 0;
+
+    proc->leader = proc;
+    proc->threads = 1;
+    proc->parent_pid = old->parent_pid;
+    proc->utime += old->utime;
+    proc->stime += old->stime;
+    proc->cutime = old->cutime;
+    proc->cstime = old->cstime;
+    proc->alarm_deadline = old->alarm_deadline;
+    proc->wait_report = old->wait_report;
+    proc->group_stopped = old->group_stopped;
+
+    // nobody waits for the old slot: the kernel reaps it
+    old->parent_pid = PID_NONE;
+    process_note_orphan_zombie();
+    spin_unlock_irqrestore(&table_lock, flags);
 }

@@ -72,11 +72,21 @@ void fd_table_put(fd_table_t *table);
 int fd_install(struct process *proc, file_t *file, uint32_t fd_flags, int min_fd);
 
 /**
- * get the entry for a descriptor of the current process.
+ * get the entry for a descriptor of the current process. when the table
+ * is shared with other threads, the file is kept open until the syscall
+ * ends (fd_release_held), even if another thread closes fd meanwhile;
+ * use entry->file before any sleep, as the entry itself can change.
  * @param fd the file descriptor number.
  * @return the entry, or NULL if fd is out of range or not open.
  */
 fd_entry_t *fd_get(int fd);
+
+/**
+ * let go of the files fd_get kept open during a syscall (the syscall
+ * handler calls this at its end). may sleep: a last close can.
+ * @param proc the process.
+ */
+void fd_release_held(struct process *proc);
 
 /**
  * close a descriptor of the current process.

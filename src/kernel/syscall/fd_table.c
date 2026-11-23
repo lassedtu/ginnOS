@@ -64,7 +64,25 @@ fd_entry_t *fd_get(int fd)
     {
         return NULL;
     }
-    return &proc->files->fd[fd];
+    fd_entry_t *entry = &proc->files->fd[fd];
+
+    // with a shared table another thread can close fd while this syscall
+    // sleeps on its file: hold a reference until the syscall ends. a table
+    // of one user cannot change meanwhile, so it needs none.
+    if (proc->files->users > 1 && proc->held_count < FD_MAX)
+    {
+        file_ref(entry->file);
+        proc->held_files[proc->held_count++] = entry->file;
+    }
+    return entry;
+}
+
+void fd_release_held(process_t *proc)
+{
+    while (proc->held_count > 0)
+    {
+        file_unref(proc->held_files[--proc->held_count]);
+    }
 }
 
 int fd_close(int fd)

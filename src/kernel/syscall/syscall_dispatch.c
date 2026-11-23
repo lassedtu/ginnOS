@@ -102,6 +102,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_CLONE] = sys_clone,
     [SYS_EXIT_GROUP] = sys_exit_group,
     [SYS_GETTID] = sys_gettid,
+    [SYS_TGKILL] = sys_tgkill,
     [SYS_SHM_CREATE] = sys_shm_create,
     [SYS_SOCKET] = sys_socket,
     [SYS_BIND] = sys_bind,
@@ -136,6 +137,12 @@ static void syscall_handler(struct registers *regs)
     }
 
     REG_RESULT(regs) = (uintptr_t)syscall_table[num](regs);
+
+    // the files fd_get kept open for this syscall (a shared table)
+    if (proc)
+    {
+        fd_release_held(proc);
+    }
 }
 
 #ifdef __x86_64__

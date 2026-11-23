@@ -112,13 +112,22 @@ struct process;
 struct registers;
 
 /**
- * send a signal to a process. a signal the process ignores is dropped; a
+ * send a signal to one thread. a signal the process ignores is dropped; a
  * deliverable one wakes the process from an interruptible sleep. SIGCONT
  * continues a stopped process, SIGKILL wakes one. safe in any context.
  * @param proc the process.
  * @param sig the signal (1 to NSIG - 1).
  */
 void signal_send(struct process *proc, int sig);
+
+/**
+ * send a signal to a process (a thread group): one of its threads takes
+ * it (signal_send), one that does not block it if there is one. SIGCONT
+ * goes to every thread.
+ * @param proc any thread of the process, or NULL (nothing is done).
+ * @param sig the signal.
+ */
+void signal_send_process(struct process *proc, int sig);
 
 /**
  * send a signal to every process of a process group.

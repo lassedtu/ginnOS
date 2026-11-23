@@ -74,6 +74,9 @@ typedef struct process
                             // until every thread of the group has ended
     uint32_t threads;       // in the leader: the threads not ended yet
     bool group_exiting;     // in the leader: every thread is to end
+    bool group_stopped;     // in the leader: the process is stopped
+    struct process *exec_thread; // in the leader: the thread in execve,
+                                 // which ends the others; or NULL
     int32_t group_status;   // in the leader: the wait status they end with
     uintptr_t clear_tid;    // a user address set to 0 when the thread ends
                             // (CLONE_CHILD_CLEARTID), or 0
@@ -111,9 +114,11 @@ typedef struct process
     signal_handlers_t *handlers; // what each signal does (shared by threads);
                                  // kept until the slot is freed
     uint32_t syscall_nr;      // the syscall in progress (for a restart)
-    uint64_t alarm_deadline;  // tick of the SIGALRM alarm, 0 for none
-    uint8_t stop_signal;      // the signal that stopped it (STOPPED)
-    wait_report_t wait_report; // a stop or continue for waitpid
+    uint64_t alarm_deadline;  // in the leader: tick of the SIGALRM alarm, 0
+                              // for none
+    uint8_t stop_signal;      // the signal that stopped it (STOPPED); in
+                              // the leader, the one that stopped the process
+    wait_report_t wait_report; // in the leader: a stop or continue for waitpid
     uint32_t utime;           // timer ticks spent in user code
     uint32_t stime;           // timer ticks spent in the kernel for it
     uint32_t cutime;          // utime of reaped children (and theirs)
@@ -128,6 +133,8 @@ typedef struct process
                             // NULL once released
     fd_table_t *files;      // the descriptors (shared by threads), or NULL
                             // once released
+    file_t *held_files[FD_MAX]; // files fd_get keeps open for the syscall in
+    uint32_t held_count;        // progress, while the table is shared
 } process_t;
 
 /**
@@ -182,11 +189,38 @@ process_t *process_fork(const struct registers *regs);
 process_t *process_clone_thread(const struct registers *regs, uintptr_t stack);
 
 /**
- * send a signal to every other thread of a process's group.
- * @param proc the thread that is left out.
+ * send a signal to the threads of a group (signal_send to each).
+ * @param tgid the group.
+ * @param except a thread that is left out, or NULL.
  * @param sig the signal.
  */
-void process_signal_threads(process_t *proc, int sig);
+void process_signal_threads(uint32_t tgid, process_t *except, int sig);
+
+/**
+ * make a thread the leader of its group in place of the old leader, which
+ * has ended (a zombie) and is the only other member: the thread takes the
+ * leader's pid and its place for the parent, and the old slot is reaped
+ * by the kernel (execve from a thread that is not the leader).
+ * @param proc the thread (the current one).
+ */
+void process_take_leader(process_t *proc);
+
+/**
+ * give every other thread of a process's group its user and group ids,
+ * its process group and its session (they belong to the process).
+ * @param proc the thread whose values the others take.
+ */
+void process_sync_threads(process_t *proc);
+
+/**
+ * choose the thread of a group that takes a signal sent to the process:
+ * the leader if it does not block mask, else a thread that does not,
+ * else any of them (the leader first).
+ * @param tgid the group.
+ * @param mask the signal's bit.
+ * @return the thread, or NULL if the group has none left.
+ */
+process_t *process_pick_thread(uint32_t tgid, uint32_t mask);
 
 /**
  * get the currently running process.
