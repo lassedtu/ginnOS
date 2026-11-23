@@ -1,7 +1,7 @@
 /**
  * @file libctest.c
  * @brief Test the C library: formatting, parsing, strings, sorting,
- * streams, memory, the environment and non-local jumps.
+ * streams, memory, the environment, non-local jumps and math.
  *
  * prints one line per failed check and "libctest: N checks, ok" (or the
  * number of failures) at the end. wide.c tests the wide characters,
@@ -16,6 +16,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <math.h>
 #include <setjmp.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -271,6 +272,56 @@ static void test_control(void)
     assert(checks > 0);
 }
 
+static void test_math(void)
+{
+    // volatile: the compiler may not work these out at build time
+    volatile double two = 2.0, ten = 10.0, three = 3.0, e = M_E;
+    CHECK(pow(two, ten) == 1024.0 && pow(ten, -two) == 0.01 && pow(-two, three) == -8.0);
+    CHECK(pow(three, 40.0) == 12157665459056928801.0 && pow(two, 0.5) == M_SQRT2);
+    CHECK(isnan(pow(-two, 0.5)) && pow(0.0, -two) == HUGE_VAL && pow(1.0, NAN) == 1.0);
+    CHECK(exp(1.0 + two - two) == M_E && exp(two - two) == 1.0);
+    CHECK(exp(1000.0 + two) == HUGE_VAL && exp(-1000.0 - two) == 0.0);
+    CHECK(log(e) == 1.0 && log(two - 1.0) == 0.0);
+    CHECK(log10(ten * ten * ten) == 3.0 && log2(1024.0 + two - two) == 10.0);
+
+    // printf gives the exact digits, rounded correctly
+    FORMATS("0.1000000000000000055511151231257827", "%.34f", 0.1);
+    FORMATS("1.7976931348623157e+308", "%.16e", 1.7976931348623157e308);
+    FORMATS("123456789012345677877719597056", "%.0f", 1.2345678901234568e29);
+    FORMATS("2.5e-05 100000 1.00 -0.00e+00", "%.3g %g %#.3g %+.2e", 0.000025, 100000.0, 1.0,
+            -0.0);
+    FORMATS("2.50000000000000000000 -00003.142 2.2     | 0.2 0.3", "%.20f %010.3f %-8.1f| %.1f %.1f",
+            2.5, -3.14159, 2.25, 0.25, 0.35);
+    FORMATS("0x1.8p+1 0x1p-1074 0x1.999999999999ap-4 0X1.8P+1", "%a %a %a %A", 3.0,
+            4.9406564584124654e-324, 0.1, 3.0);
+    FORMATS("  -inf nan INF", "%6f %f %F", -(double)INFINITY, (double)NAN, (double)INFINITY);
+    FORMATS("0.125 0.3333333333", "%Lg %.10Lf", 0.125L, 1.0L / 3);
+
+    // strtod rounds correctly, and reads hexadecimal numbers, inf and nan
+    char *end;
+    CHECK(strtod("1.25", &end) == 1.25 && *end == '\0' && strtod("0.1", NULL) == 0.1);
+    CHECK(strtod("2.2250738585072011e-308", NULL) == 2.2250738585072011e-308);
+    CHECK(strtod("0x1.8p1", NULL) == 3.0 && strtod("-0X10", NULL) == -16.0);
+    CHECK(strtod("  1.5x", &end) == 1.5 && *end == 'x' && strtod("0x", &end) == 0 && *end == 'x');
+    CHECK(strtod("abc", &end) == 0 && strcmp(end, "abc") == 0);
+    CHECK(isinf(strtod("-Infinity", NULL)) && isnan(strtod("nan", NULL)));
+    CHECK(signbit(strtod("-0", NULL)) && strtof("0.1", NULL) == 0.1f);
+    errno = 0;
+    CHECK(strtod("1e400", NULL) == HUGE_VAL && errno == ERANGE);
+
+    // a number printed with %.17g or %a reads back the same
+    double values[] = {0.1, 1.0 / 3, 2.0 / 3, 1e23, 5e-324, 1.7976931348623157e308, 123.456};
+    int same = 1;
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++)
+    {
+        char a[64], b[64];
+        snprintf(a, sizeof(a), "%.17g", values[i]);
+        snprintf(b, sizeof(b), "%a", values[i]);
+        same &= strtod(a, NULL) == values[i] && strtod(b, NULL) == values[i];
+    }
+    CHECK(same);
+}
+
 int main(void)
 {
     test_printf();
@@ -280,6 +331,7 @@ int main(void)
     test_streams();
     test_memory();
     test_control();
+    test_math();
     test_wide();
     test_regex();
     test_posix();
