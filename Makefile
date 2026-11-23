@@ -3,6 +3,7 @@
 #   kernel.mk  the kernel and the common code
 #   boot.mk    the old BIOS bootloader, and the disk layouts
 #   libc.mk    the C library and the sysroot
+#   ports.mk   programs from other projects (sbase)
 #   user.mk    our own libraries and programs
 #   image.mk   the root filesystem and the disk image
 #   test.mk    the in-kernel tests
@@ -20,6 +21,7 @@ include mk/config.mk
 include mk/kernel.mk
 include mk/boot.mk
 include mk/libc.mk
+include mk/ports.mk
 include mk/user.mk
 include mk/image.mk
 include mk/test.mk
@@ -30,11 +32,12 @@ include mk/dev.mk
 
 all: check-tools $(DISK_IMAGE)
 
-# clean keeps the fetched limine and freedoom releases (build/limine,
-# build/freedoom); distclean removes them
+# clean keeps what was fetched (build/limine, build/freedoom, build/fonts,
+# build/icons, build/sources); distclean removes it
 clean:
 	@if [ -d $(BUILD_DIR) ]; then \
-		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine ! -name freedoom ! -name fonts ! -name icons -exec rm -rf {} +; \
+		find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name limine ! -name freedoom ! -name fonts \
+			! -name icons ! -name sources -exec rm -rf {} +; \
 	fi
 	rm -rf $(EXT2_SOURCE_DIR)/boot $(EXT2_SOURCE_DIR)/bin
 	rm -f $(ISR_GEN_C) $(ISR_GEN_INC)

@@ -29,7 +29,7 @@ icons: $(ICONS_PACKS)
 $(WALLPAPER_OUT): $(wildcard $(WALLPAPER)) tools/wallpaper/make.py
 	$(PYTHON) tools/wallpaper/make.py "$(WALLPAPER)" $@ $(RESOLUTION)
 
-rootfs-image: $(ROOTFS_KERNEL) user-programs $(if $(filter 1,$(ICONS)),$(ICONS_PACKS)) \
+rootfs-image: $(ROOTFS_KERNEL) user-programs $(PORT_STAMPS) $(if $(filter 1,$(ICONS)),$(ICONS_PACKS)) \
               $(if $(WALLPAPER),$(WALLPAPER_OUT))
 	rm -rf $(ROOTFS_STAGING)
 	@mkdir -p $(ROOTFS_STAGING) $(dir $(ROOTFS_IMAGE))
@@ -38,6 +38,14 @@ rootfs-image: $(ROOTFS_KERNEL) user-programs $(if $(filter 1,$(ICONS)),$(ICONS_P
 	$(if $(ROOTFS_KERNEL),cp $(ROOTFS_KERNEL) $(ROOTFS_STAGING)/boot/kernel.bin)
 	@for prog in $(USER_PROGRAMS); do \
 		cp $$prog $(ROOTFS_STAGING)/bin/$$(basename $$prog); \
+	done
+	@for root in $(PORT_ROOTS); do \
+		for f in $$(cd $$root && find . ! -type d); do \
+			if [ -e $(ROOTFS_STAGING)/$$f ] || [ -L $(ROOTFS_STAGING)/$$f ]; then \
+				echo "$${f#.} is in a port ($$root) and in ginnOS"; exit 1; \
+			fi; \
+		done; \
+		cp -R $$root/. $(ROOTFS_STAGING)/; \
 	done
 	$(PYTHON) tools/sounds/make_sounds.py $(ROOTFS_STAGING)/usr/share/sounds
 	$(if $(filter 1,$(FREEDOOM)),./$(FREEDOOM_FETCH) $(FREEDOOM_CACHE) $(ROOTFS_STAGING)/usr/share/doom)

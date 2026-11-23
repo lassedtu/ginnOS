@@ -51,8 +51,14 @@ $(BUILD_DIR)/user/lib/crt%.o: src/user/lib/$(ARCH)/crt%.asm
 	$(AS) -f $(ASM_FORMAT) $< -o $@
 
 # the libc headers, start files and libc.a where the ginnOS toolchain
-# looks for them; build the toolchain with tools/toolchain/build.sh
-sysroot: $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A)
+# looks for them; build the toolchain with tools/toolchain/build.sh. the
+# stamp file is new when the sysroot changed, for the ports (mk/ports.mk).
+SYSROOT_STAMP := $(SYSROOT)/.done
+LIBC_HEADERS  := $(shell find src/libc/include -type f 2>/dev/null | sort)
+
+sysroot: $(SYSROOT_STAMP)
+
+$(SYSROOT_STAMP): $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A) $(LIBC_HEADERS)
 	@rm -rf $(SYSROOT)/usr/include
 	@mkdir -p $(SYSROOT)/usr/include $(SYSROOT)/usr/lib
 	cp -R src/libc/include/. $(SYSROOT)/usr/include/
@@ -60,3 +66,4 @@ sysroot: $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A)
 	@# the math functions are in libc.a: -lm finds an empty library
 	@rm -f $(SYSROOT)/usr/lib/libm.a
 	$(CROSS)ar rcs $(SYSROOT)/usr/lib/libm.a
+	@touch $@

@@ -256,9 +256,12 @@ Everything below is implemented and working today.
 
 ### Bundled userspace programs
 
-- `cat`, `chmod`, `chown`, `clear`, `date`, `echo`, `id`, `init`, `ls`,
-  `mkdir`, `pwd`, `rm`, `rmdir`, `sh`, `sleep`, `su`, `touch`, `uptime`,
-  `whoami`, `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
+- The Unix tools from [sbase](https://core.suckless.org/sbase/) (MIT),
+  built as a port without changes: `ls`, `cat`, `cp`, `mv`, `rm`, `grep`,
+  `sed`, `find`, `tar`, `sort`, `dd`, `bc`, `date` and about 90 more, all
+  in one program (`/bin/sbase-box`) with a symbolic link for each tool
+- `clear`, `id`, `init`, `sh`, `su`, `uptime`,
+  `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
   tests the kernel's handling of user memory (heap, stack growth, `mmap`,
   `munmap`, `mprotect`, and faults that must kill only the process), and
   `proctest`, which tests the process model (`fork`, copy-on-write, pipes,
@@ -607,7 +610,20 @@ Once that is done, build from the project root, see **Build and Run** below. QEM
 
 ## Build and Run
 
-From project root:
+The image includes ports (programs from other projects, now sbase), which
+are built with the ginnOS toolchain: a GCC and binutils that know ginnOS.
+Build it once for each architecture (it downloads GCC and binutils, needs
+gmp, mpfr, libmpc and isl, takes about 20 minutes, and goes into
+`tools/toolchain/prefix`). The ports
+also need `git` and `yacc` (macOS has both). `make PORTS=` builds an image
+without the ports, and so without the Unix tools.
+
+```bash
+tools/toolchain/build.sh i686
+tools/toolchain/build.sh x86_64
+```
+
+Then, from project root:
 
 ```bash
 make

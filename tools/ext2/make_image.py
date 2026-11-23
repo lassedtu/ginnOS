@@ -48,6 +48,8 @@ def source_size_bytes(source_dir: Path) -> int:
             if name in IGNORED_NAMES:
                 continue
             path = Path(root) / name
+            if path.is_symlink():
+                continue  # a link takes no data blocks (its target is short)
             try:
                 stat = path.stat()
             except OSError:
@@ -78,9 +80,12 @@ def read_permissions(path: Path) -> list[tuple[str, bool, int, int, int]]:
 
 
 def prepare_filtered_source(source_dir: Path, temp_root: Path) -> Path:
-    """Copy source tree to a temp location while excluding unwanted files."""
+    """Copy source tree to a temp location while excluding unwanted files.
+
+    Symbolic links stay links (mke2fs -d makes them links in the image).
+    """
     filtered_dir = temp_root / "rootfs"
-    shutil.copytree(source_dir, filtered_dir, ignore=ignore_unwanted)
+    shutil.copytree(source_dir, filtered_dir, ignore=ignore_unwanted, symlinks=True)
     # the folders of the permissions table that are not in the tree
     for name, folder, _mode, _uid, _gid in read_permissions(PERMISSIONS_FILE):
         if folder:
