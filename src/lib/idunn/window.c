@@ -579,6 +579,30 @@ static int count_clicks(idunn_window_t *win, int32_t x, int32_t y)
     return win->clicks;
 }
 
+/**
+ * the deepest widget at a point, interactive or not (the wheel and a
+ * right click go to it and then to its parents).
+ */
+static idunn_widget_t *deepest(idunn_widget_t *w, int32_t x, int32_t y)
+{
+    while (w)
+    {
+        idunn_widget_t *inner = NULL;
+        if ((w->flags & IDUNN_CLIPS) && !gfx_rect_contains(w->rect, x, y))
+            break;
+        for (int i = w->child_count - 1; i >= 0 && !inner; i--)
+        {
+            idunn_widget_t *c = w->children[i];
+            if (!(c->state & IDUNN_HIDDEN) && gfx_rect_contains(c->rect, x, y))
+                inner = c;
+        }
+        if (!inner)
+            break;
+        w = inner;
+    }
+    return w;
+}
+
 void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, int32_t y,
                           uint32_t mods)
 {
@@ -636,7 +660,37 @@ void idunn_window_pointer(idunn_window_t *win, idunn_pointer_t kind, int32_t x, 
         }
         break;
     }
+    case IDUNN_POINTER_MENU:
+    {
+        close_tooltip(win);
+        win->tip_widget = NULL;
+        win->menu_x = x;
+        win->menu_y = y;
+        set_hover(win, under);
+        if (under && (under->flags & IDUNN_FOCUSABLE))
+            set_focus(win, under, false);
+        idunn_event_t ev = {.type = IDUNN_EV_MENU, .x = x, .y = y, .mods = mods};
+        for (idunn_widget_t *w = deepest(top, x, y); w; w = w->parent)
+        {
+            if (w->state & IDUNN_DISABLED)
+                continue;
+            if (idunn_send(w, &ev))
+                break;
+            if (w->on_menu)
+            {
+                w->on_menu(w, w->menu_data);
+                break;
+            }
+        }
+        break;
     }
+    }
+}
+
+void idunn_window_on_key(idunn_window_t *win, idunn_key_hook_t on_key, void *data)
+{
+    win->on_key = on_key;
+    win->on_key_data = data;
 }
 
 /**
@@ -686,6 +740,9 @@ void idunn_window_key(idunn_window_t *win, uint16_t code, uint32_t mods, const c
         if (idunn_send(w, &ev))
             return;
     }
+    // the window's own shortcuts (not under a dialog)
+    if (!win->modal && win->on_key && win->on_key(win, code, mods, text ? text : "", win->on_key_data))
+        return;
     // Escape that nothing used closes a dialog or a popup
     if (code == IDUNN_KEY_ESCAPE && win->modal)
         idunn_dialog_dismiss(win);
@@ -729,22 +786,7 @@ void idunn_focus_first(idunn_widget_t *w)
 void idunn_window_scroll(idunn_window_t *win, int32_t x, int32_t y, int32_t steps)
 {
     // the widget under the pointer, or the first of its parents that scrolls
-    idunn_widget_t *w = win->modal ? win->modal : win->root;
-    while (w)
-    {
-        idunn_widget_t *inner = NULL;
-        if ((w->flags & IDUNN_CLIPS) && !gfx_rect_contains(w->rect, x, y))
-            break;
-        for (int i = w->child_count - 1; i >= 0 && !inner; i--)
-        {
-            idunn_widget_t *c = w->children[i];
-            if (!(c->state & IDUNN_HIDDEN) && gfx_rect_contains(c->rect, x, y))
-                inner = c;
-        }
-        if (!inner)
-            break;
-        w = inner;
-    }
+    idunn_widget_t *w = deepest(win->modal ? win->modal : win->root, x, y);
     idunn_event_t ev = {.type = IDUNN_EV_SCROLL, .x = x, .y = y, .steps = steps};
     for (; w; w = w->parent)
     {

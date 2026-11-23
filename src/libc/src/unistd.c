@@ -415,6 +415,11 @@ int stat(const char *path, struct stat *st)
     return check(_syscall(SYS_STAT, (long)path, (long)st, 0, 0, 0));
 }
 
+int lstat(const char *path, struct stat *st)
+{
+    return stat(path, st);
+}
+
 int fstat(int fd, struct stat *st)
 {
     return check(_syscall(SYS_FSTAT, fd, (long)st, 0, 0, 0));

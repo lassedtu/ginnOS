@@ -563,3 +563,11 @@ void idunn_menu_popup(idunn_menu_t *menu, idunn_widget_t *owner)
     }
     idunn_menu_open(menu, owner, r, first, NULL, NULL);
 }
+
+void idunn_menu_popup_at_pointer(idunn_menu_t *menu, idunn_widget_t *owner)
+{
+    if (!owner || !owner->window)
+        return;
+    gfx_rect_t r = gfx_rect(owner->window->menu_x, owner->window->menu_y, 1, 1);
+    idunn_menu_open(menu, owner, r, -1, NULL, NULL);
+}

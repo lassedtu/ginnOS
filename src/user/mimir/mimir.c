@@ -2,7 +2,12 @@
  * @file mimir.c
  * @brief mimir, the terminal: the shell in a window.
  *
- * usage: mimir [program [arguments]]   (the shell, /bin/sh, without one)
+ * usage: mimir [-k] [-d folder] [program [arguments]]
+ *
+ * without a program it starts the shell, /bin/sh. the program starts in
+ * the folder of -d (the file manager's "Open in Mimir"), else in $HOME.
+ * the window closes when the program ends; with -k it stays, so the
+ * output of a program the file manager ran can be read.
  *
  * mimir opens a pty, starts the program on its slave side, and shows
  * what it writes: libvt keeps the screen, a canvas draws it in
@@ -63,6 +68,7 @@ static struct
     vt_t *vt;
     int master;
     pid_t child;
+    bool keep; // -k: the window stays after the program ends
 
     bragi_font_t *fonts[FACE_COUNT];
     bragi_face_t *faces[FACE_COUNT];
@@ -363,7 +369,7 @@ static void canvas_frame(idunn_widget_t *canvas, void *data)
     if (vt->title_changed)
     {
         vt->title_changed = false;
-        idunn_window_set_title(M.win, vt->title[0] ? vt->title : "mimir");
+        idunn_window_set_title(M.win, vt->title[0] ? vt->title : "Mimir");
     }
     vt->bell = false;
     int scrolled = vt->scrolled;
@@ -917,15 +923,22 @@ static void pty_ready(int fd, void *data)
         }
         if (n < 0 && (errno == EAGAIN || errno == EINTR))
             break;
-        // the program ended (EIO): so does the terminal
+        // the program ended (EIO): so does the terminal, unless -k
         idunn_app_watch(M.app, fd, NULL, NULL);
+        if (M.keep)
+        {
+            static const char ended[] = "\r\n\033[2m[the program ended]\033[0m";
+            vt_write(M.vt, ended, sizeof(ended) - 1);
+            idunn_canvas_update(M.canvas);
+            return;
+        }
         idunn_app_quit(M.app);
         return;
     }
     idunn_canvas_update(M.canvas);
 }
 
-static pid_t start_program(char **argv, int cols, int rows)
+static pid_t start_program(char **argv, const char *folder, int cols, int rows)
 {
     struct winsize size = {(unsigned short)rows, (unsigned short)cols, 0, 0};
     int slave;
@@ -941,7 +954,9 @@ static pid_t start_program(char **argv, int cols, int rows)
         setenv("COLORTERM", "truecolor", 1);
         setenv("TERM_PROGRAM", "mimir", 1);
         const char *home = getenv("HOME");
-        if (home && chdir(home) != 0)
+        if (folder && chdir(folder) == 0)
+            setenv("PWD", folder, 1);
+        else if (home && chdir(home) != 0)
             chdir("/");
         if (argv[0])
             execvp(argv[0], argv);
@@ -959,7 +974,23 @@ static pid_t start_program(char **argv, int cols, int rows)
 
 int main(int argc, char **argv)
 {
-    (void)argc;
+    const char *folder = NULL;
+    int first = 1;
+    for (;;)
+    {
+        if (first < argc && strcmp(argv[first], "-k") == 0)
+        {
+            M.keep = true;
+            first++;
+        }
+        else if (first + 1 < argc && strcmp(argv[first], "-d") == 0)
+        {
+            folder = argv[first + 1];
+            first += 2;
+        }
+        else
+            break;
+    }
     M.app = idunn_app_new("mimir");
     if (!M.app)
     {
@@ -977,7 +1008,7 @@ int main(int argc, char **argv)
     M.blink_on = true;
     M.vt = vt_new(80, 24, SCROLLBACK);
     vt_set_reply(M.vt, on_reply, NULL);
-    M.child = start_program(argv + 1, 80, 24);
+    M.child = start_program(argv + first, folder, 80, 24);
     if (M.child < 0)
     {
         printf("mimir: no pty\n");
@@ -987,7 +1018,7 @@ int main(int argc, char **argv)
     // 80 by 24 cells, in design pixels
     int32_t width = (80 * M.cw + 2 * M.pad + M.scale - 1) / M.scale;
     int32_t height = (24 * M.ch + 2 * M.pad + M.scale - 1) / M.scale;
-    M.win = idunn_window_new(M.app, "mimir", width, height);
+    M.win = idunn_window_new(M.app, "Mimir", width, height);
     if (!M.win)
         return 1;
     static const idunn_canvas_hooks_t hooks = {canvas_draw, canvas_input, canvas_resize,

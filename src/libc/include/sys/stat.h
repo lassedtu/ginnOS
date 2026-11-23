@@ -63,6 +63,12 @@ struct stat
 int stat(const char *path, struct stat *st);
 
 /**
+ * the metadata of a symbolic link itself. the file systems have no
+ * symbolic links yet, so this is the same as stat.
+ */
+int lstat(const char *path, struct stat *st);
+
+/**
  * get an open file's metadata (pipes and the console too).
  * @return 0, or -1 (errno set).
  */

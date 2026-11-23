@@ -50,6 +50,7 @@ const char *strerror(int errnum)
     case EAFNOSUPPORT: return "address family not supported";
     case EPROTONOSUPPORT: return "protocol not supported";
     case EOPNOTSUPP: return "operation not supported";
+    case ECANCELED: return "cancelled";
     }
     return "unknown error";
 }

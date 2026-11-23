@@ -107,6 +107,13 @@ void idunn_app_every(idunn_app_t *app, uint32_t period, void (*every)(void *data
 void idunn_app_watch(idunn_app_t *app, int fd, void (*ready)(int fd, void *data), void *data);
 
 /**
+ * ask for the clipboard's text for the program itself (not a widget):
+ * got gets it when it comes ("" when the clipboard is empty).
+ */
+void idunn_app_paste(idunn_app_t *app, void (*got)(const char *text, size_t length, void *data),
+                     void *data);
+
+/**
  * run until the last window is closed or idunn_app_quit.
  * @return the exit status for main.
  */
@@ -144,6 +151,15 @@ idunn_window_t *idunn_panel_new(idunn_app_t *app, int32_t height);
  * window owns the tree from now on.
  */
 void idunn_window_set_root(idunn_window_t *win, idunn_widget_t *root);
+
+/**
+ * keys that no widget used (the focused one and its parents): the
+ * window's own shortcuts. on_key returns true when it used the key.
+ * code is a Linux key code, mods IDUNN_MOD_, text what it types or "".
+ */
+typedef bool (*idunn_key_hook_t)(idunn_window_t *win, uint16_t code, uint32_t mods,
+                                 const char *text, void *data);
+void idunn_window_on_key(idunn_window_t *win, idunn_key_hook_t on_key, void *data);
 
 /**
  * close and free the window (and its widgets).
@@ -190,6 +206,12 @@ void idunn_box_set_padding(idunn_widget_t *box, int vertical, int horizontal);
  * a background for a box, a colour token (by default it has none).
  */
 void idunn_box_set_background(idunn_widget_t *box, idunn_color_t color);
+/**
+ * a row that is too short for its children shows the last ones: the
+ * first go out of view on the left, whole (a path bar keeps the folder
+ * that is open in view).
+ */
+void idunn_box_set_keep_end(idunn_widget_t *box, bool keep_end);
 
 /**
  * a card: a column on the card colour with a border, the large radius and
@@ -249,6 +271,12 @@ void idunn_set_hidden(idunn_widget_t *w, bool hidden);
  * a disabled widget is drawn at half opacity and gets no input.
  */
 void idunn_set_disabled(idunn_widget_t *w, bool disabled);
+/**
+ * on_menu on a right click on the widget or in it, when no widget in it
+ * used the click (a list view uses it on its items: idunn_list_view_on_menu).
+ * open a menu with idunn_menu_popup_at_pointer.
+ */
+void idunn_on_menu(idunn_widget_t *w, idunn_callback_t on_menu, void *data);
 
 /**
  * a control with a wrong value: its border and ring are red (a field
@@ -324,6 +352,11 @@ idunn_widget_t *idunn_text_field(const char *placeholder);
 /** the text (UTF-8); valid until the text changes */
 const char *idunn_text_field_text(const idunn_widget_t *field);
 void idunn_text_field_set_text(idunn_widget_t *field, const char *text);
+/**
+ * select bytes start to end (the caret at end); typing replaces them.
+ * (size_t)-1 is the end of the text.
+ */
+void idunn_text_field_select(idunn_widget_t *field, size_t start, size_t end);
 
 /** an icon (a Lucide name) at the start, as in a search field */
 void idunn_text_field_set_icon(idunn_widget_t *field, const char *icon);
@@ -403,6 +436,11 @@ idunn_widget_t *idunn_icon_view(const char *name, int32_t size, idunn_color_t co
  */
 idunn_widget_t *idunn_empty_state(const char *icon, const char *title, const char *text);
 
+#define IDUNN_PROGRESS_MAX 1000
+/** a progress bar across its box; value 0 to IDUNN_PROGRESS_MAX */
+idunn_widget_t *idunn_progress(void);
+void idunn_progress_set(idunn_widget_t *progress, int32_t value);
+
 /**
  * tabs: a strip of names and the page of the active one below it. the
  * strip is one Tab stop; the arrows change the tab.
@@ -431,6 +469,8 @@ int idunn_list_view_count(const idunn_widget_t *list);
 const char *idunn_list_view_text(const idunn_widget_t *list, int item);
 /** many items can be selected (Ctrl, Shift, Ctrl+A) */
 void idunn_list_view_set_multiple(idunn_widget_t *list, bool multiple);
+/** rows with a Tela icon (a file or folder icon name) in colour, not a Lucide one */
+void idunn_list_view_set_pictures(idunn_widget_t *list, bool pictures);
 /** a border, the large radius and the card colour around the items */
 void idunn_list_view_set_framed(idunn_widget_t *list, bool framed);
 bool idunn_list_view_selected(const idunn_widget_t *list, int item);
@@ -440,6 +480,14 @@ int idunn_list_view_current(const idunn_widget_t *list);
 /** on_select after the selection changes; on_activate on a double click or Enter */
 void idunn_list_view_on_select(idunn_widget_t *list, idunn_callback_t on_select, void *data);
 void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activate, void *data);
+/**
+ * on_menu on a right click: on an item that is not selected, it selects
+ * only that item first; on no item, nothing stays selected. open a menu
+ * with idunn_menu_popup_at_pointer.
+ */
+void idunn_list_view_on_menu(idunn_widget_t *list, idunn_callback_t on_menu, void *data);
+/** the item at a point of the window, or -1 */
+int idunn_list_view_item_at(const idunn_widget_t *list, int32_t x, int32_t y);
 
 // things that float: menus, selects, tooltips, popovers and dialogs
 
@@ -469,6 +517,8 @@ void idunn_menu_set_checked(idunn_menu_t *menu, int item, bool checked);
 void idunn_menu_set_min_width(idunn_menu_t *menu, int32_t width);
 /** open the menu under a widget (a button's on_click does it) */
 void idunn_menu_popup(idunn_menu_t *menu, idunn_widget_t *owner);
+/** open the menu where the last right click was (a context menu) */
+void idunn_menu_popup_at_pointer(idunn_menu_t *menu, idunn_widget_t *owner);
 
 /**
  * a select: a field with the chosen value; it opens a menu of the choices.
@@ -561,6 +611,7 @@ typedef enum
     IDUNN_POINTER_PRESS,   // the left button
     IDUNN_POINTER_RELEASE,
     IDUNN_POINTER_LEAVE,
+    IDUNN_POINTER_MENU,    // the right button went down: a context menu
 } idunn_pointer_t;
 
 /**

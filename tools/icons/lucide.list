@@ -75,3 +75,12 @@ bell
 palette
 square-terminal
 monitor
+
+# the file manager
+house
+hard-drive
+file-music
+clipboard-paste
+rotate-ccw
+play
+folder-open
