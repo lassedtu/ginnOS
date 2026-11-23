@@ -18,6 +18,7 @@ user_space_t *user_space_create(void)
         return NULL;
     }
     vma_table_init(&space->vmas);
+    mutex_init(&space->lock);
     space->users = 1;
     return space;
 }

@@ -503,7 +503,7 @@ syscall_ret_t sys_sched_yield(struct registers *regs)
  * for positive increments, grows the heap area; the new pages are backed
  * with zeroed frames on first touch.
  */
-syscall_ret_t sys_sbrk(struct registers *regs)
+static syscall_ret_t sbrk_locked(struct registers *regs)
 {
     intptr_t increment = (intptr_t)syscall_arg(regs, 0);
     uintptr_t old_brk = usermode_get_brk();
@@ -566,6 +566,16 @@ syscall_ret_t sys_sbrk(struct registers *regs)
     return (syscall_ret_t)old_brk;
 }
 
+syscall_ret_t sys_sbrk(struct registers *regs)
+{
+    // one memory syscall at a time among the threads of the process
+    user_space_t *space = process_current()->space;
+    mutex_lock(&space->lock);
+    syscall_ret_t result = sbrk_locked(regs);
+    mutex_unlock(&space->lock);
+    return result;
+}
+
 /**
  * SYS_mmap: map memory into the calling process.
  * args: EBX = addr, ECX = length, EDX = prot | flags << 8, ESI = fd,
@@ -582,7 +592,7 @@ syscall_ret_t sys_sbrk(struct registers *regs)
  * free range of the region is used.
  * returns the mapped address, or MAP_FAILED (-1) on error.
  */
-syscall_ret_t sys_mmap(struct registers *regs)
+static syscall_ret_t mmap_locked(struct registers *regs)
 {
     uintptr_t hint = syscall_arg(regs, 0);
     size_t length = syscall_arg(regs, 1);
@@ -674,6 +684,16 @@ syscall_ret_t sys_mmap(struct registers *regs)
     return (syscall_ret_t)virt;
 }
 
+syscall_ret_t sys_mmap(struct registers *regs)
+{
+    // one memory syscall at a time among the threads of the process
+    user_space_t *space = process_current()->space;
+    mutex_lock(&space->lock);
+    syscall_ret_t result = mmap_locked(regs);
+    mutex_unlock(&space->lock);
+    return result;
+}
+
 /**
  * SYS_shm_create: make a shared memory object (kernel/memory/shm.h).
  * args: EBX = size in bytes (rounded up to pages), ECX = fd flags
@@ -707,7 +727,7 @@ syscall_ret_t sys_shm_create(struct registers *regs)
  * every page of [addr, addr + length) that is mapped is removed; parts that
  * are not mapped are skipped. returns 0, or a negative errno.
  */
-syscall_ret_t sys_munmap(struct registers *regs)
+static syscall_ret_t munmap_locked(struct registers *regs)
 {
     uintptr_t addr = syscall_arg(regs, 0);
     size_t length = syscall_arg(regs, 1);
@@ -722,13 +742,23 @@ syscall_ret_t sys_munmap(struct registers *regs)
     return kerr_to_errno(mm_unmap(proc, addr, addr + len_pages));
 }
 
+syscall_ret_t sys_munmap(struct registers *regs)
+{
+    // one memory syscall at a time among the threads of the process
+    user_space_t *space = process_current()->space;
+    mutex_lock(&space->lock);
+    syscall_ret_t result = munmap_locked(regs);
+    mutex_unlock(&space->lock);
+    return result;
+}
+
 /**
  * SYS_mprotect: change the protection of mapped memory.
  * args: EBX = addr (page-aligned), ECX = length, EDX = prot.
  * returns 0, -ENOMEM if part of the range is not mapped, or another
  * negative errno.
  */
-syscall_ret_t sys_mprotect(struct registers *regs)
+static syscall_ret_t mprotect_locked(struct registers *regs)
 {
     uintptr_t addr = syscall_arg(regs, 0);
     size_t length = syscall_arg(regs, 1);
@@ -747,6 +777,16 @@ syscall_ret_t sys_mprotect(struct registers *regs)
         return -ENOMEM; // POSIX's error for an unmapped range
     }
     return kerr_to_errno(err);
+}
+
+syscall_ret_t sys_mprotect(struct registers *regs)
+{
+    // one memory syscall at a time among the threads of the process
+    user_space_t *space = process_current()->space;
+    mutex_lock(&space->lock);
+    syscall_ret_t result = mprotect_locked(regs);
+    mutex_unlock(&space->lock);
+    return result;
 }
 
 /**

@@ -8,6 +8,7 @@
 
 #include "common/stdint.h"
 #include "kernel/memory/vma.h"
+#include "kernel/sync/mutex.h"
 #include "arch/arch.h"
 
 typedef struct user_space
@@ -16,6 +17,7 @@ typedef struct user_space
     addr_space_t page_directory; // the page tables (the kernel half is shared)
     vma_table_t vmas;            // what is mapped in the user half
     uintptr_t brk;               // the program break (for sbrk)
+    mutex_t lock;                // held by a memory syscall (mmap, sbrk, fork) of a thread
 } user_space_t;
 
 /**

@@ -216,13 +216,21 @@ process_t *process_fork(const struct registers *regs)
 
     // the memory: the same areas, and the parent's pages shared
     // copy-on-write
-    if (!arch_copy_user_space(child->space->page_directory, parent->space->page_directory))
+    // another thread of the parent may not change the memory while it is
+    // copied: its syscalls wait for the lock, and its page faults for the
+    // interrupts
+    mutex_lock(&parent->space->lock);
+    uint32_t flags = arch_irq_save();
+    bool copied = arch_copy_user_space(child->space->page_directory, parent->space->page_directory);
+    child->space->vmas = parent->space->vmas;
+    child->space->brk = parent->space->brk;
+    arch_irq_restore(flags);
+    mutex_unlock(&parent->space->lock);
+    if (!copied)
     {
         process_destroy(child);
         return NULL;
     }
-    child->space->vmas = parent->space->vmas;
-    child->space->brk = parent->space->brk;
 
     child->parent_pid = parent->tgid; // a child of the group, not the thread
     child->pgid = parent->pgid;

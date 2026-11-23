@@ -34,12 +34,11 @@ static uint32_t mmu_flags_for(uint32_t prot)
     return flags;
 }
 
-kerr_t mm_unmap(process_t *proc, uintptr_t start, uintptr_t end)
+/**
+ * mm_unmap, with interrupts masked by the caller.
+ */
+static kerr_t unmap(process_t *proc, uintptr_t start, uintptr_t end)
 {
-    if (!valid_user_range(start, end))
-    {
-        return KERR_INVAL;
-    }
 
     // a hole punched in the middle of an area needs a free slot: check
     // before touching any page, so failure leaves everything mapped
@@ -68,6 +67,21 @@ kerr_t mm_unmap(process_t *proc, uintptr_t start, uintptr_t end)
     }
 
     return vma_remove(&proc->space->vmas, start, end);
+}
+
+kerr_t mm_unmap(process_t *proc, uintptr_t start, uintptr_t end)
+{
+    if (!valid_user_range(start, end))
+    {
+        return KERR_INVAL;
+    }
+
+    // a fault in another thread must not back a page between the unmap of
+    // the pages and the removal of the area (mm_fault_in)
+    uint32_t flags = arch_irq_save();
+    kerr_t err = unmap(proc, start, end);
+    arch_irq_restore(flags);
+    return err;
 }
 
 kerr_t mm_protect(process_t *proc, uintptr_t start, uintptr_t end, uint32_t prot)

@@ -57,12 +57,11 @@ static bool break_cow(process_t *proc, const vma_t *area, uintptr_t page, phys_a
     return true;
 }
 
-bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
+/**
+ * mm_fault_in, with interrupts masked by the caller.
+ */
+static bool fault_in(process_t *proc, uintptr_t addr, bool write)
 {
-    if (!proc || !proc->space)
-    {
-        return false;
-    }
 
     vma_t *area = vma_find(&proc->space->vmas, addr);
     if (!area)
@@ -92,7 +91,8 @@ bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
         {
             return break_cow(proc, area, page, PAGE_ALIGN_DOWN(frame));
         }
-        return false;
+        // another thread of the process backed it first: try again
+        return arch_user_access_ok(proc->space->page_directory, page, 1, write);
     }
 
     void *new_frame = pmm_alloc_page();
@@ -108,6 +108,22 @@ bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
         return false;
     }
     return true;
+}
+
+bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
+{
+    if (!proc || !proc->space)
+    {
+        return false;
+    }
+
+    // the threads of a process share the pages: one fault is handled at a
+    // time, and never while another thread changes the areas (they change
+    // them with interrupts masked too)
+    uint32_t flags = arch_irq_save();
+    bool fixed = fault_in(proc, addr, write);
+    arch_irq_restore(flags);
+    return fixed;
 }
 
 void mm_handle_user_fault(uintptr_t addr, bool write, bool present, uintptr_t pc)
