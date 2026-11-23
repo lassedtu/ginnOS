@@ -139,6 +139,8 @@ struct idunn_widget
     idunn_callback_t on_menu; // a right click on it that no child used (idunn_on_menu)
     void *menu_data;
     idunn_callback_t on_middle; // a middle click on it (idunn_on_middle_click)
+    idunn_widget_key_t on_key;  // keys for it before it gets them (idunn_on_key)
+    void *key_data;
     void *middle_data;
     void *data;           // the class's own state
 };
@@ -398,8 +400,6 @@ void idunn_focus(idunn_widget_t *w);
 /** give the keyboard to the first widget that takes it in w */
 void idunn_focus_first(idunn_widget_t *w);
 
-/** free w (and its children) after the event that is running (idunn_reap) */
-void idunn_free_later(idunn_widget_t *w);
 
 // floating.c
 /** show w's tooltip over it */
@@ -421,3 +421,26 @@ void idunn_draw_ring(const idunn_widget_t *w, gfx_buffer_t *buf, gfx_rect_t box,
 
 /** how far drawing goes out of a widget's rect (rings and shadows) */
 int32_t idunn_overdraw(const idunn_theme_t *theme);
+
+/**
+ * the columns of a list view, in the window (for its heads).
+ * @param name_x where the names start.
+ * @param row_x where the rows start.
+ * @param left, right the edges of each column (COLUMNS_MAX at most).
+ * @return the column count (0 for a grid).
+ */
+int idunn_list_columns_at(const idunn_widget_t *list, int32_t *name_x, int32_t *row_x,
+                          int32_t *left, int32_t *right);
+/** true if a column of a list is drawn at its left */
+bool idunn_list_column_left(const idunn_widget_t *list, int column);
+/** the heads over a list (NULL: none); the list draws them again on layout */
+void idunn_list_set_heads(idunn_widget_t *list, idunn_widget_t *heads);
+/** the list of these heads is freed */
+void idunn_list_heads_forget(idunn_widget_t *heads);
+
+/**
+ * draw a Tela picture. in the light theme a faint edge of its own shape
+ * goes under it, so a white page (a text file) shows on a white ground.
+ */
+void idunn_draw_picture(const idunn_theme_t *t, gfx_buffer_t *buf, const icon_t *icon,
+                        int32_t x, int32_t y, uint8_t opacity);

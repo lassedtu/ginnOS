@@ -81,6 +81,8 @@ typedef struct
     void *menu_data;
     int32_t columns[COLUMNS_MAX]; // widths of the detail's columns (idunn_list_view_set_columns)
     int column_count;
+    uint32_t columns_left; // a bit for each column drawn at its left (text, not numbers)
+    idunn_widget_t *heads; // the column heads over the list (idunn_list_heads), or NULL
     idunn_widget_t *editor; // the name field of idunn_list_view_edit, or NULL
     int editing;            // its item
     int edit_state;         // EDIT_
@@ -138,8 +140,8 @@ static gfx_rect_t item_rect(const idunn_widget_t *w, int i)
     cell(w, &cw, &ch, &gap);
     int cols = columns(w);
     int32_t pad = pad_of(w);
-    return gfx_rect(w->rect.x + pad + (i % cols) * (cw + gap), w->rect.y + pad + (i / cols) * (ch + gap),
-                    cw, ch);
+    return gfx_rect(w->rect.x + pad + (i % cols) * (cw + gap),
+                    w->rect.y + pad + (i / cols) * (ch + gap), cw, ch);
 }
 
 static int item_at(const idunn_widget_t *w, int32_t x, int32_t y)
@@ -198,7 +200,7 @@ static void draw_tile(idunn_widget_t *w, gfx_buffer_t *buf, int i)
     int32_t top = r.y + idunn_px(t, 8);
     const icon_t *picture = idunn_picture(ctx, it->icon ? it->icon : "unknown", PICTURE);
     if (picture)
-        icon_draw(buf, picture, r.x + (r.w - size) / 2, top, 255);
+        idunn_draw_picture(t, buf, picture, r.x + (r.w - size) / 2, top, 255);
     // the name in the middle, with "..." when it is too long
     bragi_face_t *face = idunn_face(ctx, IDUNN_TEXT_BODY);
     int32_t room = r.w - idunn_px(t, 8);
@@ -228,7 +230,7 @@ static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
         if (!picture)
             picture = idunn_picture(ctx, "unknown", ROW_PICTURE);
         if (picture)
-            icon_draw(buf, picture, x, r.y + (r.h - size) / 2, 255);
+            idunn_draw_picture(t, buf, picture, x, r.y + (r.h - size) / 2, 255);
         x += size + idunn_px(t, ICON_GAP);
     }
     else if (it->icon)
@@ -264,7 +266,8 @@ static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
             {
                 int32_t dw = small ? bragi_measure(small, parts[c], -1) : 0;
                 dw = dw < width ? dw : width;
-                idunn_draw_text(ctx, buf, IDUNN_TEXT_SMALL, edge - dw, r.y + (r.h - line) / 2,
+                int32_t at = (l->columns_left >> c) & 1u ? edge - width : edge - dw;
+                idunn_draw_text(ctx, buf, IDUNN_TEXT_SMALL, at, r.y + (r.h - line) / 2,
                                 width, parts[c], idunn_color(t, IDUNN_COLOR_MUTED_FOREGROUND));
             }
             edge -= width + idunn_px(t, ICON_GAP);
@@ -286,33 +289,45 @@ static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
                         idunn_color(t, IDUNN_COLOR_FOREGROUND));
 }
 
-/** where the name field of an item goes */
+/**
+ * where the name field of an item goes: a thin box just around the name,
+ * as wide as the text (it grows while the name is typed, to a limit)
+ */
 static gfx_rect_t edit_rect(idunn_widget_t *w, int i)
 {
     const list_t *l = w->data;
     const idunn_theme_t *t = idunn_theme(w);
     gfx_rect_t r = item_rect(w, i);
+    int32_t edge = idunn_px(t, 4); // the field's padding and border
+    int32_t line = idunn_text_style(t, IDUNN_TEXT_BODY).line_height;
+    int32_t height = line + 2 * edge;
+    int32_t want = (l->editor ? idunn_text_field_text_width(l->editor) : 0) + 2 * edge +
+                   idunn_px(t, 12); // room for the caret and the next letter
+    if (want < idunn_px(t, 40))
+        want = idunn_px(t, 40);
     if (l->grid)
     {
-        int32_t width = idunn_px(t, EDIT_TILE_W);
-        int32_t top = r.y + idunn_px(t, 8 + PICTURE + 2);
-        return gfx_rect(r.x + (r.w - width) / 2, top, width, idunn_px(t, 28));
+        int32_t width = want < idunn_px(t, EDIT_TILE_W) ? want : idunn_px(t, EDIT_TILE_W);
+        int32_t top = r.y + idunn_px(t, 8 + PICTURE + 6) - edge;
+        return gfx_rect(r.x + (r.w - width) / 2, top, width, height);
     }
-    // over the text: where it starts, less the field's own padding
+    // over the name: where it starts, less the field's padding
     int32_t x = r.x + idunn_px(t, ROW_PAD);
     if (l->items[i].icon)
         x += idunn_px(t, (l->pictures ? ROW_PICTURE : ICON) + ICON_GAP);
-    x -= idunn_px(t, 8);
-    // to the row's end, but not over the detail of a wide row
-    int32_t width = r.x + r.w - x - idunn_px(t, 4);
-    if (width > idunn_px(t, EDIT_ROW_W))
-        width = idunn_px(t, EDIT_ROW_W);
-    return gfx_rect(x, r.y, width, r.h);
+    x -= edge;
+    // to the row's end at most, and not over the detail of a wide row
+    int32_t room = r.x + r.w - x - idunn_px(t, 4);
+    if (room > idunn_px(t, EDIT_ROW_W))
+        room = idunn_px(t, EDIT_ROW_W);
+    return gfx_rect(x, r.y + (r.h - height) / 2, want < room ? want : room, height);
 }
 
 static void list_layout(idunn_widget_t *w)
 {
     const list_t *l = w->data;
+    if (l->heads)
+        idunn_dirty(l->heads); // the columns may have moved
     if (l->editor && l->editing < l->count)
         idunn_place(l->editor, edit_rect(w, l->editing));
 }
@@ -332,6 +347,12 @@ static void editor_submitted(idunn_widget_t *field, void *data)
 {
     (void)field;
     edit_end(data, EDIT_KEEP);
+}
+
+static void editor_changed(idunn_widget_t *field, void *data)
+{
+    (void)field;
+    idunn_relayout(data); // the box follows the width of the name
 }
 
 static void editor_blurred(idunn_widget_t *field, void *data)
@@ -707,6 +728,8 @@ static void free_items(list_t *l)
 static void list_free(idunn_widget_t *w)
 {
     list_t *l = w->data;
+    if (l->heads)
+        idunn_list_heads_forget(l->heads);
     free_items(l);
     free(l->items);
     free(l);
@@ -895,6 +918,17 @@ void idunn_list_view_select(idunn_widget_t *list, int row, bool selected)
     dirty_row(list, row);
 }
 
+void idunn_list_view_go_to(idunn_widget_t *list, int item)
+{
+    if (as_list(list))
+        move_to(list, item, false);
+}
+
+int idunn_list_view_columns(const idunn_widget_t *list)
+{
+    return as_list(list) && list->window ? columns(list) : 1;
+}
+
 int idunn_list_view_current(const idunn_widget_t *list)
 {
     const list_t *l = as_list(list);
@@ -963,7 +997,9 @@ bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t e
     l->edit_done = done;
     l->edit_data = data;
     l->editor = idunn_add(list, field);
+    idunn_text_field_set_plain(field, true);
     idunn_text_field_set_text(field, l->items[item].text);
+    idunn_text_field_on_change(field, editor_changed, list);
     idunn_text_field_on_submit(field, editor_submitted, list);
     idunn_text_field_on_blur(field, editor_blurred, list);
     idunn_place(field, edit_rect(list, item));
@@ -983,6 +1019,51 @@ void idunn_list_view_set_columns(idunn_widget_t *list, const int32_t *widths, in
     for (int i = 0; i < l->column_count; i++)
         l->columns[i] = widths[i];
     idunn_dirty(list);
+}
+
+int idunn_list_columns_at(const idunn_widget_t *list, int32_t *name_x, int32_t *row_x,
+                          int32_t *left, int32_t *right)
+{
+    const list_t *l = as_list(list);
+    if (!l || l->grid)
+        return 0;
+    const idunn_theme_t *t = idunn_theme(list);
+    gfx_rect_t r = item_rect(list, 0);
+    *row_x = r.x;
+    *name_x = r.x + idunn_px(t, ROW_PAD);
+    if (l->pictures || (l->count && l->items[0].icon))
+        *name_x += idunn_px(t, (l->pictures ? ROW_PICTURE : ICON) + ICON_GAP);
+    int32_t edge = r.x + r.w - idunn_px(t, ROW_PAD);
+    for (int c = l->column_count - 1; c >= 0; c--)
+    {
+        int32_t width = idunn_px(t, l->columns[c]);
+        right[c] = edge;
+        left[c] = edge - width;
+        edge -= width + idunn_px(t, ICON_GAP);
+    }
+    return l->column_count;
+}
+
+bool idunn_list_column_left(const idunn_widget_t *list, int column)
+{
+    const list_t *l = as_list(list);
+    return l && column >= 0 && column < COLUMNS_MAX && ((l->columns_left >> column) & 1u);
+}
+
+void idunn_list_view_set_columns_left(idunn_widget_t *list, uint32_t mask)
+{
+    list_t *l = as_list(list);
+    if (!l)
+        return;
+    l->columns_left = mask;
+    idunn_dirty(list);
+}
+
+void idunn_list_set_heads(idunn_widget_t *list, idunn_widget_t *heads)
+{
+    list_t *l = as_list(list);
+    if (l)
+        l->heads = heads;
 }
 
 bool idunn_list_view_editing(const idunn_widget_t *list)

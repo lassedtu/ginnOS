@@ -153,6 +153,21 @@ idunn_window_t *idunn_panel_new(idunn_app_t *app, int32_t height);
 void idunn_window_set_root(idunn_window_t *win, idunn_widget_t *root);
 
 /**
+ * free w (and its children) after the event that is running: for a
+ * widget that may be in its own callback (a button that rebuilds the
+ * view it is in).
+ */
+void idunn_free_later(idunn_widget_t *w);
+
+/**
+ * keys for a widget (when it or a child has the keyboard) before the
+ * widget gets them. return true to use the key (the widget does not get
+ * it), false to let it go on as before.
+ */
+typedef bool (*idunn_widget_key_t)(idunn_widget_t *w, uint16_t code, uint32_t mods, void *data);
+void idunn_on_key(idunn_widget_t *w, idunn_widget_key_t on_key, void *data);
+
+/**
  * keys that no widget used (the focused one and its parents): the
  * window's own shortcuts. on_key returns true when it used the key.
  * code is a Linux key code, mods IDUNN_MOD_, text what it types or "".
@@ -382,6 +397,13 @@ void idunn_text_field_set_text(idunn_widget_t *field, const char *text);
  * select bytes start to end (the caret at end); typing replaces them.
  * (size_t)-1 is the end of the text.
  */
+/**
+ * a plain field: a thin box around the text, with little padding and no
+ * ring (a name that is changed in place, as in a file list).
+ */
+void idunn_text_field_set_plain(idunn_widget_t *field, bool plain);
+/** the width of the field's text in pixels (0 before it is in a window) */
+int32_t idunn_text_field_text_width(idunn_widget_t *field);
 void idunn_text_field_select(idunn_widget_t *field, size_t start, size_t end);
 
 /** an icon (a Lucide name) at the start, as in a search field */
@@ -535,6 +557,27 @@ bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t e
  * @param widths the columns' widths in design pixels, left to right.
  */
 void idunn_list_view_set_columns(idunn_widget_t *list, const int32_t *widths, int count);
+/**
+ * heads over the columns of a list view, which line up with it. a click
+ * on a head calls on_click; idunn_list_heads_clicked tells which.
+ * @param names the name column's head, then one for each column of
+ *        idunn_list_view_set_columns.
+ */
+idunn_widget_t *idunn_list_heads(idunn_widget_t *list, const char *const *names, int count,
+                                 idunn_callback_t on_click, void *data);
+/** the head that was clicked: 0 for the names, 1 and on for the columns */
+int idunn_list_heads_clicked(const idunn_widget_t *heads);
+/** show the order on a head (an arrow), or on none with head -1 */
+void idunn_list_heads_set_order(idunn_widget_t *heads, int head, bool descending);
+/**
+ * draw some columns at their left, for text (a date, a type); the others
+ * stay at their right, for numbers. bit c is column c.
+ */
+void idunn_list_view_set_columns_left(idunn_widget_t *list, uint32_t mask);
+/** make an item the current one and select only it, as the arrow keys do */
+void idunn_list_view_go_to(idunn_widget_t *list, int item);
+/** the items in a line (1 for a list, more for a grid) */
+int idunn_list_view_columns(const idunn_widget_t *list);
 /** true while an item is edited in place */
 bool idunn_list_view_editing(const idunn_widget_t *list);
 /** one click activates an item (a launcher); the arrow keys only move */

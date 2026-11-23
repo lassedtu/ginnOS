@@ -52,6 +52,12 @@ void tasks_fit(void);
 // launcher.c
 idunn_widget_t *launcher_button(void);
 
+// recent.c: the programs started last, newest first (asgard.conf)
+void recent_load(void);
+void recent_used(const char *id);
+/** where id is among the recent programs (0: the last one), or -1 */
+int recent_rank(const char *id);
+
 // tray.c
 idunn_widget_t *layout_button(void);
 idunn_widget_t *volume_button(void);

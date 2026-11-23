@@ -79,6 +79,7 @@ typedef struct
     idunn_widget_t *places;
     idunn_widget_t *view_holder; // a column the view is in
     idunn_widget_t *scroll;      // the scroll view around the list
+    idunn_widget_t *heads;       // the column heads over a list (NULL: none)
     idunn_widget_t *list;        // the list or the grid (NULL: an empty state)
     idunn_widget_t *status;
 } ygg_t;
@@ -104,6 +105,8 @@ bool folder_same(const folder_t *a, const folder_t *b);
 void format_size(uint64_t size, char *out, size_t length);
 /** "2026-11-22 14:03" in local time */
 void format_time(uint32_t time, char *out, size_t length);
+/** the kind of an entry for people: "Folder", "PNG image", "TXT file", "Program" */
+void entry_kind(const entry_t *e, char *out, size_t length);
 /** the Tela icon of a folder: user-home for the home folder, and so on */
 const char *folder_icon(const char *path);
 void path_join(const char *dir, const char *name, char *out, size_t length);
@@ -136,6 +139,8 @@ void toolbar_update(void);
 void toolbar_edit_path(void);
 /** the order of the last time (yggdrasil.conf), before the toolbar is built */
 void toolbar_load_sort(void);
+/** order the view by a key (a click on a column head); saved as the sort menu does */
+void toolbar_set_sort(sort_t by, bool reverse);
 /** true while the filter field has the keyboard */
 bool toolbar_filtering(void);
 /** the filter field gets the keyboard (Ctrl+F) */

@@ -150,9 +150,95 @@ static void read_madt(const uint8_t *madt)
     }
 }
 
+/**
+ * read one small AML number: ZeroOp, OneOp, a BytePrefix value, or a
+ * plain byte (some firmware writes it so).
+ * @return the bytes it used, 0 if it is not a small number.
+ */
+static uint32_t aml_small(const uint8_t *p, const uint8_t *end, uint8_t *value)
+{
+    if (p >= end)
+    {
+        return 0;
+    }
+    if (*p == 0x0A && p + 1 < end) // BytePrefix
+    {
+        *value = p[1];
+        return 2;
+    }
+    if (*p <= 0x07) // ZeroOp is 0, OneOp is 1; the sleep types are 3 bits
+    {
+        *value = *p;
+        return 1;
+    }
+    return 0;
+}
+
+bool acpi_find_s5(const uint8_t *aml, uint32_t length, uint8_t *type_a, uint8_t *type_b)
+{
+    const uint8_t *end = aml + length;
+    for (const uint8_t *p = aml; p + 4 <= end; p++)
+    {
+        // "_S5_" after a NameOp (0x08), or after NameOp and a root '\'
+        if (memcmp(p, "_S5_", 4) != 0 || p == aml ||
+            !(p[-1] == 0x08 || (p - aml >= 2 && p[-1] == '\\' && p[-2] == 0x08)))
+        {
+            continue;
+        }
+        const uint8_t *q = p + 4;
+        if (q >= end || *q != 0x12) // PackageOp
+        {
+            continue;
+        }
+        q++;
+        if (q >= end)
+        {
+            return false;
+        }
+        q += 1 + (*q >> 6); // PkgLength: the top 2 bits count the bytes after it
+        q++;                // NumElements
+        uint32_t used = aml_small(q, end, type_a);
+        if (!used)
+        {
+            continue;
+        }
+        q += used;
+        if (!aml_small(q, end, type_b))
+        {
+            *type_b = 0;
+        }
+        return true;
+    }
+    return false;
+}
+
+static void read_dsdt(uint64_t phys)
+{
+    const uint8_t *dsdt = map_table(phys);
+    if (dsdt)
+    {
+        info.has_s5 = acpi_find_s5(dsdt + SDT_HEADER_SIZE, read32(dsdt + 4) - SDT_HEADER_SIZE,
+                                   &info.s5_type_a, &info.s5_type_b);
+    }
+}
+
 static void read_fadt(const uint8_t *fadt)
 {
     uint32_t length = read32(fadt + 4);
+    if (length >= 72)
+    {
+        info.smi_command = read32(fadt + 48);
+        info.acpi_enable = fadt[52];
+        info.pm1a_control = (uint16_t)read32(fadt + 64);
+        info.pm1b_control = (uint16_t)read32(fadt + 68);
+        // the DSDT: the 64-bit X_DSDT (ACPI 2.0) when there is one
+        uint64_t dsdt = read32(fadt + 40);
+        if (length >= 148 && read64(fadt + 140) != 0)
+        {
+            dsdt = read64(fadt + 140);
+        }
+        read_dsdt(dsdt);
+    }
     // the reset register (a generic address structure at 116) and the
     // reset value (at 128) are in ACPI 2.0 and later FADTs
     if (length < 129 || !(read32(fadt + 112) & FADT_RESET_REG_SUP))
@@ -282,6 +368,10 @@ bool acpi_init(const boot_info_t *boot)
     KLOG_INFO("acpi: revision %u, %u cpus, %u io apics, %u overrides%s", info.revision,
               info.cpu_count, info.ioapic_count, info.iso_count,
               info.has_reset_register ? ", reset register" : "");
+    if (info.has_s5)
+    {
+        KLOG_INFO("acpi: power off by S5 (types %u %u)", info.s5_type_a, info.s5_type_b);
+    }
     return true;
 }
 
@@ -359,6 +449,34 @@ static void reset_through_fadt(void)
     default:
         break;
     }
+}
+
+void acpi_power_off(void)
+{
+    arch_disable_interrupts();
+    if (info.has_s5 && info.pm1a_control)
+    {
+        // the firmware may still own ACPI (SCI_EN clear): ask for it
+        if (!(io_inw(info.pm1a_control) & 1u) && info.smi_command && info.acpi_enable)
+        {
+            io_outb((uint16_t)info.smi_command, info.acpi_enable);
+            for (int i = 0; i < 1000000 && !(io_inw(info.pm1a_control) & 1u); i++)
+            {
+            }
+        }
+        // SLP_TYP in bits 10 to 12, SLP_EN in bit 13
+        io_outw(info.pm1a_control, (uint16_t)((info.s5_type_a & 7u) << 10 | 1u << 13));
+        if (info.pm1b_control)
+        {
+            io_outw(info.pm1b_control, (uint16_t)((info.s5_type_b & 7u) << 10 | 1u << 13));
+        }
+    }
+
+    // QEMU (newer machines, then older ones and Bochs), VirtualBox
+    io_outw(0x604, 0x2000);
+    io_outw(0xB004, 0x2000);
+    io_outw(0x4004, 0x3400);
+    arch_halt_forever();
 }
 
 void acpi_reboot(void)

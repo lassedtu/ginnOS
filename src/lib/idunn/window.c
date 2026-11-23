@@ -753,6 +753,8 @@ void idunn_window_key(idunn_window_t *win, uint16_t code, uint32_t mods, const c
     idunn_event_t ev = {.type = IDUNN_EV_KEY, .code = code, .mods = mods, .text = text ? text : ""};
     for (idunn_widget_t *w = win->focus; w; w = w->parent)
     {
+        if (w->on_key && w->on_key(w, code, mods, w->key_data))
+            return;
         if (idunn_send(w, &ev))
             return;
     }

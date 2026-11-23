@@ -142,8 +142,9 @@ static int compare_by(const void *pa, const void *pb)
     const entry_t *b = pb;
     bool da = S_ISDIR(a->mode);
     bool db = S_ISDIR(b->mode);
+    // folders first; the other way round reverses that too, as in Explorer
     if (da != db)
-        return da ? -1 : 1;
+        return (da ? -1 : 1) * (sort_reversed ? -1 : 1);
     int d = 0;
     switch (sort_by)
     {
@@ -219,6 +220,37 @@ void format_size(uint64_t size, char *out, size_t length)
     else
         snprintf(out, length, "%u.%u %s", (unsigned)(tenths / 10), (unsigned)(tenths % 10),
                  units[unit]);
+}
+
+void entry_kind(const entry_t *e, char *out, size_t length)
+{
+    if (S_ISDIR(e->mode))
+    {
+        snprintf(out, length, "Folder");
+        return;
+    }
+    if (!S_ISREG(e->mode))
+    {
+        snprintf(out, length, "Device");
+        return;
+    }
+    const char *dot = strrchr(e->name, '.');
+    if (!dot || dot == e->name || !dot[1])
+    {
+        snprintf(out, length, (e->mode & 0111) ? "Program" : "File");
+        return;
+    }
+    char ext[12];
+    size_t n = 0;
+    for (const char *p = dot + 1; *p && n + 1 < sizeof(ext); p++)
+        ext[n++] = (char)toupper((unsigned char)*p);
+    ext[n] = '\0';
+    const char *type = e->type ? e->type : "";
+    const char *what = strncmp(type, "image/", 6) == 0   ? "image"
+                       : strncmp(type, "audio/", 6) == 0 ? "audio"
+                       : strncmp(type, "video/", 6) == 0 ? "video"
+                                                         : "file";
+    snprintf(out, length, "%s %s", ext, what);
 }
 
 void format_time(uint32_t time, char *out, size_t length)

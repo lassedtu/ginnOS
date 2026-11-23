@@ -5,8 +5,9 @@
  * @brief the ACPI tables: RSDP, RSDT/XSDT, MADT, FADT, HPET and MCFG.
  *
  * the kernel reads the static tables only. it has no AML interpreter, so it
- * cannot use the DSDT: no power-off (that needs the _S5 object), no device
- * enumeration through ACPI. reboot uses the FADT reset register.
+ * cannot run the DSDT: no device enumeration through ACPI. power-off reads
+ * only the _S5 package from the DSDT bytes. reboot uses the FADT reset
+ * register.
  */
 
 #include "common/boot/boot_info.h"
@@ -58,6 +59,13 @@ typedef struct
     uint8_t reset_space; // 0: memory, 1: I/O port, 2: PCI configuration
     uint64_t reset_address;
     uint8_t reset_value;
+    uint32_t smi_command;   // the port to give ACPI to the OS, 0: none
+    uint8_t acpi_enable;    // the value for it
+    uint16_t pm1a_control;  // the PM1 control ports (0: none)
+    uint16_t pm1b_control;
+    bool has_s5;            // the _S5 sleep types were found in the DSDT
+    uint8_t s5_type_a;
+    uint8_t s5_type_b;
 
     // HPET and MCFG
     uint64_t hpet_address; // 0: none
@@ -91,3 +99,17 @@ uint32_t acpi_irq_to_gsi(uint8_t irq, bool *active_low, bool *level);
  * controller, then a triple fault. does not return.
  */
 void acpi_reboot(void) __attribute__((noreturn));
+
+/**
+ * turn the machine off: the ACPI S5 state (the _S5 sleep types into the
+ * PM1 control registers), then the QEMU and Bochs ports. if all fail, the
+ * CPU halts.
+ */
+void acpi_power_off(void) __attribute__((noreturn));
+
+/**
+ * find the S5 sleep types in DSDT bytes (the AML of "Name (_S5, Package
+ * () {a, b, ...})"), without an AML interpreter.
+ * @return false if there is no such package.
+ */
+bool acpi_find_s5(const uint8_t *aml, uint32_t length, uint8_t *type_a, uint8_t *type_b);
