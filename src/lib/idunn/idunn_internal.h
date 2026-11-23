@@ -189,6 +189,10 @@ struct idunn_window
     idunn_key_hook_t on_key;
     void *on_key_data;
 
+    // the close button (idunn_window_on_close)
+    bool (*on_close)(idunn_window_t *win, void *data);
+    void *on_close_data;
+
     // times widgets asked to be woken at (idunn_wake)
     struct
     {

@@ -20,6 +20,9 @@
 #define isinf(x) __builtin_isinf(x)
 
 double fabs(double x);
+/** the smaller (larger) of two; a NaN gives the other one */
+double fmin(double a, double b);
+double fmax(double a, double b);
 double floor(double x);
 double ceil(double x);
 double round(double x);

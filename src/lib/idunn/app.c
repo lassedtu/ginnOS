@@ -462,7 +462,8 @@ int idunn_app_run(idunn_app_t *app)
             // the server closes popups (a press outside them); the app, windows
             if (win && win->opener)
                 idunn_popup_close(win);
-            else if (win && !win->dead)
+            else if (win && !win->dead &&
+                     (!win->on_close || win->on_close(win, win->on_close_data)))
                 idunn_window_close(win);
             break;
         case HEIM_EV_CONFIGURE:
@@ -532,4 +533,11 @@ void idunn_app_paste(idunn_app_t *app, void (*got)(const char *text, size_t leng
     app->paste_hook = got;
     app->paste_data = data;
     heim_clipboard_request(app->conn);
+}
+
+void idunn_window_on_close(idunn_window_t *win, bool (*on_close)(idunn_window_t *win, void *data),
+                           void *data)
+{
+    win->on_close = on_close;
+    win->on_close_data = data;
 }

@@ -84,3 +84,14 @@ clipboard-paste
 rotate-ccw
 play
 folder-open
+
+# Saga and Freyja
+save
+undo-2
+redo-2
+replace
+case-sensitive
+zoom-in
+zoom-out
+expand
+rotate-cw

@@ -13,6 +13,24 @@ double fabs(double x)
     return x < 0 ? -x : x;
 }
 
+double fmin(double a, double b)
+{
+    if (isnan(a))
+        return b;
+    if (isnan(b))
+        return a;
+    return a < b ? a : b;
+}
+
+double fmax(double a, double b)
+{
+    if (isnan(a))
+        return b;
+    if (isnan(b))
+        return a;
+    return a > b ? a : b;
+}
+
 double sqrt(double x)
 {
     double result;
