@@ -13,7 +13,8 @@
  *              without it, the one of the settings ([desktop] wallpaper in
  *              desktop.conf), else /usr/share/wallpapers/default.png
  *   -x         stop when the program ends (the session: startde runs
- *              "heimdalld -x asgard")
+ *              "heimdalld -x asgard"); heimdalld ends with the
+ *              program's exit status
  *   -s         every 2 seconds with frames, a line of statistics in the
  *              kernel log (/dev/kmsg, the serial port): frames, pixels and
  *              the time in composing, presenting and flushing
@@ -73,6 +74,7 @@ static void load_look(void)
 
 static pid_t program; // the program of the command line (0: none)
 static bool exit_with_program;
+static int program_status; // its exit status: heimdalld -x ends with it
 
 static void start(char **argv)
 {
@@ -90,12 +92,39 @@ static void start(char **argv)
     }
 }
 
+/**
+ * SIGCHLD only wakes poll (it is ignored if no handler catches it): the
+ * loop then reaps the child, so a program that ends while nothing else
+ * happens is seen at once.
+ */
+static void child_ended(int sig)
+{
+    (void)sig;
+}
+
+static void reap_children(void)
+{
+    pid_t ended;
+    int status;
+    while ((ended = waitpid(-1, &status, WNOHANG)) > 0)
+    {
+        if (ended == program && exit_with_program)
+        {
+            S.quit = true; // the session's program ended
+            program_status = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+        }
+    }
+}
+
 static void loop(void)
 {
     struct pollfd fds[POLL_MAX];
     client_t *owners[POLL_MAX];
     while (!S.quit)
     {
+        reap_children();
+        if (S.quit)
+            break;
         screen_compose();
 
         int n = 0;
@@ -132,12 +161,6 @@ static void loop(void)
         if (fds[0].revents)
             client_accept(S.listen_fd);
         client_reap();
-        pid_t ended;
-        while ((ended = waitpid(-1, NULL, WNOHANG)) > 0)
-        {
-            if (ended == program && exit_with_program)
-                S.quit = true; // the session's program ended
-        }
     }
 }
 
@@ -177,6 +200,9 @@ int main(int argc, char **argv)
     // the scale can depend on the size of the screen
     idunn_theme_fit(&S.theme, S.width);
     window_look();
+    struct sigaction sa = {0};
+    sa.sa_handler = child_ended; // no SA_RESTART: poll ends with EINTR
+    sigaction(SIGCHLD, &sa, NULL);
     if (arg < argc)
         start(argv + arg);
 
@@ -188,5 +214,5 @@ int main(int argc, char **argv)
     ioctl(fb, FBIO_GRAPHICS, &off);
     close(fb);
     printf("heimdalld: stopped\n");
-    return 0;
+    return program_status;
 }

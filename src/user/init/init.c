@@ -5,10 +5,10 @@
  *
  * /etc/ginnos/boot.conf chooses: [boot] session = login (the default)
  * runs Bifrost, the login screen ("heimdalld -x bifrost"), when there is
- * a display; session = text runs the shell on the console. a login screen
- * that ends within LOGIN_FAIL_SECONDS of its start cannot run: init says
- * so and runs the shell instead, so the computer is never left with
- * nothing.
+ * a display; session = text runs the shell on the console. Bifrost does
+ * not end by itself, and heimdalld -x ends with its exit status: a login
+ * screen that ends with a status other than 0 cannot run. init says so
+ * and runs the shell instead, so the computer is never left with nothing.
  *
  * the kernel gives orphaned processes to init, so init waits for any
  * child, not only the shell. the shell runs in a session of its own with
@@ -29,9 +29,6 @@
 
 #define SHELL "/bin/sh"
 #define LOGIN "/bin/heimdalld"
-
-// a login screen that ends this soon after its start cannot run
-#define LOGIN_FAIL_SECONDS 5
 
 // a shell that ends this soon after it started waits before the next start
 #define QUICK_EXIT_SECONDS 2
@@ -105,13 +102,13 @@ int main(void)
 
         if (pid == front || front < 0)
         {
-            bool quick = time(NULL) - started < (login ? LOGIN_FAIL_SECONDS : QUICK_EXIT_SECONDS);
-            if (login && quick)
+            bool failed = pid == front && !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+            if (login && (failed || front < 0))
             {
                 printf("init: the login screen cannot run; this is the text console\n");
                 login = false;
             }
-            else if (quick)
+            else if (time(NULL) - started < QUICK_EXIT_SECONDS)
             {
                 sleep(1); // do not spin if the shell cannot start
             }
