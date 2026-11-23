@@ -184,6 +184,7 @@ static void layout(idunn_window_t *win)
     if (!win->needs_layout || !win->buffer)
         return;
     win->needs_layout = false;
+    win->laying_out = true;
     int32_t m = win->margin;
     int32_t width = win->buffer->width;
     int32_t height = win->buffer->height;
@@ -200,7 +201,8 @@ static void layout(idunn_window_t *win)
         idunn_measure(win->modal, dw, &mw, &mh);
         idunn_place(win->modal, gfx_rect((width - dw) / 2, (height - mh) / 2, dw, mh));
     }
-    idunn_window_invalidate(win);
+    // only the widgets that moved were drawn again (idunn_place)
+    win->laying_out = false;
 }
 
 static void frame_tree(idunn_widget_t *w)

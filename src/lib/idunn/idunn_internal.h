@@ -170,6 +170,7 @@ struct idunn_window
     idunn_widget_t *focus;   // it gets the keys
     bool focus_visible;      // the focus ring shows (after a key, not a click)
     bool needs_layout;
+    bool laying_out; // in layout(): a widget that moves or changes size is drawn again
     bool animating;          // a transition runs: draw the next frame too
     gfx_rect_t damage;       // what must be drawn again: all of it
     gfx_rect_t damage_list[IDUNN_DAMAGE_MAX]; // and in parts (far apart ones stay apart)

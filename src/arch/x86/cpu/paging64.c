@@ -462,6 +462,47 @@ static void free_user_table(pte_t *table, int level)
     pmm_free_page(table);
 }
 
+/** the present RAM pages under a user table; level 0 is a PDPT, 2 a PT */
+static uint32_t count_user_table(const pte_t *table, int level)
+{
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < PAGE_ENTRIES; i++)
+    {
+        pte_t entry = table[i];
+        if (!(entry & PTE_PRESENT))
+        {
+            continue;
+        }
+        if (level < 2)
+        {
+            count += count_user_table(entry_table(entry), level + 1);
+        }
+        else if (pmm_owns(PAGE_FRAME(entry)))
+        {
+            count++; // RAM only: a device mapping is not the process's memory
+        }
+    }
+    return count;
+}
+
+uint32_t paging_count_user(phys_addr_t pd_phys)
+{
+    if (pd_phys == 0 || pd_phys == kernel_pml4_phys)
+    {
+        return 0;
+    }
+    const pte_t *pml4 = (const pte_t *)phys_to_virt(pd_phys);
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < KERNEL_PML4_START; i++)
+    {
+        if (pml4[i] & PTE_PRESENT)
+        {
+            count += count_user_table(entry_table(pml4[i]), 0);
+        }
+    }
+    return count;
+}
+
 void paging_free_directory(phys_addr_t pd_phys)
 {
     if (pd_phys == 0 || pd_phys == kernel_pml4_phys)

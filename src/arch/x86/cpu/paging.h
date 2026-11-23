@@ -188,6 +188,14 @@ void paging_free_directory(phys_addr_t pd_phys);
 bool paging_copy_user(phys_addr_t dst_phys, phys_addr_t src_phys);
 
 /**
+ * count the pages of RAM mapped in the user half of a page directory (a
+ * process's resident memory). device mappings are not counted.
+ * @param pd_phys the directory.
+ * @return the number of 4 KiB pages.
+ */
+uint32_t paging_count_user(phys_addr_t pd_phys);
+
+/**
  * map a page in a specific page directory (not necessarily the current one).
  * used to set up process address spaces before switching to them.
  * @param pd_phys physical address of the target page directory.

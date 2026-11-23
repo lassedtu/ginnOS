@@ -22,6 +22,7 @@
 
 #include "idunn_internal.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -40,6 +41,7 @@
 #define FIND_MAX 32
 #define EDIT_TILE_W 150 // the name field of a tile: wider than the tile
 #define EDIT_ROW_W  360 // the name field of a row, at most
+#define COLUMNS_MAX 8
 
 enum
 {
@@ -77,6 +79,8 @@ typedef struct
     void *activate_data;
     idunn_callback_t on_menu;
     void *menu_data;
+    int32_t columns[COLUMNS_MAX]; // widths of the detail's columns (idunn_list_view_set_columns)
+    int column_count;
     idunn_widget_t *editor; // the name field of idunn_list_view_edit, or NULL
     int editing;            // its item
     int edit_state;         // EDIT_
@@ -236,7 +240,38 @@ static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
                            idunn_color(t, IDUNN_COLOR_MUTED_FOREGROUND));
         x += size + idunn_px(t, ICON_GAP);
     }
-    if (it->detail)
+    if (it->detail && l->column_count)
+    {
+        // the parts between tabs, each at the right of its column
+        bragi_face_t *small = idunn_face(ctx, IDUNN_TEXT_SMALL);
+        int32_t line = idunn_text_style(t, IDUNN_TEXT_SMALL).line_height;
+        const char *parts[COLUMNS_MAX];
+        int count = 0;
+        char copy[256];
+        snprintf(copy, sizeof(copy), "%s", it->detail);
+        for (char *p = copy; p && count < l->column_count;)
+        {
+            parts[count++] = p;
+            p = strchr(p, '\t');
+            if (p)
+                *p++ = '\0';
+        }
+        int32_t edge = right;
+        for (int c = l->column_count - 1; c >= 0; c--)
+        {
+            int32_t width = idunn_px(t, l->columns[c]);
+            if (c < count && parts[c][0])
+            {
+                int32_t dw = small ? bragi_measure(small, parts[c], -1) : 0;
+                dw = dw < width ? dw : width;
+                idunn_draw_text(ctx, buf, IDUNN_TEXT_SMALL, edge - dw, r.y + (r.h - line) / 2,
+                                width, parts[c], idunn_color(t, IDUNN_COLOR_MUTED_FOREGROUND));
+            }
+            edge -= width + idunn_px(t, ICON_GAP);
+        }
+        right = edge;
+    }
+    else if (it->detail)
     {
         bragi_face_t *small = idunn_face(ctx, IDUNN_TEXT_SMALL);
         int32_t dw = small ? bragi_measure(small, it->detail, -1) : 0;
@@ -765,6 +800,60 @@ void idunn_list_view_clear(idunn_widget_t *list)
     idunn_dirty(list);
 }
 
+static bool same(const char *a, const char *b)
+{
+    return (!a && !b) || (a && b && strcmp(a, b) == 0);
+}
+
+/** put a new text in *field when it differs; true when it did */
+static bool change(char **field, const char *text, bool keep_null)
+{
+    if (same(*field, text) || (!keep_null && !text && *field && !(*field)[0]))
+        return false;
+    char *copy = text ? strdup(text) : keep_null ? NULL : strdup("");
+    if (text && !copy)
+        return false;
+    free(*field);
+    *field = copy;
+    return true;
+}
+
+void idunn_list_view_set_item(idunn_widget_t *list, int item, const char *icon, const char *text,
+                              const char *detail)
+{
+    list_t *l = as_list(list);
+    if (!l || item < 0 || item >= l->count)
+        return;
+    item_t *it = &l->items[item];
+    bool changed = change(&it->icon, icon, true);
+    changed |= change(&it->text, text, false);
+    changed |= change(&it->detail, detail, true);
+    if (changed)
+        dirty_row(list, item);
+}
+
+void idunn_list_view_set_count(idunn_widget_t *list, int count)
+{
+    list_t *l = as_list(list);
+    if (!l || count < 0 || count >= l->count)
+        return;
+    edit_finish(list, false);
+    for (int i = count; i < l->count; i++)
+    {
+        free(l->items[i].icon);
+        free(l->items[i].text);
+        free(l->items[i].detail);
+    }
+    l->count = count;
+    if (l->current >= count)
+        l->current = count - 1;
+    if (l->anchor >= count)
+        l->anchor = count > 0 ? count - 1 : 0;
+    if (l->hover >= count)
+        l->hover = -1;
+    idunn_relayout(list);
+}
+
 int idunn_list_view_count(const idunn_widget_t *list)
 {
     const list_t *l = as_list(list);
@@ -800,6 +889,8 @@ void idunn_list_view_select(idunn_widget_t *list, int row, bool selected)
         return;
     if (selected && !l->multiple)
         select_only(list, row);
+    if (l->items[row].selected == selected)
+        return;
     l->items[row].selected = selected;
     dirty_row(list, row);
 }
@@ -881,6 +972,17 @@ bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t e
     idunn_text_field_select(field, start, end);
     idunn_dirty(list);
     return true;
+}
+
+void idunn_list_view_set_columns(idunn_widget_t *list, const int32_t *widths, int count)
+{
+    list_t *l = as_list(list);
+    if (!l)
+        return;
+    l->column_count = count < 0 ? 0 : count > COLUMNS_MAX ? COLUMNS_MAX : count;
+    for (int i = 0; i < l->column_count; i++)
+        l->columns[i] = widths[i];
+    idunn_dirty(list);
 }
 
 bool idunn_list_view_editing(const idunn_widget_t *list)

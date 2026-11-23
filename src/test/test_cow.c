@@ -93,3 +93,26 @@ KTEST(cow_write_copies_then_reuses)
     process_destroy(parent);
     KEXPECT_EQ(pmm_free_count(), free_before);
 }
+
+KTEST(count_user_pages_counts_ram_only)
+{
+    void *frame;
+    process_t *parent = parent_with_page(&frame);
+    KEXPECT(parent != NULL);
+    KEXPECT_EQ(arch_count_user_pages(parent->page_directory), 1);
+
+    // a second page of RAM counts, a device page (no PMM frame) does not
+    void *second = pmm_alloc_page();
+    arch_map_page(parent->page_directory, COW_ADDR + PAGE_SIZE, virt_to_phys(second),
+                  MMU_USER_RW);
+    arch_map_page(parent->page_directory, COW_ADDR + 2 * PAGE_SIZE, 0xFE000000u, MMU_USER_RW);
+    KEXPECT_EQ(arch_count_user_pages(parent->page_directory), 2);
+    arch_unmap_page(parent->page_directory, COW_ADDR + 2 * PAGE_SIZE);
+
+    // the copy shares both pages: each address space counts them
+    process_t *child = copy_of(parent);
+    KEXPECT(child != NULL);
+    KEXPECT_EQ(arch_count_user_pages(child->page_directory), 2);
+    process_destroy(child);
+    process_destroy(parent);
+}

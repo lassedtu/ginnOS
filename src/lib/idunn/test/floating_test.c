@@ -648,6 +648,90 @@ static void test_file_dialog(idunn_context_t *ctx)
     rmdir(dir);
 }
 
+/**
+ * after a layout only the widgets that moved are drawn again, and the
+ * window must be what a full drawing makes
+ */
+/** a list changed in place draws only the rows that differ */
+static void test_list_in_place(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 400, 300);
+    idunn_widget_t *list = idunn_list_view();
+    for (int i = 0; i < 6; i++)
+        idunn_list_view_add(list, NULL, "Row", "1");
+    idunn_window_set_root(win, idunn_scroll_view(list));
+    idunn_window_tick(win, 1000);
+    idunn_window_draw(win);
+
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1];
+    idunn_list_view_set_item(list, 2, NULL, "Row", "1");
+    CHECK_EQ(idunn_window_draw_parts(win, parts), 0); // nothing differs
+    idunn_list_view_set_item(list, 2, NULL, "Row", "2");
+    int count = idunn_window_draw_parts(win, parts);
+    CHECK_EQ(count, 1);
+    CHECK(count == 1 && parts[0].h < 300 / 4);
+    CHECK(same_as_full(win));
+    CHECK(strcmp(idunn_list_view_text(list, 2), "Row") == 0);
+
+    idunn_list_view_set_count(list, 3);
+    CHECK_EQ(idunn_list_view_count(list), 3);
+    idunn_window_draw(win);
+    CHECK(same_as_full(win));
+
+    idunn_window_free_widgets(win);
+    idunn_reap(ctx);
+    free(win);
+}
+
+static void test_layout_damage(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 500, 400);
+    idunn_widget_t *col = idunn_column(2, 4);
+    idunn_widget_t *row = idunn_add(col, idunn_row(2, 0));
+    idunn_box_set_align(row, IDUNN_CENTER, IDUNN_START);
+    idunn_widget_t *label = idunn_add(row, idunn_label("Short", IDUNN_TEXT_BODY));
+    idunn_widget_t *after = idunn_add(row, idunn_button("After", IDUNN_OUTLINE, NULL, NULL));
+    idunn_widget_t *middle = idunn_add(col, idunn_button("Middle", IDUNN_PRIMARY, NULL, NULL));
+    idunn_add(col, idunn_card(2));
+    idunn_widget_t *last = idunn_add(col, idunn_label("The last line", IDUNN_TEXT_SMALL));
+    idunn_window_set_root(win, col);
+    idunn_window_tick(win, 1000);
+    idunn_window_draw(win);
+    (void)after;
+    (void)last;
+
+    // a wider text moves the button after it: a small part is drawn
+    idunn_label_set_text(label, "A much longer text than before");
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1];
+    int count = idunn_window_draw_parts(win, parts);
+    int64_t drawn = 0;
+    for (int i = 0; i < count; i++)
+        drawn += (int64_t)parts[i].w * parts[i].h;
+    CHECK(drawn < 500 * 400 / 3);
+    CHECK(same_as_full(win));
+
+    // hidden: what was under it moves up
+    idunn_set_hidden(middle, true);
+    idunn_window_draw(win);
+    CHECK(same_as_full(win));
+    // shown again, at the same place as before
+    idunn_set_hidden(middle, false);
+    idunn_window_draw(win);
+    CHECK(same_as_full(win));
+
+    // a new widget and a freed one
+    idunn_widget_t *extra = idunn_add(row, idunn_button("New", IDUNN_GHOST, NULL, NULL));
+    idunn_window_draw(win);
+    CHECK(same_as_full(win));
+    idunn_widget_free(extra);
+    idunn_window_draw(win);
+    CHECK(same_as_full(win));
+
+    idunn_window_free_widgets(win);
+    idunn_reap(ctx);
+    free(win);
+}
+
 void test_floating(idunn_context_t *ctx)
 {
     test_canvas(ctx);
@@ -660,4 +744,6 @@ void test_floating(idunn_context_t *ctx)
     test_dialog(ctx);
     test_dialog_default(ctx);
     test_file_dialog(ctx);
+    test_layout_damage(ctx);
+    test_list_in_place(ctx);
 }

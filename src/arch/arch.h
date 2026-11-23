@@ -130,6 +130,14 @@ bool arch_copy_user_space(addr_space_t dst, addr_space_t src);
 void arch_destroy_address_space(addr_space_t as);
 
 /**
+ * count the pages of RAM mapped in the user half of an address space (a
+ * process's resident memory). device mappings are not counted.
+ * @param as the address space.
+ * @return the number of pages.
+ */
+uint32_t arch_count_user_pages(addr_space_t as);
+
+/**
  * set aside a kernel-only virtual range whose mappings every address space
  * shares. call during boot, before the first arch_create_address_space().
  * @param start first virtual address of the range.

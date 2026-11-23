@@ -221,31 +221,24 @@ static void blur_mask(uint8_t *mask, int32_t width, int32_t height, double sigma
     free(tmp);
 }
 
-void gfx_box_shadow(gfx_buffer_t *buf, gfx_rect_t box, int32_t radius, const gfx_shadow_t *s)
+/** what a shadow is made of: its shape, the box it is cut by, the blur */
+typedef struct
 {
-    if (gfx_rect_empty(box) || (s->color >> 24) == 0)
-        return;
-    shape_t clip = shape_of(box, radius);
-    double sigma = s->blur / 2.0;
-    int32_t pad = s->blur > 0 ? (int32_t)ceil(sigma * 3) + 1 : 0;
+    shape_t clip;   // the box: an outer shadow shows outside it, an inset one in it
+    shape_t shadow; // the shadow's shape
+    bool shadow_empty;
+    double sigma;
+    int32_t pad;
+} shadow_plan_t;
 
-    // the shadow's shape: the box moved, then grown (outer) or shrunk
-    // (inset) by the spread
-    int32_t grow = s->inset ? -s->spread : s->spread;
-    gfx_rect_t moved = gfx_rect(box.x + s->x - grow, box.y + s->y - grow, box.w + 2 * grow,
-                                box.h + 2 * grow);
-    shape_t shadow = shape_of(moved, spread_radius(clip.radius, grow));
-    bool shadow_empty = moved.w <= 0 || moved.h <= 0;
-
-    // where it can show: around the shadow (outer), or the box (inset)
-    gfx_rect_t area = s->inset ? box
-                               : gfx_rect(moved.x - pad, moved.y - pad, moved.w + 2 * pad,
-                                          moved.h + 2 * pad);
-    area = gfx_rect_intersect(area, gfx_clip_of(buf));
+/** draw the shadow in one part of the buffer */
+static void shadow_part(gfx_buffer_t *buf, const shadow_plan_t *p, const gfx_shadow_t *s,
+                        gfx_rect_t area)
+{
     if (gfx_rect_empty(area))
         return;
-
     // the mask, with room for the blur around the part that is drawn
+    int32_t pad = p->pad;
     gfx_rect_t m = gfx_rect(area.x - pad, area.y - pad, area.w + 2 * pad, area.h + 2 * pad);
     uint8_t *mask = malloc((size_t)m.w * (size_t)m.h);
     if (!mask)
@@ -254,13 +247,13 @@ void gfx_box_shadow(gfx_buffer_t *buf, gfx_rect_t box, int32_t radius, const gfx
     {
         for (int32_t x = 0; x < m.w; x++)
         {
-            uint32_t in = shadow_empty ? 0 : coverage(&shadow, m.x + x, m.y + y);
+            uint32_t in = p->shadow_empty ? 0 : coverage(&p->shadow, m.x + x, m.y + y);
             // an inset shadow is everything outside its shape
             mask[(ptrdiff_t)y * m.w + x] = (uint8_t)(s->inset ? 255 - in : in);
         }
     }
     if (s->blur > 0)
-        blur_mask(mask, m.w, m.h, sigma);
+        blur_mask(mask, m.w, m.h, p->sigma);
 
     for (int32_t y = area.y; y < area.y + area.h; y++)
     {
@@ -269,10 +262,60 @@ void gfx_box_shadow(gfx_buffer_t *buf, gfx_rect_t box, int32_t radius, const gfx
         for (int32_t x = area.x; x < area.x + area.w; x++)
         {
             // outer shadows show only outside the box, inset ones only in it
-            uint32_t box_cover = coverage(&clip, x, y);
+            uint32_t box_cover = coverage(&p->clip, x, y);
             uint32_t keep = s->inset ? box_cover : 255 - box_cover;
             blend_covered(&row[x], s->color, line[x] * keep / 255);
         }
     }
     free(mask);
+}
+
+void gfx_box_shadow(gfx_buffer_t *buf, gfx_rect_t box, int32_t radius, const gfx_shadow_t *s)
+{
+    if (gfx_rect_empty(box) || (s->color >> 24) == 0)
+        return;
+    shadow_plan_t p;
+    p.clip = shape_of(box, radius);
+    p.sigma = s->blur / 2.0;
+    p.pad = s->blur > 0 ? (int32_t)ceil(p.sigma * 3) + 1 : 0;
+
+    // the shadow's shape: the box moved, then grown (outer) or shrunk
+    // (inset) by the spread
+    int32_t grow = s->inset ? -s->spread : s->spread;
+    gfx_rect_t moved = gfx_rect(box.x + s->x - grow, box.y + s->y - grow, box.w + 2 * grow,
+                                box.h + 2 * grow);
+    p.shadow = shape_of(moved, spread_radius(p.clip.radius, grow));
+    p.shadow_empty = moved.w <= 0 || moved.h <= 0;
+
+    // where it can show: around the shadow (outer), or the box (inset)
+    gfx_rect_t area = s->inset ? box
+                               : gfx_rect(moved.x - p.pad, moved.y - p.pad, moved.w + 2 * p.pad,
+                                          moved.h + 2 * p.pad);
+    area = gfx_rect_intersect(area, gfx_clip_of(buf));
+    if (gfx_rect_empty(area))
+        return;
+    if (s->inset)
+    {
+        shadow_part(buf, &p, s, area);
+        return;
+    }
+
+    // an outer shadow does not show in the middle of the box, which the box
+    // covers whole: only the bands around it are made (a part of a large
+    // card that is drawn again then costs nothing)
+    int32_t r = p.clip.radius > 0 ? (int32_t)ceil(p.clip.radius) + 1 : 1;
+    gfx_rect_t inner = gfx_rect(box.x + r, box.y + r, box.w - 2 * r, box.h - 2 * r);
+    inner = gfx_rect_intersect(inner, area);
+    if (gfx_rect_empty(inner))
+    {
+        shadow_part(buf, &p, s, area);
+        return;
+    }
+    int32_t top = inner.y - area.y;
+    int32_t bottom = area.y + area.h - (inner.y + inner.h);
+    shadow_part(buf, &p, s, gfx_rect(area.x, area.y, area.w, top));
+    shadow_part(buf, &p, s, gfx_rect(area.x, inner.y + inner.h, area.w, bottom));
+    shadow_part(buf, &p, s, gfx_rect(area.x, inner.y, inner.x - area.x, inner.h));
+    shadow_part(buf, &p, s, gfx_rect(inner.x + inner.w, inner.y,
+                                     area.x + area.w - (inner.x + inner.w), inner.h));
 }
