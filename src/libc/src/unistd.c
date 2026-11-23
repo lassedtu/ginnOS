@@ -242,7 +242,7 @@ int sched_yield(void)
 
 void _exit(int status)
 {
-    _syscall(SYS_EXIT, status, 0, 0, 0, 0);
+    _syscall(SYS_EXIT_GROUP, status, 0, 0, 0, 0); // every thread
     __builtin_unreachable();
 }
 

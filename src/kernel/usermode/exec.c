@@ -9,6 +9,8 @@
 #include "kernel/elf/elf_loader.h"
 #include "kernel/process/process.h"
 #include "kernel/process/wait_status.h"
+#include "kernel/usermode/uaccess.h"
+#include "kernel/signal/signal.h"
 #include "kernel/vfs/permission.h"
 #include "kernel/vfs/stat.h"
 #include "kernel/vfs/vfs.h"
@@ -133,7 +135,7 @@ int exec_program(const char *path, const char **argv)
     }
 
     child->space->brk = elf.brk;
-    child->parent_pid = parent ? parent->pid : PID_NONE;
+    child->parent_pid = parent ? parent->tgid : PID_NONE;
     process_set_name(child, path);
 
     // the child joins the caller's group and session; the first process
@@ -246,15 +248,29 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
 }
 
 /**
- * end the current process with a wait status (wait_status.h). never returns.
+ * end the current thread with a wait status (wait_status.h). never
+ * returns. the last thread of a group ends the group: its children go to
+ * init, and the parent gets SIGCHLD and the status. a thread that is not
+ * the leader is reaped by the kernel; the leader stays a zombie until the
+ * group has ended and the parent reaps it.
  */
-static void process_exit(int32_t status) __attribute__((noreturn));
+static void thread_exit(int32_t status) __attribute__((noreturn));
 
-static void process_exit(int32_t status)
+static void thread_exit(int32_t status)
 {
     process_t *proc = process_current();
+    process_t *leader = proc->leader;
 
-    if (proc->pid == PID_INIT)
+    // while the group ends, each thread ends with the group's status
+    uint32_t flags = arch_irq_save();
+    if (leader->group_exiting)
+    {
+        status = leader->group_status;
+    }
+    bool last = --leader->threads == 0;
+    arch_irq_restore(flags);
+
+    if (last && proc->tgid == PID_INIT)
     {
         // PID 1 (init, for now /bin/sh) has no parent to reap it. with no
         // init left the system cannot do anything more: halt.
@@ -264,15 +280,27 @@ static void process_exit(int32_t status)
         arch_halt_forever();
     }
 
+    // CLONE_CHILD_CLEARTID: the thread's id word becomes 0, for a thread
+    // that waits for this one to end (pthread_join). a bad address is
+    // the program's own fault: nothing is written then.
+    if (proc->clear_tid)
+    {
+        uint32_t zero = 0;
+        (void)copy_to_user((void *)proc->clear_tid, &zero, sizeof(zero));
+    }
+
     // release everything but the kernel stack and slot now, while this
-    // process can still sleep (closing a file may wait for the fs mutex).
+    // thread can still sleep (closing a file may wait for the fs mutex).
     // closing the fds here also gives pipe readers EOF as soon as the
     // writer exits, not when the parent gets round to reaping it.
     process_release_resources(proc);
 
-    // children outlive us: zombie ones are destroyed now, running ones are
-    // reaped by the kernel when they exit
-    process_orphan_children(proc);
+    // the group's children outlive it: zombie ones are destroyed now,
+    // running ones are reaped by init or the kernel when they exit
+    if (last)
+    {
+        process_orphan_children(proc);
+    }
 
     // masked from here on: becoming a zombie, waking the parent and
     // switching away must not be split by a timer tick. this context never
@@ -283,32 +311,81 @@ static void process_exit(int32_t status)
     proc->exit_status = status;
     scheduler_remove(proc);
 
-    // parent_pid is PID_NONE if our parent exited first
-    process_t *parent = process_get(proc->parent_pid);
-    if (parent)
+    if (proc != leader)
     {
-        // a parent in waitpid sleeps on its child_exit queue
-        signal_send(parent, SIGCHLD);
-        wait_queue_wake_all(&parent->child_exit);
-    }
-    else
-    {
-        // nobody will waitpid for us: the scheduler reaps us once we're gone
+        // a thread is nobody's child: the scheduler reaps it once it's gone
+        proc->parent_pid = PID_NONE;
         process_note_orphan_zombie();
+    }
+
+    if (last)
+    {
+        leader->exit_status = status;
+        // parent_pid is PID_NONE if the parent exited first
+        process_t *parent = process_get(leader->parent_pid);
+        if (parent)
+        {
+            // a parent in waitpid sleeps on its leader's child_exit queue
+            signal_send(parent, SIGCHLD);
+            wait_queue_wake_all(&parent->child_exit);
+        }
+        else
+        {
+            // nobody will waitpid for the group: the kernel reaps its leader
+            process_note_orphan_zombie();
+        }
     }
 
     scheduler_yield();
 
     // unreachable
-    kernel_panic("process_exit: a zombie woke up... run.");
+    kernel_panic("thread_exit: a zombie woke up... run.");
+}
+
+/**
+ * end every thread of the current group with a wait status, the caller
+ * included. the first status set holds. the other threads get SIGKILL,
+ * which wakes them from a sleep or a stop; they end with the group's
+ * status when they next return to user mode (signal_deliver).
+ */
+static void group_exit(int32_t status) __attribute__((noreturn));
+
+static void group_exit(int32_t status)
+{
+    process_t *proc = process_current();
+    process_t *leader = proc->leader;
+
+    uint32_t flags = arch_irq_save();
+    if (!leader->group_exiting)
+    {
+        leader->group_exiting = true;
+        leader->group_status = status;
+    }
+    arch_irq_restore(flags);
+
+    if (leader->threads > 1)
+    {
+        process_signal_threads(proc, SIGKILL);
+    }
+    thread_exit(status);
 }
 
 void usermode_exit(int exit_code)
 {
-    process_exit(WAIT_STATUS_EXITED(exit_code));
+    thread_exit(WAIT_STATUS_EXITED(exit_code));
+}
+
+void usermode_exit_group(int exit_code)
+{
+    group_exit(WAIT_STATUS_EXITED(exit_code));
 }
 
 void usermode_kill(int signal)
 {
-    process_exit(WAIT_STATUS_SIGNALED(signal));
+    group_exit(WAIT_STATUS_SIGNALED(signal));
+}
+
+void usermode_end_thread(void)
+{
+    thread_exit(process_current()->leader->group_status);
 }

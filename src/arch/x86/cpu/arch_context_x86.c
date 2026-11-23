@@ -44,7 +44,7 @@ void arch_setup_initial_stack(process_t *proc, void (*entry_fn)(void))
     proc->kernel_esp = (uintptr_t)sp;
 }
 
-void arch_setup_fork_stack(process_t *child, const struct registers *regs)
+void arch_setup_fork_stack(process_t *child, const struct registers *regs, uintptr_t user_sp)
 {
     // the saved user registers go at the top of the stack, where the CPU and
     // isr_common put them on a syscall from user mode, so the TSS's esp0
@@ -53,6 +53,10 @@ void arch_setup_fork_stack(process_t *child, const struct registers *regs)
     struct registers *frame = (struct registers *)(top - sizeof(struct registers));
     *frame = *regs;
     REG_RESULT(frame) = 0; // fork returns 0 in the child
+    if (user_sp)
+    {
+        REG_SP(frame) = user_sp;
+    }
 
     // below it, the frame arch_context_switch pops: four registers, then a
     // return address into isr_exit, with ESP left at the saved registers

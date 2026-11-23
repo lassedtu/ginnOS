@@ -246,20 +246,20 @@ static void report_fatal(const process_t *proc, int sig)
     switch (sig)
     {
     case SIGSEGV:
-        printf("pid %u: segmentation fault (%s 0x%lx)\r\n", proc->pid,
+        printf("pid %u: segmentation fault (%s 0x%lx)\r\n", proc->tgid,
                proc->fault_write ? "write to" : "read of", (unsigned long)proc->fault_addr);
         break;
     case SIGFPE:
-        printf("pid %u: arithmetic exception\r\n", proc->pid);
+        printf("pid %u: arithmetic exception\r\n", proc->tgid);
         break;
     case SIGILL:
-        printf("pid %u: illegal instruction\r\n", proc->pid);
+        printf("pid %u: illegal instruction\r\n", proc->tgid);
         break;
     case SIGBUS:
-        printf("pid %u: bus error\r\n", proc->pid);
+        printf("pid %u: bus error\r\n", proc->tgid);
         break;
     case SIGTRAP:
-        printf("pid %u: trace trap\r\n", proc->pid);
+        printf("pid %u: trace trap\r\n", proc->tgid);
         break;
     default:
         break; // signals sent by others end a process quietly
@@ -342,6 +342,13 @@ void signal_deliver(struct registers *regs)
     if (!proc)
     {
         return;
+    }
+
+    // another thread ended the process (exit_group or a fatal signal)
+    if (proc->leader->group_exiting)
+    {
+        arch_enable_interrupts();
+        usermode_end_thread();
     }
 
     bool interrupted = regs->interrupt == SYSCALL_VECTOR && REG_RESULT(regs) == (uintptr_t)-ERESTARTSYS;

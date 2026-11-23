@@ -185,8 +185,8 @@ syscall_ret_t sys_times(struct registers *regs)
 
     if (user_times)
     {
-        ktms_t times = {(long)proc->utime, (long)proc->stime, (long)proc->cutime,
-                        (long)proc->cstime};
+        ktms_t times = {(long)proc->utime, (long)proc->stime, (long)proc->leader->cutime,
+                        (long)proc->leader->cstime};
         if (kerr_failed(copy_to_user(user_times, &times, sizeof(times))))
             return -EFAULT;
     }

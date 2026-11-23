@@ -36,8 +36,9 @@ void arch_setup_initial_stack(process_t *proc, void (*entry_fn)(void));
 /**
  * prepare a forked child's kernel stack so its first arch_context_switch()
  * into it returns to user mode with the parent's registers, except that
- * the syscall returns 0.
+ * the syscall returns 0 (and, for a thread, the user stack is its own).
  * @param child the new process (uses kernel_stack, sets kernel_esp).
  * @param regs the parent's saved user registers (its fork syscall frame).
+ * @param user_sp the child's user stack pointer, or 0 for the parent's.
  */
-void arch_setup_fork_stack(process_t *child, const struct registers *regs);
+void arch_setup_fork_stack(process_t *child, const struct registers *regs, uintptr_t user_sp);

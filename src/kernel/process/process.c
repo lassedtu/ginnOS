@@ -66,6 +66,9 @@ static process_t *claim_slot(void)
     {
         memset(proc, 0, sizeof(process_t));
         proc->pid = next_pid++;
+        proc->tgid = proc->pid; // a group of its own until clone joins one
+        proc->leader = proc;
+        proc->threads = 1;
         proc->state = PROC_STATE_NEW;
     }
     spin_unlock_irqrestore(&table_lock, flags);
@@ -100,12 +103,17 @@ void process_init(void)
     spinlock_init(&table_lock);
 }
 
-process_t *process_create(void)
+/**
+ * claim a slot and give it a kernel stack: a process without memory,
+ * descriptors, fs context or handlers yet.
+ * @return the slot in PROC_STATE_NEW, or NULL.
+ */
+static process_t *create_task(void)
 {
     process_t *proc = claim_slot();
     if (!proc)
     {
-        return NULL; /* table full */
+        return NULL; // table full
     }
 
     // the slot is ours (PROC_STATE_NEW), so it is set up without the lock
@@ -114,15 +122,7 @@ process_t *process_create(void)
     wait_queue_init(&proc->child_exit);
     arch_fpu_clean(proc->fpu_state);
 
-    // the descriptor table, all free
-    proc->files = fd_table_create();
-    if (!proc->files)
-    {
-        release_slot(proc);
-        return NULL;
-    }
-
-    // allocate a guarded kernel stack (zeroed)
+    // a guarded kernel stack (zeroed); ESP starts at its top
     uintptr_t stack = kstack_alloc();
     if (!stack)
     {
@@ -130,44 +130,73 @@ process_t *process_create(void)
         return NULL;
     }
     proc->kernel_stack = stack;
-    // ESP starts at the top of the stack (grows downward)
     proc->kernel_esp = stack + KERNEL_STACK_SIZE;
+    return proc;
+}
 
-    // its own user memory (the kernel half is shared by all)
-    proc->space = user_space_create();
-    if (!proc->space)
+process_t *process_create(void)
+{
+    process_t *proc = create_task();
+    if (!proc)
     {
-        kstack_free(stack);
-        release_slot(proc);
         return NULL;
     }
 
-    // initialize fd table: stdin/stdout/stderr as console
+    // its own user memory (the kernel half is shared by all), descriptors
+    // (0 to 2 are the console), handlers (all SIG_DFL), and fs context
+    proc->space = user_space_create();
+    proc->files = fd_table_create();
+    proc->handlers = signal_handlers_create();
+    proc->fs = kcalloc(1, sizeof(fs_context_t));
+    if (!proc->space || !proc->files || !proc->handlers || !proc->fs)
+    {
+        process_destroy(proc);
+        return NULL;
+    }
     for (int fd = 0; fd < FD_STDIO_COUNT; fd++)
     {
         proc->files->fd[fd].file = file_console();
-    }
-
-    proc->handlers = signal_handlers_create();
-    if (!proc->handlers)
-    {
-        process_destroy(proc);
-        return NULL;
-    }
-
-    // the working and the root directory are "/"
-    proc->fs = kcalloc(1, sizeof(fs_context_t));
-    if (!proc->fs)
-    {
-        process_destroy(proc);
-        return NULL;
     }
     proc->fs->users = 1;
     proc->fs->umask = 022; // the ids start as root's (0), from the cleared slot
     strcpy(proc->fs->cwd, "/");
     strcpy(proc->fs->root, "/");
-
     return proc;
+}
+
+process_t *process_clone_thread(const struct registers *regs, uintptr_t stack)
+{
+    process_t *parent = current_process;
+    process_t *thread = create_task();
+    if (!thread)
+    {
+        return NULL;
+    }
+
+    // one group: the memory, the descriptors, the fs context and the
+    // handlers are the same objects
+    thread->space = user_space_get(parent->space);
+    thread->files = fd_table_get(parent->files);
+    thread->fs = fs_context_get(parent->fs);
+    thread->handlers = signal_handlers_get(parent->handlers);
+
+    thread->tgid = parent->tgid;
+    thread->leader = parent->leader;
+    thread->parent_pid = parent->parent_pid; // the group's parent
+    thread->pgid = parent->pgid;
+    thread->sid = parent->sid;
+    process_copy_credentials(thread, parent);
+    memcpy(thread->name, parent->name, sizeof(thread->name));
+    thread->signals.blocked = parent->signals.blocked;
+    arch_fpu_save(thread->fpu_state);
+
+    // the thread returns from the same syscall with 0, on its own stack
+    arch_setup_fork_stack(thread, regs, stack);
+
+    uint32_t flags = arch_irq_save();
+    thread->leader->threads++;
+    arch_irq_restore(flags);
+    return thread;
 }
 
 process_t *process_fork(const struct registers *regs)
@@ -194,7 +223,7 @@ process_t *process_fork(const struct registers *regs)
     child->space->vmas = parent->space->vmas;
     child->space->brk = parent->space->brk;
 
-    child->parent_pid = parent->pid;
+    child->parent_pid = parent->tgid; // a child of the group, not the thread
     child->pgid = parent->pgid;
     child->sid = parent->sid;
     process_copy_credentials(child, parent);
@@ -215,7 +244,7 @@ process_t *process_fork(const struct registers *regs)
     arch_fpu_save(child->fpu_state);
 
     // the child resumes from the same syscall, which returns 0 there
-    arch_setup_fork_stack(child, regs);
+    arch_setup_fork_stack(child, regs, 0);
     scheduler_ready(child);
     return child;
 }
@@ -343,17 +372,18 @@ void process_orphan_children(process_t *parent)
         {
             continue;
         }
-        if (child->state == PROC_STATE_UNUSED || child->parent_pid != parent->pid)
+        if (child->state == PROC_STATE_UNUSED || child->parent_pid != parent->tgid)
         {
             continue;
         }
 
-        if (child->state == PROC_STATE_ZOMBIE)
+        if (child->state == PROC_STATE_ZOMBIE && child->threads == 0)
         {
-            // exited and never reaped: nobody else will, so destroy it below
+            // a group that ended and was never reaped: nobody else will, so
+            // destroy it below
             zombies[zombie_count++] = child;
         }
-        else if (parent->pid != PID_INIT && process_init_alive())
+        else if (parent->tgid != PID_INIT && process_init_alive())
         {
             // still running: init adopts it and reaps it when it exits
             child->parent_pid = PID_INIT;
@@ -419,13 +449,14 @@ process_t *process_find_waitable_child(process_t *parent, int32_t pid, uint32_t 
         {
             continue;
         }
-        if (child->state == PROC_STATE_UNUSED || child->parent_pid != parent->pid ||
-            (pid != -1 && child->pid != (uint32_t)pid))
+        // a child is a group: its leader stands for it
+        if (child->state == PROC_STATE_UNUSED || child->parent_pid != parent->tgid ||
+            child->pid != child->tgid || (pid != -1 && child->pid != (uint32_t)pid))
         {
             continue;
         }
         *has_child = true;
-        if (child->state == PROC_STATE_ZOMBIE ||
+        if ((child->state == PROC_STATE_ZOMBIE && child->threads == 0) ||
             ((options & WUNTRACED) && child->wait_report == WAIT_REPORT_STOPPED) ||
             ((options & WCONTINUED) && child->wait_report == WAIT_REPORT_CONTINUED))
         {
@@ -621,4 +652,28 @@ process_t *process_get(uint32_t pid)
     spin_unlock_irqrestore(&table_lock, flags);
 
     return found;
+}
+
+void process_signal_threads(process_t *proc, int sig)
+{
+    process_t *threads[PROCESS_MAX];
+    uint32_t count = 0;
+    uint32_t flags = spin_lock_irqsave(&table_lock);
+    for (int i = 0; i < PROCESS_MAX; i++)
+    {
+        process_t *other = proc_table[i];
+        if (other && other != proc && other->tgid == proc->tgid &&
+            other->state != PROC_STATE_UNUSED && other->state != PROC_STATE_ZOMBIE)
+        {
+            threads[count++] = other;
+        }
+    }
+    spin_unlock_irqrestore(&table_lock, flags);
+
+    // a slot is never freed, so a thread that ends meanwhile is only
+    // skipped by signal_send
+    for (uint32_t i = 0; i < count; i++)
+    {
+        signal_send(threads[i], sig);
+    }
 }

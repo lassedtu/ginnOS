@@ -79,19 +79,33 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
 int exec_program(const char *path, const char **argv);
 
 /**
- * called by SYS_exit: the current process becomes a zombie for its parent
- * to reap, and never runs again. its wait status says it exited with
- * exit_code. if it has no parent (PID 1), the system halts.
+ * called by SYS_exit: end the current thread, and never run again. if it
+ * is the last thread of its process, the process ends: it becomes a
+ * zombie for its parent to reap, with a wait status that says it exited
+ * with exit_code. if PID 1 ends, the system halts.
  * @param exit_code the exit code passed by the user program (low 8 bits).
  */
 void usermode_exit(int exit_code) __attribute__((noreturn));
 
 /**
- * end the current process as killed by a signal: like usermode_exit, but
- * the wait status names the signal (SIGSEGV for a bad memory access).
+ * called by SYS_exit_group (and so by exit()): end every thread of the
+ * current process, which then ends with exit_code.
+ * @param exit_code the exit code (low 8 bits).
+ */
+void usermode_exit_group(int exit_code) __attribute__((noreturn));
+
+/**
+ * end the current process (every thread) as killed by a signal: the wait
+ * status names the signal (SIGSEGV for a bad memory access).
  * @param signal the signal number (kernel/signal/signal.h).
  */
 void usermode_kill(int signal) __attribute__((noreturn));
+
+/**
+ * end the current thread because its process is ending (exit_group or a
+ * fatal signal in another thread), with the process's status.
+ */
+void usermode_end_thread(void) __attribute__((noreturn));
 
 /**
  * get the current program break (end of the user heap).

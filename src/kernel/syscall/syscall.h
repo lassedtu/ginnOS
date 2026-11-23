@@ -103,9 +103,12 @@
 #define SYS_FLOCK 94         // an advisory lock on a whole file
 #define SYS_MKNODAT 95       // a named pipe or a device node
 #define SYS_CHROOT 96        // change the root directory (root)
+#define SYS_CLONE 97         // make a thread (the Linux flags for one)
+#define SYS_EXIT_GROUP 98    // end every thread of the process
+#define SYS_GETTID 99        // the calling thread's id
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 97
+#define SYSCALL_COUNT 100
 
 /**
  * initialize the system call interface.

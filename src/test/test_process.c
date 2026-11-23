@@ -85,6 +85,7 @@ KTEST(process_orphan_children_detaches_and_destroys)
     // the zombie child exited: it released its resources, nobody reaped it
     process_release_resources(zombie);
     zombie->state = PROC_STATE_ZOMBIE;
+    zombie->threads = 0; // its only thread ended
     uint32_t zombie_pid = zombie->pid;
 
     process_orphan_children(parent);

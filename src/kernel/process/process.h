@@ -67,9 +67,19 @@ typedef struct fs_context
  */
 typedef struct process
 {
-    uint32_t pid;           // process identifier
-    uint32_t parent_pid;    // parent PID; PID_NONE for PID 1 (and for orphans
-                            // when there is no init, which the kernel reaps)
+    uint32_t pid;           // process identifier (the thread id)
+    uint32_t tgid;          // the thread group: the pid of its first thread
+                            // (the leader). getpid gives it.
+    struct process *leader; // the leader (itself for it); its slot stays
+                            // until every thread of the group has ended
+    uint32_t threads;       // in the leader: the threads not ended yet
+    bool group_exiting;     // in the leader: every thread is to end
+    int32_t group_status;   // in the leader: the wait status they end with
+    uintptr_t clear_tid;    // a user address set to 0 when the thread ends
+                            // (CLONE_CHILD_CLEARTID), or 0
+    uint32_t parent_pid;    // the parent group's tgid; PID_NONE for PID 1 (and
+                            // for orphans when there is no init, and for a
+                            // thread that ended: the kernel reaps them)
     uint32_t pgid;          // process group (job control)
     uint32_t sid;           // session
     uint32_t uid, euid, suid; // real, effective and saved user id
@@ -161,6 +171,24 @@ struct registers;
 process_t *process_fork(const struct registers *regs);
 
 /**
+ * make a thread of the current process: a new task in its group that
+ * shares its memory, descriptors, fs context and handlers. it resumes from
+ * the same syscall, which returns 0 there, with stack as its user stack
+ * pointer. the caller makes it runnable.
+ * @param regs the caller's saved user registers (its syscall frame).
+ * @param stack the thread's user stack pointer.
+ * @return the thread, or NULL if the table or the memory ran out.
+ */
+process_t *process_clone_thread(const struct registers *regs, uintptr_t stack);
+
+/**
+ * send a signal to every other thread of a process's group.
+ * @param proc the thread that is left out.
+ * @param sig the signal.
+ */
+void process_signal_threads(process_t *proc, int sig);
+
+/**
  * get the currently running process.
  * @return pointer to the current process, or NULL if none is running.
  */
@@ -190,7 +218,8 @@ void process_destroy(process_t *proc);
 void process_release_resources(process_t *proc);
 
 /**
- * detach the children of an exiting process: zombie children are destroyed
+ * detach the children of an exiting group (call when its last thread
+ * ends; parent is that thread): zombie children are destroyed
  * now (nobody wants their status), running ones get init (PID 1) as their
  * parent, which reaps them. without init they lose their parent
  * (PID_NONE) and the kernel reaps them when they exit.
