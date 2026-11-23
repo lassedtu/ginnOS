@@ -12,8 +12,8 @@
  * calls audio_pull to fill it again. if the ring is empty, the period is
  * filled with silence and counted as an underrun (/proc/audio).
  *
- * one program at a time opens /dev/dsp (EBUSY for a second one); a
- * sound server can share it later.
+ * several programs can open /dev/dsp at once (up to 8): each has its own
+ * ring, and the core adds them together for the device.
  */
 
 #include "common/stdint.h"
@@ -88,7 +88,7 @@ typedef struct
     uint32_t codec_id;
     const char *detail;
     uint32_t rate;
-    bool open;
+    uint32_t open;      // programs that have /dev/dsp open
     bool running;
     uint32_t queued;    // bytes in the ring
     uint32_t underruns; // periods filled with silence while a program played
@@ -97,3 +97,13 @@ typedef struct
 } audio_status_t;
 
 void audio_status(audio_status_t *status);
+
+/**
+ * add 16-bit little-endian samples to sums (the mixing of the streams).
+ */
+void audio_mix_add(int32_t *sums, const uint8_t *frames, uint32_t samples);
+
+/**
+ * write sums as 16-bit little-endian samples, clipped to the 16-bit range.
+ */
+void audio_mix_out(uint8_t *out, const int32_t *sums, uint32_t samples);

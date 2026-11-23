@@ -143,7 +143,7 @@ void actions_paste(void)
 {
     if (view_in_trash())
     {
-        show_message("Cannot paste here", "Move things to the trash with Delete.");
+        show_message("Could not paste", "Items cannot be pasted into the Trash.");
         return;
     }
     idunn_app_paste(Y.app, pasted, NULL);
@@ -155,7 +155,7 @@ static bool good_name(const char *name)
     if (name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0 ||
         strchr(name, '/'))
     {
-        show_message("Not a name", "A name cannot be empty, . or .., or have a / in it.");
+        show_message("Invalid name", "A name cannot be empty, . or .., or have a / in it.");
         return false;
     }
     return true;
@@ -209,12 +209,12 @@ static void rename_edited(idunn_widget_t *list, int item, const char *name, void
     struct stat st;
     if (lstat(to, &st) == 0)
     {
-        report_error("Cannot rename", name, EEXIST);
+        report_error("Could not rename", name, EEXIST);
         return;
     }
     if (rename(from, to) != 0)
     {
-        report_error("Cannot rename", renaming, errno);
+        report_error("Could not rename", renaming, errno);
         return;
     }
     view_refresh();
@@ -253,7 +253,7 @@ void actions_new(bool folder)
     int fd = -1;
     if (folder ? mkdir(path, 0755) != 0 : (fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644)) < 0)
     {
-        report_error(folder ? "Cannot make the folder" : "Cannot make the file", path_name(path),
+        report_error(folder ? "Could not create folder" : "Could not create file", path_name(path),
                      errno);
         return;
     }
@@ -293,9 +293,9 @@ void actions_delete(void)
         return;
     char title[300];
     if (delete_count == 1)
-        snprintf(title, sizeof(title), "Delete \"%s\" for good?", path_name(delete_paths[0]));
+        snprintf(title, sizeof(title), "Permanently delete \"%s\"?", path_name(delete_paths[0]));
     else
-        snprintf(title, sizeof(title), "Delete %d things for good?", delete_count);
+        snprintf(title, sizeof(title), "Permanently delete %d items?", delete_count);
     idunn_widget_t *dialog = idunn_dialog(title, "This cannot be undone.");
     idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, delete_cancelled, NULL);
     idunn_dialog_add_button(dialog, "Delete", IDUNN_DESTRUCTIVE, delete_confirmed, NULL);
@@ -334,19 +334,19 @@ void actions_trash(void)
     {
         char text[400];
         snprintf(text, sizeof(text), "%s: %s.%s", first_name, strerror(first_error),
-                 failed > 1 ? " Other things could not go to the trash either." : "");
-        show_message("Cannot move to the trash", text);
+                 failed > 1 ? " Other items could not be moved either." : "");
+        show_message("Could not move to Trash", text);
     }
     else if (delete_count > 0)
     {
         char text[400];
         if (delete_count == 1)
-            snprintf(text, sizeof(text), "\"%s\" is on another disk than the trash. Delete it "
-                     "for good?", path_name(delete_paths[0]));
+            snprintf(text, sizeof(text), "\"%s\" is on a different disk than the Trash. Delete "
+                     "it permanently?", path_name(delete_paths[0]));
         else
-            snprintf(text, sizeof(text), "%d things are on another disk than the trash. Delete "
-                     "them for good?", delete_count);
-        idunn_widget_t *dialog = idunn_dialog("Cannot move to the trash", text);
+            snprintf(text, sizeof(text), "%d items are on a different disk than the Trash. "
+                     "Delete them permanently?", delete_count);
+        idunn_widget_t *dialog = idunn_dialog("Could not move to Trash", text);
         idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, delete_cancelled, NULL);
         idunn_dialog_add_button(dialog, "Delete", IDUNN_DESTRUCTIVE, delete_confirmed, NULL);
         idunn_dialog_open(view_widget(), dialog);
@@ -365,7 +365,7 @@ void actions_restore(void)
         int error = trash_restore(Y.trash, name, restored, sizeof(restored));
         if (error)
         {
-            report_error("Cannot restore", name, error);
+            report_error("Could not restore", name, error);
             break;
         }
     }
@@ -378,14 +378,14 @@ static void empty_confirmed(idunn_widget_t *w, void *data)
     (void)data;
     int error = trash_empty(Y.trash);
     if (error)
-        report_error("Cannot empty the trash", "Trash", error);
+        report_error("Could not empty Trash", "Trash", error);
     view_refresh();
 }
 
 void actions_empty_trash(void)
 {
-    idunn_widget_t *dialog = idunn_dialog("Empty the trash?",
-                                          "All in the trash is deleted for good.");
+    idunn_widget_t *dialog = idunn_dialog("Empty Trash?",
+                                          "All items in the Trash will be permanently deleted.");
     idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, NULL, NULL);
     idunn_dialog_add_button(dialog, "Empty", IDUNN_DESTRUCTIVE, empty_confirmed, NULL);
     idunn_dialog_open(view_widget(), dialog);
@@ -407,7 +407,7 @@ static void properties_apply(idunn_widget_t *w, void *data)
         if (idunn_check_box_state(mode_boxes[i]) == IDUNN_CHECKED)
             mode |= mode_bits[i];
     if ((mode & 0777) != (properties_mode & 0777) && chmod(properties_path, mode & 07777) != 0)
-        report_error("Cannot change the permissions", path_name(properties_path), errno);
+        report_error("Could not change permissions", path_name(properties_path), errno);
     view_refresh();
 }
 
@@ -600,11 +600,11 @@ void actions_item_menu(void)
     if (trash && count > 0)
     {
         idunn_menu_add(menu, "rotate-ccw", "Restore", NULL, do_restore, NULL);
-        idunn_menu_add(menu, "trash", "Delete for good...", "Delete", do_delete, NULL);
+        idunn_menu_add(menu, "trash", "Delete permanently...", "Delete", do_delete, NULL);
     }
     else if (trash)
     {
-        int item = idunn_menu_add(menu, "trash", "Empty the trash...", NULL, do_empty, NULL);
+        int item = idunn_menu_add(menu, "trash", "Empty Trash...", NULL, do_empty, NULL);
         idunn_menu_set_disabled(menu, item, Y.folder.count == 0);
     }
     else if (count > 0)
@@ -624,8 +624,8 @@ void actions_item_menu(void)
         if (e)
             idunn_menu_add(menu, "pencil", "Rename", "F2", do_rename, NULL);
         idunn_menu_add_separator(menu);
-        idunn_menu_add(menu, "trash", "Move to the trash", "Delete", do_trash, NULL);
-        idunn_menu_add(menu, NULL, "Delete for good...", "Shift+Delete", do_delete, NULL);
+        idunn_menu_add(menu, "trash", "Move to Trash", "Delete", do_trash, NULL);
+        idunn_menu_add(menu, NULL, "Delete permanently...", "Shift+Delete", do_delete, NULL);
         if (e)
         {
             idunn_menu_add_separator(menu);
@@ -639,7 +639,7 @@ void actions_item_menu(void)
         idunn_menu_add(menu, "clipboard-paste", "Paste", "Ctrl+V", do_paste, NULL);
         idunn_menu_add_separator(menu);
         idunn_menu_add(menu, "square-terminal", "Open in Mimir", NULL, do_mimir, NULL);
-        idunn_menu_add_check(menu, "Hidden files", Y.show_hidden, do_hidden, NULL);
+        idunn_menu_add_check(menu, "Show hidden files", Y.show_hidden, do_hidden, NULL);
     }
     idunn_menu_popup_at_pointer(menu, view_widget());
 }

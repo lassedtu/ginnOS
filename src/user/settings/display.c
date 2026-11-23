@@ -32,9 +32,9 @@ static struct
 } D;
 
 static const char *const boot_note =
-    "This screen's size is chosen when ginnOS starts. Restart, and in the boot menu open "
-    "Screen sizes and pick one. The first entry uses the size the monitor asks for, when "
-    "the computer tells it.";
+    "This display's resolution is set when ginnOS starts. To change it, restart and choose "
+    "a resolution under Screen sizes in the boot menu. The first entry uses the monitor's "
+    "preferred resolution, when available.";
 
 static void read_modes(void)
 {
@@ -99,7 +99,7 @@ static void size_chosen(idunn_widget_t *select, void *data)
     }
     // no driver: back to the size in use, and how to change it
     idunn_select_choose(select, D.current);
-    idunn_widget_t *dialog = idunn_dialog("The size cannot change now", boot_note);
+    idunn_widget_t *dialog = idunn_dialog("Resolution cannot be changed", boot_note);
     idunn_dialog_add_button(dialog, "OK", IDUNN_PRIMARY, NULL, NULL);
     idunn_dialog_open(select, dialog);
 }
@@ -108,10 +108,10 @@ idunn_widget_t *display_page(void)
 {
     idunn_widget_t *page = idunn_column(6, 0);
     read_modes();
-    idunn_widget_t *card = page_card(page, "Screen size", NULL);
+    idunn_widget_t *card = page_card(page, "Resolution", NULL);
     if (D.count == 0)
     {
-        idunn_add(card, muted("There is no screen to set.", IDUNN_TEXT_BODY));
+        idunn_add(card, muted("No display found.", IDUNN_TEXT_BODY));
         return page;
     }
     const char *names[MODES_MAX];
@@ -119,11 +119,11 @@ idunn_widget_t *display_page(void)
         names[i] = D.names[i];
     D.select = idunn_select(names, D.count, D.current, size_chosen, NULL);
     idunn_add(card, idunn_field("Size", D.select,
-                                D.driver ? "The screen changes at once; the windows follow."
-                                         : "The sizes the computer's firmware offers."));
+                                D.driver ? "The resolution changes immediately."
+                                         : "Resolutions offered by the firmware."));
     if (!D.driver)
     {
-        idunn_widget_t *note = page_card(page, "Another size", NULL);
+        idunn_widget_t *note = page_card(page, "Other resolutions", NULL);
         idunn_add(note, muted(boot_note, IDUNN_TEXT_BODY));
     }
     return page;

@@ -180,8 +180,8 @@ idunn_widget_t *find_bar_new(void)
     F.result = idunn_add(F.find_row, idunn_label(" ", IDUNN_TEXT_SMALL));
     idunn_label_set_color(F.result, IDUNN_COLOR_MUTED_FOREGROUND);
     F.case_button = icon(F.find_row, "case-sensitive", "Match case", case_clicked, NULL);
-    icon(F.find_row, "chevron-up", "The one before (Shift+F3)", next_clicked, (void *)1);
-    icon(F.find_row, "chevron-down", "The next one (F3)", next_clicked, NULL);
+    icon(F.find_row, "chevron-up", "Find previous (Shift+F3)", next_clicked, (void *)1);
+    icon(F.find_row, "chevron-down", "Find next (F3)", next_clicked, NULL);
     icon(F.find_row, "x", "Close (Escape)", close_clicked, NULL);
 
     F.replace_row = idunn_add(F.bar, idunn_row(1, 0));

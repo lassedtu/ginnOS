@@ -16,7 +16,7 @@ static void term_size_chosen(idunn_widget_t *select, void *data)
 idunn_widget_t *terminal_page(void)
 {
     idunn_widget_t *page = idunn_column(6, 0);
-    idunn_widget_t *card = page_card(page, "Text", "Open terminals change at once.");
+    idunn_widget_t *card = page_card(page, "Text", "Changes apply to open terminals immediately.");
     char value[16];
     read_setting("mimir", "terminal", "font_size", "13", value, sizeof(value));
     int count = (int)(sizeof(term_sizes) / sizeof(term_sizes[0]));
@@ -24,7 +24,7 @@ idunn_widget_t *terminal_page(void)
     idunn_add(card, idunn_field("Text size",
                                 idunn_select(term_sizes, count, chosen < 0 ? 2 : chosen,
                                              term_size_chosen, NULL),
-                                "In pixels at 1x. Ctrl+plus and Ctrl+minus change it in one "
-                                "window, Ctrl+0 goes back to this size."));
+                                "Size in pixels at 1x scale. Ctrl+Plus and Ctrl+Minus adjust a "
+                                "single window; Ctrl+0 resets it."));
     return page;
 }

@@ -57,7 +57,8 @@ static void draw_graph(idunn_widget_t *canvas, gfx_buffer_t *buf, gfx_rect_t rec
         {
             for (int32_t px = last_x; px < x; px++)
             {
-                int32_t py = last_y + (int32_t)((y - last_y) * (px - last_x) / (double)(x - last_x));
+                double along = (px - last_x) / (double)(x - last_x);
+                int32_t py = last_y + (int32_t)((y - last_y) * along);
                 gfx_fill_rect(buf, gfx_rect(px, py, 1, rect.y + rect.h - py), fill);
                 gfx_fill_rect(buf, gfx_rect(px, py - line / 2, 1, line), accent);
             }
@@ -143,7 +144,7 @@ idunn_widget_t *resources_page(void)
     static const idunn_canvas_hooks_t hooks = {draw_graph, NULL, graph_resized, NULL};
     R.graph = idunn_add(cpu, idunn_canvas(&hooks, NULL));
     idunn_set_size(R.graph, 0, GRAPH_HEIGHT);
-    idunn_widget_t *note = idunn_add(cpu, idunn_label("The last minute", IDUNN_TEXT_SMALL));
+    idunn_widget_t *note = idunn_add(cpu, idunn_label("Last 60 seconds", IDUNN_TEXT_SMALL));
     idunn_label_set_color(note, IDUNN_COLOR_MUTED_FOREGROUND);
 
     idunn_widget_t *memory = idunn_add(page, idunn_card(3));
@@ -152,7 +153,7 @@ idunn_widget_t *resources_page(void)
 
     idunn_widget_t *system = idunn_add(page, idunn_card(2));
     idunn_add(system, idunn_label("System", IDUNN_TEXT_HEADING));
-    R.uptime = fact(system, "Up for");
+    R.uptime = fact(system, "Uptime");
     R.processes = fact(system, "Processes");
     return idunn_scroll_view(page);
 }

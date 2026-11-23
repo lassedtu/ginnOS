@@ -149,10 +149,10 @@ static bool make_text(procfs_node_t *node, const char *name, uint32_t pid)
         }
         else
         {
-            FORMAT("Device:\t%s\nCodec:\t%08x\nDetail:\t%s\nRate:\t%u Hz\nOpen:\t%s\nPlaying:\t%s\n"
+            FORMAT("Device:\t%s\nCodec:\t%08x\nDetail:\t%s\nRate:\t%u Hz\nOpen:\t%u\nPlaying:\t%s\n"
                    "Queued:\t%u bytes\nPlayed:\t%lu bytes\nUnderruns:\t%u\n"
                    "Volume:\t%u %u\n",
-                   audio.name, audio.codec_id, audio.detail, audio.rate, audio.open ? "yes" : "no",
+                   audio.name, audio.codec_id, audio.detail, audio.rate, audio.open,
                    audio.running ? "yes" : "no", audio.queued, (unsigned long)audio.played,
                    audio.underruns, audio.volume & 0xFF, (audio.volume >> 8) & 0xFF);
         }

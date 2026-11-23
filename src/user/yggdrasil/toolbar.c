@@ -157,7 +157,7 @@ static void path_typed(idunn_widget_t *field, void *data)
     }
     if (path[0] != '/')
     {
-        show_message("Not a path", "Type a path that starts with / or ~.");
+        show_message("Invalid path", "Paths must start with / or ~.");
         return;
     }
     navigate(path, true); // it builds the bar again
@@ -292,7 +292,7 @@ idunn_widget_t *toolbar_build(void)
                                                  NULL));
     idunn_set_tooltip(T.forward, "Forward (Alt+Right)");
     T.up = idunn_add(row, idunn_icon_button("arrow-up", IDUNN_GHOST, up_clicked, NULL));
-    idunn_set_tooltip(T.up, "The folder above (Backspace)");
+    idunn_set_tooltip(T.up, "Parent folder (Backspace)");
 
     T.bar = idunn_grow(idunn_add(row, idunn_row(1, 0)), 1);
     idunn_box_set_padding(T.bar, 0, 2);
@@ -305,13 +305,13 @@ idunn_widget_t *toolbar_build(void)
     idunn_text_field_on_change(T.filter, filter_typed, NULL);
     idunn_text_field_on_submit(T.filter, filter_submitted, NULL);
     idunn_set_size(T.filter, 180, 0);
-    idunn_set_tooltip(T.filter, "Show the names with this in them (Ctrl+F)");
+    idunn_set_tooltip(T.filter, "Filter by name (Ctrl+F)");
 
     T.sort_menu = idunn_menu_new();
     idunn_menu_add_check(T.sort_menu, "Name", false, sort_chosen, (void *)0);
     idunn_menu_add_check(T.sort_menu, "Size", false, sort_chosen, (void *)1);
     idunn_menu_add_check(T.sort_menu, "Type", false, sort_chosen, (void *)2);
-    idunn_menu_add_check(T.sort_menu, "Date changed", false, sort_chosen, (void *)3);
+    idunn_menu_add_check(T.sort_menu, "Date modified", false, sort_chosen, (void *)3);
     idunn_menu_add_separator(T.sort_menu);
     idunn_menu_add_check(T.sort_menu, "Reverse order", false, sort_chosen, (void *)4);
     show_sort();

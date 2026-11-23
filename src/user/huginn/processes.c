@@ -178,7 +178,7 @@ static void send_signal(idunn_widget_t *w, void *data)
     {
         char text[160];
         snprintf(text, sizeof(text), "%s (%u): %s.", p->name, p->pid, strerror(errno));
-        idunn_widget_t *dialog = idunn_dialog("Cannot end the process", text);
+        idunn_widget_t *dialog = idunn_dialog("Could not end process", text);
         idunn_dialog_add_button(dialog, "OK", IDUNN_PRIMARY, NULL, NULL);
         idunn_dialog_open(P.list, dialog);
     }
@@ -193,12 +193,12 @@ static void ask_end(bool force)
     P.asked = p->pid;
     P.asked_signal = force ? SIGKILL : SIGTERM;
     char title[96];
-    snprintf(title, sizeof(title), force ? "Force %s to end?" : "End %s?", p->name);
+    snprintf(title, sizeof(title), force ? "Kill %s?" : "End %s?", p->name);
     idunn_widget_t *dialog = idunn_dialog(
-        title, force ? "It ends at once. Work in it that is not saved is lost."
-                     : "It is asked to end. Work in it that is not saved can be lost.");
+        title, force ? "The process stops immediately. Unsaved work will be lost."
+                     : "The process is asked to quit. Unsaved work may be lost.");
     idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, NULL, NULL);
-    idunn_dialog_add_button(dialog, force ? "Force end" : "End process", IDUNN_DESTRUCTIVE,
+    idunn_dialog_add_button(dialog, force ? "Kill process" : "End process", IDUNN_DESTRUCTIVE,
                             send_signal, NULL);
     idunn_dialog_open(P.list, dialog);
 }
@@ -280,20 +280,20 @@ idunn_widget_t *processes_page(void)
 
     idunn_widget_t *bar = idunn_add(page, idunn_row(2, 0));
     idunn_box_set_align(bar, IDUNN_CENTER, IDUNN_START);
-    P.filter = idunn_grow(idunn_add(bar, idunn_text_field("Filter by name or pid")), 1);
+    P.filter = idunn_grow(idunn_add(bar, idunn_text_field("Filter by name or PID")), 1);
     idunn_text_field_set_icon(P.filter, "search");
     idunn_text_field_on_change(P.filter, filter_typed, NULL);
     P.order_menu = idunn_menu_new();
     idunn_menu_add_check(P.order_menu, "CPU", true, order_chosen, (void *)ORDER_CPU);
     idunn_menu_add_check(P.order_menu, "Memory", false, order_chosen, (void *)ORDER_MEMORY);
     idunn_menu_add_check(P.order_menu, "Name", false, order_chosen, (void *)ORDER_NAME);
-    idunn_menu_add_check(P.order_menu, "Pid", false, order_chosen, (void *)ORDER_PID);
+    idunn_menu_add_check(P.order_menu, "PID", false, order_chosen, (void *)ORDER_PID);
     idunn_widget_t *order = idunn_add(bar, idunn_icon_button("arrow-down-wide-narrow",
                                                              IDUNN_OUTLINE, order_clicked, NULL));
     idunn_set_tooltip(order, "Sort");
     P.end_button = idunn_add(bar, idunn_button("End process", IDUNN_DESTRUCTIVE, end_clicked,
                                                NULL));
-    idunn_set_tooltip(P.end_button, "End the chosen process (Delete)");
+    idunn_set_tooltip(P.end_button, "End the selected process (Delete)");
 
     // the heads, over the columns of the list (its padding and the gaps)
     idunn_widget_t *heads = idunn_add(page, idunn_row(0, 0));
@@ -303,7 +303,7 @@ idunn_widget_t *processes_page(void)
     idunn_widget_t *name_label = idunn_add(name, idunn_label("Name", IDUNN_TEXT_SMALL));
     idunn_label_set_color(name_label, IDUNN_COLOR_MUTED_FOREGROUND);
     idunn_add(heads, idunn_spacer());
-    static const char *const names[] = {"CPU", "Memory", "User", "Pid"};
+    static const char *const names[] = {"CPU", "Memory", "User", "PID"};
     for (int i = 0; i < 4; i++)
     {
         head(heads, names[i], columns[i]);
@@ -321,7 +321,7 @@ idunn_widget_t *processes_page(void)
 
     P.item_menu = idunn_menu_new();
     idunn_menu_add(P.item_menu, "x", "End process", "Delete", menu_chosen, NULL);
-    idunn_menu_add(P.item_menu, NULL, "Force end", "Shift+Delete", menu_chosen, (void *)1);
+    idunn_menu_add(P.item_menu, NULL, "Kill process", "Shift+Delete", menu_chosen, (void *)1);
 
     P.count = idunn_add(page, idunn_label(" ", IDUNN_TEXT_SMALL));
     idunn_label_set_color(P.count, IDUNN_COLOR_MUTED_FOREGROUND);

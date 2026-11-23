@@ -1,7 +1,7 @@
 # a program of the desktop (the format is in src/lib/apps/include/apps.h)
 [app]
 name = Huginn
-comment = See the processes, the CPU and the memory
+comment = Monitor processes, CPU and memory
 exec = huginn
 icon = utilities-system-monitor
 category = System

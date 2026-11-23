@@ -29,19 +29,19 @@ typedef struct
 } page_t;
 
 static const page_t pages[] = {
-    {"appearance", "Appearance", "palette", "The theme, the accent colour and the wallpaper.",
+    {"appearance", "Appearance", "palette", "Theme, accent colour and wallpaper",
      "dark light mode color colour accent wallpaper background picture text size font scale "
      "large small",
      appearance_page},
-    {"display", "Display", "monitor", "The size of the screen.",
+    {"display", "Display", "monitor", "Screen resolution",
      "screen resolution size monitor pixels mode", display_page},
-    {"keyboard", "Keyboard", "keyboard", "The layout the keys type in.",
+    {"keyboard", "Keyboard", "keyboard", "Keyboard layout",
      "layout keys language danish english us dk", keyboard_page},
-    {"sound", "Sound", "volume-2", "The volume of the sound card.",
+    {"sound", "Sound", "volume-2", "Output volume",
      "volume audio mixer speaker loud quiet mute", sound_page},
-    {"terminal", "Terminal", "square-terminal", "The text of Mimir.",
+    {"terminal", "Terminal", "square-terminal", "Font and text size for Mimir",
      "mimir console shell font text size", terminal_page},
-    {"about", "About", "info", "What this computer is and runs.",
+    {"about", "About", "info", "System information",
      "version system kernel memory cpu processor computer ginnos", about_page},
 };
 #define PAGE_COUNT (int)(sizeof(pages) / sizeof(pages[0]))

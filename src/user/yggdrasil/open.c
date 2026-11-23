@@ -40,7 +40,7 @@ void open_in_mimir(const char *folder, const char *program)
     char *with_program[] = {"mimir", "-k", "-d", (char *)folder, (char *)program, NULL};
     char *shell[] = {"mimir", "-d", (char *)folder, NULL};
     if (!spawn(program ? with_program : shell, folder))
-        show_message("Cannot start Mimir", "There are too many programs.");
+        show_message("Could not start Mimir", "Too many processes are running.");
 }
 
 /** true when a .app file starts this program (it has a window of its own) */
@@ -113,7 +113,7 @@ static void run_command(const char *command, const char *path)
         argv[n++] = (char *)path;
     argv[n] = NULL;
     if (!spawn(argv, Y.folder.path))
-        show_message("Cannot start the program", command);
+        show_message("Could not start the app", command);
 }
 
 void open_entry(const entry_t *e)
@@ -140,8 +140,8 @@ void open_entry(const entry_t *e)
     if (!command_for(e->type, command, sizeof(command)))
     {
         char text[160];
-        snprintf(text, sizeof(text), "No program opens %s files yet.", e->type);
-        show_message("Cannot open the file", text);
+        snprintf(text, sizeof(text), "No app is set to open %s files.", e->type);
+        show_message("Could not open file", text);
         return;
     }
     run_command(command, path);

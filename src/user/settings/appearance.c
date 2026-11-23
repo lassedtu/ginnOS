@@ -21,7 +21,7 @@ static const char *const accent_names[] = {"Rose", "Blue", "Green", "Orange", "V
 static const char *const sizes[] = {"13", "14", "15"};
 static const char *const size_names[] = {"Small (13)", "Medium (14)", "Large (15)"};
 static const char *const scales[] = {"auto", "1", "2"};
-static const char *const scale_names[] = {"By the screen", "1x", "2x"};
+static const char *const scale_names[] = {"Automatic", "1x", "2x"};
 
 static void mode_chosen(idunn_widget_t *group, void *data)
 {
@@ -66,7 +66,7 @@ static int list_wallpapers(const char *names[CHOICES_MAX])
 {
     wallpaper_count = 0;
     snprintf(wallpapers[wallpaper_count], NAME_LEN, "none");
-    names[wallpaper_count++] = "None: a gradient";
+    names[wallpaper_count++] = "None (gradient)";
     DIR *dir = opendir(WALLPAPERS);
     struct dirent *e;
     while (dir && (e = readdir(dir)) && wallpaper_count < CHOICES_MAX)
@@ -89,7 +89,7 @@ idunn_widget_t *appearance_page(void)
     idunn_widget_t *page = idunn_column(6, 0);
     char value[NAME_LEN];
 
-    idunn_widget_t *look = page_card(page, "Theme", "Every open window changes at once.");
+    idunn_widget_t *look = page_card(page, "Theme", "Changes apply to all open windows.");
     read_setting("theme", "theme", "mode", "dark", value, sizeof(value));
     int mode = index_of(modes, 2, value);
     idunn_widget_t *mode_group = idunn_radio_group(mode_names, 2, mode < 0 ? 1 : mode,
@@ -102,9 +102,9 @@ idunn_widget_t *appearance_page(void)
     if (accent < 0)
         idunn_select_set_placeholder(accent_select, value); // a colour of the user's own
     idunn_add(look, idunn_field("Accent colour", accent_select,
-                                "Buttons, selections and the focus ring."));
+                                "Used for buttons, selections and focus highlights."));
 
-    idunn_widget_t *text = page_card(page, "Text and size", NULL);
+    idunn_widget_t *text = page_card(page, "Text and scaling", NULL);
     read_setting("theme", "theme", "font_size", "13", value, sizeof(value));
     int size = index_of(sizes, 3, value);
     idunn_widget_t *size_group = idunn_radio_group(size_names, 3, size < 0 ? 0 : size,
@@ -116,22 +116,24 @@ idunn_widget_t *appearance_page(void)
     idunn_add(text, idunn_field("Scale",
                                 idunn_select(scale_names, 3, scale < 0 ? 0 : scale, scale_chosen,
                                              NULL),
-                                "2x makes everything twice as large, for a sharp screen. "
-                                "By the screen: 2x on a screen 2400 pixels wide or more."));
+                                "2x doubles the size of everything, for high-density screens. "
+                                "Automatic uses 2x on screens 2400 pixels wide or wider."));
     read_setting("theme", "theme", "motion", "true", value, sizeof(value));
     idunn_add(text, idunn_switch("Animations", strcmp(value, "false") != 0, motion_changed,
                                  NULL));
 
-    idunn_widget_t *desk = page_card(page, "Wallpaper", "The picture behind the windows.");
+    idunn_widget_t *desk = page_card(page, "Wallpaper", "The desktop background.");
     const char *names[CHOICES_MAX];
     int count = list_wallpapers(names);
-    read_setting("desktop", "desktop", "wallpaper", WALLPAPERS "/default.png", value, sizeof(value));
+    read_setting("desktop", "desktop", "wallpaper", WALLPAPERS "/default.png", value,
+                 sizeof(value));
     int chosen = 0;
     for (int i = 0; i < count; i++)
         if (strcmp(wallpapers[i], value) == 0)
             chosen = i;
-    idunn_add(desk, idunn_field("Picture",
+    idunn_add(desk, idunn_field("Image",
                                 idunn_select(names, count, chosen, wallpaper_chosen, NULL),
-                                "Add PNG, JPEG or BMP files to " WALLPAPERS "."));
+                                "To add wallpapers, copy PNG, JPEG or BMP files to "
+                                WALLPAPERS "."));
     return page;
 }
