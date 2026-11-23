@@ -661,6 +661,8 @@ bool actions_key(idunn_window_t *win, uint16_t code, uint32_t mods, const char *
         go_forward();
     else if (ctrl && code == KEY_L)
         toolbar_edit_path();
+    else if (ctrl && code == KEY_F)
+        toolbar_find();
     else if (ctrl && code == KEY_H)
     {
         Y.show_hidden = !Y.show_hidden;
@@ -681,7 +683,16 @@ bool actions_key(idunn_window_t *win, uint16_t code, uint32_t mods, const char *
     else if (code == KEY_DELETE)
         shift ? actions_delete() : actions_trash();
     else if (code == KEY_ESC)
-        toolbar_update(); // leaves the typed path
+    {
+        // a filter goes first, then the typed path
+        if (toolbar_clear_filter())
+        {
+            view_refresh();
+            if (Y.list)
+                idunn_set_focus(Y.list);
+        }
+        toolbar_update();
+    }
     else
         return false;
     return true;

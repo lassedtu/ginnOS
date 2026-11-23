@@ -55,6 +55,7 @@ typedef struct
     char trash[PATH_LEN]; // ~/.local/share/Trash
 
     folder_t folder;
+    char filter[128]; // only the names with this in them ("" for all)
     bool show_hidden;
     bool grid;
 
@@ -83,6 +84,8 @@ extern ygg_t Y;
  */
 bool folder_read(folder_t *f, const char *path, bool hidden, const mime_table_t *mime);
 void folder_free(folder_t *f);
+/** keep only the entries whose names have text in them (letter case ignored) */
+void folder_filter(folder_t *f, const char *text);
 /** the same names, sizes and times (a refresh changes nothing) */
 bool folder_same(const folder_t *a, const folder_t *b);
 /** "12 bytes", "4.2 KiB", "650 MiB" */
@@ -119,6 +122,12 @@ idunn_widget_t *toolbar_build(void);
 void toolbar_update(void);
 /** a text field to type a path (Ctrl+L) */
 void toolbar_edit_path(void);
+/** true while the filter field has the keyboard */
+bool toolbar_filtering(void);
+/** the filter field gets the keyboard (Ctrl+F) */
+void toolbar_find(void);
+/** empty the filter (another folder, or Escape); false when it was empty */
+bool toolbar_clear_filter(void);
 
 // places.c
 

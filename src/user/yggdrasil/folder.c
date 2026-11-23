@@ -108,6 +108,31 @@ bool folder_read(folder_t *f, const char *path, bool hidden, const mime_table_t 
     return true;
 }
 
+/** true when name has text in it, with no regard to letter case */
+static bool has(const char *name, const char *text)
+{
+    size_t n = strlen(text);
+    for (const char *p = name; *p; p++)
+        if (strncasecmp(p, text, n) == 0)
+            return true;
+    return n == 0;
+}
+
+void folder_filter(folder_t *f, const char *text)
+{
+    if (!text[0])
+        return;
+    int kept = 0;
+    for (int i = 0; i < f->count; i++)
+    {
+        if (has(f->entries[i].name, text))
+            f->entries[kept++] = f->entries[i];
+        else
+            free(f->entries[i].name);
+    }
+    f->count = kept;
+}
+
 void folder_free(folder_t *f)
 {
     for (int i = 0; i < f->count; i++)

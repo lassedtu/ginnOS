@@ -78,6 +78,7 @@ static void push(char **stack, int *count, const char *path)
 static void show(const char *path)
 {
     folder_read(&Y.folder, path, Y.show_hidden, Y.mime);
+    folder_filter(&Y.folder, Y.filter);
     char trash_files[PATH_LEN];
     snprintf(trash_files, sizeof(trash_files), "%s/files", Y.trash);
     const char *title = strcmp(path, "/") == 0             ? "Computer"
@@ -94,6 +95,8 @@ void navigate(const char *path, bool history)
 {
     char clean[PATH_LEN];
     clean_path(path, clean, sizeof(clean));
+    if (strcmp(clean, Y.folder.path) != 0)
+        toolbar_clear_filter(); // a filter is for one folder
     if (history && strcmp(clean, Y.folder.path) != 0)
     {
         push(Y.back, &Y.back_count, Y.folder.path);

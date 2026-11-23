@@ -29,6 +29,7 @@ static struct
     char paths[PARTS_MAX + 1][PATH_LEN];
     idunn_widget_t *list_button;
     idunn_widget_t *grid_button;
+    idunn_widget_t *filter;
 } T;
 
 static void back_clicked(idunn_widget_t *b, void *data)
@@ -187,6 +188,42 @@ void toolbar_update(void)
     idunn_button_set_variant(T.grid_button, Y.grid ? IDUNN_SECONDARY : IDUNN_GHOST);
 }
 
+static void filter_typed(idunn_widget_t *field, void *data)
+{
+    (void)data;
+    snprintf(Y.filter, sizeof(Y.filter), "%s", idunn_text_field_text(field));
+    view_refresh();
+}
+
+/** Enter in the filter: to the list, the first match current */
+static void filter_submitted(idunn_widget_t *field, void *data)
+{
+    (void)field;
+    (void)data;
+    if (Y.list)
+        idunn_set_focus(Y.list);
+}
+
+bool toolbar_filtering(void)
+{
+    return T.filter && idunn_window_focus(Y.win) == T.filter;
+}
+
+void toolbar_find(void)
+{
+    idunn_set_focus(T.filter);
+    idunn_text_field_select(T.filter, 0, (size_t)-1);
+}
+
+bool toolbar_clear_filter(void)
+{
+    if (!Y.filter[0])
+        return false;
+    Y.filter[0] = '\0';
+    idunn_text_field_set_text(T.filter, "");
+    return true;
+}
+
 idunn_widget_t *toolbar_build(void)
 {
     idunn_widget_t *row = idunn_row(1, 0);
@@ -205,6 +242,13 @@ idunn_widget_t *toolbar_build(void)
     idunn_box_set_keep_end(T.bar, true);
     idunn_box_set_align(T.bar, IDUNN_CENTER, IDUNN_START);
     idunn_on_menu(T.bar, bar_menu, NULL);
+
+    T.filter = idunn_add(row, idunn_text_field("Filter"));
+    idunn_text_field_set_icon(T.filter, "search");
+    idunn_text_field_on_change(T.filter, filter_typed, NULL);
+    idunn_text_field_on_submit(T.filter, filter_submitted, NULL);
+    idunn_set_size(T.filter, 180, 0);
+    idunn_set_tooltip(T.filter, "Show the names with this in them (Ctrl+F)");
 
     T.list_button = idunn_add(row, idunn_icon_button("list", IDUNN_SECONDARY, list_clicked,
                                                      NULL));

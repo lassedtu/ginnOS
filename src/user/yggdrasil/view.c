@@ -79,13 +79,15 @@ void view_build(void)
     if (Y.folder.error || Y.folder.count == 0)
     {
         const char *title = Y.folder.error ? "Cannot open this folder"
+                            : Y.filter[0]     ? "No names match"
                             : view_in_trash() ? "The trash is empty"
                                               : "This folder is empty";
         const char *text = Y.folder.error ? strerror(Y.folder.error)
+                           : Y.filter[0]      ? "Nothing here has that in its name."
                            : view_in_trash()  ? "Things you move to the trash wait here."
                                               : "Right click to make a folder or a file.";
-        idunn_widget_t *empty = idunn_empty_state(Y.folder.error ? "circle-alert" : "folder-open",
-                                                  title, text);
+        const char *icon = Y.folder.error ? "circle-alert" : Y.filter[0] ? "search" : "folder-open";
+        idunn_widget_t *empty = idunn_empty_state(icon, title, text);
         Y.scroll = idunn_grow(idunn_add(Y.view_holder, idunn_scroll_view(empty)), 1);
         idunn_on_menu(Y.scroll, background_menu, NULL);
         view_status();
@@ -116,7 +118,9 @@ void view_build(void)
     idunn_add(pad, Y.list);
     Y.scroll = idunn_grow(idunn_add(Y.view_holder, idunn_scroll_view(pad)), 1);
     idunn_on_menu(Y.scroll, background_menu, NULL);
-    idunn_set_focus(Y.list);
+    if (!toolbar_filtering())
+        idunn_set_focus(Y.list); // not while a filter is typed
+
     view_status();
 }
 
@@ -124,6 +128,7 @@ void view_refresh(void)
 {
     folder_t fresh = {0};
     folder_read(&fresh, Y.folder.path, Y.show_hidden, Y.mime);
+    folder_filter(&fresh, Y.filter);
     if (folder_same(&fresh, &Y.folder))
     {
         folder_free(&fresh);
