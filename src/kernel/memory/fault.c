@@ -36,7 +36,7 @@ static bool break_cow(process_t *proc, const vma_t *area, uintptr_t page, phys_a
     if (pmm_page_refcount(old) == 1)
     {
         // the last user: nothing to copy
-        return arch_protect_page(proc->page_directory, page, page_flags(area));
+        return arch_protect_page(proc->space->page_directory, page, page_flags(area));
     }
 
     void *copy = pmm_alloc_page();
@@ -46,7 +46,7 @@ static bool break_cow(process_t *proc, const vma_t *area, uintptr_t page, phys_a
     }
     memcpy(copy, old, PAGE_SIZE);
 
-    if (arch_map_page(proc->page_directory, page, virt_to_phys(copy), page_flags(area)) != 0)
+    if (arch_map_page(proc->space->page_directory, page, virt_to_phys(copy), page_flags(area)) != 0)
     {
         pmm_free_page(copy);
         return false;
@@ -59,12 +59,12 @@ static bool break_cow(process_t *proc, const vma_t *area, uintptr_t page, phys_a
 
 bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
 {
-    if (!proc || !proc->page_directory)
+    if (!proc || !proc->space)
     {
         return false;
     }
 
-    vma_t *area = vma_find(&proc->vmas, addr);
+    vma_t *area = vma_find(&proc->space->vmas, addr);
     if (!area)
     {
         return false;
@@ -83,12 +83,12 @@ bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
     }
 
     uintptr_t page = PAGE_ALIGN_DOWN(addr);
-    phys_addr_t frame = arch_translate_in(proc->page_directory, page);
+    phys_addr_t frame = arch_translate_in(proc->space->page_directory, page);
     if (frame != 0)
     {
         // already backed. in a writable area the only page user code
         // cannot write is a copy-on-write page shared after fork
-        if (write && !arch_user_access_ok(proc->page_directory, page, 1, true))
+        if (write && !arch_user_access_ok(proc->space->page_directory, page, 1, true))
         {
             return break_cow(proc, area, page, PAGE_ALIGN_DOWN(frame));
         }
@@ -102,7 +102,7 @@ bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
     }
     memset(new_frame, 0, PAGE_SIZE);
 
-    if (arch_map_page(proc->page_directory, page, virt_to_phys(new_frame), page_flags(area)) != 0)
+    if (arch_map_page(proc->space->page_directory, page, virt_to_phys(new_frame), page_flags(area)) != 0)
     {
         pmm_free_page(new_frame);
         return false;

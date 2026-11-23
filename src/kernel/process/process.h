@@ -3,6 +3,7 @@
 #include "common/stdint.h"
 #include "kernel/memory/page.h"
 #include "kernel/memory/vma.h"
+#include "kernel/memory/user_space.h"
 #include "arch/arch.h"
 #include "kernel/syscall/fd_table.h"
 #include "kernel/sync/wait_queue.h"
@@ -64,13 +65,12 @@ typedef struct process
     uint32_t umask;         // permission bits taken off new files
     int32_t nice;           // -20 (most CPU) to 19 (least): the time slice length
     process_state_t state;  // current state
-    uintptr_t brk;          // program break (for sbrk)
-    vma_table_t vmas;       // what is mapped in the user half (vma.h)
+    user_space_t *space;    // the user memory (shared by threads), or NULL
+                            // once released
     int32_t exit_status;    // wait status (wait_status.h), valid in ZOMBIE state
     uintptr_t kernel_stack; // lowest address of the kernel stack (kstack.h)
     uintptr_t kernel_esp;   // saved kernel ESP (for context switch)
     uintptr_t entry;        // ELF entry point (used by trampoline on first schedule)
-    addr_space_t page_directory; // this process's address space (page directory)
     wait_queue_t child_exit; // where this process waits for a child to exit
     char **argv;            // kernel-heap copy of argv (freed at exit)
 

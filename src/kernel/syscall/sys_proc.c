@@ -434,17 +434,17 @@ syscall_ret_t sys_sbrk(struct registers *regs)
     {
         /* the heap area grows to cover the new pages; it may not run into
          * another area (the stack, an mmap) */
-        if (!vma_range_free(&proc->vmas, page, end))
+        if (!vma_range_free(&proc->space->vmas, page, end))
         {
             return -1;
         }
 
-        vma_t *heap = vma_find_kind(&proc->vmas, VMA_HEAP);
+        vma_t *heap = vma_find_kind(&proc->space->vmas, VMA_HEAP);
         if (heap && heap->end == page)
         {
             heap->end = end;
         }
-        else if (kerr_failed(vma_insert(&proc->vmas, page, end, PROT_READ | PROT_WRITE,
+        else if (kerr_failed(vma_insert(&proc->space->vmas, page, end, PROT_READ | PROT_WRITE,
                                         VMA_HEAP)))
         {
             return -1;
@@ -523,13 +523,13 @@ syscall_ret_t sys_mmap(struct registers *regs)
     }
     else if (hint != 0 && PAGE_IS_ALIGNED(hint) && hint >= USER_MMAP_BASE &&
              len_pages <= USER_MMAP_END - hint &&
-             vma_range_free(&proc->vmas, hint, hint + len_pages))
+             vma_range_free(&proc->space->vmas, hint, hint + len_pages))
     {
         virt = hint;
     }
     else
     {
-        virt = vma_find_free(&proc->vmas, len_pages, USER_MMAP_BASE, USER_MMAP_END);
+        virt = vma_find_free(&proc->space->vmas, len_pages, USER_MMAP_BASE, USER_MMAP_END);
         if (virt == 0)
         {
             return (syscall_ret_t)MAP_FAILED; /* region exhausted */
@@ -542,7 +542,7 @@ syscall_ret_t sys_mmap(struct registers *regs)
     {
         kind = shm_is_file(entry->file) ? VMA_SHARED : VMA_DEVICE;
     }
-    if (kerr_failed(vma_insert(&proc->vmas, virt, virt + len_pages, area_prot, kind)))
+    if (kerr_failed(vma_insert(&proc->space->vmas, virt, virt + len_pages, area_prot, kind)))
     {
         return (syscall_ret_t)MAP_FAILED; /* too many areas */
     }
@@ -552,7 +552,7 @@ syscall_ret_t sys_mmap(struct registers *regs)
     // own memory up front.
     if (!(flags & MAP_ANONYMOUS))
     {
-        int32_t err = file_mmap(entry->file, proc->page_directory, virt, len_pages, prot, offset);
+        int32_t err = file_mmap(entry->file, proc->space->page_directory, virt, len_pages, prot, offset);
         if (err != 0)
         {
             // the pages mapped before the error go too

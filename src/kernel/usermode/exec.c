@@ -117,7 +117,7 @@ int exec_program(const char *path, const char **argv)
     }
 
     // load ELF into the child's page directory, recording its segments
-    if (!elf_load(path, child->page_directory, &child->vmas, &elf))
+    if (!elf_load(path, child->space->page_directory, &child->space->vmas, &elf))
     {
         process_destroy(child);
         return -1;
@@ -125,14 +125,14 @@ int exec_program(const char *path, const char **argv)
 
     // the user stack area: its top pages are mapped when the process first
     // runs, the rest on demand as the stack grows down
-    if (kerr_failed(vma_insert(&child->vmas, USER_STACK_LIMIT, USER_STACK_TOP,
+    if (kerr_failed(vma_insert(&child->space->vmas, USER_STACK_LIMIT, USER_STACK_TOP,
                                PROT_READ | PROT_WRITE, VMA_STACK)))
     {
         process_destroy(child);
         return -1;
     }
 
-    child->brk = elf.brk;
+    child->space->brk = elf.brk;
     child->parent_pid = parent ? parent->pid : PID_NONE;
     process_set_name(child, path);
 
@@ -190,37 +190,28 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
 
     // load the new program into a new address space. the old one stays
     // untouched until the load has worked, so a failed execve returns.
-    vma_table_t *vmas = kmalloc(sizeof(vma_table_t));
-    if (!vmas)
+    user_space_t *space = user_space_create();
+    if (!space)
     {
         return KERR_NOMEM;
     }
-    vma_table_init(vmas);
-
-    addr_space_t as = arch_create_address_space();
-    if (as == ADDR_SPACE_NONE)
-    {
-        kfree(vmas);
-        return KERR_NOMEM;
-    }
+    addr_space_t as = space->page_directory;
 
     elf_load_result_t elf;
-    if (!elf_load(path, as, vmas, &elf) ||
-        kerr_failed(vma_insert(vmas, USER_STACK_LIMIT, USER_STACK_TOP, PROT_READ | PROT_WRITE,
-                               VMA_STACK)))
+    if (!elf_load(path, as, &space->vmas, &elf) ||
+        kerr_failed(vma_insert(&space->vmas, USER_STACK_LIMIT, USER_STACK_TOP,
+                               PROT_READ | PROT_WRITE, VMA_STACK)))
     {
-        arch_destroy_address_space(as);
-        kfree(vmas);
+        user_space_put(space);
         return KERR_NOENT;
     }
+    space->brk = elf.brk;
 
     // no way back from here: swap in the new image. masked, so the process
     // is never scheduled with a half-changed address space.
     uint32_t flags = arch_irq_save();
-    addr_space_t old = proc->page_directory;
-    proc->page_directory = as;
-    proc->vmas = *vmas;
-    proc->brk = elf.brk;
+    user_space_t *old = proc->space;
+    proc->space = space;
     process_set_name(proc, path);
     signal_exec(proc);
     apply_set_ids(proc, &program);
@@ -231,8 +222,7 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     arch_switch_address_space(as);
     arch_irq_restore(flags);
 
-    arch_destroy_address_space(old);
-    kfree(vmas);
+    user_space_put(old);
 
     // descriptors marked close-on-exec do not survive into the new program
     for (int i = 0; i < FD_MAX; i++)

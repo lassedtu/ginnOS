@@ -107,8 +107,6 @@ process_t *process_create(void)
 
     // the slot is ours (PROC_STATE_NEW), so it is set up without the lock
     proc->parent_pid = PID_NONE;
-    proc->brk = 0;
-    vma_table_init(&proc->vmas);
     proc->exit_status = 0;
     wait_queue_init(&proc->child_exit);
     proc->umask = 022; // the ids start as root's (0), from the cleared slot
@@ -134,15 +132,14 @@ process_t *process_create(void)
     // ESP starts at the top of the stack (grows downward)
     proc->kernel_esp = stack + KERNEL_STACK_SIZE;
 
-    // allocate a per-process address space (shares kernel mappings)
-    addr_space_t pd = arch_create_address_space();
-    if (pd == ADDR_SPACE_NONE)
+    // its own user memory (the kernel half is shared by all)
+    proc->space = user_space_create();
+    if (!proc->space)
     {
         kstack_free(stack);
         release_slot(proc);
         return NULL;
     }
-    proc->page_directory = pd;
 
     // initialize fd table: stdin/stdout/stderr as console
     for (int fd = 0; fd < FD_STDIO_COUNT; fd++)
@@ -175,13 +172,13 @@ process_t *process_fork(const struct registers *regs)
 
     // the memory: the same areas, and the parent's pages shared
     // copy-on-write
-    if (!arch_copy_user_space(child->page_directory, parent->page_directory))
+    if (!arch_copy_user_space(child->space->page_directory, parent->space->page_directory))
     {
         process_destroy(child);
         return NULL;
     }
-    child->vmas = parent->vmas;
-    child->brk = parent->brk;
+    child->space->vmas = parent->space->vmas;
+    child->space->brk = parent->space->brk;
 
     child->parent_pid = parent->pid;
     child->pgid = parent->pgid;
@@ -250,19 +247,10 @@ void process_release_resources(process_t *proc)
     free_argv(proc->argv);
     proc->argv = NULL;
 
-    // free the per-process address space (and user page tables/frames).
-    // a process tearing down its own space moves to the kernel's first; its
-    // kernel stack lives in the shared kernel region, so it stays mapped.
-    if (proc->page_directory)
-    {
-        if (proc == current_process)
-        {
-            arch_switch_address_space(arch_kernel_address_space());
-        }
-        arch_destroy_address_space(proc->page_directory);
-        proc->page_directory = 0;
-    }
-    vma_table_init(&proc->vmas);
+    // let go of the user memory; the last user frees it (a process that
+    // frees its own moves to the kernel's page tables first)
+    user_space_put(proc->space);
+    proc->space = NULL;
 }
 
 void process_destroy(process_t *proc)
@@ -373,7 +361,7 @@ void process_reap_orphans(void)
         {
             // an orphan released everything else before it exited, so only
             // its stack and slot are left and nothing here can sleep
-            KASSERT(proc->page_directory == 0, "orphan zombie still has an address space");
+            KASSERT(!proc->space, "orphan zombie still has an address space");
             process_destroy(proc);
             orphan_zombies--;
         }
@@ -500,17 +488,17 @@ bool process_info(uint32_t pid, process_info_t *info)
         info->parent_pid = proc->parent_pid;
         info->state = proc->state;
         memcpy(info->name, proc->name, sizeof(info->name));
-        info->areas = proc->vmas.count;
+        info->areas = proc->space ? proc->space->vmas.count : 0;
         info->open_fds = 0;
         for (int fd = 0; proc->fds && fd < FD_MAX; fd++)
         {
             info->open_fds += proc->fds[fd].file != NULL;
         }
-        info->brk = proc->brk;
+        info->brk = proc->space ? proc->space->brk : 0;
         info->uid = proc->uid;
         info->utime = proc->utime;
         info->stime = proc->stime;
-        info->pages = arch_count_user_pages(proc->page_directory);
+        info->pages = proc->space ? arch_count_user_pages(proc->space->page_directory) : 0;
         found = true;
         break;
     }
