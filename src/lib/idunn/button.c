@@ -247,7 +247,8 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
         const icon_t *icon = idunn_picture(ctx, b->icon, PICTURE_SIZE);
         int32_t size = idunn_px(t, PICTURE_SIZE);
         if (icon)
-            icon_draw(buf, icon, x, w->rect.y + (w->rect.h - size) / 2, b->dim ? 140 : 255);
+            idunn_draw_picture(t, buf, icon, x, w->rect.y + (w->rect.h - size) / 2,
+                               b->dim ? 140 : 255);
         x += size + idunn_px(t, ICON_GAP);
         room -= size + idunn_px(t, ICON_GAP);
     }

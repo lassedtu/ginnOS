@@ -437,3 +437,10 @@ bool idunn_list_column_left(const idunn_widget_t *list, int column);
 void idunn_list_set_heads(idunn_widget_t *list, idunn_widget_t *heads);
 /** the list of these heads is freed */
 void idunn_list_heads_forget(idunn_widget_t *heads);
+
+/**
+ * draw a Tela picture. in the light theme a faint edge of its own shape
+ * goes under it, so a white page (a text file) shows on a white ground.
+ */
+void idunn_draw_picture(const idunn_theme_t *t, gfx_buffer_t *buf, const icon_t *icon,
+                        int32_t x, int32_t y, uint8_t opacity);

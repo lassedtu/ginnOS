@@ -378,3 +378,20 @@ void idunn_on_menu(idunn_widget_t *w, idunn_callback_t on_menu, void *data)
     w->on_menu = on_menu;
     w->menu_data = data;
 }
+
+void idunn_draw_picture(const idunn_theme_t *t, gfx_buffer_t *buf, const icon_t *icon,
+                        int32_t x, int32_t y, uint8_t opacity)
+{
+    if (t->mode == IDUNN_LIGHT)
+    {
+        // the shape, a pixel out on each side and a little more below
+        int32_t one = idunn_px(t, 1);
+        gfx_color_t black = gfx_rgb(0, 0, 0);
+        gfx_color_t side = gfx_fade(black, (uint8_t)(16 * opacity / 255));
+        icon_draw_mask(buf, icon, x - one, y, side);
+        icon_draw_mask(buf, icon, x + one, y, side);
+        icon_draw_mask(buf, icon, x, y - one, side);
+        icon_draw_mask(buf, icon, x, y + one, gfx_fade(black, (uint8_t)(40 * opacity / 255)));
+    }
+    icon_draw(buf, icon, x, y, opacity);
+}

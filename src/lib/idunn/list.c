@@ -200,7 +200,7 @@ static void draw_tile(idunn_widget_t *w, gfx_buffer_t *buf, int i)
     int32_t top = r.y + idunn_px(t, 8);
     const icon_t *picture = idunn_picture(ctx, it->icon ? it->icon : "unknown", PICTURE);
     if (picture)
-        icon_draw(buf, picture, r.x + (r.w - size) / 2, top, 255);
+        idunn_draw_picture(t, buf, picture, r.x + (r.w - size) / 2, top, 255);
     // the name in the middle, with "..." when it is too long
     bragi_face_t *face = idunn_face(ctx, IDUNN_TEXT_BODY);
     int32_t room = r.w - idunn_px(t, 8);
@@ -230,7 +230,7 @@ static void draw_row(idunn_widget_t *w, gfx_buffer_t *buf, int i)
         if (!picture)
             picture = idunn_picture(ctx, "unknown", ROW_PICTURE);
         if (picture)
-            icon_draw(buf, picture, x, r.y + (r.h - size) / 2, 255);
+            idunn_draw_picture(t, buf, picture, x, r.y + (r.h - size) / 2, 255);
         x += size + idunn_px(t, ICON_GAP);
     }
     else if (it->icon)
