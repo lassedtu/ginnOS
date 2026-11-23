@@ -144,7 +144,8 @@ static int32_t open_at(int32_t dirfd, const char *path, uint32_t flags, uint32_t
     if (kerr_failed(err))
         return kerr_to_errno(err);
 
-    uint8_t type = vfs_file_type(&file->vfs);
+    // a device with its own stream (a terminal) has no filesystem file
+    uint8_t type = file_is_vfs(file) ? vfs_file_type(&file->vfs) : FS_TYPE_UNKNOWN;
     if ((flags & O_DIRECTORY) && type != FS_TYPE_DIR)
         ret = -ENOTDIR;
     else if (type == FS_TYPE_DIR && access != O_RDONLY)

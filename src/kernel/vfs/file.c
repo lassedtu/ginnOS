@@ -26,6 +26,7 @@ static file_t *file_alloc(const file_ops_t *ops, uint32_t flags)
         file->refcount = 1;
         file->flags = flags;
         file->lookahead = NULL;
+        file->path = NULL; // only a filesystem file has one (file_open)
     }
     return file;
 }

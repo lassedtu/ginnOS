@@ -88,6 +88,11 @@ static void test_at_calls(void)
     close(file);
     CHECK(fstatat(dir, "", &st, 0) == -1 && errno == ENOENT);
     CHECK(unlinkat(dir, "sub", 0) == -1);
+    int pipe_fds[2];
+    CHECK(pipe(pipe_fds) == 0);
+    CHECK(fstatat(pipe_fds[0], "x", &st, 0) == -1 && errno == ENOTDIR);
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
 
     // fchown on an open file (libctest runs as root)
     file = openat(dir, "moved", O_RDONLY);
