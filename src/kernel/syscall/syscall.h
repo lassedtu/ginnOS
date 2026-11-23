@@ -108,9 +108,10 @@
 #define SYS_GETTID 99        // the calling thread's id
 #define SYS_TGKILL 100       // send a signal to one thread
 #define SYS_SET_TLS 101      // set the thread pointer (thread-local storage)
+#define SYS_FUTEX 102        // wait on or wake a word in user memory
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 102
+#define SYSCALL_COUNT 103
 
 /**
  * initialize the system call interface.

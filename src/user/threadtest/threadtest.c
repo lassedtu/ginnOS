@@ -19,6 +19,8 @@
  *   stop    SIGSTOP stops every thread, reported once; SIGCONT, SIGKILL
  *   tls     a thread made with CLONE_SETTLS has its own __thread variables,
  *           which start as the program's values
+ *   futex   wait and wake, the checks, the timeout, a signal, and a join
+ *           that sleeps until the CLEARTID wake
  *   all     every mode above
  *
  * each mode prints "threadtest <mode>: ok" when it passes. a thread does
@@ -36,6 +38,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <syscall.h>
+#include <time.h>
 #include <unistd.h>
 
 #define CLONE_VM             0x00000100
@@ -605,6 +608,112 @@ static int test_tls(void)
     return ok();
 }
 
+#define FUTEX_WAIT 0
+#define FUTEX_WAKE 1
+#define FUTEX_PRIVATE_FLAG 128
+
+static long futex(volatile int *word, int op, int value, const struct timespec *timeout)
+{
+    return _syscall(SYS_FUTEX, (long)word, op | FUTEX_PRIVATE_FLAG, value, (long)timeout, 0);
+}
+
+static volatile int futex_word;
+static volatile long wait_result;
+
+static int wait_on_word(void *arg)
+{
+    (void)arg;
+    long result = 0;
+    while (futex_word == 0 && (result == 0 || result == -EAGAIN))
+    {
+        result = futex(&futex_word, FUTEX_WAIT, 0, NULL);
+    }
+    wait_result = result;
+    return 0;
+}
+
+static int nap(void *arg)
+{
+    (void)arg;
+    struct timespec span = {0, 100 * 1000 * 1000};
+    nanosleep(&span, NULL);
+    return 0;
+}
+
+/** wait for a thread as pthread_join does: sleep until its id word is 0 */
+static bool futex_join(volatile pid_t *tid)
+{
+    struct timespec limit = {5, 0};
+    pid_t seen;
+    while ((seen = *tid) != 0)
+    {
+        if (futex((volatile int *)tid, FUTEX_WAIT, seen, &limit) == -ETIMEDOUT)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static int test_futex(void)
+{
+    futex_word = 1;
+    if (futex(&futex_word, FUTEX_WAIT, 0, NULL) != -EAGAIN)
+    {
+        return failed("FUTEX_WAIT on another value");
+    }
+    if (futex((volatile int *)((char *)&futex_word + 1), FUTEX_WAKE, 1, NULL) != -EINVAL)
+    {
+        return failed("a futex that is not aligned");
+    }
+    struct timespec short_wait = {0, 50 * 1000 * 1000};
+    if (futex(&futex_word, FUTEX_WAIT, 1, &short_wait) != -ETIMEDOUT)
+    {
+        return failed("the timeout");
+    }
+    if (futex(&futex_word, FUTEX_WAKE, 1, NULL) != 0)
+    {
+        return failed("FUTEX_WAKE with no thread waiting");
+    }
+
+    // a thread sleeps on the word until it changes
+    futex_word = 0;
+    wait_result = 1;
+    volatile pid_t tid = 0;
+    start(wait_on_word, NULL, &tid);
+    spin(10);
+    futex_word = 1;
+    long woken = futex(&futex_word, FUTEX_WAKE, 1, NULL);
+    join(&tid);
+    if (woken != 1 || wait_result != 0)
+    {
+        printf("threadtest futex: woke %ld, the wait returned %ld\n", woken, wait_result);
+        return 1;
+    }
+
+    // a signal ends the sleep
+    signal(SIGUSR1, record_handler);
+    futex_word = 0;
+    wait_result = 1;
+    pid_t thread = start(wait_on_word, NULL, &tid);
+    spin(10);
+    _syscall(SYS_TGKILL, getpid(), thread, SIGUSR1, 0, 0);
+    join(&tid);
+    if (wait_result != -EINTR)
+    {
+        printf("threadtest futex: after a signal the wait returned %ld\n", wait_result);
+        return 1;
+    }
+
+    // the join sleeps, and the end of the thread wakes it
+    start(nap, NULL, &tid);
+    if (!futex_join(&tid))
+    {
+        return failed("the wake when a thread ends");
+    }
+    return ok();
+}
+
 static const struct
 {
     const char *name;
@@ -614,7 +723,7 @@ static const struct
     {"group", test_group},   {"leader", test_leader}, {"fault", test_fault},
     {"sleep", test_sleep},   {"fork", test_fork},     {"exec", test_exec},
     {"signal", test_signal}, {"tgkill", test_tgkill}, {"stop", test_stop},
-    {"tls", test_tls},
+    {"tls", test_tls},       {"futex", test_futex},
 };
 
 #define MODE_COUNT (sizeof(modes) / sizeof(modes[0]))
@@ -641,6 +750,6 @@ int main(int argc, char **argv)
         }
     }
     printf("usage: threadtest ids|many|share|group|leader|fault|sleep|fork|exec|signal|tgkill|"
-           "stop|tls|all\n");
+           "stop|tls|futex|all\n");
     return 2;
 }

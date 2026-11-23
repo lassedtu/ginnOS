@@ -51,6 +51,11 @@ uint32_t clock_realtime_seconds(void);
 void clock_ticks_to_timespec(uint64_t ticks, struct ktimespec *out);
 
 /**
+ * the timer ticks that cover at least a time span (rounded up).
+ */
+uint64_t clock_timespec_to_ticks(const struct ktimespec *span);
+
+/**
  * the wall-clock time as a timespec.
  */
 void clock_realtime(struct ktimespec *out);

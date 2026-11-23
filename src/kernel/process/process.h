@@ -111,6 +111,11 @@ typedef struct process
     wait_queue_t *waiting_on; // the queue it sleeps on (BLOCKED), or NULL
     bool interruptible;       // a signal may end the sleep
 
+    // the futex it sleeps on (futex.c): its address space and user address
+    struct user_space *futex_space;
+    uintptr_t futex_addr;
+    bool futex_woken; // a FUTEX_WAKE ended the sleep
+
     signal_state_t signals;   // pending and blocked
     signal_handlers_t *handlers; // what each signal does (shared by threads);
                                  // kept until the slot is freed

@@ -5,6 +5,7 @@
 #include "kernel/process/process.h"
 #include "kernel/signal/signal.h"
 #include "kernel/time/clock.h"
+#include "kernel/sync/futex.h"
 
 #include "arch/x86/cpu/isr.h"
 #include "arch/x86/cpu/idt.h"
@@ -104,6 +105,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_GETTID] = sys_gettid,
     [SYS_TGKILL] = sys_tgkill,
     [SYS_SET_TLS] = sys_set_tls,
+    [SYS_FUTEX] = sys_futex,
     [SYS_SHM_CREATE] = sys_shm_create,
     [SYS_SOCKET] = sys_socket,
     [SYS_BIND] = sys_bind,
@@ -193,7 +195,7 @@ void syscall_initialize(void)
     poll_init();
     signal_init();
     clock_init_sleep();
-
+    futex_init();
 
     /* register the handler in the ISR dispatch table */
     isr_register_handler(SYSCALL_VECTOR, syscall_handler);

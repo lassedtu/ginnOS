@@ -2,6 +2,7 @@
 
 #include "arch/arch.h"
 #include "arch/x86/cpu/gdt.h"
+#include "kernel/sync/futex.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/heap.h"
 #include "kernel/memory/memory_layout.h"
@@ -323,13 +324,16 @@ static void thread_exit(int32_t status)
         arch_halt_forever();
     }
 
-    // CLONE_CHILD_CLEARTID: the thread's id word becomes 0, for a thread
-    // that waits for this one to end (pthread_join). a bad address is
+    // CLONE_CHILD_CLEARTID: the thread's id word becomes 0, and a thread
+    // that waits on it as a futex wakes (pthread_join). a bad address is
     // the program's own fault: nothing is written then.
     if (proc->clear_tid)
     {
         uint32_t zero = 0;
-        (void)copy_to_user((void *)proc->clear_tid, &zero, sizeof(zero));
+        if (!kerr_failed(copy_to_user((void *)proc->clear_tid, &zero, sizeof(zero))))
+        {
+            futex_wake(proc->space, proc->clear_tid, 1);
+        }
     }
 
     // release everything but the kernel stack and slot now, while this
