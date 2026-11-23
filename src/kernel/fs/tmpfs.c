@@ -5,6 +5,7 @@
 #include "kernel/errno.h"
 #include "kernel/memory/heap.h"
 #include "kernel/sync/mutex.h"
+#include "kernel/time/clock.h"
 #include "kernel/vfs/stat.h"
 
 /**
@@ -46,6 +47,9 @@ typedef struct tmpfs_node
     uint32_t mode;              // permission bits (07777)
     uint32_t uid;
     uint32_t gid;
+    uint32_t atime;             // seconds since 1970
+    uint32_t mtime;
+    uint32_t ctime;
 } tmpfs_node_t;
 
 static mutex_t tmpfs_lock = MUTEX_INIT;
@@ -66,6 +70,7 @@ static tmpfs_node_t *node_new(const char *name, uint8_t type)
         node->inode = next_inode++;
         // the creator sets its own mode and owner right after (sys_open)
         node->mode = type == FS_TYPE_DIR ? 0755 : type == FS_TYPE_SYMLINK ? 0777 : 0644;
+        node->atime = node->mtime = node->ctime = clock_realtime_seconds();
     }
     return node;
 }
@@ -303,6 +308,9 @@ static void fill_stat(const tmpfs_node_t *node, fs_stat_t *stat_out)
     stat_out->links_count = 1;
     stat_out->size = node->size;
     stat_out->blocks = (node->capacity + 511) / 512;
+    stat_out->atime = node->atime;
+    stat_out->mtime = node->mtime;
+    stat_out->ctime = node->ctime;
 }
 
 /*
@@ -545,6 +553,7 @@ static uint32_t tmpfs_write(fs_file_t *file, uint32_t count, const void *data_in
         {
             node->size = end;
         }
+        node->mtime = node->ctime = clock_realtime_seconds();
         n = count;
     }
     mutex_unlock(&tmpfs_lock);
@@ -557,6 +566,7 @@ static kerr_t tmpfs_truncate(fs_file_t *file)
     tmpfs_node_t *node = file->fs_data;
     node->size = 0;
     file->fs_pos = 0;
+    node->mtime = node->ctime = clock_realtime_seconds();
     mutex_unlock(&tmpfs_lock);
     return KERR_OK;
 }
@@ -647,6 +657,15 @@ static kerr_t tmpfs_setattr(fs_file_t *file, const fs_attr_t *attr)
         node->uid = attr->uid;
         node->gid = attr->gid;
     }
+    if (attr->what & FS_ATTR_ATIME)
+    {
+        node->atime = attr->atime;
+    }
+    if (attr->what & FS_ATTR_MTIME)
+    {
+        node->mtime = attr->mtime;
+    }
+    node->ctime = clock_realtime_seconds();
     mutex_unlock(&tmpfs_lock);
     return KERR_OK;
 }

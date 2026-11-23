@@ -95,9 +95,10 @@
 #define SYS_SYMLINKAT 86  // links: a symbolic link, its target, a hard link
 #define SYS_READLINKAT 87
 #define SYS_LINKAT 88
+#define SYS_UTIMENSAT 89  // set a file's times
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 89
+#define SYSCALL_COUNT 90
 
 /**
  * initialize the system call interface.

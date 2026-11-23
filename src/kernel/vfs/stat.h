@@ -7,6 +7,7 @@
 
 #include "common/stdint.h"
 #include "kernel/fs/fs.h"
+#include "kernel/time/clock.h"
 
 // file type bits of st_mode (the ext2 i_mode values)
 #define S_IFMT   0170000
@@ -30,9 +31,9 @@ struct kstat
     int32_t st_size;     // bytes
     uint32_t st_blksize; // preferred I/O size
     uint32_t st_blocks;  // 512-byte blocks allocated
-    uint32_t st_atime;   // last access, seconds since 1970
-    uint32_t st_mtime;   // last modification
-    uint32_t st_ctime;   // last status change
+    struct ktimespec st_atim; // last access, since 1970
+    struct ktimespec st_mtim; // last modification
+    struct ktimespec st_ctim; // last status change
 };
 
 /**
@@ -59,7 +60,8 @@ static inline void stat_from_fs(const fs_stat_t *fs, struct kstat *out)
     out->st_size = (int32_t)fs->size;
     out->st_blksize = 1024;
     out->st_blocks = fs->blocks;
-    out->st_atime = fs->atime;
-    out->st_mtime = fs->mtime;
-    out->st_ctime = fs->ctime;
+    // the filesystems keep whole seconds
+    out->st_atim = (struct ktimespec){.tv_sec = fs->atime, .tv_nsec = 0};
+    out->st_mtim = (struct ktimespec){.tv_sec = fs->mtime, .tv_nsec = 0};
+    out->st_ctim = (struct ktimespec){.tv_sec = fs->ctime, .tv_nsec = 0};
 }

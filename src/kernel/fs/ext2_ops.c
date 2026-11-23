@@ -318,6 +318,14 @@ static kerr_t ext2_ops_setattr(fs_file_t *file, const fs_attr_t *attr)
         inode.i_uid = (uint16_t)attr->uid;
         inode.i_gid = (uint16_t)attr->gid;
     }
+    if (attr->what & FS_ATTR_ATIME)
+    {
+        inode.i_atime = attr->atime;
+    }
+    if (attr->what & FS_ATTR_MTIME)
+    {
+        inode.i_mtime = attr->mtime;
+    }
     inode.i_ctime = ext2_now();
 
     if (!ext2_write_inode(ext2->volume, ext2->inode, &inode))

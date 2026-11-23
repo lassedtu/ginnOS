@@ -1,4 +1,6 @@
 #include "unistd.h"
+#include "sys/time.h"
+#include "utime.h"
 #include <stdarg.h>
 #include <stdbool.h>
 #include "errno.h"
@@ -682,4 +684,37 @@ int linkat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_p
 int link(const char *old_path, const char *new_path)
 {
     return linkat(AT_FDCWD, old_path, AT_FDCWD, new_path, 0);
+}
+
+int utimensat(int dirfd, const char *path, const struct timespec times[2], int flags)
+{
+    // a NULL path would make the kernel act on dirfd: that is futimens
+    if (!path)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return check(_syscall(SYS_UTIMENSAT, dirfd, (long)path, (long)times, flags, 0));
+}
+
+int futimens(int fd, const struct timespec times[2])
+{
+    return check(_syscall(SYS_UTIMENSAT, fd, 0, (long)times, 0, 0));
+}
+
+int utime(const char *path, const struct utimbuf *times)
+{
+    if (!times)
+        return utimensat(AT_FDCWD, path, NULL, 0);
+    struct timespec both[2] = {{times->actime, 0}, {times->modtime, 0}};
+    return utimensat(AT_FDCWD, path, both, 0);
+}
+
+int utimes(const char *path, const struct timeval times[2])
+{
+    if (!times)
+        return utimensat(AT_FDCWD, path, NULL, 0);
+    struct timespec both[2] = {{times[0].tv_sec, times[0].tv_usec * 1000},
+                               {times[1].tv_sec, times[1].tv_usec * 1000}};
+    return utimensat(AT_FDCWD, path, both, 0);
 }

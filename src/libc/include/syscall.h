@@ -95,6 +95,7 @@
 #define SYS_SYMLINKAT 86  // links: a symbolic link, its target, a hard link
 #define SYS_READLINKAT 87
 #define SYS_LINKAT 88
+#define SYS_UTIMENSAT 89  // set a file's times
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

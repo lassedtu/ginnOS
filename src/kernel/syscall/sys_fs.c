@@ -5,11 +5,8 @@
 #include "kernel/vfs/permission.h"
 #include "kernel/process/process.h"
 #include "kernel/vfs/dirent.h"
-#include "common/memory.h"
-#include "common/string.h"
-
 #include "kernel/vfs/vfs.h"
-#include "kernel/process/process.h"
+#include "kernel/time/clock.h"
 #include "common/memory.h"
 #include "common/string.h"
 
@@ -416,6 +413,107 @@ syscall_ret_t sys_linkat(struct registers *regs)
     if (linked == KERR_RANGE)
         return -EMLINK;
     return kerr_to_errno(linked);
+}
+
+// utimensat: a tv_nsec that asks for the time now, or no change
+#define UTIME_NOW  ((1l << 30) - 1)
+#define UTIME_OMIT ((1l << 30) - 2)
+
+/**
+ * the time changes utimensat asks for, as setattr attributes.
+ * @param explicit_out set when a time is given (not UTIME_NOW or OMIT).
+ * @return 0, or -EINVAL for a bad tv_nsec.
+ */
+static int32_t times_to_attr(const struct ktimespec times[2], fs_attr_t *attr, bool *explicit_out)
+{
+    uint32_t now = clock_realtime_seconds();
+    const uint32_t bits[2] = {FS_ATTR_ATIME, FS_ATTR_MTIME};
+    uint32_t *fields[2] = {&attr->atime, &attr->mtime};
+    *explicit_out = false;
+    for (int i = 0; i < 2; i++)
+    {
+        long nsec = times[i].tv_nsec;
+        if (nsec == UTIME_OMIT)
+            continue;
+        if (nsec != UTIME_NOW && (nsec < 0 || nsec > 999999999l))
+            return -EINVAL;
+        attr->what |= bits[i];
+        *fields[i] = nsec == UTIME_NOW ? now : (uint32_t)times[i].tv_sec;
+        if (nsec != UTIME_NOW)
+            *explicit_out = true;
+    }
+    return 0;
+}
+
+/**
+ * the caller may set a file's times to given values if it owns the file
+ * (or is root); to the time now also if it may write the file.
+ */
+static int32_t may_set_times(const vfs_stat_t *st, bool explicit_times)
+{
+    process_t *proc = process_current();
+    if (proc->euid == 0 || proc->euid == st->uid)
+        return 0;
+    if (explicit_times)
+        return -EPERM;
+    return permission_check(st, proc->euid, proc->egid, MAY_WRITE);
+}
+
+/**
+ * SYS_utimensat: set a file's access and modification times.
+ * args: dirfd, path (NULL: the file open as dirfd, which is futimens),
+ *       times (two timespecs, access then modification; NULL: both now),
+ *       flags (AT_SYMLINK_NOFOLLOW).
+ * a tv_nsec of UTIME_NOW takes the time now; UTIME_OMIT keeps the time.
+ * returns 0, or a negative errno (EPERM, EACCES, EINVAL, ENOENT, EBADF).
+ */
+syscall_ret_t sys_utimensat(struct registers *regs)
+{
+    int32_t dirfd = (int32_t)syscall_arg(regs, 0);
+    const char *path = (const char *)syscall_arg(regs, 1);
+    const struct ktimespec *user_times = (const struct ktimespec *)syscall_arg(regs, 2);
+    uint32_t flags = (uint32_t)syscall_arg(regs, 3);
+    if (flags & ~(uint32_t)AT_SYMLINK_NOFOLLOW)
+        return -EINVAL;
+
+    struct ktimespec times[2] = {{0, UTIME_NOW}, {0, UTIME_NOW}};
+    if (user_times && kerr_failed(copy_from_user(times, user_times, sizeof(times))))
+        return -EFAULT;
+    fs_attr_t attr = {0};
+    bool explicit_times;
+    int32_t err = times_to_attr(times, &attr, &explicit_times);
+    if (err < 0)
+        return err;
+
+    vfs_stat_t st;
+    if (!path)
+    {
+        fd_entry_t *entry = fd_get(dirfd);
+        if (!entry)
+            return -EBADF;
+        if (!file_is_vfs(entry->file))
+            return -EINVAL;
+        kerr_t found = vfs_fstat(&entry->file->vfs, &st);
+        if (kerr_failed(found))
+            return kerr_to_errno(found);
+        err = may_set_times(&st, explicit_times);
+        if (err < 0 || attr.what == 0)
+            return err;
+        return kerr_to_errno(vfs_fsetattr(&entry->file->vfs, &attr));
+    }
+
+    char resolved[PATH_MAX];
+    err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved),
+                               !(flags & AT_SYMLINK_NOFOLLOW));
+    if (err < 0)
+        return err;
+    kerr_t found = vfs_stat(resolved, &st);
+    if (kerr_failed(found))
+        return kerr_to_errno(found);
+    err = may_set_times(&st, explicit_times);
+    if (err < 0 || attr.what == 0)
+        return err;
+    return kerr_to_errno(vfs_setattr(resolved, &attr));
 }
 
 // the size of a record with the longest name (a name has at most

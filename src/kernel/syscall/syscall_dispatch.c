@@ -91,6 +91,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_SYMLINKAT] = sys_symlinkat,
     [SYS_READLINKAT] = sys_readlinkat,
     [SYS_LINKAT] = sys_linkat,
+    [SYS_UTIMENSAT] = sys_utimensat,
     [SYS_SHM_CREATE] = sys_shm_create,
     [SYS_SOCKET] = sys_socket,
     [SYS_BIND] = sys_bind,

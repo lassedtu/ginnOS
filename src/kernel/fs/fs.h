@@ -36,6 +36,8 @@ typedef struct fs_stat fs_stat_t;
 // which fields of an fs_attr_t to set
 #define FS_ATTR_MODE  0x1 // the permission bits (07777)
 #define FS_ATTR_OWNER 0x2 // uid and gid
+#define FS_ATTR_ATIME 0x4 // the time of the last access
+#define FS_ATTR_MTIME 0x8 // the time of the last change of the data
 
 /**
  * a change of a file's permissions or owner (setattr).
@@ -46,6 +48,8 @@ typedef struct
     uint32_t mode; // permission bits; the file type is kept
     uint32_t uid;
     uint32_t gid;
+    uint32_t atime; // seconds since 1970
+    uint32_t mtime;
 } fs_attr_t;
 
 typedef struct

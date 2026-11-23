@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
+#include <time.h>
 
 /**
  * @file sys/stat.h
@@ -53,10 +54,15 @@ struct stat
     off_t st_size;
     blksize_t st_blksize;
     blkcnt_t st_blocks;
-    unsigned int st_atime; // 32 bits in the kernel ABI (time_t is wider on x86_64)
-    unsigned int st_mtime;
-    unsigned int st_ctime;
+    struct timespec st_atim; // last access
+    struct timespec st_mtim; // last change of the data
+    struct timespec st_ctim; // last change of the data or the metadata
 };
+
+// the whole seconds, by their older names
+#define st_atime st_atim.tv_sec
+#define st_mtime st_mtim.tv_sec
+#define st_ctime st_ctim.tv_sec
 
 /**
  * get a file's metadata by path.
@@ -65,8 +71,7 @@ struct stat
 int stat(const char *path, struct stat *st);
 
 /**
- * the metadata of a symbolic link itself. the file systems have no
- * symbolic links yet, so this is the same as stat.
+ * the metadata of a symbolic link itself (stat gives what it points at).
  */
 int lstat(const char *path, struct stat *st);
 
@@ -99,3 +104,16 @@ int fchmod(int fd, mode_t mode);
  * @return the old mask.
  */
 mode_t umask(mode_t mask);
+
+// utimensat and futimens: a tv_nsec for the time now, or for no change
+#define UTIME_NOW  ((1l << 30) - 1)
+#define UTIME_OMIT ((1l << 30) - 2)
+
+/**
+ * set a file's access and modification times (times[0], times[1]); with
+ * times NULL, both to the time now.
+ * @param flags AT_SYMLINK_NOFOLLOW: the link itself.
+ * @return 0, or -1 (errno set).
+ */
+int utimensat(int dirfd, const char *path, const struct timespec times[2], int flags);
+int futimens(int fd, const struct timespec times[2]);

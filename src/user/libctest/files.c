@@ -1,8 +1,8 @@
 /**
  * @file files.c
  * @brief libctest: the calls that name a file relative to an open
- *        directory (openat and the other *at calls), fdopendir, and
- *        hard and symbolic links.
+ *        directory (openat and the other *at calls), fdopendir, hard
+ *        and symbolic links, and file times.
  */
 
 #include "libctest.h"
@@ -13,6 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <time.h>
+#include <utime.h>
 #include <unistd.h>
 
 /** the names in a directory stream, counted */
@@ -217,8 +220,51 @@ static void test_tmpfs_links(void)
     CHECK(unlink("/tmp/libctest-soft") == 0);
 }
 
+/** set and read back the times of a file in dir (ext2 or tmpfs) */
+static void check_times(const char *dir)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "%s/libctest-times", dir);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    CHECK(fd >= 0);
+
+    // a new file has the time now
+    struct stat st;
+    time_t now = time(NULL);
+    CHECK(fstat(fd, &st) == 0 && st.st_mtime >= now - 5 && st.st_mtime <= now + 5);
+    CHECK(st.st_mtim.tv_sec == st.st_mtime && st.st_mtim.tv_nsec == 0);
+
+    struct timespec times[2] = {{1000000000, 0}, {1200000000, 0}};
+    CHECK(utimensat(AT_FDCWD, path, times, 0) == 0);
+    CHECK(stat(path, &st) == 0 && st.st_atime == 1000000000 && st.st_mtime == 1200000000);
+
+    // UTIME_OMIT keeps a time; UTIME_NOW takes the time now
+    struct timespec omit_now[2] = {{0, UTIME_OMIT}, {0, UTIME_NOW}};
+    CHECK(futimens(fd, omit_now) == 0);
+    CHECK(fstat(fd, &st) == 0 && st.st_atime == 1000000000 && st.st_mtime >= now - 5);
+
+    struct utimbuf old = {.actime = 86400, .modtime = 2 * 86400};
+    CHECK(utime(path, &old) == 0);
+    CHECK(stat(path, &st) == 0 && st.st_atime == 86400 && st.st_mtime == 2 * 86400);
+    struct timeval tv[2] = {{300, 0}, {400, 999}};
+    CHECK(utimes(path, tv) == 0);
+    CHECK(stat(path, &st) == 0 && st.st_atime == 300 && st.st_mtime == 400);
+
+    // writing moves the modification time on
+    CHECK(write(fd, "x", 1) == 1);
+    CHECK(fstat(fd, &st) == 0 && st.st_mtime >= now - 5);
+
+    struct timespec bad[2] = {{0, 1000000000}, {0, 0}};
+    CHECK(utimensat(AT_FDCWD, path, bad, 0) == -1 && errno == EINVAL);
+    CHECK(utimensat(AT_FDCWD, "/no/such/file", NULL, 0) == -1 && errno == ENOENT);
+    close(fd);
+    CHECK(unlink(path) == 0);
+}
+
 void test_files(void)
 {
+    check_times("");
+    check_times("/tmp");
     test_at_calls();
     test_links();
     test_tmpfs_links();

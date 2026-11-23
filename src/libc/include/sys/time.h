@@ -21,3 +21,10 @@ struct timeval
  * @return 0, or -1 (errno set).
  */
 int gettimeofday(struct timeval *tv, void *tz);
+
+/**
+ * set a file's access and modification times (times[0], times[1]) in
+ * microseconds; with times NULL, both to the time now.
+ * @return 0, or -1 (errno set).
+ */
+int utimes(const char *path, const struct timeval times[2]);
