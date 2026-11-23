@@ -12,7 +12,9 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <sys/time.h>
 #include <time.h>
 #include <utime.h>
@@ -283,8 +285,66 @@ static void check_truncate(const char *dir)
     CHECK(unlink(path) == 0);
 }
 
+/** flock: shared and exclusive locks between open files */
+static void test_flock(void)
+{
+    const char *path = "/tmp/libctest-lock";
+    int a = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    int b = open(path, O_RDWR);
+    CHECK(a >= 0 && b >= 0);
+
+    CHECK(flock(a, LOCK_SH) == 0);
+    CHECK(flock(b, LOCK_SH | LOCK_NB) == 0); // shared with shared
+    CHECK(flock(b, LOCK_EX | LOCK_NB) == -1 && errno == EWOULDBLOCK);
+    CHECK(flock(a, LOCK_UN) == 0);
+    CHECK(flock(b, LOCK_EX | LOCK_NB) == 0); // now b alone
+    CHECK(flock(a, LOCK_SH | LOCK_NB) == -1 && errno == EWOULDBLOCK);
+
+    // a descriptor made by dup shares b's lock; the lock goes with the
+    // last of them
+    int c = dup(b);
+    close(b);
+    CHECK(flock(a, LOCK_EX | LOCK_NB) == -1 && errno == EWOULDBLOCK);
+    close(c);
+    CHECK(flock(a, LOCK_EX | LOCK_NB) == 0);
+    CHECK(flock(a, 0) == -1 && errno == EINVAL);
+    close(a);
+
+    // a lock that waits: a child holds it for a moment
+    int ready[2];
+    CHECK(pipe(ready) == 0);
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        int fd = open(path, O_RDWR);
+        flock(fd, LOCK_EX);
+        write(ready[1], "x", 1);
+        struct timespec moment = {0, 200 * 1000 * 1000};
+        nanosleep(&moment, NULL);
+        _exit(0); // the exit closes fd, which frees the lock
+    }
+    char x;
+    CHECK(read(ready[0], &x, 1) == 1);
+    a = open(path, O_RDWR);
+    CHECK(flock(a, LOCK_EX | LOCK_NB) == -1 && errno == EWOULDBLOCK);
+    CHECK(flock(a, LOCK_EX) == 0); // waits for the child's exit
+    int status;
+    CHECK(waitpid(pid, &status, WNOHANG) == pid || waitpid(pid, &status, 0) == pid);
+    close(a);
+    close(ready[0]);
+    close(ready[1]);
+    CHECK(unlink(path) == 0);
+
+    int fds[2];
+    CHECK(pipe(fds) == 0);
+    CHECK(flock(fds[0], LOCK_EX) == -1 && errno == EINVAL);
+    close(fds[0]);
+    close(fds[1]);
+}
+
 void test_files(void)
 {
+    test_flock();
     check_truncate("");
     check_truncate("/tmp");
     check_times("");

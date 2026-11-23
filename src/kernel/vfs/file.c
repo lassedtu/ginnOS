@@ -4,6 +4,7 @@
 #include "kernel/vfs/poll.h"
 #include "kernel/device/device.h"
 #include "kernel/fs/devfs.h"
+#include "kernel/vfs/flock.h"
 #include "kernel/memory/heap.h"
 #include "kernel/sync/spinlock.h"
 #include "kernel/assert.h"
@@ -267,6 +268,7 @@ static int32_t vfs_kind_stat(file_t *file, struct kstat *st)
 
 static void vfs_kind_release(file_t *file)
 {
+    flock_release(file);
     kfree(file->lookahead);
     kfree(file->path);
     vfs_close(&file->vfs);

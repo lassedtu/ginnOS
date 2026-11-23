@@ -56,6 +56,7 @@
 #define EILSEQ       44 // not a character in UTF-8 (programs use it; the kernel does not)
 #define EMLINK       45 // too many links to a file
 #define EFBIG        46 // a file would be too large
+#define ENOLCK       47 // no locks left (flock)
 
 #define EWOULDBLOCK EAGAIN
 

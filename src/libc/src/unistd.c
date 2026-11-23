@@ -9,6 +9,7 @@
 #include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/reboot.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -854,4 +855,9 @@ int nice(int increment)
         return -1;
     }
     return getpriority(PRIO_PROCESS, 0);
+}
+
+int flock(int fd, int operation)
+{
+    return check(_syscall(SYS_FLOCK, fd, operation, 0, 0, 0));
 }

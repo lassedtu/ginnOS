@@ -105,6 +105,7 @@ int32_t set_new_owner(const char *path, uint32_t mode);
 syscall_ret_t sys_write(struct registers *regs);
 syscall_ret_t sys_read(struct registers *regs);
 syscall_ret_t sys_open(struct registers *regs);
+syscall_ret_t sys_flock(struct registers *regs);
 syscall_ret_t sys_openat(struct registers *regs);
 syscall_ret_t sys_close(struct registers *regs);
 syscall_ret_t sys_lseek(struct registers *regs);

@@ -3,6 +3,7 @@
 #include "fd_table.h"
 
 #include "kernel/vfs/file.h"
+#include "kernel/vfs/flock.h"
 #include "kernel/vfs/poll.h"
 #include "kernel/vfs/permission.h"
 #include "kernel/time/timer.h"
@@ -511,4 +512,19 @@ syscall_ret_t sys_poll(struct registers *regs)
     if (kerr_failed(copy_to_user(user_fds, fds, count * sizeof(kpollfd_t))))
         return -EFAULT;
     return ready;
+}
+
+/**
+ * SYS_flock: an advisory lock on a whole file (kernel/vfs/flock.h).
+ * args: fd, operation (LOCK_SH or LOCK_EX, with LOCK_NB; or LOCK_UN).
+ * returns 0, or a negative errno (EWOULDBLOCK, EINTR, EBADF, EINVAL).
+ */
+syscall_ret_t sys_flock(struct registers *regs)
+{
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
+    if (!entry)
+        return -EBADF;
+    if (!file_is_vfs(entry->file))
+        return -EINVAL; // a pipe, a socket or a device stream
+    return flock_apply(entry->file, (uint32_t)syscall_arg(regs, 1));
 }

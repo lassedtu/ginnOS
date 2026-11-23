@@ -100,9 +100,10 @@
 #define SYS_SETHOSTNAME 91   // set the host name (root)
 #define SYS_GETPRIORITY 92   // the nice value of processes
 #define SYS_SETPRIORITY 93
+#define SYS_FLOCK 94         // an advisory lock on a whole file
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 94
+#define SYSCALL_COUNT 95
 
 /**
  * initialize the system call interface.

@@ -50,6 +50,7 @@ const char *strerror(int errnum)
     case EILSEQ:  return "invalid or incomplete multibyte character";
     case EMLINK:  return "too many links";
     case EFBIG:   return "file too large";
+    case ENOLCK:  return "no locks available";
     case EAFNOSUPPORT: return "address family not supported";
     case EPROTONOSUPPORT: return "protocol not supported";
     case EOPNOTSUPP: return "operation not supported";

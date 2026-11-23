@@ -96,6 +96,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_SETHOSTNAME] = sys_sethostname,
     [SYS_GETPRIORITY] = sys_getpriority,
     [SYS_SETPRIORITY] = sys_setpriority,
+    [SYS_FLOCK] = sys_flock,
     [SYS_SHM_CREATE] = sys_shm_create,
     [SYS_SOCKET] = sys_socket,
     [SYS_BIND] = sys_bind,
