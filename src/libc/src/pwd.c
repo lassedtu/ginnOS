@@ -1,5 +1,6 @@
 #include "pwd.h"
 #include "grp.h"
+#include "shadow.h"
 
 #include "fcntl.h"
 #include "stdlib.h"
@@ -107,4 +108,14 @@ struct group *getgrgid(gid_t gid)
 struct group *getgrnam(const char *name)
 {
     return group_from(find_line("/etc/group", 0, name, 0, line, fields), fields);
+}
+
+struct spwd *getspnam(const char *name)
+{
+    static struct spwd entry;
+    if (find_line(SHADOW_FILE, 0, name, 0, line, fields) < 2)
+        return NULL;
+    entry.sp_namp = fields[0];
+    entry.sp_pwdp = fields[1];
+    return &entry;
 }

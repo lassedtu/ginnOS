@@ -14,6 +14,9 @@
 #define ICON_GAP     8
 #define MARK_WIDTH   16 // the accent line under an active button
 #define MARK_HEIGHT  3
+#define TILE_ICON    24 // a tile: a larger icon over the text
+#define TILE_PAD     10
+#define TILE_GAP     6
 
 typedef struct
 {
@@ -25,6 +28,9 @@ typedef struct
     idunn_variant_t variant;
     idunn_size_t size;
     idunn_align_t align; // the content: centred, or at the start
+    bool pill;           // round ends (idunn_button_set_pill)
+    bool tile;           // the icon over the text (idunn_button_set_tile)
+    bool glass;          // see-through over a picture (idunn_button_set_glass)
     idunn_callback_t on_click;
     void *data;
 } button_t;
@@ -117,6 +123,16 @@ static void button_measure(idunn_widget_t *w, int32_t max_width, int32_t *width,
     (void)max_width;
     const button_t *b = w->data;
     const idunn_theme_t *t = idunn_theme(w);
+    if (b->tile)
+    {
+        bragi_face_t *face = idunn_face(idunn_ctx(w), IDUNN_TEXT_SMALL);
+        int32_t text = face && b->text ? bragi_measure(face, b->text, -1) : 0;
+        int32_t icon = idunn_px(t, TILE_ICON);
+        *width = (text > icon ? text : icon) + 2 * idunn_px(t, TILE_PAD + 4);
+        *height = icon + idunn_px(t, TILE_GAP) +
+                  idunn_text_style(t, IDUNN_TEXT_SMALL).line_height + 2 * idunn_px(t, TILE_PAD);
+        return;
+    }
     *height = idunn_px(t, height_of(b));
     // the content, the padding and a 1 px border (transparent in most
     // variants), as the preview's border-box buttons
@@ -197,7 +213,7 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     const button_t *b = w->data;
     idunn_context_t *ctx = idunn_ctx(w);
     const idunn_theme_t *t = &ctx->theme;
-    int32_t radius = idunn_radius(t);
+    int32_t radius = b->pill ? w->rect.h / 2 : idunn_radius(t);
     look_t look = look_of(t, b->variant);
 
     if (idunn_ring_visible(w))
@@ -215,6 +231,14 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     }
     if (b->dim)
         look.text = idunn_color(t, IDUNN_COLOR_MUTED_FOREGROUND);
+    if (b->glass)
+    {
+        // as a pill field: white (dark) or black (light) over what is under it
+        bool dark = t->mode == IDUNN_DARK;
+        look.normal = dark ? gfx_rgba(255, 255, 255, 18) : gfx_rgba(0, 0, 0, 9);
+        look.hover = dark ? gfx_rgba(255, 255, 255, 28) : gfx_rgba(0, 0, 0, 14);
+        look.pressed = dark ? gfx_rgba(255, 255, 255, 38) : gfx_rgba(0, 0, 0, 20);
+    }
     gfx_color_t fill = gfx_mix(look.normal, look.hover, idunn_hover_amount(w));
     fill = gfx_mix(fill, look.pressed, idunn_press_amount(w));
     if (b->variant == IDUNN_PRIMARY)
@@ -228,6 +252,25 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
         gfx_fill_round_rect(buf, w->rect, radius, fill);
     }
     draw_over(w, buf, radius);
+
+    if (b->tile)
+    {
+        int32_t size = idunn_px(t, TILE_ICON);
+        int32_t line = idunn_text_style(t, IDUNN_TEXT_SMALL).line_height;
+        int32_t y = w->rect.y + (w->rect.h - size - idunn_px(t, TILE_GAP) - line) / 2;
+        const icon_t *icon = b->icon ? idunn_icon(ctx, b->icon, TILE_ICON) : NULL;
+        if (icon)
+            icon_draw_mask(buf, icon, w->rect.x + (w->rect.w - size) / 2, y, look.text);
+        bragi_face_t *face = idunn_face(ctx, IDUNN_TEXT_SMALL);
+        if (b->text && face)
+        {
+            int32_t width = bragi_measure(face, b->text, -1);
+            idunn_draw_text(ctx, buf, IDUNN_TEXT_SMALL, w->rect.x + (w->rect.w - width) / 2,
+                            y + size + idunn_px(t, TILE_GAP), w->rect.w, b->text,
+                            gfx_fade(look.text, 200));
+        }
+        return;
+    }
 
     // the icon and the text, in the middle
     int32_t pad = idunn_px(t, padding_of(b) + 1);
@@ -387,6 +430,33 @@ void idunn_button_set_active(idunn_widget_t *button, bool active)
         return;
     b->active = active;
     idunn_dirty(button);
+}
+
+void idunn_button_set_pill(idunn_widget_t *button, bool pill)
+{
+    button_t *b = as_button(button);
+    if (!b)
+        return;
+    b->pill = pill;
+    idunn_dirty(button);
+}
+
+void idunn_button_set_glass(idunn_widget_t *button, bool glass)
+{
+    button_t *b = as_button(button);
+    if (!b)
+        return;
+    b->glass = glass;
+    idunn_dirty(button);
+}
+
+void idunn_button_set_tile(idunn_widget_t *button, bool tile)
+{
+    button_t *b = as_button(button);
+    if (!b)
+        return;
+    b->tile = tile;
+    idunn_relayout(button);
 }
 
 void idunn_button_set_dim(idunn_widget_t *button, bool dim)

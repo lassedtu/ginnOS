@@ -69,6 +69,7 @@ typedef enum
     IDUNN_TEXT_DISPLAY, // the first page of an app
     IDUNN_TEXT_MONO,    // code, paths
     IDUNN_TEXT_CAPTION, // badges, tabs, section captions: small and medium
+    IDUNN_TEXT_HERO,    // one very large line: the clock of a login screen
     IDUNN_TEXT_COUNT
 } idunn_text_t;
 

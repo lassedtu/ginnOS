@@ -294,7 +294,11 @@ int idunn_window_draw_parts(idunn_window_t *win, gfx_rect_t parts[IDUNN_DAMAGE_M
         if (gfx_rect_empty(clip))
             continue;
         gfx_set_clip(buf, clip);
-        gfx_fill_rect(buf, clip, ground);
+        // the ground replaces the pixels: what was there before is not seen
+        if (win->backdrop)
+            gfx_copy(buf, clip.x, clip.y, win->backdrop, clip);
+        else
+            gfx_clear(buf, ground);
         if (win->root)
             draw_tree(win->root, buf, clip, idunn_overdraw(t), false);
         if (win->modal)

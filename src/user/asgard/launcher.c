@@ -182,11 +182,15 @@ static void submitted(idunn_widget_t *field, void *data)
     start(0, field);
 }
 
+/**
+ * the session ends when asgard ends: Bifrost (the login screen) comes
+ * back, or with startde ("heimdalld -x asgard") the window server ends
+ */
 static void log_out(idunn_widget_t *button, void *data)
 {
     (void)button;
     (void)data;
-    heim_shell_quit(A.conn);
+    idunn_app_quit(A.app);
 }
 
 static void restart(idunn_widget_t *button, void *data)

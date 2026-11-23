@@ -341,6 +341,28 @@ static void test_reference(void)
     gfx_buffer_free(b);
 }
 
+/** a blur keeps a flat colour flat (the edges too) and spreads a point */
+static void test_blur(void)
+{
+    gfx_buffer_t *b = gfx_buffer_new(40, 30);
+    gfx_clear(b, gfx_rgb(200, 100, 50));
+    gfx_blur(b, 6);
+    CHECK_EQ(*gfx_pixel_at(b, 0, 0), gfx_rgb(200, 100, 50));
+    CHECK_EQ(*gfx_pixel_at(b, 39, 29), gfx_rgb(200, 100, 50));
+    CHECK_EQ(*gfx_pixel_at(b, 20, 15), gfx_rgb(200, 100, 50));
+
+    gfx_clear(b, gfx_rgb(0, 0, 0));
+    *gfx_pixel_at(b, 20, 15) = gfx_rgb(255, 255, 255);
+    gfx_blur(b, 2);
+    uint32_t middle = *gfx_pixel_at(b, 20, 15) & 0xff;
+    uint32_t near = *gfx_pixel_at(b, 21, 15) & 0xff;
+    uint32_t far = *gfx_pixel_at(b, 30, 15) & 0xff;
+    CHECK(middle < 255 && middle > 0);
+    CHECK(near > 0 && near <= middle);
+    CHECK_EQ(far, 0u);
+    gfx_buffer_free(b);
+}
+
 int main(void)
 {
     test_arithmetic();
@@ -351,5 +373,6 @@ int main(void)
     test_scene();
     test_mix();
     test_reference();
+    test_blur();
     return hosttest_done("gfx");
 }
