@@ -542,6 +542,23 @@ bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t e
  * @param widths the columns' widths in design pixels, left to right.
  */
 void idunn_list_view_set_columns(idunn_widget_t *list, const int32_t *widths, int count);
+/**
+ * heads over the columns of a list view, which line up with it. a click
+ * on a head calls on_click; idunn_list_heads_clicked tells which.
+ * @param names the name column's head, then one for each column of
+ *        idunn_list_view_set_columns.
+ */
+idunn_widget_t *idunn_list_heads(idunn_widget_t *list, const char *const *names, int count,
+                                 idunn_callback_t on_click, void *data);
+/** the head that was clicked: 0 for the names, 1 and on for the columns */
+int idunn_list_heads_clicked(const idunn_widget_t *heads);
+/** show the order on a head (an arrow), or on none with head -1 */
+void idunn_list_heads_set_order(idunn_widget_t *heads, int head, bool descending);
+/**
+ * draw some columns at their left, for text (a date, a type); the others
+ * stay at their right, for numbers. bit c is column c.
+ */
+void idunn_list_view_set_columns_left(idunn_widget_t *list, uint32_t mask);
 /** true while an item is edited in place */
 bool idunn_list_view_editing(const idunn_widget_t *list);
 /** one click activates an item (a launcher); the arrow keys only move */

@@ -48,19 +48,49 @@ static void item_menu(idunn_widget_t *w, void *data)
     actions_item_menu();
 }
 
-/** "4.2 KiB  2026-11-22 14:03" for a file, the time for a folder */
+#define HEAD_COUNT 4
+
+/** the columns of the list: the date, the kind and the size (none for a folder) */
+static const int32_t columns[] = {120, 96, 72};
+
 static void detail(const entry_t *e, char *out, size_t length)
 {
-    char when[32];
-    format_time(e->mtime, when, sizeof(when));
-    if (S_ISDIR(e->mode))
-    {
-        snprintf(out, length, "%s", when);
+    char when[32] = ""; // none for a file system without times (/proc)
+    char kind[32];
+    char size[32] = "";
+    if (e->mtime)
+        format_time(e->mtime, when, sizeof(when));
+    entry_kind(e, kind, sizeof(kind));
+    if (!S_ISDIR(e->mode))
+        format_size((uint64_t)e->size, size, sizeof(size));
+    snprintf(out, length, "%s\t%s\t%s", when, kind, size);
+}
+
+/** the sort key of each head: the names, the date, the kind, the size */
+static const sort_t head_sort[HEAD_COUNT] = {SORT_NAME, SORT_DATE, SORT_TYPE, SORT_SIZE};
+
+static void head_clicked(idunn_widget_t *heads, void *data)
+{
+    (void)data;
+    int head = idunn_list_heads_clicked(heads);
+    if (head < 0 || head >= HEAD_COUNT)
         return;
-    }
-    char size[32];
-    format_size((uint64_t)e->size, size, sizeof(size));
-    snprintf(out, length, "%s    %s", size, when);
+    sort_t by = head_sort[head];
+    // the same head again: the other way
+    toolbar_set_sort(by, by == Y.sort ? !Y.sort_reverse : false);
+}
+
+/** the arrow on the head of the order (size and date start with the largest) */
+static void show_order(void)
+{
+    if (!Y.heads)
+        return;
+    for (int i = 0; i < HEAD_COUNT; i++)
+        if (head_sort[i] == Y.sort)
+        {
+            bool large_first = Y.sort == SORT_SIZE || Y.sort == SORT_DATE;
+            idunn_list_heads_set_order(Y.heads, i, large_first != Y.sort_reverse);
+        }
 }
 
 bool view_in_trash(void)
@@ -72,7 +102,9 @@ bool view_in_trash(void)
 
 void view_build(void)
 {
+    idunn_widget_free(Y.heads);
     idunn_widget_free(Y.scroll);
+    Y.heads = NULL;
     Y.scroll = NULL;
     Y.list = NULL;
 
@@ -97,7 +129,16 @@ void view_build(void)
     Y.list = Y.grid ? idunn_grid_view() : idunn_list_view();
     idunn_list_view_set_multiple(Y.list, true);
     idunn_list_view_set_pictures(Y.list, true);
-    char text[64];
+    if (!Y.grid)
+    {
+        idunn_list_view_set_columns(Y.list, columns, HEAD_COUNT - 1);
+        idunn_list_view_set_columns_left(Y.list, 1u << 0 | 1u << 1); // the date and the type
+        static const char *const names[HEAD_COUNT] = {"Name", "Date modified", "Type", "Size"};
+        Y.heads = idunn_add(Y.view_holder, idunn_list_heads(Y.list, names, HEAD_COUNT,
+                                                            head_clicked, NULL));
+        show_order();
+    }
+    char text[128];
     for (int i = 0; i < Y.folder.count; i++)
     {
         const entry_t *e = &Y.folder.entries[i];
@@ -130,6 +171,7 @@ void view_refresh(void)
     folder_read(&fresh, Y.folder.path, Y.show_hidden, Y.mime);
     folder_filter(&fresh, Y.filter);
     folder_sort(&fresh, Y.sort, Y.sort_reverse);
+    show_order(); // a new order can leave the same list
     if (folder_same(&fresh, &Y.folder))
     {
         folder_free(&fresh);

@@ -250,6 +250,15 @@ static void save_sort(void)
     conf_free(conf);
 }
 
+void toolbar_set_sort(sort_t by, bool reverse)
+{
+    Y.sort = by;
+    Y.sort_reverse = reverse;
+    show_sort();
+    save_sort();
+    view_refresh();
+}
+
 static void sort_chosen(idunn_widget_t *w, void *data)
 {
     (void)w;

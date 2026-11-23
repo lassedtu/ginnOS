@@ -27,7 +27,10 @@ typedef enum
     ORDER_MEMORY,
     ORDER_NAME,
     ORDER_PID,
+    ORDER_USER,
 } order_t;
+
+#define ORDERS 5
 
 static struct
 {
@@ -35,9 +38,11 @@ static struct
     idunn_widget_t *filter;
     idunn_widget_t *end_button;
     idunn_widget_t *count;
+    idunn_widget_t *heads;
     idunn_menu_t *order_menu;
     idunn_menu_t *item_menu;
     order_t order;
+    bool reverse; // the other way from the order's own (a second click on a head)
     uint32_t shown[SHOWN_MAX]; // the pids in the list, in its order
     int shown_count;
     uint32_t chosen; // the chosen pid, or 0
@@ -73,10 +78,19 @@ static int compare(const void *pa, const void *pb)
             return d;
         break;
     }
+    case ORDER_USER:
+        if (a->uid != b->uid)
+            return a->uid < b->uid ? -1 : 1;
+        break;
     default:
         break;
     }
     return a->pid < b->pid ? -1 : a->pid > b->pid;
+}
+
+static int compare_ordered(const void *pa, const void *pb)
+{
+    return P.reverse ? compare(pb, pa) : compare(pa, pb);
 }
 
 /** true when the filter text is in the name, or is the pid */
@@ -130,7 +144,7 @@ void processes_update(void)
     for (int i = 0; i < H.now.count && P.shown_count < SHOWN_MAX; i++)
         if (matches(&H.now.procs[i], filter))
             P.shown[P.shown_count++] = H.now.procs[i].pid;
-    qsort(P.shown, (size_t)P.shown_count, sizeof(uint32_t), compare);
+    qsort(P.shown, (size_t)P.shown_count, sizeof(uint32_t), compare_ordered);
 
     // the rows are changed in place: only a row that differs is drawn again
     int rows = idunn_list_view_count(P.list);
@@ -231,13 +245,37 @@ static void filter_typed(idunn_widget_t *field, void *data)
     processes_update();
 }
 
+/** the head of each order: Name, CPU, Memory, User, PID */
+static const int head_of[ORDERS] = {1, 2, 0, 4, 3};
+static const order_t order_of_head[ORDERS] = {ORDER_NAME, ORDER_CPU, ORDER_MEMORY, ORDER_USER,
+                                              ORDER_PID};
+
+static void set_order(order_t order, bool reverse)
+{
+    P.order = order;
+    P.reverse = reverse;
+    for (int i = 0; i < 4; i++)
+        idunn_menu_set_checked(P.order_menu, i, i == (int)P.order);
+    // CPU and memory start with the largest
+    bool large_first = order == ORDER_CPU || order == ORDER_MEMORY;
+    idunn_list_heads_set_order(P.heads, head_of[order], large_first != reverse);
+    processes_update();
+}
+
 static void order_chosen(idunn_widget_t *w, void *data)
 {
     (void)w;
-    P.order = (order_t)(intptr_t)data;
-    for (int i = 0; i < 4; i++)
-        idunn_menu_set_checked(P.order_menu, i, i == (int)P.order);
-    processes_update();
+    set_order((order_t)(intptr_t)data, false);
+}
+
+static void head_clicked(idunn_widget_t *heads, void *data)
+{
+    (void)data;
+    int head = idunn_list_heads_clicked(heads);
+    if (head < 0 || head >= ORDERS)
+        return;
+    order_t order = order_of_head[head];
+    set_order(order, order == P.order ? !P.reverse : false);
 }
 
 static void order_clicked(idunn_widget_t *b, void *data)
@@ -259,16 +297,6 @@ bool processes_key(uint16_t code, uint32_t mods)
         return true;
     }
     return false;
-}
-
-/** a head over a column, at its right, as wide as the column */
-static void head(idunn_widget_t *row, const char *text, int32_t width)
-{
-    idunn_widget_t *cell = idunn_add(row, idunn_row(0, 0));
-    idunn_box_set_align(cell, IDUNN_CENTER, IDUNN_END);
-    idunn_set_size(cell, width, 0);
-    idunn_widget_t *label = idunn_add(cell, idunn_label(text, IDUNN_TEXT_SMALL));
-    idunn_label_set_color(label, IDUNN_COLOR_MUTED_FOREGROUND);
 }
 
 idunn_widget_t *processes_page(void)
@@ -295,28 +323,16 @@ idunn_widget_t *processes_page(void)
                                                NULL));
     idunn_set_tooltip(P.end_button, "End the selected process (Delete)");
 
-    // the heads, over the columns of the list (its padding and the gaps)
-    idunn_widget_t *heads = idunn_add(page, idunn_row(0, 0));
-    idunn_box_set_padding(heads, 0, 0);
-    idunn_widget_t *name = idunn_add(heads, idunn_row(0, 0));
-    idunn_box_set_padding(name, 0, 3);
-    idunn_widget_t *name_label = idunn_add(name, idunn_label("Name", IDUNN_TEXT_SMALL));
-    idunn_label_set_color(name_label, IDUNN_COLOR_MUTED_FOREGROUND);
-    idunn_add(heads, idunn_spacer());
-    static const char *const names[] = {"CPU", "Memory", "User", "PID"};
-    for (int i = 0; i < 4; i++)
-    {
-        head(heads, names[i], columns[i]);
-        idunn_widget_t *gap = idunn_add(heads, idunn_row(0, 0));
-        idunn_set_size(gap, i < 3 ? 10 : 14 + 1, 0); // the column gap; then the padding
-    }
-
     P.list = idunn_list_view();
     idunn_list_view_set_pictures(P.list, true);
     idunn_list_view_set_framed(P.list, true);
     idunn_list_view_set_columns(P.list, columns, 4);
+    idunn_list_view_set_columns_left(P.list, 1u << 2); // the user
     idunn_list_view_on_select(P.list, selected, NULL);
     idunn_list_view_on_menu(P.list, item_menu, NULL);
+    static const char *const names[ORDERS] = {"Name", "CPU", "Memory", "User", "PID"};
+    P.heads = idunn_add(page, idunn_list_heads(P.list, names, ORDERS, head_clicked, NULL));
+    idunn_list_heads_set_order(P.heads, head_of[ORDER_CPU], true);
     idunn_grow(idunn_add(page, idunn_scroll_view(P.list)), 1);
 
     P.item_menu = idunn_menu_new();
