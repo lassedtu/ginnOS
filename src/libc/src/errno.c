@@ -1,7 +1,12 @@
 #include "errno.h"
 #include "stdio.h"
 
-int errno = 0;
+static __thread int thread_errno;
+
+int *__errno_location(void)
+{
+    return &thread_errno;
+}
 
 const char *strerror(int errnum)
 {

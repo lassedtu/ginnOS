@@ -21,6 +21,7 @@
  *           which start as the program's values
  *   futex   wait and wake, the checks, the timeout, a signal, and a join
  *           that sleeps until the CLEARTID wake
+ *   errno   each thread has its own errno
  *   all     every mode above
  *
  * each mode prints "threadtest <mode>: ok" when it passes. a thread does
@@ -714,6 +715,46 @@ static int test_futex(void)
     return ok();
 }
 
+static volatile int thread_errno;
+
+static int fail_a_call(void *arg)
+{
+    (void)arg;
+    errno = 0;
+    close(-1);
+    thread_errno = errno;
+    return 0;
+}
+
+static void *volatile errno_tls_area;
+
+static int test_errno(void)
+{
+    // the thread needs its own TLS for its own errno (CLONE_SETTLS)
+    errno_tls_area = malloc(__tls_area_size());
+    char *stack = malloc(STACK_SIZE);
+    if (!errno_tls_area || !stack)
+    {
+        return failed("malloc");
+    }
+    errno = ENOENT;
+    volatile pid_t tid = 0;
+    int flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM |
+                CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+    if (__clone(fail_a_call, stack + STACK_SIZE, flags, NULL, (pid_t *)&tid,
+                __tls_setup(errno_tls_area), (pid_t *)&tid) <= 0)
+    {
+        return failed("clone");
+    }
+    join(&tid);
+    if (thread_errno != EBADF || errno != ENOENT)
+    {
+        printf("threadtest errno: the thread has %d, the first %d\n", thread_errno, errno);
+        return 1;
+    }
+    return ok();
+}
+
 static const struct
 {
     const char *name;
@@ -723,7 +764,7 @@ static const struct
     {"group", test_group},   {"leader", test_leader}, {"fault", test_fault},
     {"sleep", test_sleep},   {"fork", test_fork},     {"exec", test_exec},
     {"signal", test_signal}, {"tgkill", test_tgkill}, {"stop", test_stop},
-    {"tls", test_tls},       {"futex", test_futex},
+    {"tls", test_tls},       {"futex", test_futex},   {"errno", test_errno},
 };
 
 #define MODE_COUNT (sizeof(modes) / sizeof(modes[0]))
@@ -750,6 +791,6 @@ int main(int argc, char **argv)
         }
     }
     printf("usage: threadtest ids|many|share|group|leader|fault|sleep|fork|exec|signal|tgkill|"
-           "stop|tls|futex|all\n");
+           "stop|tls|futex|errno|all\n");
     return 2;
 }
