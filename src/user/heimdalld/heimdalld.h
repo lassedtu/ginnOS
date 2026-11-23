@@ -71,13 +71,15 @@ typedef struct window
     struct window *below; // the z order: S.bottom up to S.top
     struct window *above;
     client_t *client;
-    uint32_t id; // the client's number for it
+    uint32_t id;  // the client's number for it
+    uint32_t sid; // the server's number for it (the shell's name for it)
     uint32_t flags;
     struct window *parent; // a popup's window (NULL: a normal window)
     gfx_rect_t anchor;     // a popup: the rect of the parent's content it goes next to
     uint32_t side;         // HEIM_SIDE_
     int32_t margin;        // the shadow around its card
     char title[HEIM_TITLE_MAX];
+    char app[HEIM_APP_ID_MAX]; // the program, for the shell ("" until told)
 
     int32_t x; // the top left of the frame (the title bar)
     int32_t y;
@@ -165,6 +167,8 @@ typedef struct
     window_t *top;
     window_t *focus;
     client_t *clients;
+    client_t *shell;    // the desktop shell: told about the windows (NULL: none)
+    uint32_t next_sid;  // the server's number of the next window
     uint32_t placed; // windows placed so far (for the cascade)
 
     // the pointer
@@ -230,6 +234,16 @@ void window_screen_changed(void);
 window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *title,
                      window_t *parent);
 bool window_is_popup(const window_t *w);
+/** a bar of the shell at the bottom of the screen (HEIM_WINDOW_PANEL) */
+bool window_is_panel(const window_t *w);
+/** a window the shell lists: not a popup, not a panel */
+bool window_is_normal(const window_t *w);
+/** the screen without the panels: where windows go and maximize to */
+gfx_rect_t window_work_area(void);
+/** a window by the server's number, or NULL */
+window_t *window_by_sid(uint32_t sid);
+/** show a window again if it is minimized, raise it and give it the keyboard */
+void window_activate(window_t *w);
 /** a popup's window at the bottom of its chain (a normal window: itself) */
 window_t *window_root(window_t *w);
 /** put a popup next to its anchor, after a HEIM_REQ_PLACE */
@@ -271,9 +285,18 @@ void client_send_window(window_t *w, heim_msg_t *msg);
 void client_screen_changed(void);
 void client_reap(void);
 
+/** tell the shell that a normal window showed or changed (no shell: nothing) */
+void shell_window(window_t *w);
+/** tell the shell the program of a window */
+void shell_window_app(window_t *w);
+/** tell the shell that a window went */
+void shell_window_gone(window_t *w);
+
 // in input.c
 
 bool input_init(void);
+/** read the keyboard layout (again: the "keyboard" settings changed) */
+void input_keymap(void);
 void input_read(void);
 void input_pointer_update(void);
 

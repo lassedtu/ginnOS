@@ -200,6 +200,8 @@ static void commit(client_t *c, window_t *w, const heim_msg_t *msg)
             w->bar_dirty = true;
         changed = gfx_rect(0, 0, own->width, own->height); // all of it
         window_damage(w);
+        if (window_is_panel(w) && w->shown)
+            window_screen_changed(); // at the bottom again, and the work area
     }
     if (!w->own)
     {
@@ -221,6 +223,94 @@ static void commit(client_t *c, window_t *w, const heim_msg_t *msg)
             screen_damage(gfx_rect_intersect(d, cr));
     }
     w->frame_pending = true;
+}
+
+/**
+ * the shell lists the windows it is told about.
+ */
+static bool listed(const window_t *w)
+{
+    return S.shell && !S.shell->dead && w->shown && window_is_normal(w);
+}
+
+void shell_window(window_t *w)
+{
+    if (!listed(w))
+        return;
+    heim_msg_t msg = {0};
+    msg.type = HEIM_EV_WINDOW;
+    msg.info.id = w->sid;
+    msg.info.state = (w->maximized ? HEIM_STATE_MAXIMIZED : 0) |
+                     (w->minimized ? HEIM_STATE_MINIMIZED : 0) |
+                     (S.focus && window_root(S.focus) == w ? HEIM_STATE_FOCUSED : 0);
+    memcpy(msg.info.title, w->title, HEIM_TITLE_MAX);
+    client_send(S.shell, &msg, -1);
+}
+
+void shell_window_app(window_t *w)
+{
+    if (!listed(w) || !w->app[0])
+        return;
+    heim_msg_t msg = {0};
+    msg.type = HEIM_EV_WINDOW_APP;
+    msg.app.id = w->sid;
+    memcpy(msg.app.app, w->app, HEIM_APP_ID_MAX);
+    client_send(S.shell, &msg, -1);
+}
+
+void shell_window_gone(window_t *w)
+{
+    if (!S.shell || S.shell->dead || !window_is_normal(w))
+        return;
+    heim_msg_t msg = {0};
+    msg.type = HEIM_EV_WINDOW_GONE;
+    msg.info.id = w->sid;
+    client_send(S.shell, &msg, -1);
+}
+
+/**
+ * the first client that asks is the shell: it hears of every window from
+ * now on, and of those there are now.
+ */
+static void become_shell(client_t *c)
+{
+    if (S.shell && S.shell != c)
+    {
+        printf("heimdalld: there is a shell already\n");
+        return;
+    }
+    S.shell = c;
+    for (window_t *w = S.bottom; w; w = w->above)
+    {
+        shell_window(w);
+        shell_window_app(w);
+    }
+}
+
+static void shell_act(uint32_t sid, uint32_t action)
+{
+    window_t *w = window_by_sid(sid);
+    if (!w || !window_is_normal(w) || !w->shown)
+        return;
+    switch (action)
+    {
+    case HEIM_ACT_ACTIVATE:
+        window_activate(w);
+        break;
+    case HEIM_ACT_MINIMIZE:
+        if (!w->minimized)
+            window_minimize(w);
+        break;
+    case HEIM_ACT_CLOSE:
+    {
+        heim_msg_t msg = {0};
+        msg.type = HEIM_EV_CLOSE;
+        client_send_window(w, &msg);
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 static void clip_set(client_t *c, const heim_msg_t *msg)
@@ -308,8 +398,10 @@ static void settings_changed(client_t *c, heim_msg_t *msg)
         window_look();
         if (S.theme.scale != scale)
             window_screen_changed(); // the title bars have another height
-
     }
+    // another keyboard layout (the shell's keyboard menu)
+    if (strcmp(name, "keyboard") == 0)
+        input_keymap();
     heim_msg_t event = {0};
     event.type = HEIM_EV_SETTINGS;
     memcpy(event.settings.name, name, sizeof(event.settings.name));
@@ -371,6 +463,17 @@ static void handle(client_t *c, heim_msg_t *msg)
     case HEIM_REQ_SETTINGS:
         settings_changed(c, msg);
         return;
+    case HEIM_REQ_SHELL:
+        become_shell(c);
+        return;
+    case HEIM_REQ_ACT:
+        if (c == S.shell)
+            shell_act(msg->act.id, msg->act.action);
+        return;
+    case HEIM_REQ_QUIT:
+        if (c == S.shell)
+            S.quit = true;
+        return;
     default:
         break;
     }
@@ -395,9 +498,15 @@ static void handle(client_t *c, heim_msg_t *msg)
         if (w->shown)
             window_place(w);
         break;
+    case HEIM_REQ_APP_ID:
+        memcpy(w->app, msg->app.app, HEIM_APP_ID_MAX);
+        w->app[HEIM_APP_ID_MAX - 1] = '\0';
+        shell_window_app(w);
+        break;
     case HEIM_REQ_TITLE:
         memcpy(w->title, msg->title.title, HEIM_TITLE_MAX);
         w->title[HEIM_TITLE_MAX - 1] = '\0';
+        shell_window(w);
         w->bar_dirty = true;
         if (window_visible(w) && window_decorated(w))
             screen_damage(gfx_rect(w->x, w->y, w->content.width, TITLE_HEIGHT));
@@ -488,6 +597,8 @@ void client_reap(void)
             continue;
         }
         *link = c->next;
+        if (S.shell == c)
+            S.shell = NULL;
         window_t *w = S.bottom;
         while (w)
         {

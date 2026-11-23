@@ -2,7 +2,7 @@
  * @file main.c
  * @brief heimdalld, the ginnOS window server.
  *
- * usage: heimdalld [-s] [-w image] [program [arguments]]
+ * usage: heimdalld [-s] [-x] [-w image] [program [arguments]]
  *
  * takes the screen, the keyboard and the mouse, and serves windows on the
  * Unix socket HEIM_SOCKET (heimdall_proto.h). with a program, starts it
@@ -11,6 +11,8 @@
  *
  *   -w image   the wallpaper (PNG, JPEG or BMP), scaled to cover the screen;
  *              without it, /usr/share/wallpapers/default.png if it is there
+ *   -x         stop when the program ends (the session: startde runs
+ *              "heimdalld -x asgard")
  *   -s         every 2 seconds with frames, a line of statistics in the
  *              kernel log (/dev/kmsg, the serial port): frames, pixels and
  *              the time in composing, presenting and flushing
@@ -68,9 +70,13 @@ static void load_look(void)
     idunn_theme_load(&S.theme);
 }
 
+static pid_t program; // the program of the command line (0: none)
+static bool exit_with_program;
+
 static void start(char **argv)
 {
     pid_t pid = fork();
+    program = pid > 0 ? pid : 0;
     if (pid == 0)
     {
         execve(argv[0], argv, environ);
@@ -125,8 +131,12 @@ static void loop(void)
         if (fds[0].revents)
             client_accept(S.listen_fd);
         client_reap();
-        while (waitpid(-1, NULL, WNOHANG) > 0)
-            ;
+        pid_t ended;
+        while ((ended = waitpid(-1, NULL, WNOHANG)) > 0)
+        {
+            if (ended == program && exit_with_program)
+                S.quit = true; // the session's program ended
+        }
     }
 }
 
@@ -140,6 +150,11 @@ int main(int argc, char **argv)
         {
             wallpaper = argv[arg + 1];
             arg += 2;
+        }
+        else if (arg < argc && strcmp(argv[arg], "-x") == 0)
+        {
+            exit_with_program = true;
+            arg++;
         }
         else if (arg < argc && strcmp(argv[arg], "-s") == 0)
         {

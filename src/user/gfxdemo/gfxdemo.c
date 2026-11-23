@@ -302,6 +302,10 @@ int main(int argc, char **argv)
     gfx_buffer_free(scratch);
 
     gfx_present(fb, fix.line_length, w, h, &format, screen, gfx_rect(0, 0, w, h));
+    fb_rect_t whole = {0, 0, (uint32_t)w, (uint32_t)h};
+    int flush_fd = fb_open();
+    ioctl(flush_fd, FBIO_FLUSH, &whole); // virtio-gpu shows only what is flushed
+    close(flush_fd);
 
     char c;
     while (read(0, &c, 1) == 1 && c != '\n')

@@ -533,3 +533,39 @@ void heim_settings_changed(heim_conn_t *conn, const char *name)
     snprintf(msg.settings.name, sizeof(msg.settings.name), "%s", name);
     send_msg(conn, &msg, -1);
 }
+
+void heim_window_set_app(heim_window_t *win, const char *app)
+{
+    heim_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = HEIM_REQ_APP_ID;
+    msg.window = win->id;
+    snprintf(msg.app.app, sizeof(msg.app.app), "%s", app);
+    send_msg(win->conn, &msg, -1);
+}
+
+void heim_shell_start(heim_conn_t *conn)
+{
+    heim_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = HEIM_REQ_SHELL;
+    send_msg(conn, &msg, -1);
+}
+
+void heim_shell_act(heim_conn_t *conn, uint32_t id, uint32_t action)
+{
+    heim_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = HEIM_REQ_ACT;
+    msg.act.id = id;
+    msg.act.action = action;
+    send_msg(conn, &msg, -1);
+}
+
+void heim_shell_quit(heim_conn_t *conn)
+{
+    heim_msg_t msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.type = HEIM_REQ_QUIT;
+    send_msg(conn, &msg, -1);
+}

@@ -43,11 +43,14 @@ void window_look(void)
     S.title_face = S.title_font ? bragi_face_new(S.title_font, 13.0f * (float)scale) : NULL;
     icon_t **icons[] = {&S.icon_minimize, &S.icon_maximize, &S.icon_restore, &S.icon_close};
     const char *names[] = {"minus", "square", "copy", "x"};
+    // lucide's square fills 18 of its 24 units, minus and x about 13: the
+    // square and copy are drawn smaller, so all the buttons look one size
+    const int32_t sizes[] = {16, 13, 13, 16};
     icon_set_t *lucide = icon_set_named("lucide");
     for (int i = 0; i < 4; i++)
     {
         icon_free(*icons[i]);
-        *icons[i] = lucide ? icon_load(lucide, names[i], 16, scale) : NULL;
+        *icons[i] = lucide ? icon_load(lucide, names[i], sizes[i], scale) : NULL;
     }
     icon_set_close(lucide);
     cursor_init(scale);
@@ -163,6 +166,84 @@ bool window_visible(const window_t *w)
 bool window_is_popup(const window_t *w)
 {
     return w->flags & HEIM_WINDOW_POPUP;
+}
+
+bool window_is_panel(const window_t *w)
+{
+    return w->flags & HEIM_WINDOW_PANEL;
+}
+
+bool window_is_normal(const window_t *w)
+{
+    return !w->parent && !window_is_panel(w);
+}
+
+gfx_rect_t window_work_area(void)
+{
+    int32_t reserved = 0;
+    for (window_t *w = S.bottom; w; w = w->above)
+    {
+        if (window_is_panel(w) && w->shown && w->content.height > reserved)
+            reserved = w->content.height;
+    }
+    return gfx_rect(0, 0, S.width, S.height - reserved);
+}
+
+window_t *window_by_sid(uint32_t sid)
+{
+    for (window_t *w = S.bottom; w; w = w->above)
+        if (w->sid == sid)
+            return w;
+    return NULL;
+}
+
+/**
+ * the layer of a window: the normal windows, then the panels, then the
+ * popups (of both).
+ */
+static int layer(const window_t *w)
+{
+    return w->parent ? 2 : window_is_panel(w) ? 1 : 0;
+}
+
+/**
+ * put the z order in layers again, each layer in the order it had.
+ */
+static void restack(void)
+{
+    window_t *head[3] = {NULL, NULL, NULL};
+    window_t *tail[3] = {NULL, NULL, NULL};
+    window_t *next;
+    for (window_t *w = S.bottom; w; w = next)
+    {
+        next = w->above;
+        int l = layer(w);
+        w->below = tail[l];
+        w->above = NULL;
+        if (tail[l])
+            tail[l]->above = w;
+        else
+            head[l] = w;
+        tail[l] = w;
+    }
+    window_t *last = NULL;
+    S.bottom = NULL;
+    for (int l = 0; l < 3; l++)
+    {
+        if (!head[l])
+            continue;
+        if (last)
+        {
+            last->above = head[l];
+            head[l]->below = last;
+        }
+        else
+        {
+            S.bottom = head[l];
+        }
+        last = tail[l];
+    }
+    S.top = last;
 }
 
 window_t *window_root(window_t *w)
@@ -401,8 +482,9 @@ window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *
         return NULL;
     w->client = client;
     w->id = id;
+    w->sid = ++S.next_sid;
     w->flags = flags & (HEIM_WINDOW_RESIZABLE | HEIM_WINDOW_ALPHA | HEIM_WINDOW_UNDECORATED |
-                        HEIM_WINDOW_POPUP | HEIM_WINDOW_TOOLTIP);
+                        HEIM_WINDOW_POPUP | HEIM_WINDOW_TOOLTIP | HEIM_WINDOW_PANEL);
     if (parent)
     {
         w->flags = (w->flags & HEIM_WINDOW_TOOLTIP) | HEIM_WINDOW_POPUP | HEIM_WINDOW_ALPHA |
@@ -412,18 +494,21 @@ window_t *window_new(client_t *client, uint32_t id, uint32_t flags, const char *
     else
     {
         w->flags &= ~(uint32_t)(HEIM_WINDOW_POPUP | HEIM_WINDOW_TOOLTIP);
+        if (w->flags & HEIM_WINDOW_PANEL)
+            w->flags = (w->flags & HEIM_WINDOW_ALPHA) | HEIM_WINDOW_PANEL | HEIM_WINDOW_UNDECORATED;
     }
     memcpy(w->title, title, HEIM_TITLE_MAX);
     w->title[HEIM_TITLE_MAX - 1] = '\0';
     w->bar_dirty = true;
 
-    // on top
+    // on top of its layer
     w->below = S.top;
     if (S.top)
         S.top->above = w;
     else
         S.bottom = w;
     S.top = w;
+    restack();
     return w;
 }
 
@@ -444,6 +529,9 @@ static void unlink_window(window_t *w)
 void window_destroy(window_t *w)
 {
     window_damage(w);
+    if (window_is_normal(w))
+        shell_window_gone(w);
+    bool panel = window_is_panel(w) && w->shown;
     unlink_window(w);
     // its popups go with it: hidden now, freed when their client says so
     for (window_t *o = S.bottom; o; o = o->above)
@@ -481,10 +569,12 @@ void window_destroy(window_t *w)
     if (had_focus)
         S.focus = NULL;
     free(w);
-    if (had_focus && parent && window_visible(parent))
+    if (had_focus && parent && window_visible(parent) && !window_is_panel(parent))
         window_focus(parent);
     else if (had_focus)
         window_focus_top();
+    if (panel)
+        window_screen_changed(); // the work area grew
     input_pointer_update();
 }
 
@@ -507,6 +597,7 @@ static void to_top(window_t *w)
     else
         S.bottom = w;
     S.top = w;
+    restack(); // the top of its layer
     window_damage(w);
 }
 
@@ -540,28 +631,37 @@ void window_focus(window_t *w)
 {
     if (S.focus == w)
         return;
+    window_t *old_root = S.focus ? window_root(S.focus) : NULL;
     if (S.focus)
     {
-        window_t *root = window_root(S.focus);
-        root->bar_dirty = true;
-        window_damage(root);
+        old_root->bar_dirty = true;
+        window_damage(old_root);
         send_focus(S.focus, false);
     }
     S.focus = w;
+    window_t *root = w ? window_root(w) : NULL;
     if (w)
     {
-        window_t *root = window_root(w);
         root->bar_dirty = true;
         window_damage(root);
         send_focus(w, true);
+    }
+    if (old_root != root)
+    {
+        if (old_root)
+            shell_window(old_root);
+        if (root)
+            shell_window(root);
     }
 }
 
 void window_focus_top(void)
 {
+    // the panels take the keyboard only through their popups
     for (window_t *w = S.top; w; w = w->below)
     {
-        if (window_visible(w) && !(w->flags & HEIM_WINDOW_TOOLTIP))
+        if (window_visible(w) && !(w->flags & HEIM_WINDOW_TOOLTIP) && !window_is_panel(w) &&
+            !window_is_panel(window_root(w)))
         {
             window_focus(w);
             return;
@@ -633,13 +733,39 @@ bool window_close_popups(void)
         w->shown = false;
     }
     if (S.focus && S.focus->parent && !S.focus->shown)
-        window_focus(window_root(S.focus));
+    {
+        window_t *root = window_root(S.focus);
+        if (window_is_panel(root))
+            window_focus_top(); // back to the window that had it
+        else
+            window_focus(root);
+    }
     input_pointer_update();
     return taking;
 }
 
+/**
+ * a panel at the bottom of the screen, the full width.
+ */
+static void place_panel(window_t *w)
+{
+    window_damage(w);
+    w->x = 0;
+    w->y = S.height - w->content.height;
+    window_damage(w);
+    if (w->content.width != S.width)
+        window_configure(w, S.width, w->content.height);
+}
+
 void window_show(window_t *w)
 {
+    if (window_is_panel(w))
+    {
+        w->shown = true;
+        place_panel(w);
+        window_screen_changed(); // the work area is smaller
+        return;
+    }
     if (w->parent)
     {
         w->shown = true;
@@ -651,15 +777,16 @@ void window_show(window_t *w)
         return;
     }
     gfx_rect_t f = window_frame(w);
+    gfx_rect_t area = window_work_area();
     int32_t cascade = idunn_px(&S.theme, 28);
     int32_t step = (int32_t)(S.placed % 8) * cascade;
     S.placed++;
-    w->x = (S.width - f.w) / 2 - 3 * cascade + step;
-    w->y = (S.height - f.h) / 2 - 3 * cascade + step;
-    if (w->x + f.w > S.width)
-        w->x = S.width - f.w;
-    if (w->y + f.h > S.height)
-        w->y = S.height - f.h;
+    w->x = (area.w - f.w) / 2 - 3 * cascade + step;
+    w->y = (area.h - f.h) / 2 - 3 * cascade + step;
+    if (w->x + f.w > area.w)
+        w->x = area.w - f.w;
+    if (w->y + f.h > area.h)
+        w->y = area.h - f.h;
     if (w->x < 0)
         w->x = 0;
     if (w->y < 0)
@@ -668,6 +795,18 @@ void window_show(window_t *w)
     window_raise(w);
     window_focus(w);
     window_damage(w);
+    shell_window(w);
+}
+
+void window_activate(window_t *w)
+{
+    window_close_popups();
+    w->minimized = false;
+    window_raise(w);
+    window_focus(w);
+    window_damage(w);
+    shell_window(w);
+    input_pointer_update();
 }
 
 void window_set_hover(window_t *w, part_t hover, part_t pressed)
@@ -682,11 +821,12 @@ void window_set_hover(window_t *w, part_t hover, part_t pressed)
 
 void window_move(window_t *w, int32_t x, int32_t y)
 {
-    // keep part of the title bar on the screen
+    // keep part of the title bar on the screen, above the panels
+    int32_t bottom = window_work_area().h;
     if (y < 0)
         y = 0;
-    if (y > S.height - TITLE_HEIGHT)
-        y = S.height - TITLE_HEIGHT;
+    if (y > bottom - TITLE_HEIGHT)
+        y = bottom - TITLE_HEIGHT;
     if (x > S.width - 60)
         x = S.width - 60;
     if (x + w->content.width < 60)
@@ -723,14 +863,16 @@ void window_toggle_maximize(window_t *w)
     }
     else
     {
+        gfx_rect_t area = window_work_area();
         w->restore = window_frame(w);
         w->maximized = true;
-        w->x = 0;
-        w->y = 0;
-        window_configure(w, S.width, S.height - TITLE_HEIGHT);
+        w->x = area.x;
+        w->y = area.y;
+        window_configure(w, area.w, area.h - TITLE_HEIGHT);
     }
     w->bar_dirty = true;
     window_damage(w);
+    shell_window(w);
 }
 
 void window_screen_changed(void)
@@ -738,20 +880,28 @@ void window_screen_changed(void)
     window_close_popups();
     for (window_t *w = S.bottom; w; w = w->above)
     {
-        if (w->parent)
+        if (window_is_panel(w) && w->shown)
+            place_panel(w);
+    }
+    gfx_rect_t area = window_work_area();
+    for (window_t *w = S.bottom; w; w = w->above)
+    {
+        if (!window_is_normal(w))
             continue;
         if (w->maximized)
         {
-            window_configure(w, S.width, S.height - TITLE_HEIGHT);
+            w->x = area.x;
+            w->y = area.y;
+            window_configure(w, area.w, area.h - TITLE_HEIGHT);
             continue;
         }
         // on the screen if it fits, else at the left; the title bar stays
-        // where the pointer can reach it
+        // where the pointer can reach it, above the panels
         gfx_rect_t f = window_frame(w);
-        if (f.x + f.w > S.width)
-            w->x -= f.x + f.w - S.width;
-        if (f.y + TITLE_HEIGHT > S.height)
-            w->y -= f.y + TITLE_HEIGHT - S.height;
+        if (f.x + f.w > area.w)
+            w->x -= f.x + f.w - area.w;
+        if (f.y + TITLE_HEIGHT > area.h)
+            w->y -= f.y + TITLE_HEIGHT - area.h;
         w->x = w->x < 0 ? 0 : w->x;
         w->y = w->y < 0 ? 0 : w->y;
         w->bar_dirty = true;
@@ -769,6 +919,7 @@ void window_minimize(window_t *w)
     w->bar_dirty = true;
     if (S.focus == w)
         window_focus_top();
+    shell_window(w);
     input_pointer_update();
 }
 
@@ -778,18 +929,18 @@ void window_minimize(window_t *w)
  */
 void window_cycle(void)
 {
+    // the normal windows are the lowest layer
     window_t *w = S.bottom;
-    while (w && !w->shown)
+    while (w && !w->shown && window_is_normal(w))
         w = w->above;
-    if (!w)
+    if (!w || !window_is_normal(w))
         return;
-    if (w == S.top && !w->minimized)
+    window_t *top = w;
+    while (top->above && window_is_normal(top->above))
+        top = top->above;
+    if (w == top && !w->minimized)
         return;
-    w->minimized = false;
-    window_raise(w);
-    window_focus(w);
-    window_damage(w);
-    input_pointer_update();
+    window_activate(w);
 }
 
 window_t *window_at(int32_t x, int32_t y, part_t *part, uint32_t *edges)

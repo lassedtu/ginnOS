@@ -572,7 +572,7 @@ static idunn_widget_t *header(void)
 
 int main(void)
 {
-    G.app = idunn_app_new("Gallery");
+    G.app = idunn_app_new("idunn-gallery");
     if (!G.app)
     {
         printf("idunn-gallery: no window server (start heimdalld)\n");

@@ -9,6 +9,7 @@ include ../../host-test.mk
 FONT_DIR := $(abspath $(ROOT)/build/host-test/fonts)
 PACK_DIR := $(abspath $(ROOT)/build/icons/out)
 CFLAGS   += -DFONT_DIR='"$(FONT_DIR)"' -DPACK_DIR='"$(PACK_DIR)"'
+CFLAGS   += -I$(ROOT)/src/lib/heimdall/include # the message types in idunn.h
 
 run: $(FONT_DIR)/inter/Inter-Regular.ttf $(PACK_DIR)/lucide.pack
 
