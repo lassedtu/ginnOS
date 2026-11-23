@@ -102,10 +102,12 @@ bool view_in_trash(void)
 
 void view_build(void)
 {
-    // the heads may be in their own click (a new order): freed after it
+    // the heads and the list may be in their own event (a click on a head,
+    // a double click on a folder): they are freed after it
     if (Y.heads)
         idunn_free_later(Y.heads);
-    idunn_widget_free(Y.scroll);
+    if (Y.scroll)
+        idunn_free_later(Y.scroll);
     Y.heads = NULL;
     Y.scroll = NULL;
     Y.list = NULL;
