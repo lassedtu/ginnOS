@@ -466,8 +466,20 @@ static void close_tooltip(idunn_window_t *win)
 /**
  * draw again what hover changes in a widget.
  */
+/**
+ * draw a widget again because its state changed (hover, press, focus),
+ * unless it draws its states itself.
+ */
+static void dirty_state(idunn_widget_t *w)
+{
+    if (!(w->flags & IDUNN_OWN_LOOK))
+        idunn_dirty(w);
+}
+
 static void dirty_hover(idunn_widget_t *w)
 {
+    if (w->flags & IDUNN_OWN_LOOK)
+        return;
     if (w->cls->hover_area)
         idunn_dirty_rect(w, w->cls->hover_area(w));
     else
@@ -507,7 +519,7 @@ static void set_focus(idunn_window_t *win, idunn_widget_t *w, bool visible)
     if (win->focus == w)
     {
         if (w && win->focus_visible != visible)
-            idunn_dirty(w);
+            dirty_state(w);
         win->focus_visible = visible;
         return;
     }
@@ -517,14 +529,14 @@ static void set_focus(idunn_window_t *win, idunn_widget_t *w, bool visible)
     if (old)
     {
         old->state &= ~IDUNN_FOCUSED;
-        idunn_dirty(old);
+        dirty_state(old);
         idunn_event_t ev = {.type = IDUNN_EV_BLUR};
         idunn_send(old, &ev);
     }
     if (w)
     {
         w->state |= IDUNN_FOCUSED;
-        idunn_dirty(w);
+        dirty_state(w);
         idunn_event_t ev = {.type = IDUNN_EV_FOCUS};
         idunn_send(w, &ev);
         if (visible)
@@ -544,7 +556,7 @@ static void set_pressed(idunn_window_t *win, idunn_widget_t *w, bool pressed)
     else
         w->state &= ~IDUNN_PRESSED;
     idunn_anim_to(&w->press, pressed ? 1 : 0, win->now, transition(win));
-    idunn_dirty(w);
+    dirty_state(w);
 }
 
 bool idunn_send(idunn_widget_t *w, const idunn_event_t *ev)
@@ -662,7 +674,8 @@ void idunn_window_key(idunn_window_t *win, uint16_t code, uint32_t mods, const c
 {
     close_tooltip(win);
     win->tip_widget = NULL;
-    if (code == IDUNN_KEY_TAB && !(mods & (IDUNN_MOD_CTRL | IDUNN_MOD_ALT)))
+    bool takes_tab = win->focus && (win->focus->flags & IDUNN_TAKES_TAB);
+    if (code == IDUNN_KEY_TAB && !(mods & (IDUNN_MOD_CTRL | IDUNN_MOD_ALT)) && !takes_tab)
     {
         move_focus(win, mods & IDUNN_MOD_SHIFT);
         return;
@@ -684,6 +697,11 @@ void idunn_focus(idunn_widget_t *w)
 {
     if (w && w->window)
         set_focus(w->window, w, false);
+}
+
+void idunn_set_focus(idunn_widget_t *w)
+{
+    idunn_focus(w);
 }
 
 static idunn_widget_t *first_focusable(idunn_widget_t *w)

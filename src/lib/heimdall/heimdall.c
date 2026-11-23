@@ -224,6 +224,11 @@ static void read_clipboard(heim_conn_t *conn, heim_event_t *event)
     munmap(map, length);
 }
 
+bool heim_pending(const heim_conn_t *conn)
+{
+    return conn->in_used >= MSG_SIZE;
+}
+
 int heim_next_event(heim_conn_t *conn, heim_event_t *event, int timeout_ms)
 {
     memset(event, 0, sizeof(*event));

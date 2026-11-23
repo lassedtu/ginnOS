@@ -55,6 +55,13 @@ void heim_disconnect(heim_conn_t *conn);
  */
 int heim_fd(const heim_conn_t *conn);
 
+/**
+ * true if a whole message is already read from the socket: the next
+ * heim_next_event returns at once. a loop that polls heim_fd with other
+ * fds checks this first.
+ */
+bool heim_pending(const heim_conn_t *conn);
+
 void heim_screen_size(const heim_conn_t *conn, int32_t *width, int32_t *height);
 
 /**

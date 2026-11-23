@@ -433,8 +433,109 @@ static void test_scroll_moves_pixels(idunn_context_t *ctx)
     free(win);
 }
 
+// the canvas test's model: a colour for each row of 10 pixels
+static struct
+{
+    uint32_t rows[64];
+    int first;   // the model row at the top of the canvas
+    int pending; // rows to move up in the next frame
+    int32_t width;
+    int32_t height;
+    idunn_input_t last;
+    int inputs;
+} cv;
+
+static void cv_draw(idunn_widget_t *canvas, gfx_buffer_t *buf, gfx_rect_t rect, void *data)
+{
+    (void)canvas;
+    (void)data;
+    for (int r = 0; r * 10 < rect.h; r++)
+        gfx_fill_rect(buf, gfx_rect(rect.x, rect.y + r * 10, rect.w, 10),
+                      cv.rows[(cv.first + r) % 64]);
+}
+
+static bool cv_input(idunn_widget_t *canvas, const idunn_input_t *in, void *data)
+{
+    (void)canvas;
+    (void)data;
+    cv.last = *in;
+    cv.inputs++;
+    return true;
+}
+
+static void cv_resize(idunn_widget_t *canvas, int32_t width, int32_t height, void *data)
+{
+    (void)canvas;
+    (void)data;
+    cv.width = width;
+    cv.height = height;
+}
+
+static void cv_frame(idunn_widget_t *canvas, void *data)
+{
+    (void)data;
+    if (!cv.pending)
+        return;
+    cv.first += cv.pending;
+    idunn_canvas_move(canvas, gfx_rect(0, 0, cv.width, cv.height), -10 * cv.pending);
+    cv.pending = 0;
+}
+
+static void test_canvas(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 300, 200);
+    idunn_widget_t *col = idunn_column(0, 0);
+    idunn_add(col, idunn_button("Before", IDUNN_OUTLINE, NULL, NULL));
+    static const idunn_canvas_hooks_t hooks = {cv_draw, cv_input, cv_resize, cv_frame};
+    for (int i = 0; i < 64; i++)
+        cv.rows[i] = gfx_rgb((uint8_t)(i * 37), (uint8_t)(i * 91), (uint8_t)(i * 13));
+    idunn_widget_t *canvas = idunn_grow(idunn_add(col, idunn_canvas(&hooks, NULL)), 1);
+    idunn_window_set_root(win, col);
+    idunn_window_draw(win);
+    gfx_rect_t r = idunn_widget_rect(canvas);
+    CHECK_EQ(cv.width, r.w);
+    CHECK_EQ(cv.height, r.h);
+    CHECK(r.h > 100);
+
+    // Tab goes to the canvas, and the keyboard stays there
+    idunn_set_focus(canvas);
+    key(win, IDUNN_KEY_TAB, 0);
+    CHECK_EQ(cv.last.type, IDUNN_INPUT_KEY);
+    CHECK_EQ(cv.last.code, IDUNN_KEY_TAB);
+    CHECK(idunn_window_focus(win) == canvas);
+
+    // the pointer in canvas coordinates
+    idunn_window_pointer(win, IDUNN_POINTER_PRESS, r.x + 7, r.y + 9, 0);
+    CHECK_EQ(cv.last.type, IDUNN_INPUT_PRESS);
+    CHECK_EQ(cv.last.x, 7);
+    CHECK_EQ(cv.last.y, 9);
+    idunn_window_pointer(win, IDUNN_POINTER_RELEASE, r.x + 7, r.y + 9, 0);
+
+    // new data: a frame moves the rows up; only the new strip is drawn
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1];
+    cv.pending = 3;
+    idunn_canvas_update(canvas);
+    int count = idunn_window_draw_parts(win, parts);
+    int64_t drawn = 0;
+    for (int i = 0; i < count - 1; i++)
+        drawn += (int64_t)parts[i].w * parts[i].h;
+    CHECK(drawn <= (int64_t)r.w * 31);
+    CHECK(same_as_full(win));
+
+    // a damaged rect of the canvas is drawn
+    cv.rows[(cv.first + 1) % 64] = gfx_rgb(255, 0, 0);
+    idunn_canvas_damage(canvas, gfx_rect(0, 10, r.w, 10));
+    idunn_window_draw(win);
+    CHECK(same_as_full(win));
+
+    idunn_window_free_widgets(win);
+    idunn_reap(ctx);
+    free(win);
+}
+
 void test_floating(idunn_context_t *ctx)
 {
+    test_canvas(ctx);
     test_damage_parts(ctx);
     test_scroll_moves_pixels(ctx);
     test_menu(ctx);
