@@ -44,10 +44,26 @@ int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolve
         base = dir->path;
     }
 
-    if (!vfs_resolve_path(base, path, resolved, size))
-        return -ENAMETOOLONG;
+    // the path is taken in the process's root directory (chroot), and
+    // turned into a real path. a working directory left outside the root
+    // still takes relative paths, as on Linux
+    const char *root = proc ? proc->root : "/";
+    const char *virtual_base = vfs_inside_root(base, root);
+    bool outside = virtual_base == base && strlen(root) > 1;
+    if (outside && path[0] != '/')
+    {
+        if (!vfs_resolve_path(base, path, resolved, size))
+            return -ENAMETOOLONG;
+    }
+    else
+    {
+        char virtual_path[PATH_MAX];
+        if (!vfs_resolve_path(virtual_base, path, virtual_path, sizeof(virtual_path)) ||
+            !vfs_join_root(root, virtual_path, resolved, size))
+            return -ENAMETOOLONG;
+    }
 
-    kerr_t err = vfs_follow(resolved, size, follow);
+    kerr_t err = vfs_follow(resolved, size, follow, root);
     if (err == KERR_RANGE)
         return -ENAMETOOLONG;
     return kerr_to_errno(err);

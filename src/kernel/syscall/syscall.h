@@ -102,9 +102,10 @@
 #define SYS_SETPRIORITY 93
 #define SYS_FLOCK 94         // an advisory lock on a whole file
 #define SYS_MKNODAT 95       // a named pipe or a device node
+#define SYS_CHROOT 96        // change the root directory (root)
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 96
+#define SYSCALL_COUNT 97
 
 /**
  * initialize the system call interface.

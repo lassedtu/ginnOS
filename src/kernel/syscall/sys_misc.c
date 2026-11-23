@@ -25,13 +25,45 @@ syscall_ret_t sys_getcwd(struct registers *regs)
         return -EINVAL;
     }
 
-    size_t len = strlen(proc->cwd);
+    // as the process sees it, inside its root directory
+    const char *cwd = vfs_inside_root(proc->cwd, proc->root);
+    size_t len = strlen(cwd);
     if (len + 1 > size)
     {
         return -ERANGE;
     }
 
-    return kerr_to_errno(copy_to_user(buf, proc->cwd, len + 1));
+    return kerr_to_errno(copy_to_user(buf, cwd, len + 1));
+}
+
+/**
+ * SYS_chroot: make a directory the caller's root: its paths start there,
+ * and ".." stops there (root only). the working directory stays; a tool
+ * then changes it to "/".
+ * args: path.
+ * returns 0, or a negative errno (EPERM, ENOTDIR, ENOENT, EACCES).
+ */
+syscall_ret_t sys_chroot(struct registers *regs)
+{
+    process_t *proc = process_current();
+    if (proc->euid != 0)
+        return -EPERM;
+
+    char resolved[PATH_MAX];
+    int32_t err = resolve_user_path((const char *)syscall_arg(regs, 0), resolved,
+                                    sizeof(resolved));
+    if (err < 0)
+        return err;
+    vfs_stat_t st;
+    kerr_t found = vfs_stat(resolved, &st);
+    if (kerr_failed(found))
+        return kerr_to_errno(found);
+    if (st.file_type != FS_TYPE_DIR)
+        return -ENOTDIR;
+
+    strncpy(proc->root, resolved, PATH_MAX - 1);
+    proc->root[PATH_MAX - 1] = '\0';
+    return 0;
 }
 
 /**

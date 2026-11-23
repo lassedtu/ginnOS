@@ -150,9 +150,11 @@ process_t *process_create(void)
         proc->fds[fd].file = file_console();
     }
 
-    // default working directory
+    // default working and root directory
     proc->cwd[0] = '/';
     proc->cwd[1] = '\0';
+    proc->root[0] = '/';
+    proc->root[1] = '\0';
 
     return proc;
 }
@@ -188,6 +190,7 @@ process_t *process_fork(const struct registers *regs)
     memcpy(child->name, parent->name, sizeof(child->name));
     signal_fork(child, parent);
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
+    memcpy(child->root, parent->root, sizeof(child->root));
 
     // every fd is inherited: the child's descriptors share the parent's
     // open files (and so their offsets)

@@ -128,6 +128,7 @@ syscall_ret_t sys_readlinkat(struct registers *regs);
 syscall_ret_t sys_linkat(struct registers *regs);
 syscall_ret_t sys_utimensat(struct registers *regs);
 syscall_ret_t sys_mknodat(struct registers *regs);
+syscall_ret_t sys_chroot(struct registers *regs);
 syscall_ret_t sys_getdents(struct registers *regs);
 syscall_ret_t sys_poll(struct registers *regs);
 

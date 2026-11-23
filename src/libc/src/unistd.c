@@ -256,15 +256,32 @@ void *sbrk(int increment)
     return (void *)_syscall(SYS_SBRK, increment, 0, 0, 0, 0);
 }
 
-int getcwd(char *buf, size_t size)
+char *getcwd(char *buf, size_t size)
 {
-    int ret = _syscall(SYS_GETCWD, (long)buf, (long)size, 0, 0, 0);
+    char own[PATH_MAX];
+    char *out = buf ? buf : own;
+    size_t room = buf ? size : sizeof(own);
+    int ret = _syscall(SYS_GETCWD, (long)out, (long)room, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
-        return -1;
+        return NULL;
     }
-    return ret;
+    if (buf)
+        return buf;
+    size_t length = strlen(own) + 1;
+    if (size && size < length)
+    {
+        errno = ERANGE;
+        return NULL;
+    }
+    char *copy = malloc(size ? size : length);
+    if (!copy)
+    {
+        errno = ENOMEM;
+        return NULL;
+    }
+    return memcpy(copy, own, length);
 }
 
 int chdir(const char *path)
@@ -880,4 +897,9 @@ int mkfifoat(int dirfd, const char *path, mode_t mode)
 int mkfifo(const char *path, mode_t mode)
 {
     return mkfifoat(AT_FDCWD, path, mode);
+}
+
+int chroot(const char *path)
+{
+    return check(_syscall(SYS_CHROOT, (long)path, 0, 0, 0, 0));
 }

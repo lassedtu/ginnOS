@@ -170,6 +170,13 @@ pid_t setsid(void);
  * @return the new value, or -1 (errno set).
  */
 int nice(int increment);
+
+/**
+ * make a directory the root of the caller's paths ("/" is then that
+ * directory; root only). the working directory stays: chdir("/") after.
+ * @return 0, or -1 (errno set).
+ */
+int chroot(const char *path);
 pid_t getsid(pid_t pid);
 
 /**
@@ -222,11 +229,12 @@ void *sbrk(int increment);
 
 /**
  * get the current working directory.
- * @param buf buffer to write the path into.
+ * @param buf buffer to write the path into; NULL: a new one from malloc
+ *        (of size bytes, or as long as needed when size is 0).
  * @param size size of the buffer.
- * @return 0 on success, -1 on failure.
+ * @return buf (or the new buffer), or NULL (errno: ERANGE, ENOMEM).
  */
-int getcwd(char *buf, size_t size);
+char *getcwd(char *buf, size_t size);
 
 /**
  * change the current working directory.

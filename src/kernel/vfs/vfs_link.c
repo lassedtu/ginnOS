@@ -16,15 +16,52 @@
  * the path is made canonical ("." and ".." removed) before the links are
  * followed, so "link/.." is the directory that holds link, as in a shell's
  * logical mode.
+ *
+ * a process can have a root directory of its own (chroot). its paths are
+ * then "virtual": "/" is that directory. an absolute link target is taken
+ * in the root too, and ".." stops at it.
  */
 
 // links followed for one path before ELOOP, as Linux
 #define FOLLOW_MAX 40
 
-kerr_t vfs_follow(char *path, uint32_t size, bool follow_last)
+const char *vfs_inside_root(const char *path, const char *root)
+{
+    size_t length = strlen(root);
+    if (length <= 1)
+    {
+        return path; // the real root
+    }
+    if (strncmp(path, root, length) != 0 || (path[length] != '/' && path[length] != '\0'))
+    {
+        return path; // outside the root (a working directory from before)
+    }
+    return path[length] == '\0' ? "/" : path + length;
+}
+
+bool vfs_join_root(const char *root, const char *virtual_path, char *out, uint32_t size)
+{
+    size_t root_length = strlen(root);
+    if (root_length <= 1)
+    {
+        root_length = 0; // the real root adds nothing
+    }
+    const char *rest = strcmp(virtual_path, "/") == 0 && root_length ? "" : virtual_path;
+    size_t rest_length = strlen(rest);
+    if (root_length + rest_length + 1 > size)
+    {
+        return false;
+    }
+    memcpy(out, root, root_length);
+    memcpy(out + root_length, rest, rest_length + 1);
+    return true;
+}
+
+kerr_t vfs_follow(char *path, uint32_t size, bool follow_last, const char *root)
 {
     char target[VFS_PATH_MAX];
     char next[VFS_PATH_MAX];
+    char canonical[VFS_PATH_MAX];
 
     for (int links = 0;; links++)
     {
@@ -50,7 +87,9 @@ kerr_t vfs_follow(char *path, uint32_t size, bool follow_last)
             return KERR_LOOP;
         }
 
-        // rel points into path (a name was found, so it is not the static "/")
+        // rel points into path (a name was found, so it is not the static "/").
+        // the new path is made in the root's terms ("virtual"), so that an
+        // absolute target and ".." stay in the root
         uint32_t link_end = (uint32_t)(rel - path) + end;
         const char *rest = path + link_end;
         size_t length;
@@ -72,17 +111,25 @@ kerr_t vfs_follow(char *path, uint32_t size, bool follow_last)
             {
                 dir_end--;
             }
-            length = dir_end + strlen(target) + strlen(rest);
+            char saved = path[dir_end];
+            path[dir_end] = '\0';
+            const char *dir = vfs_inside_root(path, root);
+            size_t dir_length = strlen(dir);
+            length = dir_length + 1 + strlen(target) + strlen(rest);
             if (length >= sizeof(next))
             {
+                path[dir_end] = saved;
                 return KERR_RANGE;
             }
-            memcpy(next, path, dir_end);
-            strcpy(next + dir_end, target);
-            strcpy(next + dir_end + strlen(target), rest);
+            memcpy(next, dir, dir_length);
+            path[dir_end] = saved;
+            next[dir_length] = '/';
+            strcpy(next + dir_length + 1, target);
+            strcpy(next + dir_length + 1 + strlen(target), rest);
         }
 
-        if (!vfs_resolve_path("/", next, path, size))
+        if (!vfs_resolve_path("/", next, canonical, sizeof(canonical)) ||
+            !vfs_join_root(root, canonical, path, size))
         {
             return KERR_RANGE;
         }

@@ -67,13 +67,28 @@ fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out);
 /**
  * replace the symbolic links along a canonical absolute path by their
  * targets (vfs_link.c).
- * @param path the path, changed in place.
+ * @param path the real path, changed in place.
  * @param size the size of the path buffer.
  * @param follow_last also the last name, when it is a link.
+ * @param root the process's root directory ("/" for the real one): an
+ *        absolute target starts there, and ".." stops there.
  * @return KERR_OK (a missing name is left for the operation to report),
  *         KERR_LOOP (too many links), KERR_RANGE (the path got too long).
  */
-kerr_t vfs_follow(char *path, uint32_t size, bool follow_last);
+kerr_t vfs_follow(char *path, uint32_t size, bool follow_last, const char *root);
+
+/**
+ * a real path as a process with this root directory sees it.
+ * @return a pointer into path, or "/"; path itself when it is not under
+ *         the root.
+ */
+const char *vfs_inside_root(const char *path, const char *root);
+
+/**
+ * the real path of a path as a process with this root sees it.
+ * @return false when it does not fit in size.
+ */
+bool vfs_join_root(const char *root, const char *virtual_path, char *out, uint32_t size);
 
 /**
  * read the target of the symbolic link at path, with a NUL.

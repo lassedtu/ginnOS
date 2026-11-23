@@ -232,10 +232,10 @@ KTEST(ext2_symbolic_links)
     KEXPECT(kerr_ok(vfs_stat(TEST_FILE "l", &st)));
     KEXPECT_EQ(st.file_type, FS_TYPE_SYMLINK);
     strcpy(path, TEST_FILE "l");
-    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), true)));
+    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), true, "/")));
     KEXPECT(strcmp(path, TEST_FILE) == 0);
     strcpy(path, TEST_FILE "l");
-    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), false)));
+    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), false, "/")));
     KEXPECT(strcmp(path, TEST_FILE "l") == 0);
 
     // removing a link leaves the target; the long one frees its block
@@ -260,13 +260,13 @@ KTEST(ext2_follow_directory_links)
     // a relative link to a directory, in the middle of a path
     KEXPECT(kerr_ok(vfs_symlink(TEST_DIR "/up", "in/../in")));
     strcpy(path, TEST_DIR "/up/file");
-    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), false)));
+    KEXPECT(kerr_ok(vfs_follow(path, sizeof(path), false, "/")));
     KEXPECT(strcmp(path, TEST_DIR "/in/file") == 0);
 
     // a link to itself
     KEXPECT(kerr_ok(vfs_symlink(TEST_DIR "/loop", "loop")));
     strcpy(path, TEST_DIR "/loop");
-    KEXPECT_EQ(vfs_follow(path, sizeof(path), true), KERR_LOOP);
+    KEXPECT_EQ(vfs_follow(path, sizeof(path), true, "/"), KERR_LOOP);
 
     KEXPECT(kerr_ok(vfs_remove(TEST_DIR "/loop")));
     KEXPECT(kerr_ok(vfs_remove(TEST_DIR "/up")));

@@ -422,8 +422,84 @@ static void check_device_node(const char *dir)
     CHECK(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
+/** what a child sees after chroot: 0 when all is as it should be */
+static int inside_chroot(const char *top)
+{
+    char cwd[64];
+    char buffer[16];
+    struct stat st;
+    if (chroot(top) < 0 || chdir("/") < 0)
+        return 1;
+    if (!getcwd(cwd, sizeof(cwd)) || strcmp(cwd, "/") != 0)
+        return 2;
+    if (strcmp(read_all("/hello"), "inside") != 0)
+        return 3;
+    if (strcmp(read_all("/abs"), "inside") != 0) // an absolute link target
+        return 4;
+    if (stat("/../../hello", &st) < 0) // ".." stops at the root
+        return 5;
+    if (stat("/etc/passwd", &st) == 0 || errno != ENOENT)
+        return 6;
+    int dir = open("/sub", O_RDONLY | O_DIRECTORY);
+    if (dir < 0 || fstatat(dir, "../hello", &st, 0) < 0)
+        return 7;
+    if (chdir("sub") < 0 || !getcwd(cwd, sizeof(cwd)) || strcmp(cwd, "/sub") != 0)
+        return 8;
+    if (readlink("/abs", buffer, sizeof(buffer)) != 6)
+        return 9;
+    char *own = getcwd(NULL, 0);
+    if (!own || strcmp(own, "/sub") != 0)
+        return 10;
+    free(own);
+    char *real = realpath("../hello", NULL);
+    if (!real || strcmp(real, "/hello") != 0)
+        return 11;
+    free(real);
+    return 0;
+}
+
+static void test_chroot(void)
+{
+    char top[] = "/libctest-root.XXXXXX";
+    CHECK(mkdtemp(top) != NULL);
+    char path[64];
+    snprintf(path, sizeof(path), "%s/hello", top);
+    int fd = open(path, O_WRONLY | O_CREAT, 0644);
+    CHECK(fd >= 0 && write(fd, "inside", 6) == 6);
+    close(fd);
+    snprintf(path, sizeof(path), "%s/abs", top);
+    CHECK(symlink("/hello", path) == 0);
+    snprintf(path, sizeof(path), "%s/sub", top);
+    CHECK(mkdir(path, 0755) == 0);
+
+    pid_t pid = fork();
+    if (pid == 0)
+        _exit(inside_chroot(top));
+    int status;
+    CHECK(waitpid(pid, &status, 0) == pid && WIFEXITED(status));
+    CHECK(WEXITSTATUS(status) == 0);
+    if (WEXITSTATUS(status))
+        printf("libctest: chroot: step %d failed\n", WEXITSTATUS(status));
+
+    // the parent's root did not change; a user may not chroot
+    struct stat st;
+    CHECK(stat("/etc/passwd", &st) == 0);
+    pid = fork();
+    if (pid == 0)
+        _exit(setuid(1000) == 0 && chroot(top) == -1 && errno == EPERM ? 0 : 1);
+    CHECK(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+    CHECK(rmdir(path) == 0);
+    snprintf(path, sizeof(path), "%s/abs", top);
+    unlink(path);
+    snprintf(path, sizeof(path), "%s/hello", top);
+    unlink(path);
+    CHECK(rmdir(top) == 0);
+}
+
 void test_files(void)
 {
+    test_chroot();
     check_fifo("");
     check_fifo("/tmp");
     check_device_node("");
