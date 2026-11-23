@@ -78,14 +78,14 @@ void view_build(void)
 
     if (Y.folder.error || Y.folder.count == 0)
     {
-        const char *title = Y.folder.error ? "Cannot open this folder"
-                            : Y.filter[0]     ? "No names match"
-                            : view_in_trash() ? "The trash is empty"
+        const char *title = Y.folder.error ? "Could not open folder"
+                            : Y.filter[0]     ? "No matching items"
+                            : view_in_trash() ? "Trash is empty"
                                               : "This folder is empty";
         const char *text = Y.folder.error ? strerror(Y.folder.error)
-                           : Y.filter[0]      ? "Nothing here has that in its name."
-                           : view_in_trash()  ? "Things you move to the trash wait here."
-                                              : "Right click to make a folder or a file.";
+                           : Y.filter[0]      ? "No items match the filter."
+                           : view_in_trash()  ? "Items you move to the Trash appear here."
+                                              : "Right-click to create a folder or file.";
         const char *icon = Y.folder.error ? "circle-alert" : Y.filter[0] ? "search" : "folder-open";
         idunn_widget_t *empty = idunn_empty_state(icon, title, text);
         Y.scroll = idunn_grow(idunn_add(Y.view_holder, idunn_scroll_view(empty)), 1);

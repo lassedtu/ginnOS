@@ -130,7 +130,7 @@ static void open_launcher(idunn_widget_t *button, void *data)
 
     idunn_widget_t *content = idunn_column(3, 0);
     idunn_set_size(content, GRID_WIDTH, 0);
-    idunn_widget_t *search = idunn_add(content, idunn_text_field("Search programs"));
+    idunn_widget_t *search = idunn_add(content, idunn_text_field("Search apps"));
     idunn_text_field_set_icon(search, "search");
     idunn_text_field_on_change(search, typed, NULL);
     idunn_text_field_on_submit(search, submitted, NULL);
@@ -140,7 +140,7 @@ static void open_launcher(idunn_widget_t *button, void *data)
     idunn_list_view_on_activate(grid, chosen, NULL);
     idunn_widget_t *scroll = idunn_add(content, idunn_scroll_view(grid));
     idunn_set_size(scroll, 0, GRID_ROWS * TILE + 8);
-    nothing = idunn_add(content, idunn_label("No programs match.", IDUNN_TEXT_SMALL));
+    nothing = idunn_add(content, idunn_label("No matching apps", IDUNN_TEXT_SMALL));
     idunn_label_set_color(nothing, IDUNN_COLOR_MUTED_FOREGROUND);
     fill("");
 

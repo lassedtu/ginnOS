@@ -170,8 +170,8 @@ static void save_to(const char *path)
     char title[300];
     const char *slash = strrchr(path, '/');
     snprintf(title, sizeof(title), "Replace %s?", slash ? slash + 1 : path);
-    idunn_widget_t *ask = idunn_dialog(title, "A file with this name is there already. "
-                                              "Saving replaces what is in it.");
+    idunn_widget_t *ask = idunn_dialog(title, "A file with this name already exists. "
+                                              "Replacing it overwrites its contents.");
     idunn_dialog_add_button(ask, "Cancel", IDUNN_OUTLINE, NULL, NULL);
     idunn_dialog_add_button(ask, "Replace", IDUNN_DESTRUCTIVE, replace_confirmed, NULL);
     idunn_dialog_open(owner, ask);
@@ -321,7 +321,7 @@ void idunn_file_dialog(idunn_widget_t *owner, idunn_file_mode_t mode, const char
     idunn_widget_t *up = idunn_add(head, idunn_icon_button("arrow-up", IDUNN_OUTLINE, up_clicked,
                                                            NULL));
     idunn_button_set_size(up, IDUNN_SIZE_SMALL);
-    idunn_set_tooltip(up, "The folder above");
+    idunn_set_tooltip(up, "Parent folder");
     F.where = idunn_grow(idunn_add(head, idunn_label(" ", IDUNN_TEXT_SMALL)), 1);
     idunn_label_set_color(F.where, IDUNN_COLOR_MUTED_FOREGROUND);
 
@@ -332,7 +332,7 @@ void idunn_file_dialog(idunn_widget_t *owner, idunn_file_mode_t mode, const char
     idunn_list_view_on_select(F.list, selected, NULL);
     idunn_widget_t *scroll = idunn_add(content, idunn_scroll_view(F.list));
     idunn_set_size(scroll, 0, LIST_HEIGHT);
-    F.empty = idunn_add(content, idunn_label("Nothing here.", IDUNN_TEXT_SMALL));
+    F.empty = idunn_add(content, idunn_label("This folder is empty.", IDUNN_TEXT_SMALL));
     idunn_label_set_color(F.empty, IDUNN_COLOR_MUTED_FOREGROUND);
 
     F.name = NULL;

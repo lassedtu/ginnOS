@@ -47,7 +47,7 @@ idunn_widget_t *sound_page(void)
     int level = read_volume();
     if (level < 0)
     {
-        idunn_add(page, idunn_empty_state("volume-x", "No sound card",
+        idunn_add(page, idunn_empty_state("volume-x", "No sound card found",
                                           "ginnOS knows the HDA and AC'97 sound cards."));
         return page;
     }

@@ -44,7 +44,7 @@ bool file_open(const char *path)
     {
         if (errno != ENOENT)
         {
-            error_message("Cannot open the file", path, errno);
+            error_message("Could not open file", path, errno);
             return false;
         }
         // a new file: it is made by the first save
@@ -55,18 +55,18 @@ bool file_open(const char *path)
     }
     if (S_ISDIR(st.st_mode))
     {
-        show_message("Cannot open a folder", path);
+        show_message("Folders cannot be opened", path);
         return false;
     }
     if (st.st_size > FILE_MAX)
     {
-        show_message("The file is too large", "Saga opens files of up to 32 MiB.");
+        show_message("File too large", "Saga can open files up to 32 MiB.");
         return false;
     }
     int fd = open(path, O_RDONLY);
     if (fd < 0)
     {
-        error_message("Cannot open the file", path, errno);
+        error_message("Could not open file", path, errno);
         return false;
     }
     size_t size = (size_t)st.st_size;
@@ -82,14 +82,14 @@ bool file_open(const char *path)
     close(fd);
     if (!text)
     {
-        show_message("Cannot open the file", "There is not enough memory.");
+        show_message("Could not open file", "Not enough memory.");
         return false;
     }
     // a zero byte: not text (a program, a picture)
     if (memchr(text, '\0', got))
     {
         free(text);
-        show_message("This is not a text file", path);
+        show_message("Not a text file", path);
         return false;
     }
     buffer_set_text(&S.buffer, text, got);
@@ -130,7 +130,7 @@ static bool write_file(const char *path)
     if (error)
     {
         unlink(temp);
-        error_message("Cannot save the file", path, error);
+        error_message("Could not save file", path, error);
         return false;
     }
     chmod(path, mode);
@@ -271,10 +271,11 @@ static void unless_unsaved(then_t what)
         return;
     }
     char title[300];
-    const char *name = S.path[0] ? strrchr(S.path, '/') + 1 : "the new text";
-    snprintf(title, sizeof(title), "Save the changes to %s?", name);
-    idunn_widget_t *dialog = idunn_dialog(title, "If you do not save them, they are lost.");
-    idunn_dialog_add_button(dialog, "Do not save", IDUNN_DESTRUCTIVE, dont_save, NULL);
+    const char *name = S.path[0] ? strrchr(S.path, '/') + 1 : "Untitled";
+    snprintf(title, sizeof(title), "Save changes to \"%s\"?", name);
+    idunn_widget_t *dialog = idunn_dialog(title,
+                                          "Your changes will be lost if you don't save them.");
+    idunn_dialog_add_button(dialog, "Don't save", IDUNN_DESTRUCTIVE, dont_save, NULL);
     idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, question_cancelled, NULL);
     idunn_dialog_add_button(dialog, "Save", IDUNN_PRIMARY, save_first, NULL);
     idunn_dialog_open(S.canvas, dialog);

@@ -93,7 +93,7 @@ static void trash_menu(idunn_widget_t *w, void *data)
     menu = idunn_menu_new();
     idunn_menu_add(menu, "folder-open", "Open", NULL, trash_open, NULL);
     idunn_menu_add_separator(menu);
-    int empty = idunn_menu_add(menu, "trash", "Empty the trash...", NULL, trash_empty_chosen,
+    int empty = idunn_menu_add(menu, "trash", "Empty Trash...", NULL, trash_empty_chosen,
                                NULL);
     idunn_menu_set_disabled(menu, empty, !trash_has_things());
     idunn_menu_popup_at_pointer(menu, w);

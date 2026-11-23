@@ -43,8 +43,8 @@ static void show_empty(void)
 {
     idunn_widget_free(empty);
     empty = idunn_empty_state(F.error[0] ? "circle-alert" : "image",
-                              F.error[0] ? "Cannot show the picture" : "No picture",
-                              F.error[0] ? F.error : "Open a picture, or open one in Yggdrasil.");
+                              F.error[0] ? "Could not open image" : "No image open",
+                              F.error[0] ? F.error : "Open an image to view it here.");
     idunn_widget_t *open = idunn_add(empty, idunn_button("Open...", IDUNN_OUTLINE, clicked_open,
                                                          NULL));
     (void)open;
@@ -89,7 +89,7 @@ static void load(const char *path, bool read_folder)
     {
         picture_free(&F.picture);
         snprintf(F.error, sizeof(F.error), "%s: %s.", strrchr(path, '/') + 1,
-                 why ? why : "there is not enough memory");
+                 why ? why : "not enough memory");
         show_empty();
         freyja_changed();
         return;
@@ -129,7 +129,7 @@ static void open_dialog(void)
     }
     else
         snprintf(folder, sizeof(folder), "%s", home && home[0] ? home : "/");
-    idunn_file_dialog(holder, IDUNN_FILE_OPEN, "Open a picture", folder, open_chosen, NULL);
+    idunn_file_dialog(holder, IDUNN_FILE_OPEN, "Open image", folder, open_chosen, NULL);
 }
 
 static void rotate(bool left)
@@ -192,17 +192,17 @@ static idunn_widget_t *toolbar(void)
                                                             clicked_open, NULL));
     idunn_set_tooltip(open, "Open (Ctrl+O)");
     separator(row);
-    tool(row, "chevron-left", "The picture before (Left)", 'p');
-    tool(row, "chevron-right", "The next picture (Right)", 'n');
+    tool(row, "chevron-left", "Previous image (Left)", 'p');
+    tool(row, "chevron-right", "Next image (Right)", 'n');
     separator(row);
     tool(row, "zoom-out", "Zoom out (minus)", '-');
     F.zoom_label = idunn_add(row, idunn_label(" ", IDUNN_TEXT_SMALL));
     idunn_set_size(F.zoom_label, 48, 0);
     tool(row, "zoom-in", "Zoom in (plus)", '+');
-    tool(row, "expand", "Fit in the window (0)", 'f');
+    tool(row, "expand", "Fit to window (0)", 'f');
     separator(row);
-    tool(row, "rotate-ccw", "Turn left (Shift+R)", 'l');
-    tool(row, "rotate-cw", "Turn right (R)", 'r');
+    tool(row, "rotate-ccw", "Rotate left (Shift+R)", 'l');
+    tool(row, "rotate-cw", "Rotate right (R)", 'r');
     return row;
 }
 

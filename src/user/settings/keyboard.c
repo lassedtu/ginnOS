@@ -30,8 +30,7 @@ idunn_widget_t *keyboard_page(void)
 {
     idunn_widget_t *page = idunn_column(6, 0);
     idunn_widget_t *card = page_card(page, "Layout",
-                                   "The keys type the characters of this layout, on the "
-                                   "desktop and in the text console.");
+                                   "Applies to the desktop and the text console.");
     const char *names[CHOICES_MAX];
     uint32_t count = 0;
     uint32_t active = 0;
@@ -54,12 +53,12 @@ idunn_widget_t *keyboard_page(void)
         close(kbd);
     if (layout_count == 0)
     {
-        idunn_add(card, muted("There is no keyboard device.", IDUNN_TEXT_BODY));
+        idunn_add(card, muted("No keyboard found.", IDUNN_TEXT_BODY));
         return page;
     }
     idunn_add(card, idunn_radio_group(names, layout_count, (int)active, layout_chosen, NULL));
 
-    idunn_widget_t *test = page_card(page, "Try it", NULL);
-    idunn_add(test, idunn_text_field("Type here to try the layout"));
+    idunn_widget_t *test = page_card(page, "Test", NULL);
+    idunn_add(test, idunn_text_field("Type here to test the layout"));
     return page;
 }

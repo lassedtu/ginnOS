@@ -302,7 +302,7 @@ static void run(conflict_t conflict)
     int fds[2];
     if (pipe(fds) != 0)
     {
-        show_message("Cannot start the work", strerror(errno));
+        show_message("Could not start the operation", strerror(errno));
         return;
     }
     pid_t pid = fork();
@@ -316,7 +316,7 @@ static void run(conflict_t conflict)
     if (pid < 0)
     {
         close(fds[0]);
-        show_message("Cannot start the work", strerror(errno));
+        show_message("Could not start the operation", strerror(errno));
         return;
     }
     fcntl(fds[0], F_SETFL, O_NONBLOCK);
@@ -351,7 +351,7 @@ void job_start(job_kind_t kind, char **paths, int count, const char *to)
 {
     if (J.pid)
     {
-        show_message("Wait a moment", "Other files are still being copied or deleted.");
+        show_message("Please wait", "Another file operation is still in progress.");
         return;
     }
     forget_paths();
@@ -364,8 +364,8 @@ void job_start(job_kind_t kind, char **paths, int count, const char *to)
         if (to && fileops_inside(to, paths[i]) && kind != JOB_DELETE)
         {
             char text[PATH_LEN + 64];
-            snprintf(text, sizeof(text), "%s cannot go into itself.", path_name(paths[i]));
-            show_message("Cannot paste here", text);
+            snprintf(text, sizeof(text), "%s cannot be placed inside itself.", path_name(paths[i]));
+            show_message("Could not paste", text);
             forget_paths();
             return;
         }
@@ -392,11 +392,11 @@ void job_start(job_kind_t kind, char **paths, int count, const char *to)
     }
     char title[96];
     if (there == 1)
-        snprintf(title, sizeof(title), "One of the names is here already");
+        snprintf(title, sizeof(title), "An item with the same name already exists");
     else
-        snprintf(title, sizeof(title), "%d of the names are here already", there);
-    idunn_widget_t *dialog = idunn_dialog(title, "Replace them, keep both (the new ones get "
-                                                 "a number), or skip them?");
+        snprintf(title, sizeof(title), "%d items with the same names already exist", there);
+    idunn_widget_t *dialog = idunn_dialog(title, "Replace the existing items, keep both (new "
+                                                 "copies get a number), or skip them?");
     idunn_dialog_add_button(dialog, "Skip", IDUNN_OUTLINE, answer,
                             (void *)(intptr_t)CONFLICT_SKIP);
     idunn_dialog_add_button(dialog, "Keep both", IDUNN_SECONDARY, answer,
