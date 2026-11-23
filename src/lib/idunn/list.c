@@ -918,6 +918,17 @@ void idunn_list_view_select(idunn_widget_t *list, int row, bool selected)
     dirty_row(list, row);
 }
 
+void idunn_list_view_go_to(idunn_widget_t *list, int item)
+{
+    if (as_list(list))
+        move_to(list, item, false);
+}
+
+int idunn_list_view_columns(const idunn_widget_t *list)
+{
+    return as_list(list) && list->window ? columns(list) : 1;
+}
+
 int idunn_list_view_current(const idunn_widget_t *list)
 {
     const list_t *l = as_list(list);

@@ -142,8 +142,9 @@ static int compare_by(const void *pa, const void *pb)
     const entry_t *b = pb;
     bool da = S_ISDIR(a->mode);
     bool db = S_ISDIR(b->mode);
+    // folders first; the other way round reverses that too, as in Explorer
     if (da != db)
-        return da ? -1 : 1;
+        return (da ? -1 : 1) * (sort_reversed ? -1 : 1);
     int d = 0;
     switch (sort_by)
     {

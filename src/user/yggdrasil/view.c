@@ -102,7 +102,9 @@ bool view_in_trash(void)
 
 void view_build(void)
 {
-    idunn_widget_free(Y.heads);
+    // the heads may be in their own click (a new order): freed after it
+    if (Y.heads)
+        idunn_free_later(Y.heads);
     idunn_widget_free(Y.scroll);
     Y.heads = NULL;
     Y.scroll = NULL;

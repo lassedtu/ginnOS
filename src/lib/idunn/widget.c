@@ -363,6 +363,14 @@ void idunn_on_middle_click(idunn_widget_t *w, idunn_callback_t on_middle, void *
     w->middle_data = data;
 }
 
+void idunn_on_key(idunn_widget_t *w, idunn_widget_key_t on_key, void *data)
+{
+    if (!w)
+        return;
+    w->on_key = on_key;
+    w->key_data = data;
+}
+
 void idunn_on_menu(idunn_widget_t *w, idunn_callback_t on_menu, void *data)
 {
     if (!w)

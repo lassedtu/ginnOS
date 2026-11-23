@@ -139,6 +139,8 @@ struct idunn_widget
     idunn_callback_t on_menu; // a right click on it that no child used (idunn_on_menu)
     void *menu_data;
     idunn_callback_t on_middle; // a middle click on it (idunn_on_middle_click)
+    idunn_widget_key_t on_key;  // keys for it before it gets them (idunn_on_key)
+    void *key_data;
     void *middle_data;
     void *data;           // the class's own state
 };
@@ -398,8 +400,6 @@ void idunn_focus(idunn_widget_t *w);
 /** give the keyboard to the first widget that takes it in w */
 void idunn_focus_first(idunn_widget_t *w);
 
-/** free w (and its children) after the event that is running (idunn_reap) */
-void idunn_free_later(idunn_widget_t *w);
 
 // floating.c
 /** show w's tooltip over it */
