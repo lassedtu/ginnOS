@@ -101,7 +101,7 @@ typedef struct process
     uint8_t fpu_state[ARCH_FPU_STATE_SIZE] __attribute__((aligned(16)));
     char name[PROCESS_NAME_MAX]; // the program's file name (procfs)
     char cwd[PATH_MAX];     // current working directory
-    fd_entry_t fds[FD_MAX]; // per-process file descriptor table
+    fd_entry_t *fds; // the file descriptor table: FD_MAX entries (process_create)
 } process_t;
 
 /**

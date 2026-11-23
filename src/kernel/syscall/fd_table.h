@@ -13,7 +13,7 @@
 struct process;
 
 // maximum number of file descriptors per process.
-#define FD_MAX 16
+#define FD_MAX 64
 
 // number of standard I/O descriptors (stdin, stdout, stderr).
 #define FD_STDIO_COUNT 3

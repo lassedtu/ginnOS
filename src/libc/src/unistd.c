@@ -558,7 +558,7 @@ long sysconf(int name)
     case _SC_CLK_TCK:
         return 100; // times() counts in hundredths of a second
     case _SC_OPEN_MAX:
-        return 16; // the kernel's FD_MAX
+        return 64; // the kernel's FD_MAX
     case _SC_PAGESIZE:
         return 4096;
     case _SC_NPROCESSORS_CONF:

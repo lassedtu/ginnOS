@@ -33,57 +33,161 @@ syscall_ret_t sys_exit(struct registers *regs)
     return 0;
 }
 
-// most entries a copied argv or envp may have, and most bytes (NULs
-// included) all copied strings of one exec may take together
-#define EXEC_VECTOR_MAX USER_ARGC_MAX
-#define EXEC_STRING_BYTES 4096
-
 /**
- * where the strings of one exec are copied to.
+ * the argv and envp of one exec, copied in from the user: the strings one
+ * after the other, and where each starts. strings and offsets grow as
+ * they fill; together (a pointer counted for each entry) they may take
+ * USER_ARG_MAX bytes.
  */
 typedef struct
 {
-    char *bytes;   // EXEC_STRING_BYTES of kernel memory
-    uint32_t used; // bytes taken so far
-} exec_strings_t;
+    char *strings;
+    size_t used;
+    size_t room;
+    size_t *starts;   // an offset in strings for each entry, NO_ENTRY ends a vector
+    size_t count;     // entries in starts, the two ends included
+    size_t capacity;
+    size_t argc;
+} exec_args_t;
+
+#define NO_ENTRY ((size_t)-1)
+
+static void exec_args_free(exec_args_t *a)
+{
+    kfree(a->strings);
+    kfree(a->starts);
+}
+
+/** room for one more entry in starts */
+static int32_t add_start(exec_args_t *a, size_t start)
+{
+    if (a->count == a->capacity)
+    {
+        size_t bigger = a->capacity ? a->capacity * 2 : 64;
+        size_t *grown = krealloc(a->starts, bigger * sizeof(size_t));
+        if (!grown)
+        {
+            return -ENOMEM;
+        }
+        a->starts = grown;
+        a->capacity = bigger;
+    }
+    a->starts[a->count++] = start;
+    return 0;
+}
 
 /**
- * copy a user string vector (argv or envp) and its strings into kernel
- * memory.
- * @param user_vector the user's NULL-terminated array (may itself be NULL).
- * @param kvector receives EXEC_VECTOR_MAX + 1 pointers into strings.
- * @param strings the string buffer, shared by the vectors of one exec.
- * @return the entry count, or a negative errno (EFAULT for bad memory,
- *         EINVAL when over EXEC_VECTOR_MAX or EXEC_STRING_BYTES).
+ * copy one string in at the end of strings, making strings larger (up to
+ * USER_ARG_MAX) when it does not fit.
+ * @return 0, or -EFAULT, -E2BIG or -ENOMEM.
  */
-static int32_t copy_vector_from_user(const char **user_vector, const char **kvector,
-                                     exec_strings_t *strings)
+static int32_t copy_string_from_user(exec_args_t *a, const char *entry)
 {
-    uint32_t count = 0;
+    for (;;)
+    {
+        int32_t len = strncpy_from_user(a->strings + a->used, entry, a->room - a->used);
+        if (len == KERR_FAULT)
+        {
+            return -EFAULT;
+        }
+        if (len >= 0)
+        {
+            int32_t err = add_start(a, a->used);
+            if (err < 0)
+            {
+                return err;
+            }
+            a->used += (size_t)len + 1;
+            return 0;
+        }
+        if (a->room >= USER_ARG_MAX)
+        {
+            return -E2BIG;
+        }
+        size_t bigger = a->room * 2 < USER_ARG_MAX ? a->room * 2 : USER_ARG_MAX;
+        char *grown = krealloc(a->strings, bigger);
+        if (!grown)
+        {
+            return -ENOMEM;
+        }
+        a->strings = grown;
+        a->room = bigger;
+    }
+}
 
+/**
+ * copy a user string vector (argv or envp) and its strings in.
+ * @param user_vector the user's NULL-terminated array (may itself be NULL).
+ * @return the entry count, or a negative errno (EFAULT for bad memory,
+ *         E2BIG when the arguments pass USER_ARG_MAX, ENOMEM).
+ */
+static int32_t copy_vector_from_user(const char **user_vector, exec_args_t *a)
+{
+    int32_t count = 0;
     while (user_vector)
     {
         const char *entry;
         if (kerr_failed(copy_from_user(&entry, &user_vector[count], sizeof(entry))))
+        {
             return -EFAULT;
+        }
         if (!entry)
+        {
             break;
-        if (count == EXEC_VECTOR_MAX)
-            return -EINVAL; // too many entries
-
-        char *dst = strings->bytes + strings->used;
-        int32_t len = strncpy_from_user(dst, entry, EXEC_STRING_BYTES - strings->used);
-        if (len == KERR_FAULT)
-            return -EFAULT;
-        if (len < 0)
-            return -EINVAL; // strings too long
-
-        kvector[count++] = dst;
-        strings->used += (uint32_t)len + 1;
+        }
+        int32_t err = copy_string_from_user(a, entry);
+        if (err < 0)
+        {
+            return err;
+        }
+        count++;
+        if (a->used + a->count * sizeof(char *) > USER_ARG_MAX)
+        {
+            return -E2BIG;
+        }
     }
+    int32_t err = add_start(a, NO_ENTRY);
+    return err < 0 ? err : count;
+}
 
-    kvector[count] = NULL;
-    return (int32_t)count;
+/**
+ * copy argv and envp (may be NULL) in. on success *vectors is one array:
+ * argv's pointers, NULL, envp's pointers, NULL (kfree it, then
+ * exec_args_free); *envp_out points at its envp part.
+ * @return 0 or a negative errno.
+ */
+static int32_t copy_args_from_user(const char **argv, const char **envp, exec_args_t *a,
+                                   const char ***vectors, const char ***envp_out)
+{
+    a->room = 4096;
+    a->strings = kmalloc(a->room);
+    if (!a->strings)
+    {
+        return -ENOMEM;
+    }
+    int32_t ret = copy_vector_from_user(argv, a);
+    if (ret < 0)
+    {
+        return ret;
+    }
+    a->argc = (size_t)ret;
+    ret = copy_vector_from_user(envp, a);
+    if (ret < 0)
+    {
+        return ret;
+    }
+    const char **v = kmalloc(a->count * sizeof(char *));
+    if (!v)
+    {
+        return -ENOMEM;
+    }
+    for (size_t i = 0; i < a->count; i++)
+    {
+        v[i] = a->starts[i] == NO_ENTRY ? NULL : a->strings + a->starts[i];
+    }
+    *vectors = v;
+    *envp_out = v + a->argc + 1;
+    return 0;
 }
 
 /**
@@ -103,20 +207,18 @@ syscall_ret_t sys_exec(struct registers *regs)
         return path_err;
 
     /* argv and its strings are user memory too: copy them in first */
-    exec_strings_t strings = {kmalloc(EXEC_STRING_BYTES), 0};
-    if (!strings.bytes)
-        return -ENOMEM;
-
-    const char *kargv[EXEC_VECTOR_MAX + 1];
-    int32_t ret = copy_vector_from_user(argv, kargv, &strings);
+    exec_args_t args = {0};
+    const char **kargv = NULL;
+    const char **kenvp;
+    int32_t ret = copy_args_from_user(argv, NULL, &args, &kargv, &kenvp);
     if (ret >= 0)
     {
         ret = (int32_t)exec_program(resolved, kargv);
         if (ret < 0)
             ret = -ENOENT;
     }
-
-    kfree(strings.bytes);
+    kfree(kargv);
+    exec_args_free(&args);
     return ret;
 }
 
@@ -139,25 +241,14 @@ syscall_ret_t sys_execve(struct registers *regs)
     if (ret < 0)
         return ret;
 
-    // the vectors are big for a kernel stack: keep them on the heap
-    exec_strings_t strings = {kmalloc(EXEC_STRING_BYTES), 0};
-    const char **kargv = kmalloc(2 * (EXEC_VECTOR_MAX + 1) * sizeof(char *));
-    if (!strings.bytes || !kargv)
-    {
-        kfree(strings.bytes);
-        kfree(kargv);
-        return -ENOMEM;
-    }
-    const char **kenvp = kargv + EXEC_VECTOR_MAX + 1;
-
-    ret = copy_vector_from_user(argv, kargv, &strings);
-    if (ret >= 0)
-        ret = copy_vector_from_user(envp, kenvp, &strings);
+    exec_args_t args = {0};
+    const char **kargv = NULL;
+    const char **kenvp = NULL;
+    ret = copy_args_from_user(argv, envp, &args, &kargv, &kenvp);
     if (ret >= 0)
         ret = kerr_to_errno(exec_replace(regs, resolved, kargv, kenvp));
-
-    kfree(strings.bytes);
     kfree(kargv);
+    exec_args_free(&args);
 
     // on success the frame's EAX was cleared for the new program; keep it
     return ret == 0 ? (syscall_ret_t)REG_RESULT(regs) : ret;

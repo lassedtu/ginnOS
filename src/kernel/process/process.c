@@ -58,6 +58,8 @@ static process_t *claim_slot(void)
  */
 static void release_slot(process_t *proc)
 {
+    kfree(proc->fds);
+    proc->fds = NULL;
     uint32_t flags = spin_lock_irqsave(&table_lock);
     proc->pid = PID_NONE;
     proc->state = PROC_STATE_UNUSED;
@@ -88,6 +90,15 @@ process_t *process_create(void)
     wait_queue_init(&proc->child_exit);
     proc->umask = 022; // the ids start as root's (0), from the cleared slot
     arch_fpu_clean(proc->fpu_state);
+
+    // the descriptor table, all free (on the heap: FD_MAX entries for each
+    // of PROCESS_MAX slots would make the kernel image's memory larger)
+    proc->fds = kcalloc(FD_MAX, sizeof(fd_entry_t));
+    if (!proc->fds)
+    {
+        release_slot(proc);
+        return NULL;
+    }
 
     // allocate a guarded kernel stack (zeroed)
     uintptr_t stack = kstack_alloc();
@@ -437,7 +448,7 @@ bool process_info(uint32_t pid, process_info_t *info)
         memcpy(info->name, proc->name, sizeof(info->name));
         info->areas = proc->vmas.count;
         info->open_fds = 0;
-        for (int fd = 0; fd < FD_MAX; fd++)
+        for (int fd = 0; proc->fds && fd < FD_MAX; fd++)
         {
             info->open_fds += proc->fds[fd].file != NULL;
         }

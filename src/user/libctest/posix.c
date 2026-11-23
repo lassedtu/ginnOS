@@ -11,6 +11,8 @@
 #include <fnmatch.h>
 #include <inttypes.h>
 #include <libgen.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <search.h>
 #include <signal.h>
@@ -18,6 +20,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -234,6 +237,63 @@ static void test_system(void)
     CHECK(strcmp(strsignal(99), "Unknown signal 99") == 0);
 }
 
+/** run /bin/echo with count arguments; the bytes it wrote, or -1 */
+static int echo_many(int count, const char *word)
+{
+    char **argv = calloc((size_t)count + 2, sizeof(char *));
+    int pipe_fds[2];
+    if (!argv || pipe(pipe_fds) < 0)
+        return -1;
+    argv[0] = "echo";
+    for (int i = 1; i <= count; i++)
+        argv[i] = (char *)word;
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        dup2(pipe_fds[1], 1);
+        execv("/bin/echo", argv);
+        _exit(errno == E2BIG ? 100 : 101);
+    }
+    close(pipe_fds[1]);
+    free(argv);
+    int total = 0;
+    char buffer[512];
+    ssize_t n;
+    while ((n = read(pipe_fds[0], buffer, sizeof(buffer))) > 0)
+        total += (int)n;
+    close(pipe_fds[0]);
+    int status;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 100 ? -2 : total;
+}
+
+/** exec takes many arguments (more than the 64 it used to keep), up to ARG_MAX bytes */
+static void test_exec_args(void)
+{
+    CHECK(echo_many(300, "ab") == 300 * 3); // "ab " 299 times and "ab\n"
+    static char big[1000];
+    memset(big, 'x', sizeof(big) - 1);
+    CHECK(echo_many(100, big) == 100 * 1000);
+    CHECK(echo_many(200, big) == -2); // 200 kB: E2BIG
+}
+
+/** more files open at once than the 16 a process could have */
+static void test_many_files(void)
+{
+    int fds[40];
+    int opened = 0;
+    for (int i = 0; i < 40; i++)
+    {
+        fds[i] = open("/etc/passwd", O_RDONLY);
+        opened += fds[i] >= 0;
+    }
+    CHECK(opened == 40);
+    for (int i = 0; i < 40; i++)
+        if (fds[i] >= 0)
+            close(fds[i]);
+    CHECK(sysconf(_SC_OPEN_MAX) == 64);
+}
+
 void test_posix(void)
 {
     test_getline();
@@ -246,4 +306,6 @@ void test_posix(void)
     test_strptime();
     test_files();
     test_system();
+    test_exec_args();
+    test_many_files();
 }
