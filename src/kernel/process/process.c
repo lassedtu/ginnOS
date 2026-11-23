@@ -10,6 +10,7 @@
 #include "kernel/memory/heap.h"
 #include "kernel/assert.h"
 #include "common/memory.h"
+#include "common/string.h"
 
 // the process table. a slot is made on the heap the first time it is
 // needed and is kept for reuse after its process ends, so a process
@@ -109,7 +110,6 @@ process_t *process_create(void)
     proc->parent_pid = PID_NONE;
     proc->exit_status = 0;
     wait_queue_init(&proc->child_exit);
-    proc->umask = 022; // the ids start as root's (0), from the cleared slot
     arch_fpu_clean(proc->fpu_state);
 
     // the descriptor table, all free
@@ -146,11 +146,17 @@ process_t *process_create(void)
         proc->files->fd[fd].file = file_console();
     }
 
-    // default working and root directory
-    proc->cwd[0] = '/';
-    proc->cwd[1] = '\0';
-    proc->root[0] = '/';
-    proc->root[1] = '\0';
+    // the working and the root directory are "/"
+    proc->fs = kcalloc(1, sizeof(fs_context_t));
+    if (!proc->fs)
+    {
+        process_destroy(proc);
+        return NULL;
+    }
+    proc->fs->users = 1;
+    proc->fs->umask = 022; // the ids start as root's (0), from the cleared slot
+    strcpy(proc->fs->cwd, "/");
+    strcpy(proc->fs->root, "/");
 
     return proc;
 }
@@ -185,8 +191,8 @@ process_t *process_fork(const struct registers *regs)
     process_copy_credentials(child, parent);
     memcpy(child->name, parent->name, sizeof(child->name));
     signal_fork(child, parent);
-    memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
-    memcpy(child->root, parent->root, sizeof(child->root));
+    memcpy(child->fs->cwd, parent->fs->cwd, sizeof(child->fs->cwd));
+    memcpy(child->fs->root, parent->fs->root, sizeof(child->fs->root));
 
     // every fd is inherited: the child's descriptors share the parent's
     // open files (and so their offsets)
@@ -247,6 +253,32 @@ void process_release_resources(process_t *proc)
     // frees its own moves to the kernel's page tables first)
     user_space_put(proc->space);
     proc->space = NULL;
+
+    fs_context_put(proc->fs);
+    proc->fs = NULL;
+}
+
+fs_context_t *fs_context_get(fs_context_t *fs)
+{
+    uint32_t flags = arch_irq_save();
+    fs->users++;
+    arch_irq_restore(flags);
+    return fs;
+}
+
+void fs_context_put(fs_context_t *fs)
+{
+    if (!fs)
+    {
+        return;
+    }
+    uint32_t flags = arch_irq_save();
+    bool last = --fs->users == 0;
+    arch_irq_restore(flags);
+    if (last)
+    {
+        kfree(fs);
+    }
 }
 
 void process_destroy(process_t *proc)
@@ -554,7 +586,7 @@ void process_copy_credentials(process_t *child, const process_t *parent)
     child->gid = parent->gid;
     child->egid = parent->egid;
     child->sgid = parent->sgid;
-    child->umask = parent->umask;
+    child->fs->umask = parent->fs->umask;
     child->nice = parent->nice;
 }
 

@@ -280,7 +280,7 @@ syscall_ret_t sys_fchown(struct registers *regs)
 syscall_ret_t sys_umask(struct registers *regs)
 {
     process_t *proc = process_current();
-    uint32_t old = proc->umask;
-    proc->umask = (uint32_t)syscall_arg(regs, 0) & 0777u;
+    uint32_t old = proc->fs->umask;
+    proc->fs->umask = (uint32_t)syscall_arg(regs, 0) & 0777u;
     return (syscall_ret_t)old;
 }

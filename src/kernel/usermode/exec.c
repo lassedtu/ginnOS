@@ -152,8 +152,8 @@ int exec_program(const char *path, const char **argv)
     // inherit parent's working directory and file descriptor table
     if (parent)
     {
-        strcpy(child->cwd, parent->cwd);
-        strcpy(child->root, parent->root);
+        strcpy(child->fs->cwd, parent->fs->cwd);
+        strcpy(child->fs->root, parent->fs->root);
 
         // the child shares the parent's open files, except the ones marked
         // close-on-exec (as posix_spawn does)

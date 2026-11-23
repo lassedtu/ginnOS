@@ -51,6 +51,18 @@ typedef enum
 #define PROCESS_NAME_MAX 32
 
 /**
+ * where paths start, and the mode bits new files lose. the threads of a
+ * process use one together; it is freed when the last lets it go.
+ */
+typedef struct fs_context
+{
+    uint32_t users;      // the processes (threads) that use it
+    uint32_t umask;      // permission bits taken off new files
+    char cwd[PATH_MAX];  // current working directory (the real path)
+    char root[PATH_MAX]; // the root directory (chroot): a path starts here
+} fs_context_t;
+
+/**
  * process control block.
  */
 typedef struct process
@@ -62,7 +74,6 @@ typedef struct process
     uint32_t sid;           // session
     uint32_t uid, euid, suid; // real, effective and saved user id
     uint32_t gid, egid, sgid; // real, effective and saved group id
-    uint32_t umask;         // permission bits taken off new files
     int32_t nice;           // -20 (most CPU) to 19 (least): the time slice length
     process_state_t state;  // current state
     user_space_t *space;    // the user memory (shared by threads), or NULL
@@ -101,11 +112,23 @@ typedef struct process
     // the FPU/SSE registers while another process runs (arch_fpu_save)
     uint8_t fpu_state[ARCH_FPU_STATE_SIZE] __attribute__((aligned(16)));
     char name[PROCESS_NAME_MAX]; // the program's file name (procfs)
-    char cwd[PATH_MAX];     // current working directory (the real path)
-    char root[PATH_MAX];    // the root directory (chroot): a path starts here
+    fs_context_t *fs;       // cwd, root and umask (shared by threads), or
+                            // NULL once released
     fd_table_t *files;      // the descriptors (shared by threads), or NULL
                             // once released
 } process_t;
+
+/**
+ * add a user to an fs context (a new thread that shares it).
+ * @return fs.
+ */
+fs_context_t *fs_context_get(fs_context_t *fs);
+
+/**
+ * remove a user from an fs context; the last user frees it.
+ * @param fs the context, or NULL (nothing is done).
+ */
+void fs_context_put(fs_context_t *fs);
 
 /**
  * initialize the process subsystem.
