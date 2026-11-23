@@ -261,8 +261,32 @@ static void check_times(const char *dir)
     CHECK(unlink(path) == 0);
 }
 
+/** ftruncate to a length, on ext2 or tmpfs */
+static void check_truncate(const char *dir)
+{
+    char path[64];
+    snprintf(path, sizeof(path), "%s/libctest-cut", dir);
+    int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    CHECK(fd >= 0);
+    CHECK(write(fd, "0123456789", 10) == 10);
+    CHECK(ftruncate(fd, 4) == 0);
+    struct stat st;
+    CHECK(fstat(fd, &st) == 0 && st.st_size == 4);
+    CHECK(lseek(fd, 0, SEEK_CUR) == 10); // the offset stays
+    CHECK(ftruncate(fd, 8) == 0);
+    char buffer[8];
+    CHECK(pread(fd, buffer, 8, 0) == 8);
+    CHECK(memcmp(buffer, "0123\0\0\0\0", 8) == 0);
+    CHECK(ftruncate(fd, -1) == -1 && errno == EINVAL);
+    close(fd);
+    CHECK(truncate(path, 2) == 0 && stat(path, &st) == 0 && st.st_size == 2);
+    CHECK(unlink(path) == 0);
+}
+
 void test_files(void)
 {
+    check_truncate("");
+    check_truncate("/tmp");
     check_times("");
     check_times("/tmp");
     test_at_calls();

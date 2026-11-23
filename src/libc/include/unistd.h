@@ -365,11 +365,12 @@ int pipe(int fds[2]);
 int dup2(int old_fd, int new_fd);
 
 /**
- * truncate an open file to zero length.
- * @param fd file descriptor.
- * @return 0 on success, -1 on failure.
+ * cut or grow a file to length bytes (the new bytes read as zeros). the
+ * file offset stays.
+ * @return 0, or -1 (errno set).
  */
-int ftruncate(int fd);
+int ftruncate(int fd, off_t length);
+int truncate(const char *path, off_t length);
 
 /* lseek whence constants */
 #define SEEK_SET 0

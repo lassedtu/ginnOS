@@ -51,7 +51,7 @@ typedef struct
     int32_t (*mmap)(file_t *file, addr_space_t as, uintptr_t virt, size_t length, int prot,
                     uint32_t offset);
     int32_t (*read_entry)(file_t *file, fs_dirent_t *entry);
-    int32_t (*truncate)(file_t *file);
+    int32_t (*truncate)(file_t *file, uint32_t length);
     int32_t (*stat)(file_t *file, struct kstat *st);
     uint32_t (*poll)(file_t *file); // POLL* events that would not block now
     void (*release)(file_t *file); // the last reference is gone
@@ -154,7 +154,7 @@ int32_t file_read_entry(file_t *file, fs_dirent_t *entry);
  * @return 0, or -ENOMEM.
  */
 int32_t file_unread_entry(file_t *file, const fs_dirent_t *entry);
-int32_t file_truncate(file_t *file);
+int32_t file_truncate(file_t *file, uint32_t length);
 int32_t file_stat(file_t *file, struct kstat *st);
 
 /**

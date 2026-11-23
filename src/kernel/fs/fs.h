@@ -64,7 +64,7 @@ typedef struct
 
     uint32_t (*read)(fs_file_t *file, uint32_t byte_count, void *data_out);
     uint32_t (*write)(fs_file_t *file, uint32_t byte_count, const void *data_in);
-    kerr_t (*truncate)(fs_file_t *file);
+    kerr_t (*truncate)(fs_file_t *file, uint32_t length); // cut or grow to length
     kerr_t (*read_entry)(fs_file_t *file, fs_dirent_t *entry_out);
     kerr_t (*fstat)(fs_file_t *file, fs_stat_t *stat_out);
     /**
@@ -261,11 +261,10 @@ uint32_t fs_read(fs_file_t *file, uint32_t byteCount, void *dataOut);
 uint32_t fs_write(fs_file_t *file, uint32_t byteCount, const void *dataIn);
 
 /**
- * truncate an open file to zero length.
- * @param file open file handle.
+ * cut or grow an open file to length bytes (growth reads as zeros).
  * @return KERR_OK on success, or an error code on failure.
  */
-kerr_t fs_truncate(fs_file_t *file);
+kerr_t fs_truncate(fs_file_t *file, uint32_t length);
 
 /**
  * stat an open file or directory.

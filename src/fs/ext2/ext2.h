@@ -310,10 +310,11 @@ uint32_t ext2_read(ext2_file_t *file, uint32_t byteCount, void *dataOut);
 uint32_t ext2_write(ext2_file_t *file, uint32_t byteCount, const void *dataIn);
 
 /**
- * truncate an open file to zero length.
- * @param file open file handle.
+ * cut or grow an open file to length bytes (growth reads as zeros). the
+ * cursor stays.
+ * @return KERR_OK, or KERR_IO.
  */
-void ext2_truncate(ext2_file_t *file);
+kerr_t ext2_truncate(ext2_file_t *file, uint32_t length);
 
 /**
  * read one directory entry from an open directory handle.
@@ -342,9 +343,11 @@ void ext2_close(ext2_file_t *file);
 kerr_t ext2_write_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer);
 
 /**
- * truncate a file to zero length.
+ * cut or grow a file to length bytes. the blocks past a shorter end are
+ * freed; a longer file gets a hole, which reads as zeros.
  * @param volume initialized ext2 volume.
  * @param inode_number file inode number.
+ * @param length the new size.
  * @return KERR_OK on success, or an error code on failure.
  */
-kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number);
+kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t length);

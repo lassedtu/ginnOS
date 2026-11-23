@@ -130,13 +130,13 @@ int32_t file_unread_entry(file_t *file, const fs_dirent_t *entry)
     return 0;
 }
 
-int32_t file_truncate(file_t *file)
+int32_t file_truncate(file_t *file, uint32_t length)
 {
     if (!file_writable(file) || !file->ops->truncate)
     {
         return -EINVAL;
     }
-    return file->ops->truncate(file);
+    return file->ops->truncate(file, length);
 }
 
 uint32_t file_poll(file_t *file)
@@ -248,9 +248,9 @@ static int32_t vfs_kind_read_entry(file_t *file, fs_dirent_t *entry)
     return kerr_to_errno(vfs_read_entry(&file->vfs, entry));
 }
 
-static int32_t vfs_kind_truncate(file_t *file)
+static int32_t vfs_kind_truncate(file_t *file, uint32_t length)
 {
-    return kerr_to_errno(vfs_truncate(&file->vfs));
+    return kerr_to_errno(vfs_truncate(&file->vfs, length));
 }
 
 static int32_t vfs_kind_stat(file_t *file, struct kstat *st)

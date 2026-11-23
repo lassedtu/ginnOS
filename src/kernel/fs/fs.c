@@ -182,14 +182,14 @@ uint32_t fs_write(fs_file_t *file, uint32_t byteCount, const void *dataIn)
     return file->ops->write(file, byteCount, dataIn);
 }
 
-kerr_t fs_truncate(fs_file_t *file)
+kerr_t fs_truncate(fs_file_t *file, uint32_t length)
 {
     if (!file || !file->is_open)
     {
         return KERR_INVAL;
     }
 
-    return file->ops->truncate(file);
+    return file->ops->truncate(file, length);
 }
 
 kerr_t fs_read_entry(fs_file_t *file, fs_dirent_t *entryOut)

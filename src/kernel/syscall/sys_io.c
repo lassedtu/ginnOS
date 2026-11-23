@@ -149,7 +149,7 @@ static int32_t open_at(int32_t dirfd, const char *path, uint32_t flags, uint32_t
     else if (type == FS_TYPE_DIR && access != O_RDONLY)
         ret = -EISDIR;
     else if ((flags & O_TRUNC) && access != O_RDONLY && type == FS_TYPE_FILE)
-        ret = file_truncate(file);
+        ret = file_truncate(file, 0);
 
     if (ret < 0)
     {
@@ -204,18 +204,27 @@ syscall_ret_t sys_lseek(struct registers *regs)
     return file_seek(entry->file, (int32_t)syscall_arg(regs, 1), (int)syscall_arg(regs, 2));
 }
 
+// the largest file size (st_size is 32 bits)
+#define FILE_SIZE_MAX 0x7FFFFFFFl
+
 /**
- * SYS_ftruncate: truncate an open file to zero length.
- * args: EBX = fd.
- * returns 0 on success, negative errno on failure.
+ * SYS_ftruncate: cut or grow an open file to a length.
+ * args: fd, length (the new bytes read as zeros). the offset stays.
+ * returns 0, or a negative errno (EINVAL: a negative length, or a file
+ * not open for writing; EFBIG: too long).
  */
 syscall_ret_t sys_ftruncate(struct registers *regs)
 {
     fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
     if (!entry)
         return -EBADF;
+    long length = (long)syscall_arg(regs, 1);
+    if (length < 0)
+        return -EINVAL;
+    if (length > FILE_SIZE_MAX)
+        return -EFBIG;
 
-    return file_truncate(entry->file);
+    return file_truncate(entry->file, (uint32_t)length);
 }
 
 /**

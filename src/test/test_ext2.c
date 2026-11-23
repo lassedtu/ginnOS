@@ -53,7 +53,7 @@ KTEST(ext2_truncate)
     vfs_file_t file;
     KEXPECT(kerr_ok(vfs_open(TEST_FILE, &file)));
     KEXPECT_EQ(vfs_write(&file, 100, write_buf), 100);
-    KEXPECT(kerr_ok(vfs_truncate(&file)));
+    KEXPECT(kerr_ok(vfs_truncate(&file, 0)));
     vfs_close(&file);
 
     vfs_stat_t st;
@@ -273,4 +273,50 @@ KTEST(ext2_follow_directory_links)
     KEXPECT(kerr_ok(vfs_remove(TEST_DIR "/in/file")));
     KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR "/in")));
     KEXPECT(kerr_ok(vfs_rmdir(TEST_DIR)));
+}
+
+// past the direct blocks and the single indirect table (1 KiB blocks: 12
+// direct, then 256 through one table): the cut frees part of a table
+#define BIG_BYTES (300u * 1024u)
+
+KTEST(ext2_truncate_to_a_length)
+{
+    vfs_file_t file;
+    vfs_stat_t st;
+    vfs_remove(TEST_FILE);
+    KEXPECT(kerr_ok(vfs_create(TEST_FILE)));
+    KEXPECT(kerr_ok(vfs_open(TEST_FILE, &file)));
+    for (uint32_t i = 0; i < TEST_BYTES; i++)
+        write_buf[i] = (uint8_t)(i * 7 + 3);
+    for (uint32_t done = 0; done < BIG_BYTES; done += TEST_BYTES)
+        KEXPECT_EQ(vfs_write(&file, TEST_BYTES, write_buf), TEST_BYTES);
+    vfs_close(&file);
+    KEXPECT(kerr_ok(vfs_stat(TEST_FILE, &st)));
+    uint32_t big_blocks = st.blocks;
+
+    // cut inside the single indirect range, mid block
+    KEXPECT(kerr_ok(vfs_open(TEST_FILE, &file)));
+    KEXPECT(kerr_ok(vfs_truncate(&file, 100u * 1024u + 10u)));
+    vfs_close(&file);
+    KEXPECT(kerr_ok(vfs_stat(TEST_FILE, &st)));
+    KEXPECT_EQ(st.size, 100u * 1024u + 10u);
+    KEXPECT(st.blocks < big_blocks);
+
+    // grow again: the old bytes past the cut read as zeros
+    KEXPECT(kerr_ok(vfs_open(TEST_FILE, &file)));
+    KEXPECT(kerr_ok(vfs_truncate(&file, 100u * 1024u + 4000u)));
+    KEXPECT_EQ(vfs_lseek(&file, 100 * 1024 - 100, 0), 100 * 1024 - 100);
+    KEXPECT_EQ(vfs_read(&file, 4100, read_buf), 4100);
+    vfs_close(&file);
+    uint32_t start = 100u * 1024u - 100u;
+    bool kept = true;
+    for (uint32_t i = 0; i < 110; i++)
+        kept = kept && read_buf[i] == (uint8_t)(((start + i) % TEST_BYTES) * 7 + 3);
+    KEXPECT(kept);
+    bool zeros = true;
+    for (uint32_t i = 110; i < 4100; i++)
+        zeros = zeros && read_buf[i] == 0;
+    KEXPECT(zeros);
+
+    KEXPECT(kerr_ok(vfs_remove(TEST_FILE)));
 }

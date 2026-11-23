@@ -199,11 +199,10 @@ uint32_t vfs_write(
     const void *buffer);
 
 /**
- * truncate an open file to zero length.
- * @param file pointer to the vfs_file_t structure.
+ * cut or grow an open file to length bytes (growth reads as zeros).
  * @return KERR_OK on success, or an error code on failure.
  */
-kerr_t vfs_truncate(vfs_file_t *file);
+kerr_t vfs_truncate(vfs_file_t *file, uint32_t length);
 
 /**
  * read a directory entry from an open directory in the virtual file system.

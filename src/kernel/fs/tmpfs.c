@@ -560,15 +560,29 @@ static uint32_t tmpfs_write(fs_file_t *file, uint32_t count, const void *data_in
     return n;
 }
 
-static kerr_t tmpfs_truncate(fs_file_t *file)
+static kerr_t tmpfs_truncate(fs_file_t *file, uint32_t length)
 {
     mutex_lock(&tmpfs_lock);
     tmpfs_node_t *node = file->fs_data;
-    node->size = 0;
-    file->fs_pos = 0;
-    node->mtime = node->ctime = clock_realtime_seconds();
+    kerr_t err = KERR_OK;
+    if (length > node->size)
+    {
+        if (reserve(node, length))
+        {
+            memset(node->data + node->size, 0, length - node->size);
+        }
+        else
+        {
+            err = KERR_NOSPC;
+        }
+    }
+    if (kerr_ok(err))
+    {
+        node->size = length;
+        node->mtime = node->ctime = clock_realtime_seconds();
+    }
     mutex_unlock(&tmpfs_lock);
-    return KERR_OK;
+    return err;
 }
 
 static kerr_t tmpfs_read_entry(fs_file_t *file, fs_dirent_t *entry_out)

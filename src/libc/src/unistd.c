@@ -365,14 +365,26 @@ int dup2(int old_fd, int new_fd)
     return ret;
 }
 
-int ftruncate(int fd)
+int ftruncate(int fd, off_t length)
 {
-    int ret = _syscall(SYS_FTRUNCATE, fd, 0, 0, 0, 0);
+    int ret = _syscall(SYS_FTRUNCATE, fd, (long)length, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
         return -1;
     }
+    return 0;
+}
+
+int truncate(const char *path, off_t length)
+{
+    int fd = open(path, O_WRONLY);
+    if (fd < 0)
+        return -1;
+    int ret = ftruncate(fd, length);
+    int saved = errno;
+    close(fd);
+    errno = saved;
     return ret;
 }
 

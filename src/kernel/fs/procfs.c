@@ -470,9 +470,10 @@ static uint32_t procfs_refuse_write(fs_file_t *file, uint32_t count, const void 
     return 0;
 }
 
-static kerr_t procfs_refuse_truncate(fs_file_t *file)
+static kerr_t procfs_refuse_truncate(fs_file_t *file, uint32_t length)
 {
     (void)file;
+    (void)length;
     return KERR_PERM;
 }
 

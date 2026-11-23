@@ -162,10 +162,9 @@ static uint32_t ext2_ops_write(fs_file_t *file, uint32_t byte_count, const void 
     return ext2_write(&file->ext2_file, byte_count, data_in);
 }
 
-static kerr_t ext2_ops_truncate(fs_file_t *file)
+static kerr_t ext2_ops_truncate(fs_file_t *file, uint32_t length)
 {
-    ext2_truncate(&file->ext2_file);
-    return KERR_OK;
+    return ext2_truncate(&file->ext2_file, length);
 }
 
 static kerr_t ext2_ops_read_entry(fs_file_t *file, fs_dirent_t *entry_out)
@@ -271,10 +270,10 @@ static uint32_t locked_write(fs_file_t *file, uint32_t byte_count, const void *d
     return n;
 }
 
-static kerr_t locked_truncate(fs_file_t *file)
+static kerr_t locked_truncate(fs_file_t *file, uint32_t length)
 {
     mutex_lock(&ext2_lock);
-    kerr_t err = ext2_ops_truncate(file);
+    kerr_t err = ext2_ops_truncate(file, length);
     mutex_unlock(&ext2_lock);
     return err;
 }
