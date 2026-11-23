@@ -10,6 +10,7 @@
 
 #include "heimdalld.h"
 
+#include <conf.h>
 #include <fcntl.h>
 #include <image.h>
 #include <stdio.h>
@@ -104,6 +105,43 @@ static bool map_screen(void)
     S.damage_count = 0;
     screen_damage(gfx_rect(0, 0, S.width, S.height));
     return true;
+}
+
+/**
+ * the wallpaper of the "desktop" settings ([desktop] wallpaper), or
+ * fallback when it has none. "none" is the gradient alone.
+ */
+const char *screen_wallpaper_setting(const char *fallback)
+{
+    static char path[256];
+    conf_t *conf = conf_open("desktop");
+    const char *value = conf ? conf_get(conf, "desktop", "wallpaper", NULL) : NULL;
+    const char *result = fallback;
+    if (value && strcmp(value, "none") == 0)
+        result = NULL;
+    else if (value && value[0])
+    {
+        snprintf(path, sizeof(path), "%s", value);
+        result = path;
+    }
+    conf_free(conf);
+    return result;
+}
+
+void screen_set_wallpaper(const char *path)
+{
+    static char copy[256];
+    if (path)
+    {
+        snprintf(copy, sizeof(copy), "%s", path);
+        path = copy;
+    }
+    S.wallpaper_path = path;
+    gfx_buffer_free(S.wallpaper);
+    S.wallpaper = NULL;
+    if (!make_wallpaper(path))
+        return;
+    screen_damage(gfx_rect(0, 0, S.width, S.height));
 }
 
 bool screen_init(const char *wallpaper)

@@ -10,7 +10,8 @@
  * console comes back as it was.
  *
  *   -w image   the wallpaper (PNG, JPEG or BMP), scaled to cover the screen;
- *              without it, /usr/share/wallpapers/default.png if it is there
+ *              without it, the one of the settings ([desktop] wallpaper in
+ *              desktop.conf), else /usr/share/wallpapers/default.png
  *   -x         stop when the program ends (the session: startde runs
  *              "heimdalld -x asgard")
  *   -s         every 2 seconds with frames, a line of statistics in the
@@ -142,7 +143,8 @@ static void loop(void)
 
 int main(int argc, char **argv)
 {
-    const char *wallpaper = access(DEFAULT_WALLPAPER, R_OK) == 0 ? DEFAULT_WALLPAPER : NULL;
+    const char *wallpaper = screen_wallpaper_setting(
+        access(DEFAULT_WALLPAPER, R_OK) == 0 ? DEFAULT_WALLPAPER : NULL);
     int arg = 1;
     for (;;)
     {

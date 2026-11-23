@@ -223,6 +223,10 @@ void screen_follow(void);
 /** read /dev/display: follow the size the screen wants, map a new mode */
 void screen_display_events(void);
 void screen_damage(gfx_rect_t r);
+/** the wallpaper the "desktop" settings name (or fallback; NULL: none) */
+const char *screen_wallpaper_setting(const char *fallback);
+/** another wallpaper (NULL: the gradient), drawn at once */
+void screen_set_wallpaper(const char *path);
 void screen_compose(void);
 
 // in window.c

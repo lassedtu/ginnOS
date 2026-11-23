@@ -12,11 +12,15 @@
  *   Shift+Page Up, Shift+Page Down the scrollback (the wheel too)
  *   Ctrl+plus, Ctrl+minus, Ctrl+0 a larger, a smaller, the normal text
  *
+ * the normal text size is [terminal] font_size in mimir.conf (settings
+ * sets it; open windows follow it).
+ *
  * drag to select; a double click selects a word, a triple click a line.
  * a program that asks for the mouse gets it; Shift lets mimir select.
  */
 
 #include <bragi.h>
+#include <conf.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <idunn.h>
@@ -518,6 +522,15 @@ static void canvas_resize(idunn_widget_t *canvas, int32_t width, int32_t height,
     fit_grid();
 }
 
+/** the text size of the settings ([terminal] font_size), or FONT_SIZE */
+static int saved_font_size(void)
+{
+    conf_t *conf = conf_open("mimir");
+    long size = conf ? conf_get_int(conf, "terminal", "font_size", FONT_SIZE) : FONT_SIZE;
+    conf_free(conf);
+    return size < FONT_MIN ? FONT_MIN : size > FONT_MAX ? FONT_MAX : (int)size;
+}
+
 static void set_font_size(int size)
 {
     if (size < FONT_MIN || size > FONT_MAX || size == M.font_size)
@@ -704,7 +717,7 @@ static bool own_key(uint16_t code, uint32_t mods)
     }
     if (ctrl && !shift && code == KEY_0)
     {
-        set_font_size(FONT_SIZE);
+        set_font_size(saved_font_size());
         return true;
     }
     return false;
@@ -877,6 +890,17 @@ static bool canvas_input(idunn_widget_t *canvas, const idunn_input_t *in, void *
 }
 
 /**
+ * events for no window: the settings of mimir changed (the text size).
+ */
+static void on_event(idunn_app_t *app, const heim_msg_t *msg, void *data)
+{
+    (void)app;
+    (void)data;
+    if (msg->type == HEIM_EV_SETTINGS && strcmp(msg->settings.name, "mimir") == 0)
+        set_font_size(saved_font_size());
+}
+
+/**
  * the program wrote: give it to libvt, and draw in the next frame.
  */
 static void pty_ready(int fd, void *data)
@@ -943,7 +967,7 @@ int main(int argc, char **argv)
         return 1;
     }
     M.scale = theme()->scale;
-    M.font_size = FONT_SIZE;
+    M.font_size = saved_font_size();
     if (!load_faces())
     {
         printf("mimir: no font in " FONTS "Regular.ttf\n");
@@ -972,6 +996,7 @@ int main(int argc, char **argv)
     idunn_window_set_root(M.win, M.canvas);
     idunn_set_focus(M.canvas);
     idunn_app_watch(M.app, M.master, pty_ready, NULL);
+    idunn_app_on_event(M.app, on_event, NULL);
 
     int status = idunn_app_run(M.app);
 
