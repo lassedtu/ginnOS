@@ -123,15 +123,22 @@ static void button_measure(idunn_widget_t *w, int32_t max_width, int32_t *width,
     *width = b->text ? content_width(w) + 2 * idunn_px(t, padding_of(b) + 1) : *height;
 }
 
+/** the variant it is drawn as: an active button looks as an outline one */
+static idunn_variant_t drawn_as(const button_t *b)
+{
+    return b->active ? IDUNN_OUTLINE : b->variant;
+}
+
 /** the layers of the refined finish under the fill (outer shadows) */
 static void draw_under(idunn_widget_t *w, gfx_buffer_t *buf, int32_t radius)
 {
     const button_t *b = w->data;
+    idunn_variant_t variant = drawn_as(b);
     const idunn_theme_t *t = idunn_theme(w);
     bool dark = t->mode == IDUNN_DARK;
     gfx_color_t black = gfx_rgb(0, 0, 0);
     int32_t one = idunn_px(t, 1);
-    if (b->variant == IDUNN_PRIMARY)
+    if (variant == IDUNN_PRIMARY)
     {
         // a rim 15 % darker than the colour and a small drop shadow
         gfx_shadow_t drop = {0, one, 2 * one, 0, gfx_fade(black, pct(14)), false};
@@ -140,7 +147,7 @@ static void draw_under(idunn_widget_t *w, gfx_buffer_t *buf, int32_t radius)
         gfx_box_shadow(buf, w->rect, radius, &drop);
         gfx_box_shadow(buf, w->rect, radius, &rim);
     }
-    else if (b->variant == IDUNN_OUTLINE)
+    else if (variant == IDUNN_OUTLINE)
     {
         gfx_shadow_t drop = {0, one, 2 * one, 0, gfx_fade(black, dark ? pct(30) : pct(5)), false};
         gfx_box_shadow(buf, w->rect, radius, &drop);
@@ -151,12 +158,13 @@ static void draw_under(idunn_widget_t *w, gfx_buffer_t *buf, int32_t radius)
 static void draw_over(idunn_widget_t *w, gfx_buffer_t *buf, int32_t radius)
 {
     const button_t *b = w->data;
+    idunn_variant_t variant = drawn_as(b);
     const idunn_theme_t *t = idunn_theme(w);
     bool dark = t->mode == IDUNN_DARK;
     gfx_color_t white = gfx_rgb(255, 255, 255);
     gfx_color_t black = gfx_rgb(0, 0, 0);
     int32_t one = idunn_px(t, 1);
-    switch (b->variant)
+    switch (variant)
     {
     case IDUNN_PRIMARY:
     {
@@ -198,11 +206,12 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
 
     if (b->active)
     {
-        // a secondary fill, so the active one stands out of a row of ghosts
-        look_t s = look_of(t, IDUNN_SECONDARY);
-        look.normal = s.normal;
-        look.hover = s.hover;
-        look.pressed = s.pressed;
+        // the outline look (a card with a border), so the active one stands
+        // out of a row of ghosts in light and dark
+        look_t o = look_of(t, IDUNN_OUTLINE);
+        look.normal = o.normal;
+        look.hover = o.hover;
+        look.pressed = o.pressed;
     }
     if (b->dim)
         look.text = idunn_color(t, IDUNN_COLOR_MUTED_FOREGROUND);
