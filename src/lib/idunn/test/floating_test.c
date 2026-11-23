@@ -683,6 +683,27 @@ static void test_list_in_place(idunn_context_t *ctx)
     free(win);
 }
 
+/** a secret field shows a bullet for each character, not the bytes */
+static void test_secret_field(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 400, 200);
+    idunn_widget_t *col = idunn_column(2, 4);
+    idunn_widget_t *secret = idunn_add(col, idunn_text_field(NULL));
+    idunn_widget_t *bullets = idunn_add(col, idunn_text_field(NULL));
+    idunn_window_set_root(win, col);
+    idunn_text_field_set_secret(secret, true);
+    idunn_text_field_set_text(secret, "p\xc3\xa4ss"); // 4 characters, 5 bytes
+    idunn_text_field_set_text(bullets, "\xe2\x80\xa2\xe2\x80\xa2\xe2\x80\xa2\xe2\x80\xa2");
+    idunn_window_tick(win, 1000);
+    idunn_window_draw(win);
+    CHECK(idunn_text_field_text_width(secret) > 0);
+    CHECK_EQ(idunn_text_field_text_width(secret), idunn_text_field_text_width(bullets));
+    CHECK(strcmp(idunn_text_field_text(secret), "p\xc3\xa4ss") == 0);
+    idunn_window_free_widgets(win);
+    idunn_reap(ctx);
+    free(win);
+}
+
 static void test_layout_damage(idunn_context_t *ctx)
 {
     idunn_window_t *win = idunn_window_offscreen(ctx, 500, 400);
@@ -746,4 +767,5 @@ void test_floating(idunn_context_t *ctx)
     test_file_dialog(ctx);
     test_layout_damage(ctx);
     test_list_in_place(ctx);
+    test_secret_field(ctx);
 }

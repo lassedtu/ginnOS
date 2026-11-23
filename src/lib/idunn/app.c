@@ -291,6 +291,18 @@ idunn_window_t *idunn_window_new(idunn_app_t *app, const char *title, int32_t wi
     return heim ? wrap(app, heim) : NULL;
 }
 
+idunn_window_t *idunn_screen_window_new(idunn_app_t *app, const gfx_buffer_t *backdrop)
+{
+    int32_t width;
+    int32_t height;
+    heim_screen_size(app->conn, &width, &height);
+    heim_window_t *heim = heim_window_new(app->conn, width, height, "", HEIM_WINDOW_UNDECORATED);
+    idunn_window_t *win = heim ? wrap(app, heim) : NULL;
+    if (win && backdrop && backdrop->width >= width && backdrop->height >= height)
+        win->backdrop = backdrop;
+    return win;
+}
+
 idunn_window_t *idunn_panel_new(idunn_app_t *app, int32_t height)
 {
     // the server makes it as wide as the screen

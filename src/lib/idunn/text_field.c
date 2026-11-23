@@ -32,8 +32,53 @@ typedef struct
     void *submit_data;
     idunn_callback_t on_blur;
     void *blur_data;
-    bool plain; // a thin box around the text (idunn_text_field_set_plain)
+    bool plain;  // a thin box around the text (idunn_text_field_set_plain)
+    bool secret; // a bullet for each character (idunn_text_field_set_secret)
 } field_t;
+
+#define BULLET       "\xe2\x80\xa2" // U+2022
+#define BULLET_BYTES 3
+#define SECRET_MAX   128 // characters shown as bullets, at most
+
+/** the characters (not the bytes) in the first n bytes of UTF-8 text */
+static size_t chars_in(const char *text, size_t n)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < n; i++)
+        if (((unsigned char)text[i] & 0xC0) != 0x80)
+            count++;
+    return count;
+}
+
+/** the byte offset of character ch of UTF-8 text */
+static size_t byte_of_char(const char *text, size_t length, size_t ch)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < length; i++)
+        if (((unsigned char)text[i] & 0xC0) != 0x80 && count++ == ch)
+            return i;
+    return length;
+}
+
+/**
+ * the text as it is shown: the text, or a bullet for each character of a
+ * secret field (in buffer).
+ */
+static const char *shown_text(const field_t *f, char *buffer, size_t *length)
+{
+    if (!f->secret)
+    {
+        *length = f->edit.length;
+        return f->edit.text;
+    }
+    size_t count = chars_in(f->edit.text, f->edit.length);
+    count = count > SECRET_MAX ? SECRET_MAX : count;
+    for (size_t i = 0; i < count; i++)
+        memcpy(buffer + i * BULLET_BYTES, BULLET, BULLET_BYTES);
+    buffer[count * BULLET_BYTES] = '\0';
+    *length = count * BULLET_BYTES;
+    return buffer;
+}
 
 /** where the text goes: the rect inside the padding, after the icon */
 static gfx_rect_t text_box(idunn_widget_t *w)
@@ -51,7 +96,15 @@ static int32_t x_of(idunn_widget_t *w, size_t offset)
 {
     const field_t *f = w->data;
     bragi_face_t *face = idunn_face(idunn_ctx(w), IDUNN_TEXT_BODY);
-    return face ? bragi_caret_x(face, f->edit.text, (int32_t)f->edit.length, (int32_t)offset) : 0;
+    if (!face)
+        return 0;
+    char buffer[SECRET_MAX * BULLET_BYTES + 1];
+    size_t length;
+    const char *text = shown_text(f, buffer, &length);
+    if (f->secret)
+        offset = chars_in(f->edit.text, offset) * BULLET_BYTES;
+    offset = offset > length ? length : offset;
+    return bragi_caret_x(face, text, (int32_t)length, (int32_t)offset);
 }
 
 /** the caret place nearest to a window x */
@@ -59,10 +112,14 @@ static size_t offset_at(idunn_widget_t *w, int32_t x)
 {
     const field_t *f = w->data;
     bragi_face_t *face = idunn_face(idunn_ctx(w), IDUNN_TEXT_BODY);
+    if (!face)
+        return 0;
     gfx_rect_t box = text_box(w);
-    return face ? (size_t)bragi_offset_at(face, f->edit.text, (int32_t)f->edit.length,
-                                          x - box.x + f->scroll)
-                : 0;
+    char buffer[SECRET_MAX * BULLET_BYTES + 1];
+    size_t length;
+    const char *text = shown_text(f, buffer, &length);
+    size_t at = (size_t)bragi_offset_at(face, text, (int32_t)length, x - box.x + f->scroll);
+    return f->secret ? byte_of_char(f->edit.text, f->edit.length, at / BULLET_BYTES) : at;
 }
 
 /** scroll so the caret is in the field, and no further than the text */
@@ -201,8 +258,13 @@ static void field_draw(idunn_widget_t *w, gfx_buffer_t *buf)
                       idunn_color(t, IDUNN_COLOR_SELECTION));
     }
     if (f->edit.length)
-        idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, x, top, 0, f->edit.text,
+    {
+        char buffer[SECRET_MAX * BULLET_BYTES + 1];
+        size_t length;
+        const char *text = shown_text(f, buffer, &length);
+        idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, x, top, 0, text,
                         idunn_color(t, IDUNN_COLOR_FOREGROUND));
+    }
     else if (f->placeholder)
         idunn_draw_text(ctx, buf, IDUNN_TEXT_BODY, x, top, 0, f->placeholder,
                         idunn_color(t, IDUNN_COLOR_MUTED_FOREGROUND));
@@ -231,6 +293,10 @@ static bool field_event(idunn_widget_t *w, const idunn_event_t *ev)
             f->on_submit(w, f->submit_data);
             return true;
         }
+        // a secret is not copied out
+        if (f->secret && (ev->mods & IDUNN_MOD_CTRL) &&
+            (ev->code == IDUNN_KEY_C || ev->code == IDUNN_KEY_X))
+            return true;
         idunn_edit_result_t r = idunn_edit_key(w, &f->edit, ev, false);
         if (r == IDUNN_EDIT_IGNORED)
             return false;
@@ -287,6 +353,8 @@ static bool field_event(idunn_widget_t *w, const idunn_event_t *ev)
 static void field_free(idunn_widget_t *w)
 {
     field_t *f = w->data;
+    if (f->secret && f->edit.text)
+        memset(f->edit.text, 0, f->edit.length); // a password does not stay in memory
     idunn_edit_free(&f->edit);
     free(f->placeholder);
     free(f->icon);
@@ -361,6 +429,15 @@ void idunn_text_field_set_plain(idunn_widget_t *field, bool plain)
         return;
     f->plain = plain;
     idunn_relayout(field);
+}
+
+void idunn_text_field_set_secret(idunn_widget_t *field, bool secret)
+{
+    field_t *f = as_field(field);
+    if (!f)
+        return;
+    f->secret = secret;
+    idunn_dirty(field);
 }
 
 int32_t idunn_text_field_text_width(idunn_widget_t *field)

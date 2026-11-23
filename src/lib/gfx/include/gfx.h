@@ -259,6 +259,12 @@ void gfx_draw_mask(gfx_buffer_t *dst, int32_t x, int32_t y, const uint8_t *mask,
 void gfx_fill_gradient(gfx_buffer_t *buf, gfx_rect_t r, gfx_color_t top, gfx_color_t bottom);
 
 /**
+ * blur the whole buffer like a Gaussian with this sigma (in pixels); the
+ * edge pixels are used again past the edges.
+ */
+void gfx_blur(gfx_buffer_t *buf, double sigma);
+
+/**
  * copy a part of a buffer to a framebuffer, in its pixel format. the
  * pixels are taken as over black (alpha is dropped).
  * @param fb the framebuffer's first pixel.

@@ -227,6 +227,7 @@ struct idunn_window
     idunn_window_t *popup;
     idunn_window_t *opener;
     bool transparent;      // a popup: see-through outside its card
+    const gfx_buffer_t *backdrop; // a screen window: its ground (idunn_screen_window_new)
     int32_t margin;        // a popup: room for the shadow around the root
     gfx_rect_t anchor;     // a popup: the rect in the opener it is next to
     int side;              // IDUNN_SIDE_

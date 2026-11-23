@@ -28,6 +28,7 @@ typedef struct
     idunn_align_t justify; // along
     int background;       // a colour token, or -1
     bool card;            // the card look: a border, a large radius, a shadow
+    bool glass;           // a card of frosted glass (idunn_card_set_glass)
     bool keep_end;        // too little room: the first children go out of view
     idunn_shadow_t shadow; // the card's shadow
 } box_t;
@@ -209,6 +210,15 @@ static void box_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     {
         int32_t radius = idunn_radius_lg(t);
         idunn_draw_shadow(t, buf, w->rect, radius, b->shadow);
+        if (b->glass)
+        {
+            // white over what is under it: a little in dark mode, more in light
+            bool dark = t->mode == IDUNN_DARK;
+            gfx_fill_round_rect(buf, w->rect, radius, gfx_rgba(255, 255, 255, dark ? 20 : 110));
+            gfx_border_round_rect(buf, w->rect, radius, idunn_px(t, 1),
+                                  gfx_rgba(255, 255, 255, dark ? 36 : 150));
+            return;
+        }
         gfx_fill_round_rect(buf, w->rect, radius, idunn_color(t, IDUNN_COLOR_CARD));
         gfx_border_round_rect(buf, w->rect, radius, idunn_px(t, 1),
                               idunn_color(t, IDUNN_COLOR_BORDER));
@@ -289,6 +299,16 @@ void idunn_box_set_padding(idunn_widget_t *box, int vertical, int horizontal)
     b->pad_v = vertical;
     b->pad_h = horizontal;
     idunn_relayout(box);
+}
+
+void idunn_card_set_glass(idunn_widget_t *card, bool glass)
+{
+    box_t *b = as_box(card);
+    if (!b || !b->card)
+        return;
+    b->glass = glass;
+    b->shadow = glass ? IDUNN_SHADOW_MD : IDUNN_SHADOW_XS; // glass floats higher
+    idunn_dirty(card);
 }
 
 void idunn_box_set_background(idunn_widget_t *box, idunn_color_t color)
