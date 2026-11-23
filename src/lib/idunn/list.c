@@ -800,6 +800,60 @@ void idunn_list_view_clear(idunn_widget_t *list)
     idunn_dirty(list);
 }
 
+static bool same(const char *a, const char *b)
+{
+    return (!a && !b) || (a && b && strcmp(a, b) == 0);
+}
+
+/** put a new text in *field when it differs; true when it did */
+static bool change(char **field, const char *text, bool keep_null)
+{
+    if (same(*field, text) || (!keep_null && !text && *field && !(*field)[0]))
+        return false;
+    char *copy = text ? strdup(text) : keep_null ? NULL : strdup("");
+    if (text && !copy)
+        return false;
+    free(*field);
+    *field = copy;
+    return true;
+}
+
+void idunn_list_view_set_item(idunn_widget_t *list, int item, const char *icon, const char *text,
+                              const char *detail)
+{
+    list_t *l = as_list(list);
+    if (!l || item < 0 || item >= l->count)
+        return;
+    item_t *it = &l->items[item];
+    bool changed = change(&it->icon, icon, true);
+    changed |= change(&it->text, text, false);
+    changed |= change(&it->detail, detail, true);
+    if (changed)
+        dirty_row(list, item);
+}
+
+void idunn_list_view_set_count(idunn_widget_t *list, int count)
+{
+    list_t *l = as_list(list);
+    if (!l || count < 0 || count >= l->count)
+        return;
+    edit_finish(list, false);
+    for (int i = count; i < l->count; i++)
+    {
+        free(l->items[i].icon);
+        free(l->items[i].text);
+        free(l->items[i].detail);
+    }
+    l->count = count;
+    if (l->current >= count)
+        l->current = count - 1;
+    if (l->anchor >= count)
+        l->anchor = count > 0 ? count - 1 : 0;
+    if (l->hover >= count)
+        l->hover = -1;
+    idunn_relayout(list);
+}
+
 int idunn_list_view_count(const idunn_widget_t *list)
 {
     const list_t *l = as_list(list);
@@ -835,6 +889,8 @@ void idunn_list_view_select(idunn_widget_t *list, int row, bool selected)
         return;
     if (selected && !l->multiple)
         select_only(list, row);
+    if (l->items[row].selected == selected)
+        return;
     l->items[row].selected = selected;
     dirty_row(list, row);
 }

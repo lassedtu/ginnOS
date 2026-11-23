@@ -3,8 +3,8 @@
  * @brief Huginn: the Processes tab: each process with its CPU, memory,
  *        user and pid, a filter, the order, and End process.
  *
- * the list is made again each second; the chosen process stays chosen
- * (by its pid). End process sends SIGTERM after a question; Force end
+ * the list is filled again each second, in place; the chosen process
+ * stays chosen (by its pid). End process sends SIGTERM after a question; Force end
  * (in the menu of a right click) sends SIGKILL.
  */
 
@@ -132,7 +132,8 @@ void processes_update(void)
             P.shown[P.shown_count++] = H.now.procs[i].pid;
     qsort(P.shown, (size_t)P.shown_count, sizeof(uint32_t), compare);
 
-    idunn_list_view_clear(P.list);
+    // the rows are changed in place: only a row that differs is drawn again
+    int rows = idunn_list_view_count(P.list);
     for (int i = 0; i < P.shown_count; i++)
     {
         const proc_t *p = proc_of_pid(P.shown[i]);
@@ -141,10 +142,14 @@ void processes_update(void)
         char detail[128];
         snprintf(detail, sizeof(detail), "%.1f %%\t%s\t%s\t%u", p->cpu, memory,
                  user_name(p->uid), p->pid);
-        idunn_list_view_add(P.list, picture_of(p), p->name, detail);
-        if (p->pid == P.chosen)
-            idunn_list_view_select(P.list, i, true);
+        if (i < rows)
+            idunn_list_view_set_item(P.list, i, picture_of(p), p->name, detail);
+        else
+            idunn_list_view_add(P.list, picture_of(p), p->name, detail);
+        idunn_list_view_select(P.list, i, p->pid == P.chosen);
     }
+    if (P.shown_count < rows)
+        idunn_list_view_set_count(P.list, P.shown_count);
     char text[64];
     snprintf(text, sizeof(text), P.shown_count == 1 ? "1 process" : "%d processes",
              P.shown_count);

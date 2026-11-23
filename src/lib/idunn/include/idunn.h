@@ -493,6 +493,14 @@ idunn_widget_t *idunn_grid_view(void);
 int idunn_list_view_add(idunn_widget_t *list, const char *icon, const char *text,
                         const char *detail);
 void idunn_list_view_clear(idunn_widget_t *list);
+/**
+ * change an item; only its row is drawn again, and only when something
+ * differs (a list that is filled again each second, as in a monitor).
+ */
+void idunn_list_view_set_item(idunn_widget_t *list, int item, const char *icon, const char *text,
+                              const char *detail);
+/** keep only the first count items (a smaller count than now) */
+void idunn_list_view_set_count(idunn_widget_t *list, int count);
 int idunn_list_view_count(const idunn_widget_t *list);
 const char *idunn_list_view_text(const idunn_widget_t *list, int item);
 /** many items can be selected (Ctrl, Shift, Ctrl+A) */

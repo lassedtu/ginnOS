@@ -652,6 +652,37 @@ static void test_file_dialog(idunn_context_t *ctx)
  * after a layout only the widgets that moved are drawn again, and the
  * window must be what a full drawing makes
  */
+/** a list changed in place draws only the rows that differ */
+static void test_list_in_place(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 400, 300);
+    idunn_widget_t *list = idunn_list_view();
+    for (int i = 0; i < 6; i++)
+        idunn_list_view_add(list, NULL, "Row", "1");
+    idunn_window_set_root(win, idunn_scroll_view(list));
+    idunn_window_tick(win, 1000);
+    idunn_window_draw(win);
+
+    gfx_rect_t parts[IDUNN_DAMAGE_MAX + 1];
+    idunn_list_view_set_item(list, 2, NULL, "Row", "1");
+    CHECK_EQ(idunn_window_draw_parts(win, parts), 0); // nothing differs
+    idunn_list_view_set_item(list, 2, NULL, "Row", "2");
+    int count = idunn_window_draw_parts(win, parts);
+    CHECK_EQ(count, 1);
+    CHECK(count == 1 && parts[0].h < 300 / 4);
+    CHECK(same_as_full(win));
+    CHECK(strcmp(idunn_list_view_text(list, 2), "Row") == 0);
+
+    idunn_list_view_set_count(list, 3);
+    CHECK_EQ(idunn_list_view_count(list), 3);
+    idunn_window_draw(win);
+    CHECK(same_as_full(win));
+
+    idunn_window_free_widgets(win);
+    idunn_reap(ctx);
+    free(win);
+}
+
 static void test_layout_damage(idunn_context_t *ctx)
 {
     idunn_window_t *win = idunn_window_offscreen(ctx, 500, 400);
@@ -714,4 +745,5 @@ void test_floating(idunn_context_t *ctx)
     test_dialog_default(ctx);
     test_file_dialog(ctx);
     test_layout_damage(ctx);
+    test_list_in_place(ctx);
 }
