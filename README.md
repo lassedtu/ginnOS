@@ -111,6 +111,12 @@ Everything below is implemented and working today.
   (divide by zero), `SIGILL`, `SIGBUS`, `SIGTRAP`; also `SIGPIPE`,
   `SIGCHLD` and `SIGALRM`
 - Process groups and sessions (`setpgid`, `getpgid`, `setsid`, `getsid`)
+- Threads: `clone` makes a thread that shares the memory, open files,
+  cwd and signal handlers of its process. A process with threads acts as
+  one process for `getpid`, `kill`, `waitpid`, stops and `execve`; `tgkill`
+  sends to one thread, and `exit_group` ends them all. Each thread has
+  its own thread-local storage (the FS base on x86_64, a GS segment on
+  i686), and `futex` lets threads sleep on a word in memory
 
 ### Concurrency
 
@@ -236,8 +242,13 @@ Everything below is implemented and working today.
   (`tcgetattr`, `tcsetattr`, `cfmakeraw`, `tcsetpgrp`), `<sys/ioctl.h>`,
   `<sys/types.h>`
 - `<sys/mman.h>` (`mmap`, `munmap`, `mprotect`), `<sys/fb.h>` (framebuffer)
-- `<errno.h>`: `errno`, `perror`, `strerror`
-- `crt0` with `argc`/`argv`/`envp` setup; `int 0x80` syscall stubs
+- `<errno.h>`: `errno` (one for each thread), `perror`, `strerror`
+- `<pthread.h>`: threads (`pthread_create`, `join`, `detach`, `exit`),
+  mutexes, condition variables, read-write locks, barriers, spin locks,
+  `pthread_once` and thread-specific data; `<semaphore.h>`; stdio and
+  `malloc` take locks once a program has threads
+- `crt0` with `argc`/`argv`/`envp` setup and thread-local storage;
+  `int 0x80` syscall stubs
 
 ### Userspace shell (skl -> /bin/sh)
 
@@ -271,7 +282,8 @@ Everything below is implemented and working today.
   `fstest`, which tests the file syscalls (`stat`, `fcntl`, `rename`,
   `pread`, `getdents`, `poll`/`select`, tmpfs, large ext2 files), and
   `sigtest`, which tests signals, process groups and the terminal, and
-  `libctest`, which tests the C library
+  `threadtest` and `pthreadtest`, which test threads in the kernel and
+  in the C library, and `libctest`, which tests the C library
 - `doom`: Doom through [doomgeneric](https://github.com/ozkl/doomgeneric)
   (a submodule, not changed), with the free
   [Freedoom](https://freedoom.github.io/) game data in `/usr/share/doom`.
