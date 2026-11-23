@@ -21,6 +21,17 @@ extern int failures;
         }                                                                                  \
     } while (0)
 
+/** as CHECK, but counted once for a whole loop (a failure still prints) */
+#define CHECK_QUIET(condition)                                                             \
+    do                                                                                     \
+    {                                                                                      \
+        if (!(condition))                                                                  \
+        {                                                                                  \
+            failures++;                                                                    \
+            printf("libctest: %s:%d: %s\n", __FILE__, __LINE__, #condition);               \
+        }                                                                                  \
+    } while (0)
+
 // wide.c
 void test_wide(void);
 // regex.c

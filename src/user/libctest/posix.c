@@ -1,13 +1,16 @@
 /**
  * @file posix.c
  * @brief libctest: the POSIX parts the Unix tools need: getline, the
- *        parts of a path, device numbers, and the time zone fields.
+ *        parts of a path, device numbers, the time zone fields, shell
+ *        patterns and search trees.
  */
 
 #include "libctest.h"
 
+#include <fnmatch.h>
 #include <inttypes.h>
 #include <libgen.h>
+#include <search.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/sysmacros.h>
@@ -80,10 +83,78 @@ static void test_zone(void)
     CHECK(tm.tm_gmtoff == 0 && strcmp(tm.tm_zone, "UTC") == 0);
 }
 
+static void test_fnmatch(void)
+{
+    CHECK(fnmatch("*.c", "main.c", 0) == 0);
+    CHECK(fnmatch("*.c", "main.h", 0) == FNM_NOMATCH);
+    CHECK(fnmatch("[a-c]?x", "b1x", 0) == 0);
+    CHECK(fnmatch("*", "a/b", 0) == 0);
+    CHECK(fnmatch("*", "a/b", FNM_PATHNAME) == FNM_NOMATCH);
+    CHECK(fnmatch("*", ".hidden", FNM_PERIOD) == FNM_NOMATCH);
+    CHECK(fnmatch("\\*", "*", 0) == 0);
+    CHECK(fnmatch("README", "readme", FNM_CASEFOLD) == 0);
+    CHECK(fnmatch("[[:digit:]]*", "7up", 0) == 0);
+}
+
+static int compare_ints(const void *a, const void *b)
+{
+    int x = *(const int *)a;
+    int y = *(const int *)b;
+    return x < y ? -1 : x > y;
+}
+
+static int deepest;
+static int visited;
+
+static void note(const void *node, VISIT which, int depth)
+{
+    (void)node;
+    if (which == leaf || which == postorder)
+        visited++;
+    deepest = depth > deepest ? depth : deepest;
+}
+
+static void test_tree(void)
+{
+    static int numbers[1000];
+    void *root = NULL;
+    // in order: an unbalanced tree would be a list 1000 deep
+    for (int i = 0; i < 1000; i++)
+    {
+        numbers[i] = i;
+        CHECK_QUIET(tsearch(&numbers[i], &root, compare_ints) != NULL);
+    }
+    int again = 500;
+    CHECK(*(int **)tsearch(&again, &root, compare_ints) == &numbers[500]); // found, not added
+    CHECK(tfind(&again, &root, compare_ints) != NULL);
+    deepest = 0;
+    visited = 0;
+    twalk(root, note);
+    CHECK(visited == 1000);
+    CHECK(deepest < 15); // an AVL tree of 1000 is at most 14 deep
+    for (int i = 0; i < 1000; i += 2)
+        CHECK_QUIET(tdelete(&numbers[i], &root, compare_ints) != NULL);
+    CHECK(tfind(&again, &root, compare_ints) == NULL);
+    int odd = 501;
+    CHECK(tfind(&odd, &root, compare_ints) != NULL);
+    visited = 0;
+    twalk(root, note);
+    CHECK(visited == 500);
+    tdestroy(root, NULL);
+
+    int table[4] = {3, 1};
+    size_t count = 2;
+    int four = 4;
+    CHECK(lfind(&four, table, &count, sizeof(int), compare_ints) == NULL);
+    CHECK(lsearch(&four, table, &count, sizeof(int), compare_ints) == &table[2] && count == 3);
+}
+
 void test_posix(void)
 {
     test_getline();
     test_paths();
     test_numbers();
     test_zone();
+    test_fnmatch();
+    test_tree();
 }
