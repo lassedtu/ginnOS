@@ -287,6 +287,12 @@ void idunn_set_disabled(idunn_widget_t *w, bool disabled);
 void idunn_on_menu(idunn_widget_t *w, idunn_callback_t on_menu, void *data);
 
 /**
+ * on_middle on a press of the middle button on the widget or in it (the
+ * nearest widget that has one): a task button closes its window.
+ */
+void idunn_on_middle_click(idunn_widget_t *w, idunn_callback_t on_middle, void *data);
+
+/**
  * a control with a wrong value: its border and ring are red (a field
  * sets this on its control with idunn_field_set_error).
  */
@@ -336,6 +342,18 @@ idunn_widget_t *idunn_icon_button(const char *icon, idunn_variant_t variant,
  * an icon (a Lucide name) before the text.
  */
 void idunn_button_set_icon(idunn_widget_t *button, const char *icon);
+
+/** a picture in its own colours (a Tela name, an app's icon) before the text */
+void idunn_button_set_picture(idunn_widget_t *button, const char *picture);
+
+/**
+ * the button is on (a task's window is active, a toggle is on): a
+ * filled look with a short accent line under it.
+ */
+void idunn_button_set_active(idunn_widget_t *button, bool active);
+
+/** the content muted (a task whose window is minimized) */
+void idunn_button_set_dim(idunn_widget_t *button, bool dim);
 void idunn_button_set_size(idunn_widget_t *button, idunn_size_t size);
 void idunn_button_set_text(idunn_widget_t *button, const char *text);
 void idunn_button_set_variant(idunn_widget_t *button, idunn_variant_t variant);
@@ -372,6 +390,8 @@ void idunn_text_field_set_icon(idunn_widget_t *field, const char *icon);
 /** on_change after every change of the text; on_submit on Enter */
 void idunn_text_field_on_change(idunn_widget_t *field, idunn_callback_t on_change, void *data);
 void idunn_text_field_on_submit(idunn_widget_t *field, idunn_callback_t on_submit, void *data);
+/** on_blur when the field loses the keyboard */
+void idunn_text_field_on_blur(idunn_widget_t *field, idunn_callback_t on_blur, void *data);
 
 /**
  * a text area: lines that wrap, Enter for a new line; it scrolls.
@@ -489,6 +509,23 @@ int idunn_list_view_current(const idunn_widget_t *list);
 void idunn_list_view_on_select(idunn_widget_t *list, idunn_callback_t on_select, void *data);
 void idunn_list_view_on_activate(idunn_widget_t *list, idunn_callback_t on_activate, void *data);
 /**
+ * what an edit in place gives: the new text, or NULL when it was taken
+ * back (Escape). it comes after the event, so the list can be made again.
+ */
+typedef void (*idunn_edit_done_t)(idunn_widget_t *list, int item, const char *text, void *data);
+/**
+ * edit an item's text in place (a rename): a text field over it with the
+ * bytes start to end selected ((size_t)-1: to the end). Enter, or the
+ * keyboard going elsewhere, keeps the text; Escape takes it back.
+ * @return false when the item is not there or the list is not shown.
+ */
+bool idunn_list_view_edit(idunn_widget_t *list, int item, size_t start, size_t end,
+                          idunn_edit_done_t done, void *data);
+/** true while an item is edited in place */
+bool idunn_list_view_editing(const idunn_widget_t *list);
+/** one click activates an item (a launcher); the arrow keys only move */
+void idunn_list_view_set_single_click(idunn_widget_t *list, bool single);
+/**
  * on_menu on a right click: on an item that is not selected, it selects
  * only that item first; on no item, nothing stays selected. open a menu
  * with idunn_menu_popup_at_pointer.
@@ -543,11 +580,31 @@ void idunn_set_tooltip(idunn_widget_t *w, const char *text);
 
 /**
  * a popover: content in a card under owner; a press outside it or Escape
- * closes it. the popover owns content.
+ * closes it. the popover owns content. it is 288 wide, or as wide as
+ * content when content has a larger width (idunn_set_size).
  */
 void idunn_popover(idunn_widget_t *owner, idunn_widget_t *content);
 /** close the popover a widget is in */
 void idunn_popover_close(idunn_widget_t *inside);
+
+typedef enum
+{
+    IDUNN_FILE_OPEN, // choose a file that is there
+    IDUNN_FILE_SAVE, // choose a name to save as (a question before one is replaced)
+} idunn_file_mode_t;
+
+/** the path chosen in a file dialog (the dialog is closed already) */
+typedef void (*idunn_file_done_t)(const char *path, void *data);
+
+/**
+ * a dialog to choose a file: the folder's items as a list, a button to
+ * the folder above, and to save, a field with the name. nothing is
+ * called when it is cancelled.
+ * @param path the folder to start in, or (to save) the whole path of the
+ *        file, whose name is then in the field.
+ */
+void idunn_file_dialog(idunn_widget_t *owner, idunn_file_mode_t mode, const char *title,
+                       const char *path, idunn_file_done_t done, void *data);
 
 /**
  * a dialog: a card with a title and a description (or NULL), in the middle
@@ -620,6 +677,7 @@ typedef enum
     IDUNN_POINTER_RELEASE,
     IDUNN_POINTER_LEAVE,
     IDUNN_POINTER_MENU,    // the right button went down: a context menu
+    IDUNN_POINTER_MIDDLE,  // the middle button went down
 } idunn_pointer_t;
 
 /**

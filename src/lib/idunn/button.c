@@ -9,13 +9,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ICON_SIZE 16
-#define ICON_GAP  8
+#define ICON_SIZE    16
+#define PICTURE_SIZE 20 // a full-colour picture is a little larger
+#define ICON_GAP     8
+#define MARK_WIDTH   16 // the accent line under an active button
+#define MARK_HEIGHT  3
 
 typedef struct
 {
     char *text; // NULL: an icon button
     char *icon; // a Lucide name, or NULL
+    bool picture; // icon is a Tela picture (in its own colours)
+    bool active;  // filled, with an accent line under it (a task, a toggle)
+    bool dim;     // the content at half (a minimized window)
     idunn_variant_t variant;
     idunn_size_t size;
     idunn_align_t align; // the content: centred, or at the start
@@ -94,7 +100,7 @@ static int32_t content_width(idunn_widget_t *w)
 {
     const button_t *b = w->data;
     const idunn_theme_t *t = idunn_theme(w);
-    int32_t width = b->icon ? idunn_px(t, ICON_SIZE) : 0;
+    int32_t width = b->icon ? idunn_px(t, b->picture ? PICTURE_SIZE : ICON_SIZE) : 0;
     if (b->text)
     {
         // to the nearest pixel, as browsers lay out text (not up)
@@ -117,15 +123,22 @@ static void button_measure(idunn_widget_t *w, int32_t max_width, int32_t *width,
     *width = b->text ? content_width(w) + 2 * idunn_px(t, padding_of(b) + 1) : *height;
 }
 
+/** the variant it is drawn as: an active button looks as an outline one */
+static idunn_variant_t drawn_as(const button_t *b)
+{
+    return b->active ? IDUNN_OUTLINE : b->variant;
+}
+
 /** the layers of the refined finish under the fill (outer shadows) */
 static void draw_under(idunn_widget_t *w, gfx_buffer_t *buf, int32_t radius)
 {
     const button_t *b = w->data;
+    idunn_variant_t variant = drawn_as(b);
     const idunn_theme_t *t = idunn_theme(w);
     bool dark = t->mode == IDUNN_DARK;
     gfx_color_t black = gfx_rgb(0, 0, 0);
     int32_t one = idunn_px(t, 1);
-    if (b->variant == IDUNN_PRIMARY)
+    if (variant == IDUNN_PRIMARY)
     {
         // a rim 15 % darker than the colour and a small drop shadow
         gfx_shadow_t drop = {0, one, 2 * one, 0, gfx_fade(black, pct(14)), false};
@@ -134,7 +147,7 @@ static void draw_under(idunn_widget_t *w, gfx_buffer_t *buf, int32_t radius)
         gfx_box_shadow(buf, w->rect, radius, &drop);
         gfx_box_shadow(buf, w->rect, radius, &rim);
     }
-    else if (b->variant == IDUNN_OUTLINE)
+    else if (variant == IDUNN_OUTLINE)
     {
         gfx_shadow_t drop = {0, one, 2 * one, 0, gfx_fade(black, dark ? pct(30) : pct(5)), false};
         gfx_box_shadow(buf, w->rect, radius, &drop);
@@ -145,12 +158,13 @@ static void draw_under(idunn_widget_t *w, gfx_buffer_t *buf, int32_t radius)
 static void draw_over(idunn_widget_t *w, gfx_buffer_t *buf, int32_t radius)
 {
     const button_t *b = w->data;
+    idunn_variant_t variant = drawn_as(b);
     const idunn_theme_t *t = idunn_theme(w);
     bool dark = t->mode == IDUNN_DARK;
     gfx_color_t white = gfx_rgb(255, 255, 255);
     gfx_color_t black = gfx_rgb(0, 0, 0);
     int32_t one = idunn_px(t, 1);
-    switch (b->variant)
+    switch (variant)
     {
     case IDUNN_PRIMARY:
     {
@@ -190,6 +204,17 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
         idunn_draw_ring(w, buf, w->rect, radius);
     draw_under(w, buf, radius);
 
+    if (b->active)
+    {
+        // the outline look (a card with a border), so the active one stands
+        // out of a row of ghosts in light and dark
+        look_t o = look_of(t, IDUNN_OUTLINE);
+        look.normal = o.normal;
+        look.hover = o.hover;
+        look.pressed = o.pressed;
+    }
+    if (b->dim)
+        look.text = idunn_color(t, IDUNN_COLOR_MUTED_FOREGROUND);
     gfx_color_t fill = gfx_mix(look.normal, look.hover, idunn_hover_amount(w));
     fill = gfx_mix(fill, look.pressed, idunn_press_amount(w));
     if (b->variant == IDUNN_PRIMARY)
@@ -207,10 +232,26 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
     // the icon and the text, in the middle
     int32_t pad = idunn_px(t, padding_of(b) + 1);
     int32_t width = content_width(w);
+    // a button made narrower than its content (a day of a calendar) gives
+    // up its padding before it cuts the text
+    if (width > w->rect.w - 2 * pad)
+    {
+        int32_t least = idunn_px(t, 4);
+        pad = (w->rect.w - width) / 2 > least ? (w->rect.w - width) / 2 : least;
+    }
     int32_t room = w->rect.w - 2 * pad;
     bool centred = b->align != IDUNN_START && (width < room || !b->text);
     int32_t x = w->rect.x + (centred ? (w->rect.w - width) / 2 : pad);
-    if (b->icon)
+    if (b->icon && b->picture)
+    {
+        const icon_t *icon = idunn_picture(ctx, b->icon, PICTURE_SIZE);
+        int32_t size = idunn_px(t, PICTURE_SIZE);
+        if (icon)
+            icon_draw(buf, icon, x, w->rect.y + (w->rect.h - size) / 2, b->dim ? 140 : 255);
+        x += size + idunn_px(t, ICON_GAP);
+        room -= size + idunn_px(t, ICON_GAP);
+    }
+    else if (b->icon)
     {
         const icon_t *icon = idunn_icon(ctx, b->icon, ICON_SIZE);
         int32_t size = idunn_px(t, ICON_SIZE);
@@ -234,6 +275,16 @@ static void button_draw(idunn_widget_t *w, gfx_buffer_t *buf)
                                         idunn_px(t, 1)),
                           look.text);
         }
+    }
+    if (b->active)
+    {
+        // a short accent line at the bottom, in the middle
+        int32_t mw = idunn_px(t, MARK_WIDTH);
+        int32_t mh = idunn_px(t, MARK_HEIGHT);
+        gfx_fill_round_rect(buf,
+                            gfx_rect(w->rect.x + (w->rect.w - mw) / 2, w->rect.y + w->rect.h - mh,
+                                     mw, mh),
+                            mh / 2, idunn_color(t, IDUNN_COLOR_ACCENT));
     }
 }
 
@@ -315,7 +366,34 @@ void idunn_button_set_icon(idunn_widget_t *button, const char *icon)
         return;
     free(b->icon);
     b->icon = icon ? strdup(icon) : NULL;
+    b->picture = false;
     idunn_relayout(button);
+    idunn_dirty(button);
+}
+
+void idunn_button_set_picture(idunn_widget_t *button, const char *picture)
+{
+    idunn_button_set_icon(button, picture);
+    button_t *b = as_button(button);
+    if (b)
+        b->picture = picture != NULL;
+}
+
+void idunn_button_set_active(idunn_widget_t *button, bool active)
+{
+    button_t *b = as_button(button);
+    if (!b || b->active == active)
+        return;
+    b->active = active;
+    idunn_dirty(button);
+}
+
+void idunn_button_set_dim(idunn_widget_t *button, bool dim)
+{
+    button_t *b = as_button(button);
+    if (!b || b->dim == dim)
+        return;
+    b->dim = dim;
     idunn_dirty(button);
 }
 

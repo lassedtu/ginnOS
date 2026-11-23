@@ -95,7 +95,10 @@ void idunn_popover(idunn_widget_t *owner, idunn_widget_t *content)
         idunn_widget_free(content);
         return;
     }
-    idunn_set_size(card, POPOVER_WIDTH, 0);
+    // wider when the content has a width of its own (a launcher's grid);
+    // the card's padding is 4 units of 4 on each side
+    int32_t width = content->width ? content->width + 2 * 4 * 4 : 0;
+    idunn_set_size(card, width > POPOVER_WIDTH ? width : POPOVER_WIDTH, 0);
     idunn_add(card, content);
     gfx_rect_t anchor = owner->rect;
     anchor.h += idunn_px(t, POPOVER_GAP);

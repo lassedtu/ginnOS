@@ -36,6 +36,7 @@ layout-grid
 
 # system
 settings
+volume-1
 volume-2
 volume-x
 wifi
@@ -66,6 +67,7 @@ chevrons-up-down
 ellipsis
 circle-check
 circle-alert
+circle-user
 external-link
 share
 user
@@ -95,3 +97,6 @@ zoom-in
 zoom-out
 expand
 rotate-cw
+
+# Yggdrasil sorting
+arrow-down-wide-narrow

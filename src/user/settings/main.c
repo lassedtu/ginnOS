@@ -24,23 +24,32 @@ typedef struct
     const char *name;
     const char *icon;
     const char *description;
+    const char *words; // more that the search finds it by
     idunn_widget_t *(*build)(void);
 } page_t;
 
 static const page_t pages[] = {
     {"appearance", "Appearance", "palette", "The theme, the accent colour and the wallpaper.",
+     "dark light mode color colour accent wallpaper background picture text size font scale "
+     "large small",
      appearance_page},
-    {"display", "Display", "monitor", "The size of the screen.", display_page},
-    {"keyboard", "Keyboard", "keyboard", "The layout the keys type in.", keyboard_page},
-    {"sound", "Sound", "volume-2", "The volume of the sound card.", sound_page},
-    {"terminal", "Terminal", "square-terminal", "The text of Mimir.", terminal_page},
-    {"about", "About", "info", "What this computer is and runs.", about_page},
+    {"display", "Display", "monitor", "The size of the screen.",
+     "screen resolution size monitor pixels mode", display_page},
+    {"keyboard", "Keyboard", "keyboard", "The layout the keys type in.",
+     "layout keys language danish english us dk", keyboard_page},
+    {"sound", "Sound", "volume-2", "The volume of the sound card.",
+     "volume audio mixer speaker loud quiet mute", sound_page},
+    {"terminal", "Terminal", "square-terminal", "The text of Mimir.",
+     "mimir console shell font text size", terminal_page},
+    {"about", "About", "info", "What this computer is and runs.",
+     "version system kernel memory cpu processor computer ginnos", about_page},
 };
 #define PAGE_COUNT (int)(sizeof(pages) / sizeof(pages[0]))
 
 static struct
 {
     idunn_widget_t *nav[PAGE_COUNT];
+    idunn_widget_t *nothing; // "No settings match"
     idunn_widget_t *main;
     idunn_widget_t *title;
     idunn_widget_t *description;
@@ -66,6 +75,52 @@ static void show_page(idunn_widget_t *button, void *data)
     M.page = idunn_grow(idunn_add(M.main, page_view(index)), 1);
 }
 
+/** true when text has part in it, with no regard to letter case */
+static bool has(const char *text, const char *part)
+{
+    size_t n = strlen(part);
+    for (const char *t = text; *t; t++)
+        if (strncasecmp(t, part, n) == 0)
+            return true;
+    return n == 0;
+}
+
+static bool page_matches(int i, const char *search)
+{
+    return has(pages[i].name, search) || has(pages[i].description, search) ||
+           has(pages[i].words, search);
+}
+
+/** the pages that do not match are hidden from the side bar */
+static void search_typed(idunn_widget_t *field, void *data)
+{
+    (void)data;
+    const char *search = idunn_text_field_text(field);
+    int shown = 0;
+    for (int i = 0; i < PAGE_COUNT; i++)
+    {
+        bool match = page_matches(i, search);
+        idunn_set_hidden(M.nav[i], !match);
+        shown += match;
+    }
+    idunn_set_hidden(M.nothing, shown > 0);
+}
+
+/** Enter: the first page that matches */
+static void search_submitted(idunn_widget_t *field, void *data)
+{
+    (void)data;
+    const char *search = idunn_text_field_text(field);
+    for (int i = 0; i < PAGE_COUNT; i++)
+    {
+        if (page_matches(i, search))
+        {
+            show_page(NULL, (void *)(intptr_t)i);
+            return;
+        }
+    }
+}
+
 static idunn_widget_t *side_bar(int first)
 {
     idunn_widget_t *side = idunn_column(1, 3);
@@ -74,6 +129,10 @@ static idunn_widget_t *side_bar(int first)
     idunn_widget_t *brand = idunn_add(side, idunn_column(0, 0));
     idunn_box_set_padding(brand, 2, 2);
     idunn_add(brand, idunn_label("Settings", IDUNN_TEXT_TITLE));
+    idunn_widget_t *search = idunn_add(side, idunn_text_field("Search"));
+    idunn_text_field_set_icon(search, "search");
+    idunn_text_field_on_change(search, search_typed, NULL);
+    idunn_text_field_on_submit(search, search_submitted, NULL);
     for (int i = 0; i < PAGE_COUNT; i++)
     {
         M.nav[i] = idunn_add(side, idunn_button(pages[i].name,
@@ -82,6 +141,9 @@ static idunn_widget_t *side_bar(int first)
         idunn_button_set_icon(M.nav[i], pages[i].icon);
         idunn_button_set_align(M.nav[i], IDUNN_START);
     }
+    M.nothing = idunn_add(side, idunn_label("No settings match.", IDUNN_TEXT_SMALL));
+    idunn_label_set_color(M.nothing, IDUNN_COLOR_MUTED_FOREGROUND);
+    idunn_set_hidden(M.nothing, true);
     return side;
 }
 

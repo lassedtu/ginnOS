@@ -108,6 +108,71 @@ bool folder_read(folder_t *f, const char *path, bool hidden, const mime_table_t 
     return true;
 }
 
+/** true when name has text in it, with no regard to letter case */
+static bool has(const char *name, const char *text)
+{
+    size_t n = strlen(text);
+    for (const char *p = name; *p; p++)
+        if (strncasecmp(p, text, n) == 0)
+            return true;
+    return n == 0;
+}
+
+void folder_filter(folder_t *f, const char *text)
+{
+    if (!text[0])
+        return;
+    int kept = 0;
+    for (int i = 0; i < f->count; i++)
+    {
+        if (has(f->entries[i].name, text))
+            f->entries[kept++] = f->entries[i];
+        else
+            free(f->entries[i].name);
+    }
+    f->count = kept;
+}
+
+static sort_t sort_by;
+static bool sort_reversed;
+
+static int compare_by(const void *pa, const void *pb)
+{
+    const entry_t *a = pa;
+    const entry_t *b = pb;
+    bool da = S_ISDIR(a->mode);
+    bool db = S_ISDIR(b->mode);
+    if (da != db)
+        return da ? -1 : 1;
+    int d = 0;
+    switch (sort_by)
+    {
+    case SORT_SIZE:
+        d = a->size == b->size ? 0 : a->size > b->size ? -1 : 1;
+        break;
+    case SORT_TYPE:
+        d = compare_names(a->type ? a->type : "", b->type ? b->type : "");
+        break;
+    case SORT_DATE:
+        d = a->mtime == b->mtime ? 0 : a->mtime > b->mtime ? -1 : 1;
+        break;
+    default:
+        break;
+    }
+    if (d == 0)
+        d = compare(pa, pb); // then by name
+    return sort_reversed ? -d : d;
+}
+
+void folder_sort(folder_t *f, sort_t by, bool reverse)
+{
+    if (by == SORT_NAME && !reverse)
+        return; // folder_read sorts by name
+    sort_by = by;
+    sort_reversed = reverse;
+    qsort(f->entries, (size_t)f->count, sizeof(entry_t), compare_by);
+}
+
 void folder_free(folder_t *f)
 {
     for (int i = 0; i < f->count; i++)

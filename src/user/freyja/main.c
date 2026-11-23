@@ -28,8 +28,6 @@ freyja_t F;
 
 static idunn_widget_t *holder;  // the canvas, or the empty state
 static idunn_widget_t *empty;
-static idunn_widget_t *path_dialog;
-static idunn_widget_t *path_field;
 
 static void open_dialog(void);
 
@@ -112,60 +110,26 @@ void freyja_step(int step)
     free(path);
 }
 
-static void path_typed(const char *typed)
-{
-    char path[PATH_LEN];
-    const char *home = getenv("HOME");
-    if (typed[0] == '~')
-        snprintf(path, sizeof(path), "%s%s", home ? home : "", typed + 1);
-    else
-        snprintf(path, sizeof(path), "%s", typed);
-    if (path[0] == '/')
-        load(path, true);
-}
-
-static void path_ok(idunn_widget_t *w, void *data)
-{
-    (void)w;
-    (void)data;
-    path_dialog = NULL;
-    path_typed(idunn_text_field_text(path_field));
-}
-
-static void path_submit(idunn_widget_t *field, void *data)
+static void open_chosen(const char *path, void *data)
 {
     (void)data;
-    char path[PATH_LEN];
-    snprintf(path, sizeof(path), "%s", idunn_text_field_text(field));
-    if (path_dialog)
-        idunn_dialog_close(path_dialog);
-    path_dialog = NULL;
-    path_typed(path);
+    load(path, true);
 }
 
-/** ask for a path (a file chooser is in the polish plan) */
 static void open_dialog(void)
 {
-    char path[PATH_LEN];
+    char folder[PATH_LEN];
     const char *home = getenv("HOME");
     if (F.path[0])
     {
-        snprintf(path, sizeof(path), "%s", F.path);
-        *(strrchr(path, '/') + 1) = '\0';
+        snprintf(folder, sizeof(folder), "%s", F.path);
+        char *slash = strrchr(folder, '/');
+        if (slash)
+            slash[slash == folder ? 1 : 0] = '\0';
     }
     else
-        snprintf(path, sizeof(path), "%s/", home && strcmp(home, "/") ? home : "");
-    path_dialog = idunn_dialog("Open a picture", NULL);
-    path_field = idunn_text_field("/path/to/picture.png");
-    idunn_set_size(path_field, 420, 0);
-    idunn_text_field_set_text(path_field, path);
-    idunn_text_field_on_submit(path_field, path_submit, NULL);
-    idunn_add(idunn_dialog_content(path_dialog), path_field);
-    idunn_dialog_add_button(path_dialog, "Cancel", IDUNN_OUTLINE, NULL, NULL);
-    idunn_dialog_add_button(path_dialog, "Open", IDUNN_PRIMARY, path_ok, NULL);
-    idunn_dialog_open(holder, path_dialog);
-    idunn_set_focus(path_field);
-    idunn_text_field_select(path_field, strlen(path), (size_t)-1);
+        snprintf(folder, sizeof(folder), "%s", home && home[0] ? home : "/");
+    idunn_file_dialog(holder, IDUNN_FILE_OPEN, "Open a picture", folder, open_chosen, NULL);
 }
 
 static void rotate(bool left)
