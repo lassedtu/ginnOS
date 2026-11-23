@@ -31,6 +31,8 @@ typedef struct dir_stream DIR;
  * @return the stream, or NULL (errno set).
  */
 DIR *opendir(const char *path);
+/** a directory stream on an open directory (closedir closes fd) */
+DIR *fdopendir(int fd);
 
 /**
  * read the next entry. the returned struct is overwritten by the next call.

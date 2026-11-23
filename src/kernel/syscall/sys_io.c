@@ -94,19 +94,17 @@ static int32_t open_create(const char *path, uint32_t flags)
  *   EISDIR  a directory opened for writing
  *   EINVAL  an access mode other than O_RDONLY, O_WRONLY or O_RDWR
  */
-syscall_ret_t sys_open(struct registers *regs)
+static int32_t open_at(int32_t dirfd, const char *path, uint32_t flags, uint32_t mode)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
-    uint32_t flags = (uint32_t)syscall_arg(regs, 1);
     process_t *proc = process_current();
 
     uint32_t access = flags & O_ACCMODE;
     if (access == O_ACCMODE)
         return -EINVAL;
 
-    // copy the path in from user memory, resolved against the cwd
+    // copy the path in from user memory, resolved against the cwd or dirfd
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path(path, resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
     if (ret < 0)
         return ret;
 
@@ -135,7 +133,7 @@ syscall_ret_t sys_open(struct registers *regs)
         if (ret == 0)
             ret = open_create(resolved, flags);
         if (ret == 0)
-            ret = set_new_owner(resolved, (uint32_t)syscall_arg(regs, 2));
+            ret = set_new_owner(resolved, mode);
         if (ret < 0)
             return ret;
     }
@@ -163,6 +161,22 @@ syscall_ret_t sys_open(struct registers *regs)
     if (fd < 0)
         file_unref(file);
     return fd;
+}
+
+syscall_ret_t sys_open(struct registers *regs)
+{
+    return open_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), (uint32_t)syscall_arg(regs, 1),
+                   (uint32_t)syscall_arg(regs, 2));
+}
+
+/**
+ * SYS_openat: open relative to a directory.
+ * args: dirfd (AT_FDCWD: the working directory), path, flags, mode.
+ */
+syscall_ret_t sys_openat(struct registers *regs)
+{
+    return open_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                   (uint32_t)syscall_arg(regs, 2), (uint32_t)syscall_arg(regs, 3));
 }
 
 /**

@@ -6,7 +6,8 @@
  * prints one line per failed check and "libctest: N checks, ok" (or the
  * number of failures) at the end. wide.c tests the wide characters,
  * regex.c the regular expressions,
- * posix.c the POSIX parts the Unix tools need.
+ * posix.c the POSIX parts the Unix tools need,
+ * files.c the *at calls.
  */
 
 #include "libctest.h"
@@ -282,6 +283,7 @@ int main(void)
     test_wide();
     test_regex();
     test_posix();
+    test_files();
 
     if (failures)
         printf("libctest: %d of %d checks failed\n", failures, checks);

@@ -15,18 +15,39 @@
 
 int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size)
 {
+    return resolve_user_path_at(AT_FDCWD, user_path, resolved, size);
+}
+
+int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolved, uint32_t size)
+{
     char path[PATH_MAX];
     int32_t len = strncpy_from_user(path, user_path, sizeof(path));
     if (len == KERR_FAULT)
         return -EFAULT;
     if (len < 0)
-        return -EINVAL; // longer than PATH_MAX
+        return -ENAMETOOLONG;
+    if (len == 0)
+        return -ENOENT;
 
     process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
+    const char *base = proc ? proc->cwd : "/";
 
-    if (!vfs_resolve_path(cwd, path, resolved, size))
-        return -EINVAL;
+    // a relative path in a directory the caller has open
+    if (path[0] != '/' && dirfd != AT_FDCWD)
+    {
+        fd_entry_t *entry = fd_get(dirfd);
+        if (!entry)
+            return -EBADF;
+        file_t *dir = entry->file;
+        if (!dir->path)
+            return -ENOTDIR; // a pipe, a socket or a device stream
+        if (vfs_file_type(&dir->vfs) != FS_TYPE_DIR)
+            return -ENOTDIR;
+        base = dir->path;
+    }
+
+    if (!vfs_resolve_path(base, path, resolved, size))
+        return -ENAMETOOLONG;
 
     return 0;
 }
@@ -46,26 +67,18 @@ int32_t set_new_owner(const char *path, uint32_t mode)
     return err == KERR_PERM ? 0 : kerr_to_errno(err);
 }
 
-/**
- * SYS_stat: get file metadata.
- * args: EBX = path string pointer, ECX = struct stat pointer (kernel/vfs/stat.h).
- * returns 0 on success, negative errno on failure.
- */
-syscall_ret_t sys_stat(struct registers *regs)
+/** stat a path relative to dirfd into user memory */
+static int32_t stat_at(int32_t dirfd, const char *path, struct kstat *user_stat)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
-    struct kstat *user_stat = (struct kstat *)syscall_arg(regs, 1);
-
-    // copy the path in from user memory, resolved against the cwd
     char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    if (err < 0)
+        return err;
 
     vfs_stat_t fs_stat;
-    kerr_t err = vfs_stat(resolved, &fs_stat);
-    if (kerr_failed(err))
-        return kerr_to_errno(err);
+    kerr_t found = vfs_stat(resolved, &fs_stat);
+    if (kerr_failed(found))
+        return kerr_to_errno(found);
 
     struct kstat st;
     stat_from_fs(&fs_stat, &st);
@@ -73,19 +86,38 @@ syscall_ret_t sys_stat(struct registers *regs)
 }
 
 /**
- * SYS_rename: rename a file or directory.
- * args: EBX = old path, ECX = new path (same filesystem).
- * returns 0 on success, negative errno on failure (EXDEV across mounts).
+ * SYS_stat: get file metadata.
+ * args: path, struct stat pointer (kernel/vfs/stat.h).
+ * returns 0 on success, negative errno on failure.
  */
-syscall_ret_t sys_rename(struct registers *regs)
+syscall_ret_t sys_stat(struct registers *regs)
+{
+    return stat_at(AT_FDCWD, (const char *)syscall_arg(regs, 0),
+                   (struct kstat *)syscall_arg(regs, 1));
+}
+
+/**
+ * SYS_fstatat: stat a path relative to a directory.
+ * args: dirfd, path, struct stat pointer, flags (AT_SYMLINK_NOFOLLOW).
+ */
+syscall_ret_t sys_fstatat(struct registers *regs)
+{
+    uint32_t flags = (uint32_t)syscall_arg(regs, 3);
+    if (flags & ~(uint32_t)AT_SYMLINK_NOFOLLOW)
+        return -EINVAL;
+    return stat_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                   (struct kstat *)syscall_arg(regs, 2));
+}
+
+static int32_t rename_at(int32_t old_dirfd, const char *old_user, int32_t new_dirfd,
+                         const char *new_user)
 {
     char old_path[PATH_MAX];
     char new_path[PATH_MAX];
 
-    int32_t err = resolve_user_path((const char *)syscall_arg(regs, 0), old_path,
-                                    sizeof(old_path));
+    int32_t err = resolve_user_path_at(old_dirfd, old_user, old_path, sizeof(old_path));
     if (err == 0)
-        err = resolve_user_path((const char *)syscall_arg(regs, 1), new_path, sizeof(new_path));
+        err = resolve_user_path_at(new_dirfd, new_user, new_path, sizeof(new_path));
     if (err < 0)
         return err;
 
@@ -102,25 +134,44 @@ syscall_ret_t sys_rename(struct registers *regs)
     return kerr_to_errno(vfs_rename(old_path, new_path));
 }
 
+/**
+ * SYS_rename: rename a file or directory.
+ * args: old path, new path (same filesystem).
+ * returns 0 on success, negative errno on failure (EXDEV across mounts).
+ */
+syscall_ret_t sys_rename(struct registers *regs)
+{
+    return rename_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), AT_FDCWD,
+                     (const char *)syscall_arg(regs, 1));
+}
+
+/**
+ * SYS_renameat: rename, each path relative to its own directory.
+ * args: old dirfd, old path, new dirfd, new path.
+ */
+syscall_ret_t sys_renameat(struct registers *regs)
+{
+    return rename_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                     (int32_t)syscall_arg(regs, 2), (const char *)syscall_arg(regs, 3));
+}
+
 // access modes (F_OK is 0: the file only has to exist)
 #define ACCESS_MODE_BITS 7 // R_OK | W_OK | X_OK
 
 /**
- * SYS_access: check that a file exists and may be accessed.
- * args: EBX = path, ECX = mode (F_OK, or R_OK | W_OK | X_OK).
- * the check uses the real user and group ids, not the effective ones (a
- * set-uid program asks what its caller may do).
- * returns 0, or a negative errno (ENOENT, EACCES).
+ * check that a file exists and may be accessed: with the real user and
+ * group ids (a set-uid program asks what its caller may do), or with the
+ * effective ones (AT_EACCESS).
  */
-syscall_ret_t sys_access(struct registers *regs)
+static int32_t access_at(int32_t dirfd, const char *path, uint32_t mode, uint32_t flags)
 {
-    uint32_t mode = (uint32_t)syscall_arg(regs, 1);
     if (mode & ~(uint32_t)ACCESS_MODE_BITS)
+        return -EINVAL;
+    if (flags & ~(uint32_t)(AT_EACCESS | AT_SYMLINK_NOFOLLOW))
         return -EINVAL;
 
     char resolved[PATH_MAX];
-    int32_t err = resolve_user_path((const char *)syscall_arg(regs, 0), resolved,
-                                    sizeof(resolved));
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
     if (err < 0)
         return err;
 
@@ -131,23 +182,40 @@ syscall_ret_t sys_access(struct registers *regs)
 
     // R_OK, W_OK and X_OK are the MAY_* bits
     process_t *proc = process_current();
+    if (flags & AT_EACCESS)
+        return permission_check(&st, proc->euid, proc->egid, mode);
     return permission_check(&st, proc->uid, proc->gid, mode);
 }
 
 /**
- * SYS_mkdir: create a directory.
- * args: EBX = path string pointer, ECX = mode (taken through the umask).
- * the new directory belongs to the caller's effective user and group.
- * returns 0 on success, negative errno on failure.
+ * SYS_access: check that a file exists and may be accessed.
+ * args: path, mode (F_OK, or R_OK | W_OK | X_OK).
+ * returns 0, or a negative errno (ENOENT, EACCES).
  */
-syscall_ret_t sys_mkdir(struct registers *regs)
+syscall_ret_t sys_access(struct registers *regs)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
-    uint32_t mode = (uint32_t)syscall_arg(regs, 1);
+    return access_at(AT_FDCWD, (const char *)syscall_arg(regs, 0),
+                     (uint32_t)syscall_arg(regs, 1), 0);
+}
 
-    // copy the path in from user memory, resolved against the cwd
+/**
+ * SYS_faccessat: access, relative to a directory.
+ * args: dirfd, path, mode, flags (AT_EACCESS).
+ */
+syscall_ret_t sys_faccessat(struct registers *regs)
+{
+    return access_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                     (uint32_t)syscall_arg(regs, 2), (uint32_t)syscall_arg(regs, 3));
+}
+
+/**
+ * create a directory. the new directory belongs to the caller's effective
+ * user and group; its mode is taken through the umask.
+ */
+static int32_t mkdir_at(int32_t dirfd, const char *path, uint32_t mode)
+{
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path(path, resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
     if (ret < 0)
         return ret;
 
@@ -163,59 +231,74 @@ syscall_ret_t sys_mkdir(struct registers *regs)
 }
 
 /**
+ * SYS_mkdir: create a directory.
+ * args: path, mode.
+ * returns 0 on success, negative errno on failure.
+ */
+syscall_ret_t sys_mkdir(struct registers *regs)
+{
+    return mkdir_at(AT_FDCWD, (const char *)syscall_arg(regs, 0),
+                    (uint32_t)syscall_arg(regs, 1));
+}
+
+/**
+ * SYS_mkdirat: mkdir relative to a directory.
+ * args: dirfd, path, mode.
+ */
+syscall_ret_t sys_mkdirat(struct registers *regs)
+{
+    return mkdir_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                    (uint32_t)syscall_arg(regs, 2));
+}
+
+/** remove a file, or a directory (AT_REMOVEDIR) */
+static int32_t unlink_at(int32_t dirfd, const char *path, uint32_t flags)
+{
+    if (flags & ~(uint32_t)AT_REMOVEDIR)
+        return -EINVAL;
+
+    char resolved[PATH_MAX];
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
+    if (err < 0)
+        return err;
+
+    err = permission_check_parent(resolved, true);
+    if (err < 0)
+        return err;
+
+    kerr_t removed = flags & AT_REMOVEDIR ? vfs_rmdir(resolved) : vfs_remove(resolved);
+    return kerr_to_errno(removed);
+}
+
+/**
  * SYS_unlink: remove a file.
- * args: EBX = path string pointer.
+ * args: path.
  * returns 0 on success, negative errno on failure.
  */
 syscall_ret_t sys_unlink(struct registers *regs)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
-
-    /* copy the path in from user memory, resolved against the cwd */
-    char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
-
-    int32_t allowed = permission_check_parent(resolved, true);
-    if (allowed < 0)
-        return allowed;
-
-    kerr_t err = vfs_remove(resolved);
-    if (kerr_failed(err))
-    {
-        return kerr_to_errno(err);
-    }
-
-    return 0;
+    return unlink_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), 0);
 }
 
 /**
  * SYS_rmdir: remove a directory.
- * args: EBX = path string pointer.
+ * args: path.
  * returns 0 on success, negative errno on failure.
  */
 syscall_ret_t sys_rmdir(struct registers *regs)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
+    return unlink_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), AT_REMOVEDIR);
+}
 
-    /* copy the path in from user memory, resolved against the cwd */
-    char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
-
-    int32_t allowed = permission_check_parent(resolved, true);
-    if (allowed < 0)
-        return allowed;
-
-    kerr_t err = vfs_rmdir(resolved);
-    if (kerr_failed(err))
-    {
-        return kerr_to_errno(err);
-    }
-
-    return 0;
+/**
+ * SYS_unlinkat: remove a file or (AT_REMOVEDIR) a directory, relative to a
+ * directory.
+ * args: dirfd, path, flags.
+ */
+syscall_ret_t sys_unlinkat(struct registers *regs)
+{
+    return unlink_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                     (uint32_t)syscall_arg(regs, 2));
 }
 
 // the size of a record with the longest name (a name has at most

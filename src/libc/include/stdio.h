@@ -128,6 +128,7 @@ int sscanf(const char *str, const char *fmt, ...);
  * @return 0, or -1 (errno set; EXDEV across filesystems).
  */
 int rename(const char *old_path, const char *new_path);
+int renameat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path);
 
 /**
  * remove a file or an empty directory.

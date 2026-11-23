@@ -66,6 +66,7 @@ struct file
     uint32_t refcount; // descriptors (and kernel users) referring to it
     uint32_t flags;    // O_ access mode and status flags
     fs_dirent_t *lookahead; // a directory entry read but not yet returned
+    char *path;             // a filesystem file: its absolute path (for the *at calls)
     union
     {
         vfs_file_t vfs; // a filesystem file or directory (its offset inside)

@@ -209,7 +209,7 @@ static void test_strptime(void)
     CHECK(strptime("x", "%d", &tm) == NULL);
 }
 
-static void test_files(void)
+static void test_temp_files(void)
 {
     char path[] = "/tmp/libctest.XXXXXX";
     CHECK(mkdtemp(path) != NULL);
@@ -304,7 +304,7 @@ void test_posix(void)
     test_tree();
     test_memory_stream();
     test_strptime();
-    test_files();
+    test_temp_files();
     test_system();
     test_exec_args();
     test_many_files();

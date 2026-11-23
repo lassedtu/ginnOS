@@ -5,6 +5,7 @@
 #include "stdlib.h"
 #include "string.h"
 #include "unistd.h"
+#include "sys/stat.h"
 
 // bytes of getdents records a stream buffers
 #define DIR_BUFFER_SIZE 1024
@@ -39,11 +40,32 @@ DIR *opendir(const char *path)
     {
         return NULL;
     }
+    DIR *dir = fdopendir(fd);
+    if (!dir)
+    {
+        int saved = errno;
+        close(fd);
+        errno = saved;
+    }
+    return dir;
+}
+
+DIR *fdopendir(int fd)
+{
+    struct stat st;
+    if (fstat(fd, &st) < 0)
+    {
+        return NULL;
+    }
+    if (!S_ISDIR(st.st_mode))
+    {
+        errno = ENOTDIR;
+        return NULL;
+    }
 
     DIR *dir = malloc(sizeof(DIR));
     if (!dir)
     {
-        close(fd);
         errno = ENOMEM;
         return NULL;
     }

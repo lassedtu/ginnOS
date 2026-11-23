@@ -38,3 +38,5 @@ void test_wide(void);
 void test_regex(void);
 // posix.c
 void test_posix(void);
+// files.c
+void test_files(void);

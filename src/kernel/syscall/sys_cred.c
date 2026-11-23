@@ -112,14 +112,10 @@ static int32_t may_change_mode(const fs_stat_t *st)
     return proc->euid == 0 || proc->euid == st->uid ? 0 : -EPERM;
 }
 
-/**
- * SYS_chmod: args: EBX = path, ECX = mode (07777 bits).
- * only the owner or root. returns 0 or a negative errno.
- */
-syscall_ret_t sys_chmod(struct registers *regs)
+static int32_t chmod_at(int32_t dirfd, const char *path, uint32_t mode)
 {
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path((const char *)syscall_arg(regs, 0), resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
     if (ret < 0)
         return ret;
 
@@ -131,8 +127,29 @@ syscall_ret_t sys_chmod(struct registers *regs)
     if (ret < 0)
         return ret;
 
-    fs_attr_t attr = {.what = FS_ATTR_MODE, .mode = (uint32_t)syscall_arg(regs, 1) & 07777u};
+    fs_attr_t attr = {.what = FS_ATTR_MODE, .mode = mode & 07777u};
     return kerr_to_errno(vfs_setattr(resolved, &attr));
+}
+
+/**
+ * SYS_chmod: args: path, mode (07777 bits).
+ * only the owner or root. returns 0 or a negative errno.
+ */
+syscall_ret_t sys_chmod(struct registers *regs)
+{
+    return chmod_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), (uint32_t)syscall_arg(regs, 1));
+}
+
+/**
+ * SYS_fchmodat: args: dirfd, path, mode, flags (AT_SYMLINK_NOFOLLOW is
+ * refused: a link has no mode of its own, as on Linux).
+ */
+syscall_ret_t sys_fchmodat(struct registers *regs)
+{
+    if ((uint32_t)syscall_arg(regs, 3) != 0)
+        return -EOPNOTSUPP;
+    return chmod_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                    (uint32_t)syscall_arg(regs, 2));
 }
 
 /**
@@ -162,16 +179,39 @@ syscall_ret_t sys_fchmod(struct registers *regs)
 }
 
 /**
- * SYS_chown: args: EBX = path, ECX = uid, EDX = gid (-1 keeps one).
- * root may give a file to anyone; the owner may only change its group to
- * its own effective group. a change of owner clears the set-uid and
- * set-gid bits (so a program cannot be made set-uid to someone else).
- * returns 0 or a negative errno.
+ * the change of owner the caller asks for, if it may make it: root may
+ * give a file to anyone; the owner may only change its group to its own
+ * effective group. a change of owner clears the set-uid and set-gid bits
+ * (so a program cannot be made set-uid to someone else).
+ * @param uid the new owner, or -1 to keep it (and gid the same).
+ * @return 0 with *attr filled, or -EPERM.
  */
-syscall_ret_t sys_chown(struct registers *regs)
+static int32_t owner_change(const vfs_stat_t *st, uint32_t uid, uint32_t gid, fs_attr_t *attr)
+{
+    uid = uid == UINT32_MAX ? st->uid : uid;
+    gid = gid == UINT32_MAX ? st->gid : gid;
+
+    // anyone but root: only the owner, only the group, only to its own
+    process_t *proc = process_current();
+    if (proc->euid != 0 &&
+        (st->uid != proc->euid || uid != st->uid || (gid != st->gid && gid != proc->egid)))
+    {
+        return -EPERM;
+    }
+
+    *attr = (fs_attr_t){.what = FS_ATTR_OWNER, .uid = uid, .gid = gid};
+    if (uid != st->uid || gid != st->gid)
+    {
+        attr->what |= FS_ATTR_MODE;
+        attr->mode = st->mode & 07777u & ~(uint32_t)(S_ISUID | S_ISGID);
+    }
+    return 0;
+}
+
+static int32_t chown_at(int32_t dirfd, const char *path, uint32_t uid, uint32_t gid)
 {
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path((const char *)syscall_arg(regs, 0), resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved));
     if (ret < 0)
         return ret;
 
@@ -180,26 +220,56 @@ syscall_ret_t sys_chown(struct registers *regs)
     if (kerr_failed(err))
         return kerr_to_errno(err);
 
-    uint32_t uid = (uint32_t)syscall_arg(regs, 1);
-    uint32_t gid = (uint32_t)syscall_arg(regs, 2);
-    uid = uid == UINT32_MAX ? st.uid : uid;
-    gid = gid == UINT32_MAX ? st.gid : gid;
-
-    // anyone but root: only the owner, only the group, only to its own
-    process_t *proc = process_current();
-    if (proc->euid != 0 &&
-        (st.uid != proc->euid || uid != st.uid || (gid != st.gid && gid != proc->egid)))
-    {
-        return -EPERM;
-    }
-
-    fs_attr_t attr = {.what = FS_ATTR_OWNER, .uid = uid, .gid = gid};
-    if (uid != st.uid || gid != st.gid)
-    {
-        attr.what |= FS_ATTR_MODE;
-        attr.mode = st.mode & 07777u & ~(uint32_t)(S_ISUID | S_ISGID);
-    }
+    fs_attr_t attr;
+    ret = owner_change(&st, uid, gid, &attr);
+    if (ret < 0)
+        return ret;
     return kerr_to_errno(vfs_setattr(resolved, &attr));
+}
+
+/**
+ * SYS_chown: args: path, uid, gid (-1 keeps one).
+ * returns 0 or a negative errno (see owner_change).
+ */
+syscall_ret_t sys_chown(struct registers *regs)
+{
+    return chown_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), (uint32_t)syscall_arg(regs, 1),
+                    (uint32_t)syscall_arg(regs, 2));
+}
+
+/**
+ * SYS_fchownat: args: dirfd, path, uid, gid, flags (AT_SYMLINK_NOFOLLOW).
+ */
+syscall_ret_t sys_fchownat(struct registers *regs)
+{
+    if ((uint32_t)syscall_arg(regs, 4) & ~(uint32_t)AT_SYMLINK_NOFOLLOW)
+        return -EINVAL;
+    return chown_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                    (uint32_t)syscall_arg(regs, 2), (uint32_t)syscall_arg(regs, 3));
+}
+
+/**
+ * SYS_fchown: args: fd, uid, gid. like chown, on an open file.
+ */
+syscall_ret_t sys_fchown(struct registers *regs)
+{
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
+    if (!entry)
+        return -EBADF;
+    if (!file_is_vfs(entry->file))
+        return -EINVAL;
+
+    vfs_stat_t st;
+    kerr_t err = vfs_fstat(&entry->file->vfs, &st);
+    if (kerr_failed(err))
+        return kerr_to_errno(err);
+
+    fs_attr_t attr;
+    int32_t ret = owner_change(&st, (uint32_t)syscall_arg(regs, 1), (uint32_t)syscall_arg(regs, 2),
+                               &attr);
+    if (ret < 0)
+        return ret;
+    return kerr_to_errno(vfs_fsetattr(&entry->file->vfs, &attr));
 }
 
 /**

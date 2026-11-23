@@ -118,6 +118,7 @@ int dup(int fd);
  * @return 0, or -1 (errno set).
  */
 int access(const char *path, int mode);
+int faccessat(int dirfd, const char *path, int mode, int flags);
 
 /**
  * read or write at an offset, without moving the file offset.
@@ -184,6 +185,9 @@ int setegid(gid_t gid);
  * only change its group to its own. (uid_t)-1 or (gid_t)-1 keeps one.
  */
 int chown(const char *path, uid_t uid, gid_t gid);
+int fchown(int fd, uid_t uid, gid_t gid);
+int lchown(const char *path, uid_t uid, gid_t gid);
+int fchownat(int dirfd, const char *path, uid_t uid, gid_t gid, int flags);
 
 /**
  * get the parent's process ID.
@@ -231,6 +235,8 @@ int chdir(const char *path);
  * @return 0 on success, -1 on failure.
  */
 int unlink(const char *path);
+/** remove a file, or with AT_REMOVEDIR a directory, relative to dirfd */
+int unlinkat(int dirfd, const char *path, int flags);
 
 /**
  * remove a directory.

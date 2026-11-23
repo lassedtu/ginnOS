@@ -8,6 +8,7 @@
 #include "kernel/sync/spinlock.h"
 #include "kernel/assert.h"
 #include "common/memory.h"
+#include "common/string.h"
 
 // guards file_t::refcount of every description
 static spinlock_t file_lock;
@@ -267,6 +268,7 @@ static int32_t vfs_kind_stat(file_t *file, struct kstat *st)
 static void vfs_kind_release(file_t *file)
 {
     kfree(file->lookahead);
+    kfree(file->path);
     vfs_close(&file->vfs);
     kfree(file);
 }
@@ -310,6 +312,14 @@ kerr_t file_open(const char *path, uint32_t flags, file_t **out)
         vfs_close(&file->vfs);
         kfree(file);
         return dev->ops->open(dev, flags, out);
+    }
+
+    // the path, for the *at calls that name a file in this directory
+    size_t length = strlen(path) + 1;
+    file->path = kmalloc(length);
+    if (file->path)
+    {
+        memcpy(file->path, path, length);
     }
 
     *out = file;

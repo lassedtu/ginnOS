@@ -73,6 +73,21 @@ typedef syscall_ret_t (*syscall_fn_t)(struct registers *regs);
  */
 int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size);
 
+// the *at calls: a relative path in the working directory, or in an open one
+#define AT_FDCWD            (-100)
+#define AT_SYMLINK_NOFOLLOW 0x100 // the link itself, not what it points at
+#define AT_REMOVEDIR        0x200 // unlinkat: a directory (rmdir)
+#define AT_SYMLINK_FOLLOW   0x400 // linkat: what the link points at
+#define AT_EACCESS          0x200 // faccessat: with the effective ids
+
+/**
+ * as resolve_user_path, with a relative path taken in the directory open
+ * as dirfd (AT_FDCWD: the working directory).
+ * @return 0, or -EFAULT, -ENAMETOOLONG, -ENOENT (an empty path), -EBADF,
+ *         or -ENOTDIR (dirfd is no directory).
+ */
+int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolved, uint32_t size);
+
 /**
  * give a file the caller has just created its mode (taken through the
  * umask) and the caller's effective user and group as owner.
@@ -86,6 +101,7 @@ int32_t set_new_owner(const char *path, uint32_t mode);
 syscall_ret_t sys_write(struct registers *regs);
 syscall_ret_t sys_read(struct registers *regs);
 syscall_ret_t sys_open(struct registers *regs);
+syscall_ret_t sys_openat(struct registers *regs);
 syscall_ret_t sys_close(struct registers *regs);
 syscall_ret_t sys_lseek(struct registers *regs);
 syscall_ret_t sys_ftruncate(struct registers *regs);
@@ -97,6 +113,11 @@ syscall_ret_t sys_stat(struct registers *regs);
 syscall_ret_t sys_mkdir(struct registers *regs);
 syscall_ret_t sys_unlink(struct registers *regs);
 syscall_ret_t sys_rmdir(struct registers *regs);
+syscall_ret_t sys_fstatat(struct registers *regs);
+syscall_ret_t sys_renameat(struct registers *regs);
+syscall_ret_t sys_faccessat(struct registers *regs);
+syscall_ret_t sys_mkdirat(struct registers *regs);
+syscall_ret_t sys_unlinkat(struct registers *regs);
 syscall_ret_t sys_getdents(struct registers *regs);
 syscall_ret_t sys_poll(struct registers *regs);
 
@@ -112,6 +133,9 @@ syscall_ret_t sys_setegid(struct registers *regs);
 syscall_ret_t sys_chmod(struct registers *regs);
 syscall_ret_t sys_fchmod(struct registers *regs);
 syscall_ret_t sys_chown(struct registers *regs);
+syscall_ret_t sys_fchmodat(struct registers *regs);
+syscall_ret_t sys_fchownat(struct registers *regs);
+syscall_ret_t sys_fchown(struct registers *regs);
 syscall_ret_t sys_umask(struct registers *regs);
 
 /* kernel/time/clock.c */

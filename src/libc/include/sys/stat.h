@@ -84,6 +84,9 @@ int fstat(int fd, struct stat *st);
  * create a directory with a mode (taken through the umask).
  */
 int mkdir(const char *path, mode_t mode);
+int mkdirat(int dirfd, const char *path, mode_t mode);
+int fstatat(int dirfd, const char *path, struct stat *st, int flags);
+int fchmodat(int dirfd, const char *path, mode_t mode, int flags);
 
 /**
  * change the permission bits of a file (owner or root only).

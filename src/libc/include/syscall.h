@@ -83,6 +83,15 @@
 #define SYS_SENDMSG 74    // send data and files
 #define SYS_RECVMSG 75    // receive data and files
 #define SYS_UNAME 76      // the name, release and machine of the system
+#define SYS_OPENAT 77     // the *at calls: a path relative to a directory fd
+#define SYS_MKDIRAT 78
+#define SYS_UNLINKAT 79
+#define SYS_RENAMEAT 80
+#define SYS_FSTATAT 81
+#define SYS_FACCESSAT 82
+#define SYS_FCHMODAT 83
+#define SYS_FCHOWNAT 84
+#define SYS_FCHOWN 85
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

@@ -599,3 +599,57 @@ char *getlogin(void)
     snprintf(name, sizeof(name), "%s", pw->pw_name);
     return name;
 }
+
+int openat(int dirfd, const char *path, int flags, ...)
+{
+    va_list args;
+    va_start(args, flags);
+    mode_t mode = (flags & O_CREAT) ? va_arg(args, mode_t) : 0;
+    va_end(args);
+    return check(_syscall(SYS_OPENAT, dirfd, (long)path, flags, (long)mode, 0));
+}
+
+int mkdirat(int dirfd, const char *path, mode_t mode)
+{
+    return check(_syscall(SYS_MKDIRAT, dirfd, (long)path, (long)mode, 0, 0));
+}
+
+int unlinkat(int dirfd, const char *path, int flags)
+{
+    return check(_syscall(SYS_UNLINKAT, dirfd, (long)path, flags, 0, 0));
+}
+
+int renameat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path)
+{
+    return check(_syscall(SYS_RENAMEAT, old_dirfd, (long)old_path, new_dirfd, (long)new_path, 0));
+}
+
+int fstatat(int dirfd, const char *path, struct stat *st, int flags)
+{
+    return check(_syscall(SYS_FSTATAT, dirfd, (long)path, (long)st, flags, 0));
+}
+
+int faccessat(int dirfd, const char *path, int mode, int flags)
+{
+    return check(_syscall(SYS_FACCESSAT, dirfd, (long)path, mode, flags, 0));
+}
+
+int fchmodat(int dirfd, const char *path, mode_t mode, int flags)
+{
+    return check(_syscall(SYS_FCHMODAT, dirfd, (long)path, (long)mode, flags, 0));
+}
+
+int fchownat(int dirfd, const char *path, uid_t uid, gid_t gid, int flags)
+{
+    return check(_syscall(SYS_FCHOWNAT, dirfd, (long)path, (long)uid, (long)gid, flags));
+}
+
+int fchown(int fd, uid_t uid, gid_t gid)
+{
+    return check(_syscall(SYS_FCHOWN, fd, (long)uid, (long)gid, 0, 0));
+}
+
+int lchown(const char *path, uid_t uid, gid_t gid)
+{
+    return fchownat(AT_FDCWD, path, uid, gid, AT_SYMLINK_NOFOLLOW);
+}
