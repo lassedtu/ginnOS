@@ -256,6 +256,13 @@ int create(const char *path);
  */
 int ttyctl(int mode);
 
+/**
+ * ask for a password on the terminal (standard input), without echo.
+ * @return the line without its newline, in a static buffer (up to 127
+ *         bytes), or NULL at the end of input.
+ */
+char *getpass(const char *prompt);
+
 
 /**
  * true if fd refers to a terminal.

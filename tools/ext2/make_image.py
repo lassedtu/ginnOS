@@ -17,6 +17,9 @@ from pathlib import Path
 
 MIB = 1024 * 1024
 IGNORED_NAMES = {".DS_Store"}
+PERMISSIONS_FILE = Path(__file__).with_name("permissions")
+S_IFREG = 0o100000
+S_IFDIR = 0o040000
 
 
 def find_mke2fs() -> str:
@@ -59,10 +62,29 @@ def ignore_unwanted(_dir: str, names: list[str]) -> set[str]:
     return {name for name in names if name in IGNORED_NAMES}
 
 
+def read_permissions(path: Path) -> list[tuple[str, bool, int, int, int]]:
+    """the lines of the permissions table: (path, folder, mode, uid, gid)."""
+    entries = []
+    if not path.exists():
+        return entries
+    for line in path.read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name, mode, uid, gid = line.split()
+        folder = mode.startswith("d")
+        entries.append((name, folder, int(mode.lstrip("d"), 8), int(uid), int(gid)))
+    return entries
+
+
 def prepare_filtered_source(source_dir: Path, temp_root: Path) -> Path:
     """Copy source tree to a temp location while excluding unwanted files."""
     filtered_dir = temp_root / "rootfs"
     shutil.copytree(source_dir, filtered_dir, ignore=ignore_unwanted)
+    # the folders of the permissions table that are not in the tree
+    for name, folder, _mode, _uid, _gid in read_permissions(PERMISSIONS_FILE):
+        if folder:
+            (filtered_dir / name.lstrip("/")).mkdir(parents=True, exist_ok=True)
     return filtered_dir
 
 
@@ -108,6 +130,14 @@ def set_root_owner(mke2fs_bin: str, source_dir: Path, image: Path) -> int:
     for path in paths:
         commands.append(f'set_inode_field "{path}" uid 0')
         commands.append(f'set_inode_field "{path}" gid 0')
+    # then the owners and modes of the permissions table
+    for name, folder, mode, uid, gid in read_permissions(PERMISSIONS_FILE):
+        if not (source_dir / name.lstrip("/")).exists():
+            continue  # a program that this build does not have
+        kind = S_IFDIR if folder or (source_dir / name.lstrip("/")).is_dir() else S_IFREG
+        commands.append(f'set_inode_field "{name}" mode 0{kind | mode:o}')
+        commands.append(f'set_inode_field "{name}" uid {uid}')
+        commands.append(f'set_inode_field "{name}" gid {gid}')
 
     try:
         debugfs_bin = find_debugfs(mke2fs_bin)

@@ -1,0 +1,11 @@
+# owners and modes that are not root's 0755/0644 (make_image.py applies
+# them after it gives every file to root). a mode with a d first makes
+# the folder when the root filesystem has none.
+#
+# path          mode    uid     gid
+/etc/shadow     0600    0       0
+/bin/su         4755    0       0
+/bin/passwd     4755    0       0
+/root           d0700   0       0
+/home           d0755   0       0
+/home/user      d0700   1000    1000

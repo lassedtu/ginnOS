@@ -1,6 +1,8 @@
 // cat - concatenate and print files (or stdin)
 
+#include <errno.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 #define BUF_SIZE 512
@@ -21,7 +23,7 @@ static int cat_file(const char *path)
     int fd = open(path, O_RDONLY);
     if (fd < 0)
     {
-        printf("cat: %s: no such file\n", path);
+        fprintf(stderr, "cat: %s: %s\n", path, strerror(errno));
         return 1;
     }
 

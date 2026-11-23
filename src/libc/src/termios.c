@@ -1,6 +1,8 @@
 #include "termios.h"
 
+#include <stdbool.h>
 #include "errno.h"
+#include "stdio.h"
 #include "sys/ioctl.h"
 #include "unistd.h"
 
@@ -81,4 +83,37 @@ int ttyctl(int mode)
         return -1;
     }
     return previous;
+}
+
+char *getpass(const char *prompt)
+{
+    static char line[128];
+    struct termios old;
+    bool tty = tcgetattr(0, &old) == 0;
+    if (tty)
+    {
+        struct termios quiet = old;
+        quiet.c_lflag &= ~(tcflag_t)ECHO;
+        tcsetattr(0, TCSANOW, &quiet);
+    }
+    fputs(prompt, stdout);
+    fflush(stdout);
+    size_t n = 0;
+    bool any = false;
+    char c;
+    while (read(0, &c, 1) == 1)
+    {
+        any = true;
+        if (c == '\n')
+            break;
+        if (n + 1 < sizeof(line))
+            line[n++] = c;
+    }
+    line[n] = '\0';
+    if (tty)
+    {
+        tcsetattr(0, TCSANOW, &old);
+        fputs("\n", stdout);
+    }
+    return any ? line : NULL;
 }
