@@ -587,6 +587,25 @@ void idunn_popover(idunn_widget_t *owner, idunn_widget_t *content);
 /** close the popover a widget is in */
 void idunn_popover_close(idunn_widget_t *inside);
 
+typedef enum
+{
+    IDUNN_FILE_OPEN, // choose a file that is there
+    IDUNN_FILE_SAVE, // choose a name to save as (a question before one is replaced)
+} idunn_file_mode_t;
+
+/** the path chosen in a file dialog (the dialog is closed already) */
+typedef void (*idunn_file_done_t)(const char *path, void *data);
+
+/**
+ * a dialog to choose a file: the folder's items as a list, a button to
+ * the folder above, and to save, a field with the name. nothing is
+ * called when it is cancelled.
+ * @param path the folder to start in, or (to save) the whole path of the
+ *        file, whose name is then in the field.
+ */
+void idunn_file_dialog(idunn_widget_t *owner, idunn_file_mode_t mode, const char *title,
+                       const char *path, idunn_file_done_t done, void *data);
+
 /**
  * a dialog: a card with a title and a description (or NULL), in the middle
  * of the window over the overlay colour. add content to

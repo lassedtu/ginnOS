@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 void test_floating(idunn_context_t *ctx);
 
@@ -562,6 +564,90 @@ static void test_canvas(idunn_context_t *ctx)
     free(win);
 }
 
+static char chosen_path[512];
+static int chosen_count;
+
+static void file_chosen(const char *path, void *data)
+{
+    (void)data;
+    chosen_count++;
+    snprintf(chosen_path, sizeof(chosen_path), "%s", path);
+}
+
+static void make_file(const char *dir, const char *name)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+    FILE *f = fopen(path, "w");
+    if (f)
+        fclose(f);
+}
+
+/** the file dialog: into a folder, choose a file; save, and replace */
+static void test_file_dialog(idunn_context_t *ctx)
+{
+    char dir[] = "/tmp/idunn-files-XXXXXX";
+    CHECK(mkdtemp(dir) != NULL);
+    char sub[600];
+    snprintf(sub, sizeof(sub), "%s/notes", dir);
+    mkdir(sub, 0755);
+    make_file(dir, "b.txt");
+    make_file(sub, "inside.txt");
+
+    idunn_window_t *win = idunn_window_offscreen(ctx, 800, 700);
+    idunn_widget_t *row = idunn_row(0, 0);
+    idunn_widget_t *owner = idunn_add(row, idunn_button("Owner", IDUNN_OUTLINE, NULL, NULL));
+    idunn_window_set_root(win, row);
+    idunn_window_draw(win);
+
+    // open: the folder first; Enter on it goes in, Enter on a file chooses it
+    chosen_count = 0;
+    idunn_file_dialog(owner, IDUNN_FILE_OPEN, "Open", dir, file_chosen, NULL);
+    CHECK(win->modal != NULL);
+    idunn_window_draw(win);
+    key(win, IDUNN_KEY_DOWN, 0); // the first item: the folder
+    key(win, IDUNN_KEY_ENTER, 0);
+    key(win, IDUNN_KEY_DOWN, 0); // inside.txt
+    key(win, IDUNN_KEY_ENTER, 0);
+    CHECK_EQ(chosen_count, 1);
+    char want[700];
+    snprintf(want, sizeof(want), "%s/inside.txt", sub);
+    CHECK(strcmp(chosen_path, want) == 0);
+    CHECK(win->modal == NULL);
+    idunn_reap(ctx);
+
+    // save: a new name is chosen at once
+    snprintf(want, sizeof(want), "%s/new.txt", dir);
+    idunn_file_dialog(owner, IDUNN_FILE_SAVE, "Save as", want, file_chosen, NULL);
+    idunn_window_draw(win);
+    key(win, IDUNN_KEY_ENTER, 0);
+    CHECK_EQ(chosen_count, 2);
+    CHECK(strcmp(chosen_path, want) == 0);
+    idunn_reap(ctx);
+
+    // save over a file: a question first, then the path
+    snprintf(want, sizeof(want), "%s/b.txt", dir);
+    idunn_file_dialog(owner, IDUNN_FILE_SAVE, "Save as", want, file_chosen, NULL);
+    idunn_window_draw(win);
+    key(win, IDUNN_KEY_ENTER, 0);
+    CHECK_EQ(chosen_count, 2);
+    CHECK(win->modal != NULL); // "Replace b.txt?", with Cancel focused
+    idunn_window_draw(win);
+    key(win, IDUNN_KEY_ENTER, 0);
+    CHECK_EQ(chosen_count, 2);
+    CHECK(win->modal == NULL);
+    idunn_reap(ctx);
+
+    idunn_window_free_widgets(win);
+    idunn_reap(ctx);
+    free(win);
+    unlink(want);
+    snprintf(want, sizeof(want), "%s/inside.txt", sub);
+    unlink(want);
+    rmdir(sub);
+    rmdir(dir);
+}
+
 void test_floating(idunn_context_t *ctx)
 {
     test_canvas(ctx);
@@ -573,4 +659,5 @@ void test_floating(idunn_context_t *ctx)
     test_popover(ctx);
     test_dialog(ctx);
     test_dialog_default(ctx);
+    test_file_dialog(ctx);
 }

@@ -29,9 +29,6 @@ typedef enum
 } then_t;
 
 static then_t then;
-static idunn_widget_t *path_dialog;
-static idunn_widget_t *path_field;
-static void (*path_done)(const char *path);
 
 static void error_message(const char *what, const char *path, int error)
 {
@@ -143,6 +140,8 @@ static bool write_file(const char *path)
     return true;
 }
 
+static void show_open_dialog(void);
+
 static void do_then(void)
 {
     then_t what = then;
@@ -155,7 +154,7 @@ static void do_then(void)
         editor_reset();
         break;
     case THEN_OPEN:
-        file_open_dialog();
+        show_open_dialog();
         break;
     case THEN_CLOSE:
         idunn_window_close(S.win);
@@ -165,76 +164,14 @@ static void do_then(void)
     }
 }
 
-/** the typed path, after its dialog closed */
-static void path_typed(const char *typed)
-{
-    char path[PATH_LEN];
-    snprintf(path, sizeof(path), "%s", typed);
-    if (path[0] == '~')
-    {
-        const char *home = getenv("HOME");
-        char rest[PATH_LEN];
-        snprintf(rest, sizeof(rest), "%s", path + 1);
-        snprintf(path, sizeof(path), "%s%s", home ? home : "", rest);
-    }
-    if (path[0] != '/')
-    {
-        then = THEN_NOTHING;
-        show_message("Not a path", "Type a whole path, from / or ~.");
-        return;
-    }
-    path_done(path);
-}
-
-static void path_ok(idunn_widget_t *w, void *data)
-{
-    (void)w;
-    (void)data;
-    // the button closed the dialog already
-    path_dialog = NULL;
-    path_typed(idunn_text_field_text(path_field));
-}
-
-static void path_cancelled(idunn_widget_t *w, void *data)
+static void question_cancelled(idunn_widget_t *w, void *data)
 {
     (void)w;
     (void)data;
     then = THEN_NOTHING;
 }
 
-/** Enter: close the dialog first, so a message can open after it */
-static void path_submit(idunn_widget_t *field, void *data)
-{
-    (void)data;
-    char path[PATH_LEN];
-    snprintf(path, sizeof(path), "%s", idunn_text_field_text(field));
-    if (path_dialog)
-        idunn_dialog_close(path_dialog);
-    path_dialog = NULL;
-    path_typed(path);
-}
-
-/** a dialog that asks for a path, then calls done with it */
-static void ask_path(const char *title, const char *button, const char *path,
-                     void (*done)(const char *path))
-{
-    path_done = done;
-    path_dialog = idunn_dialog(title, NULL);
-    path_field = idunn_text_field("/path/to/file.txt");
-    idunn_set_size(path_field, 420, 0);
-    idunn_text_field_set_text(path_field, path);
-    idunn_text_field_on_submit(path_field, path_submit, NULL);
-    idunn_add(idunn_dialog_content(path_dialog), path_field);
-    idunn_dialog_add_button(path_dialog, "Cancel", IDUNN_OUTLINE, path_cancelled, NULL);
-    idunn_dialog_add_button(path_dialog, button, IDUNN_PRIMARY, path_ok, NULL);
-    idunn_dialog_open(S.canvas, path_dialog);
-    idunn_set_focus(path_field);
-    // the name (after the last /) is selected, so typing replaces it
-    const char *slash = strrchr(path, '/');
-    idunn_text_field_select(path_field, slash ? (size_t)(slash + 1 - path) : 0, (size_t)-1);
-}
-
-/** the folder of the open file (or the home folder), with a / at its end */
+/** the folder of the open file, or the home folder */
 static void start_folder(char *out, size_t length)
 {
     if (S.path[0])
@@ -242,22 +179,56 @@ static void start_folder(char *out, size_t length)
         snprintf(out, length, "%s", S.path);
         char *slash = strrchr(out, '/');
         if (slash)
-            slash[1] = '\0';
+            slash[slash == out ? 1 : 0] = '\0';
         return;
     }
     const char *home = getenv("HOME");
-    snprintf(out, length, "%s%s", home ? home : "/",
-             home && home[strlen(home) - 1] != '/' ? "/" : "");
+    snprintf(out, length, "%s", home && home[0] ? home : "/");
 }
 
-static void open_chosen(const char *path)
+static void open_chosen(const char *path, void *data)
 {
+    (void)data;
     file_open(path);
 }
 
-static void save_as_chosen(const char *path)
+static void save_as_chosen(const char *path, void *data)
 {
+    (void)data;
     if (write_file(path))
+        do_then();
+    else
+        then = THEN_NOTHING;
+}
+
+/**
+ * the next step ("then") is set only in a "save the changes?" question.
+ * a Save as that is cancelled leaves it set, so each thing the user
+ * starts (file_save, file_save_as, file_open_dialog) clears it first.
+ */
+static void save_as_now(void)
+{
+    char path[PATH_LEN];
+    if (S.path[0])
+        snprintf(path, sizeof(path), "%s", S.path);
+    else
+    {
+        char folder[PATH_LEN];
+        start_folder(folder, sizeof(folder));
+        snprintf(path, sizeof(path), "%s%suntitled.txt", folder,
+                 strcmp(folder, "/") == 0 ? "" : "/");
+    }
+    idunn_file_dialog(S.canvas, IDUNN_FILE_SAVE, "Save as", path, save_as_chosen, NULL);
+}
+
+static void save_now(void)
+{
+    if (!S.path[0])
+    {
+        save_as_now();
+        return;
+    }
+    if (write_file(S.path))
         do_then();
     else
         then = THEN_NOTHING;
@@ -265,28 +236,14 @@ static void save_as_chosen(const char *path)
 
 void file_save_as(void)
 {
-    char path[PATH_LEN];
-    if (S.path[0])
-        snprintf(path, sizeof(path), "%s", S.path);
-    else
-    {
-        start_folder(path, sizeof(path));
-        strncat(path, "untitled.txt", sizeof(path) - strlen(path) - 1);
-    }
-    ask_path("Save as", "Save", path, save_as_chosen);
+    then = THEN_NOTHING;
+    save_as_now();
 }
 
 void file_save(void)
 {
-    if (!S.path[0])
-    {
-        file_save_as();
-        return;
-    }
-    if (write_file(S.path))
-        do_then();
-    else
-        then = THEN_NOTHING;
+    then = THEN_NOTHING;
+    save_now();
 }
 
 static void dont_save(idunn_widget_t *w, void *data)
@@ -301,7 +258,7 @@ static void save_first(idunn_widget_t *w, void *data)
 {
     (void)w;
     (void)data;
-    file_save(); // then do_then, or save as and then do_then
+    save_now(); // then do_then, or save as and then do_then
 }
 
 /** go on with what, after asking about unsaved changes when there are any */
@@ -318,7 +275,7 @@ static void unless_unsaved(then_t what)
     snprintf(title, sizeof(title), "Save the changes to %s?", name);
     idunn_widget_t *dialog = idunn_dialog(title, "If you do not save them, they are lost.");
     idunn_dialog_add_button(dialog, "Do not save", IDUNN_DESTRUCTIVE, dont_save, NULL);
-    idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, path_cancelled, NULL);
+    idunn_dialog_add_button(dialog, "Cancel", IDUNN_OUTLINE, question_cancelled, NULL);
     idunn_dialog_add_button(dialog, "Save", IDUNN_PRIMARY, save_first, NULL);
     idunn_dialog_open(S.canvas, dialog);
 }
@@ -328,17 +285,16 @@ void file_new(void)
     unless_unsaved(THEN_NEW);
 }
 
+static void show_open_dialog(void)
+{
+    char folder[PATH_LEN];
+    start_folder(folder, sizeof(folder));
+    idunn_file_dialog(S.canvas, IDUNN_FILE_OPEN, "Open", folder, open_chosen, NULL);
+}
+
 void file_open_dialog(void)
 {
-    if (then == THEN_NOTHING && buffer_modified(&S.buffer))
-    {
-        unless_unsaved(THEN_OPEN);
-        return;
-    }
-    then = THEN_NOTHING;
-    char path[PATH_LEN];
-    start_folder(path, sizeof(path));
-    ask_path("Open", "Open", path, open_chosen);
+    unless_unsaved(THEN_OPEN);
 }
 
 bool file_close_window(idunn_window_t *win, void *data)
