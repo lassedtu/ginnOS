@@ -38,6 +38,14 @@ typedef struct
     const char *icon; // a Tela icon name
 } entry_t;
 
+typedef enum
+{
+    SORT_NAME, // A to Z
+    SORT_SIZE, // the largest first
+    SORT_TYPE, // by the type, then the name
+    SORT_DATE, // the newest first
+} sort_t;
+
 typedef struct
 {
     char path[PATH_LEN];
@@ -56,6 +64,8 @@ typedef struct
 
     folder_t folder;
     char filter[128]; // only the names with this in them ("" for all)
+    sort_t sort;
+    bool sort_reverse;
     bool show_hidden;
     bool grid;
 
@@ -84,6 +94,8 @@ extern ygg_t Y;
  */
 bool folder_read(folder_t *f, const char *path, bool hidden, const mime_table_t *mime);
 void folder_free(folder_t *f);
+/** order the entries: folders first, then by the key (reversed: the other way) */
+void folder_sort(folder_t *f, sort_t by, bool reverse);
 /** keep only the entries whose names have text in them (letter case ignored) */
 void folder_filter(folder_t *f, const char *text);
 /** the same names, sizes and times (a refresh changes nothing) */
@@ -122,6 +134,8 @@ idunn_widget_t *toolbar_build(void);
 void toolbar_update(void);
 /** a text field to type a path (Ctrl+L) */
 void toolbar_edit_path(void);
+/** the order of the last time (yggdrasil.conf), before the toolbar is built */
+void toolbar_load_sort(void);
 /** true while the filter field has the keyboard */
 bool toolbar_filtering(void);
 /** the filter field gets the keyboard (Ctrl+F) */

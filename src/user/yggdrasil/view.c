@@ -129,6 +129,7 @@ void view_refresh(void)
     folder_t fresh = {0};
     folder_read(&fresh, Y.folder.path, Y.show_hidden, Y.mime);
     folder_filter(&fresh, Y.filter);
+    folder_sort(&fresh, Y.sort, Y.sort_reverse);
     if (folder_same(&fresh, &Y.folder))
     {
         folder_free(&fresh);

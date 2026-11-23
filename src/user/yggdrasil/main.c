@@ -79,6 +79,7 @@ static void show(const char *path)
 {
     folder_read(&Y.folder, path, Y.show_hidden, Y.mime);
     folder_filter(&Y.folder, Y.filter);
+    folder_sort(&Y.folder, Y.sort, Y.sort_reverse);
     char trash_files[PATH_LEN];
     snprintf(trash_files, sizeof(trash_files), "%s/files", Y.trash);
     const char *title = strcmp(path, "/") == 0             ? "Computer"
@@ -183,6 +184,7 @@ int main(int argc, char **argv)
     }
     find_home();
     Y.mime = mime_open(MIME_CONF);
+    toolbar_load_sort();
     Y.win = idunn_window_new(Y.app, "Yggdrasil", 960, 600);
     if (!Y.win)
         return 1;
