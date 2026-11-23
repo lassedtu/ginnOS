@@ -564,6 +564,10 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
 
 # libc build rules
+# the regex files are musl's as musl has them (src/libc/src/regex/README.md);
+# they compare signed with unsigned and fall through cases on purpose
+$(BUILD_DIR)/libc/regex/%.o: LIBC_CFLAGS += -Wno-sign-compare -Wno-implicit-fallthrough
+
 $(BUILD_DIR)/libc/%.o: src/libc/src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@

@@ -31,3 +31,7 @@
 #define PIPE_BUF 4096
 
 #define MB_LEN_MAX 4 // the longest UTF-8 character
+
+// regular expressions (regex.h)
+#define RE_DUP_MAX         255 // the most a {m,n} can repeat
+#define CHARCLASS_NAME_MAX 14  // the longest name in [[:name:]]

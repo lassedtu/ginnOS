@@ -23,3 +23,5 @@ extern int failures;
 
 // wide.c
 void test_wide(void);
+// regex.c
+void test_regex(void);
