@@ -89,9 +89,22 @@ int main(int argc, char **argv)
     history_init();
     jobs_init();
 
-    // set default environment
-    env_set("PATH", "/bin");
-    env_set("HOME", "/");
+    // the environment the shell was started with (TERM from a terminal),
+    // then PATH and HOME where it gave none
+    for (char **e = environ; e && *e; e++)
+    {
+        const char *eq = strchr(*e, '=');
+        if (!eq || eq == *e || eq - *e >= ENV_KEY_MAX || strlen(eq + 1) >= ENV_VAL_MAX)
+            continue;
+        char key[ENV_KEY_MAX];
+        memcpy(key, *e, (size_t)(eq - *e));
+        key[eq - *e] = '\0';
+        env_set(key, eq + 1);
+    }
+    if (!env_get("PATH"))
+        env_set("PATH", "/bin");
+    if (!env_get("HOME"))
+        env_set("HOME", "/");
 
     while (1)
     {

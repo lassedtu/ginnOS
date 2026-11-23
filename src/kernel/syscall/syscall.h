@@ -82,9 +82,10 @@
 #define SYS_SOCKETPAIR 73 // make two connected sockets
 #define SYS_SENDMSG 74    // send data and files
 #define SYS_RECVMSG 75    // receive data and files
+#define SYS_UNAME 76      // the name, release and machine of the system
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 76
+#define SYSCALL_COUNT 77
 
 /**
  * initialize the system call interface.
