@@ -81,8 +81,8 @@ static process_t *claim_slot(void)
  */
 static void release_slot(process_t *proc)
 {
-    kfree(proc->fds);
-    proc->fds = NULL;
+    fd_table_put(proc->files); // a process that failed before it ran
+    proc->files = NULL;
     uint32_t flags = spin_lock_irqsave(&table_lock);
     proc->pid = PID_NONE;
     proc->state = PROC_STATE_UNUSED;
@@ -112,10 +112,9 @@ process_t *process_create(void)
     proc->umask = 022; // the ids start as root's (0), from the cleared slot
     arch_fpu_clean(proc->fpu_state);
 
-    // the descriptor table, all free (on the heap: FD_MAX entries for each
-    // of PROCESS_MAX slots would make the kernel image's memory larger)
-    proc->fds = kcalloc(FD_MAX, sizeof(fd_entry_t));
-    if (!proc->fds)
+    // the descriptor table, all free
+    proc->files = fd_table_create();
+    if (!proc->files)
     {
         release_slot(proc);
         return NULL;
@@ -144,7 +143,7 @@ process_t *process_create(void)
     // initialize fd table: stdin/stdout/stderr as console
     for (int fd = 0; fd < FD_STDIO_COUNT; fd++)
     {
-        proc->fds[fd].file = file_console();
+        proc->files->fd[fd].file = file_console();
     }
 
     // default working and root directory
@@ -193,8 +192,8 @@ process_t *process_fork(const struct registers *regs)
     // open files (and so their offsets)
     for (int i = 0; i < FD_MAX; i++)
     {
-        fd_close_entry(&child->fds[i]);
-        fd_copy_entry(&child->fds[i], &parent->fds[i]);
+        fd_close_entry(&child->files->fd[i]);
+        fd_copy_entry(&child->files->fd[i], &parent->files->fd[i]);
     }
 
     // the child's FPU registers are the parent's, as they are now in the CPU
@@ -235,14 +234,11 @@ static void free_argv(char **argv)
 
 void process_release_resources(process_t *proc)
 {
-    // close all open file descriptors (including pipes and fds 0-2). this
-    // may run for a process that isn't the current one (a parent reaping a
-    // child that never ran), so it works on the entries directly rather
-    // than through fd_close(), which operates on process_current().
-    for (int i = 0; i < FD_MAX; i++)
-    {
-        fd_close_entry(&proc->fds[i]);
-    }
+    // let go of the descriptors; the last user closes them (pipes and
+    // fds 0-2 included). this may run for a process that isn't the
+    // current one: a parent reaping a child that never ran.
+    fd_table_put(proc->files);
+    proc->files = NULL;
 
     free_argv(proc->argv);
     proc->argv = NULL;
@@ -490,9 +486,9 @@ bool process_info(uint32_t pid, process_info_t *info)
         memcpy(info->name, proc->name, sizeof(info->name));
         info->areas = proc->space ? proc->space->vmas.count : 0;
         info->open_fds = 0;
-        for (int fd = 0; proc->fds && fd < FD_MAX; fd++)
+        for (int fd = 0; proc->files && fd < FD_MAX; fd++)
         {
-            info->open_fds += proc->fds[fd].file != NULL;
+            info->open_fds += proc->files->fd[fd].file != NULL;
         }
         info->brk = proc->space ? proc->space->brk : 0;
         info->uid = proc->uid;

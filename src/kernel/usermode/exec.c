@@ -159,10 +159,10 @@ int exec_program(const char *path, const char **argv)
         // close-on-exec (as posix_spawn does)
         for (int i = 0; i < FD_MAX; i++)
         {
-            fd_close_entry(&child->fds[i]);
-            if (!(parent->fds[i].flags & FD_CLOEXEC))
+            fd_close_entry(&child->files->fd[i]);
+            if (!(parent->files->fd[i].flags & FD_CLOEXEC))
             {
-                fd_copy_entry(&child->fds[i], &parent->fds[i]);
+                fd_copy_entry(&child->files->fd[i], &parent->files->fd[i]);
             }
         }
     }
@@ -227,9 +227,9 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     // descriptors marked close-on-exec do not survive into the new program
     for (int i = 0; i < FD_MAX; i++)
     {
-        if (proc->fds[i].flags & FD_CLOEXEC)
+        if (proc->files->fd[i].flags & FD_CLOEXEC)
         {
-            fd_close_entry(&proc->fds[i]);
+            fd_close_entry(&proc->files->fd[i]);
         }
     }
 

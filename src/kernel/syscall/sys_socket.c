@@ -163,7 +163,7 @@ syscall_ret_t sys_socketpair(struct registers *regs)
     {
         if (fds[0] >= 0)
         {
-            proc->fds[fds[0]].file = NULL;
+            proc->files->fd[fds[0]].file = NULL;
         }
         file_unref(a);
         file_unref(b);

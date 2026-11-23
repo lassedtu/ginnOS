@@ -2,15 +2,55 @@
 
 #include "kernel/errno.h"
 #include "kernel/process/process.h"
+#include "kernel/memory/heap.h"
+#include "arch/arch.h"
+
+fd_table_t *fd_table_create(void)
+{
+    fd_table_t *table = kcalloc(1, sizeof(fd_table_t));
+    if (table)
+    {
+        table->users = 1;
+    }
+    return table;
+}
+
+fd_table_t *fd_table_get(fd_table_t *table)
+{
+    uint32_t flags = arch_irq_save();
+    table->users++;
+    arch_irq_restore(flags);
+    return table;
+}
+
+void fd_table_put(fd_table_t *table)
+{
+    if (!table)
+    {
+        return;
+    }
+    uint32_t flags = arch_irq_save();
+    bool last = --table->users == 0;
+    arch_irq_restore(flags);
+    if (!last)
+    {
+        return;
+    }
+    for (int i = 0; i < FD_MAX; i++)
+    {
+        fd_close_entry(&table->fd[i]);
+    }
+    kfree(table);
+}
 
 int fd_install(process_t *proc, file_t *file, uint32_t fd_flags, int min_fd)
 {
     for (int fd = min_fd < 0 ? 0 : min_fd; fd < FD_MAX; fd++)
     {
-        if (!proc->fds[fd].file)
+        if (!proc->files->fd[fd].file)
         {
-            proc->fds[fd].file = file;
-            proc->fds[fd].flags = fd_flags;
+            proc->files->fd[fd].file = file;
+            proc->files->fd[fd].flags = fd_flags;
             return fd;
         }
     }
@@ -20,11 +60,11 @@ int fd_install(process_t *proc, file_t *file, uint32_t fd_flags, int min_fd)
 fd_entry_t *fd_get(int fd)
 {
     process_t *proc = process_current();
-    if (!proc || fd < 0 || fd >= FD_MAX || !proc->fds[fd].file)
+    if (!proc || !proc->files || fd < 0 || fd >= FD_MAX || !proc->files->fd[fd].file)
     {
         return NULL;
     }
-    return &proc->fds[fd];
+    return &proc->files->fd[fd];
 }
 
 int fd_close(int fd)

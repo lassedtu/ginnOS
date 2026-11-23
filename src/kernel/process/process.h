@@ -103,7 +103,8 @@ typedef struct process
     char name[PROCESS_NAME_MAX]; // the program's file name (procfs)
     char cwd[PATH_MAX];     // current working directory (the real path)
     char root[PATH_MAX];    // the root directory (chroot): a path starts here
-    fd_entry_t *fds; // the file descriptor table: FD_MAX entries (process_create)
+    fd_table_t *files;      // the descriptors (shared by threads), or NULL
+                            // once released
 } process_t;
 
 /**
