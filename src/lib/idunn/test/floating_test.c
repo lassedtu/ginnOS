@@ -271,6 +271,35 @@ static void ask(idunn_widget_t *button, void *data)
     idunn_dialog_open(button, dialog);
 }
 
+/**
+ * a dialog without a field: the main button (the last one that is not
+ * destructive) has the focus, so Enter is safe.
+ */
+static void test_dialog_default(idunn_context_t *ctx)
+{
+    idunn_window_t *win = idunn_window_offscreen(ctx, 600, 400);
+    idunn_widget_t *row = idunn_row(0, 2);
+    idunn_widget_t *owner = idunn_add(row, idunn_button("Owner", IDUNN_OUTLINE, NULL, NULL));
+    idunn_window_set_root(win, row);
+    idunn_window_draw(win);
+
+    idunn_widget_t *save = idunn_dialog("Save the changes?", NULL);
+    idunn_dialog_add_button(save, "Do not save", IDUNN_DESTRUCTIVE, NULL, NULL);
+    idunn_dialog_add_button(save, "Cancel", IDUNN_OUTLINE, NULL, NULL);
+    idunn_widget_t *save_button = idunn_dialog_add_button(save, "Save", IDUNN_PRIMARY, NULL, NULL);
+    idunn_dialog_open(owner, save);
+    CHECK(idunn_window_focus(win) == save_button);
+    idunn_dialog_close(save);
+
+    idunn_widget_t *del = idunn_dialog("Delete for good?", NULL);
+    idunn_widget_t *cancel = idunn_dialog_add_button(del, "Cancel", IDUNN_OUTLINE, NULL, NULL);
+    idunn_dialog_add_button(del, "Delete", IDUNN_DESTRUCTIVE, NULL, NULL);
+    idunn_dialog_open(owner, del);
+    CHECK(idunn_window_focus(win) == cancel);
+    idunn_dialog_close(del);
+    idunn_window_free_widgets(win);
+}
+
 static void test_dialog(idunn_context_t *ctx)
 {
     idunn_window_t *win = idunn_window_offscreen(ctx, 600, 400);
@@ -543,4 +572,5 @@ void test_floating(idunn_context_t *ctx)
     test_tooltip(ctx);
     test_popover(ctx);
     test_dialog(ctx);
+    test_dialog_default(ctx);
 }

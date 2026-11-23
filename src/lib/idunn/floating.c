@@ -120,6 +120,8 @@ typedef struct
     {
         idunn_callback_t call;
         void *data;
+        idunn_widget_t *button;
+        bool destructive;
     } buttons[4];
     int count;
 } dialog_t;
@@ -209,8 +211,11 @@ idunn_widget_t *idunn_dialog_add_button(idunn_widget_t *dialog, const char *text
     }
     d->buttons[d->count].call = on_click;
     d->buttons[d->count].data = data;
-    return idunn_add(d->footer,
-                     idunn_button(text, variant, button_clicked, (void *)(intptr_t)d->count++));
+    d->buttons[d->count].destructive = variant == IDUNN_DESTRUCTIVE;
+    idunn_widget_t *b = idunn_add(d->footer, idunn_button(text, variant, button_clicked,
+                                                          (void *)(intptr_t)d->count));
+    d->buttons[d->count++].button = b;
+    return b;
 }
 
 void idunn_dialog_open(idunn_widget_t *owner, idunn_widget_t *dialog)
@@ -229,7 +234,8 @@ void idunn_dialog_open(idunn_widget_t *owner, idunn_widget_t *dialog)
     idunn_set_window(dialog, win);
     win->needs_layout = true;
     idunn_window_invalidate(win);
-    // the focus goes inside: the first field, or else the first button
+    // the focus goes inside: the first field, or else the main button (the
+    // last one that is not destructive), so Enter does what is safe
     dialog_t *d = dialog->data;
     idunn_widget_t *card = dialog->children[0];
     bool field = false;
@@ -243,7 +249,16 @@ void idunn_dialog_open(idunn_widget_t *owner, idunn_widget_t *dialog)
         }
     }
     if (!field && d->footer)
-        idunn_focus_first(d->footer);
+    {
+        idunn_widget_t *main_button = NULL;
+        for (int i = 0; i < d->count; i++)
+            if (!d->buttons[i].destructive)
+                main_button = d->buttons[i].button;
+        if (main_button)
+            idunn_set_focus(main_button);
+        else
+            idunn_focus_first(d->footer);
+    }
 }
 
 void idunn_dialog_close(idunn_widget_t *dialog)

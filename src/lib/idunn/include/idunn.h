@@ -167,6 +167,14 @@ void idunn_window_on_key(idunn_window_t *win, idunn_key_hook_t on_key, void *dat
 void idunn_window_close(idunn_window_t *win);
 
 /**
+ * the close button (or the shell's Close): on_close returns true to let
+ * the window close, false to keep it (to ask about unsaved changes first,
+ * and close it later with idunn_window_close).
+ */
+void idunn_window_on_close(idunn_window_t *win, bool (*on_close)(idunn_window_t *win, void *data),
+                           void *data);
+
+/**
  * a new title in the window's title bar (and the shell's window list).
  */
 void idunn_window_set_title(idunn_window_t *win, const char *title);
