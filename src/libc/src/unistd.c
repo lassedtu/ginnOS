@@ -246,6 +246,11 @@ void _exit(int status)
     __builtin_unreachable();
 }
 
+void _Exit(int status)
+{
+    _exit(status);
+}
+
 pid_t getpid(void)
 {
     return (pid_t)_syscall(SYS_GETPID, 0, 0, 0, 0, 0);
@@ -902,4 +907,65 @@ int mkfifo(const char *path, mode_t mode)
 int chroot(const char *path)
 {
     return check(_syscall(SYS_CHROOT, (long)path, 0, 0, 0, 0));
+}
+
+/** a _PC_ limit; the file must exist (checked by the caller) */
+static long path_limit(int name)
+{
+    switch (name)
+    {
+    case _PC_LINK_MAX:
+        return 32000; // ext2's links to one file (the kernel's EXT2_LINK_MAX)
+    case _PC_MAX_CANON:
+    case _PC_MAX_INPUT:
+        return 255; // a terminal's line
+    case _PC_NAME_MAX:
+        return NAME_MAX;
+    case _PC_PATH_MAX:
+        return PATH_MAX;
+    case _PC_PIPE_BUF:
+        return PIPE_BUF;
+    case _PC_CHOWN_RESTRICTED:
+    case _PC_NO_TRUNC:
+        return 1; // only root gives files away; a long name is an error
+    case _PC_VDISABLE:
+        return 0; // a terminal control character of 0 is off
+    default:
+        errno = EINVAL;
+        return -1;
+    }
+}
+
+long pathconf(const char *path, int name)
+{
+    struct stat st;
+    if (stat(path, &st) < 0)
+        return -1;
+    return path_limit(name);
+}
+
+long fpathconf(int fd, int name)
+{
+    struct stat st;
+    if (fstat(fd, &st) < 0)
+        return -1;
+    return path_limit(name);
+}
+
+size_t confstr(int name, char *buffer, size_t size)
+{
+    if (name != _CS_PATH)
+    {
+        errno = EINVAL;
+        return 0;
+    }
+    const char *value = "/bin";
+    size_t length = strlen(value) + 1;
+    if (buffer && size)
+    {
+        size_t copy = length < size ? length : size;
+        memcpy(buffer, value, copy - 1);
+        buffer[copy - 1] = '\0';
+    }
+    return length;
 }

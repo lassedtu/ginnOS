@@ -396,4 +396,13 @@ void test_posix(void)
     test_many_files();
     test_system_calls();
     test_priorities();
+
+    // the limits getconf shows
+    CHECK(pathconf("/", _PC_NAME_MAX) == NAME_MAX && pathconf("/etc", _PC_PATH_MAX) == PATH_MAX);
+    CHECK(pathconf("/no/such", _PC_NAME_MAX) == -1 && errno == ENOENT);
+    CHECK(fpathconf(0, _PC_PIPE_BUF) == PIPE_BUF && fpathconf(0, 99) == -1 && errno == EINVAL);
+    char path[8];
+    CHECK(confstr(_CS_PATH, path, sizeof(path)) == 5 && strcmp(path, "/bin") == 0);
+    CHECK(confstr(_CS_PATH, path, 3) == 5 && strcmp(path, "/b") == 0);
+    CHECK(NZERO == 20);
 }

@@ -169,6 +169,9 @@ void abort(void) __attribute__((noreturn));
  */
 void exit(int status) __attribute__((noreturn));
 
+/** end the process at once: no atexit functions, no stream flush (C99) */
+void _Exit(int status) __attribute__((noreturn));
+
 // characters of more than one byte: UTF-8 (see <wchar.h>)
 #define MB_CUR_MAX ((size_t)4)
 

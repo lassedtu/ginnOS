@@ -38,6 +38,7 @@
 
 #define NAME_MAX      255 // the longest name in a folder (ext2)
 #define HOST_NAME_MAX 64
+#define NZERO         20 // the nice value a process starts with, from 0 (sys/resource.h)
 #define SSIZE_MAX     __PTRDIFF_MAX__
 #define ARG_MAX       131072 // bytes of arguments and environment (the kernel's)
 #define LINE_MAX      2048

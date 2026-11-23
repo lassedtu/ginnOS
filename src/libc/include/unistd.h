@@ -416,6 +416,35 @@ int lseek(int fd, int offset, int whence);
 
 /** a limit of the system (a _SC_ name), or -1 with EINVAL */
 long sysconf(int name);
+
+// pathconf names (Linux's numbers)
+#define _PC_LINK_MAX         0
+#define _PC_MAX_CANON        1
+#define _PC_MAX_INPUT        2
+#define _PC_NAME_MAX         3
+#define _PC_PATH_MAX         4
+#define _PC_PIPE_BUF         5
+#define _PC_CHOWN_RESTRICTED 6
+#define _PC_NO_TRUNC         7
+#define _PC_VDISABLE         8
+
+/**
+ * a limit of the files at path (a _PC_ name). ginnOS's limits are the
+ * same on every filesystem.
+ * @return the limit, or -1 (errno: EINVAL for a name, or as stat sets it).
+ */
+long pathconf(const char *path, int name);
+long fpathconf(int fd, int name);
+
+// confstr names
+#define _CS_PATH 0 // a PATH that finds the standard tools
+
+/**
+ * a string value of the system (a _CS_ name) into buffer.
+ * @return the size the whole value needs, NUL included; 0 with EINVAL for
+ *         an unknown name.
+ */
+size_t confstr(int name, char *buffer, size_t size);
 /** the name of this computer (uname's nodename) into name */
 int gethostname(char *name, size_t length);
 /** set the host name (root only; at most 64 bytes) */
