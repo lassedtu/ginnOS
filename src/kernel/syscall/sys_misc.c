@@ -105,17 +105,31 @@ syscall_ret_t sys_ioctl(struct registers *regs)
     return file_ioctl(entry->file, request, arg);
 }
 
+#define RB_AUTOBOOT  0x01234567 // the values of <sys/reboot.h>, as on Linux
+#define RB_POWER_OFF 0x4321FEDC
+
 /**
- * SYS_reboot: restart the machine. only root (effective user 0) may.
- * the disk writes are already done: the block cache writes through.
- * returns -EPERM for other users; it does not return for root.
+ * SYS_reboot: restart (RB_AUTOBOOT) or turn off (RB_POWER_OFF) the
+ * machine. only root (effective user 0) may. the disk writes are already
+ * done: the block cache writes through.
+ * returns -EPERM for other users and -EINVAL for another value; it does
+ * not return for root.
  */
 syscall_ret_t sys_reboot(struct registers *regs)
 {
-    (void)regs;
+    uint32_t how = (uint32_t)syscall_arg(regs, 0);
+    if (how != RB_AUTOBOOT && how != RB_POWER_OFF)
+    {
+        return -EINVAL;
+    }
     if (process_current()->euid != 0)
     {
         return -EPERM;
+    }
+    if (how == RB_POWER_OFF)
+    {
+        KLOG_INFO("kernel: power off");
+        acpi_power_off();
     }
     KLOG_INFO("kernel: reboot");
     acpi_reboot();

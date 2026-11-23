@@ -256,11 +256,6 @@ int create(const char *path);
  */
 int ttyctl(int mode);
 
-/**
- * restart the machine (ginnOS; root only).
- * @return does not return on success; -1 with errno EPERM for other users.
- */
-int reboot(void);
 
 /**
  * true if fd refers to a terminal.

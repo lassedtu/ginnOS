@@ -14,6 +14,7 @@
 #include <ctype.h>
 #include <pwd.h>
 #include <string.h>
+#include <sys/reboot.h>
 #include <unistd.h>
 
 #define SHOWN_MAX  64
@@ -97,7 +98,14 @@ static void restart(idunn_widget_t *button, void *data)
 {
     (void)button;
     (void)data;
-    reboot(); // the disk is written through: nothing waits to be written
+    reboot(RB_AUTOBOOT); // the disk is written through: nothing waits to be written
+}
+
+static void power_off(idunn_widget_t *button, void *data)
+{
+    (void)button;
+    (void)data;
+    reboot(RB_POWER_OFF);
 }
 
 static idunn_widget_t *footer(void)
@@ -114,6 +122,9 @@ static idunn_widget_t *footer(void)
         idunn_widget_t *again = idunn_add(row, idunn_icon_button("rotate-cw", IDUNN_GHOST,
                                                                  restart, NULL));
         idunn_set_tooltip(again, "Restart");
+        idunn_widget_t *off = idunn_add(row, idunn_icon_button("power", IDUNN_GHOST, power_off,
+                                                               NULL));
+        idunn_set_tooltip(off, "Power off");
     }
     idunn_widget_t *out = idunn_add(row, idunn_icon_button("log-out", IDUNN_GHOST, log_out,
                                                            NULL));
@@ -153,6 +164,6 @@ static void open_launcher(idunn_widget_t *button, void *data)
 idunn_widget_t *launcher_button(void)
 {
     idunn_widget_t *b = idunn_icon_button("layout-grid", IDUNN_GHOST, open_launcher, NULL);
-    idunn_set_tooltip(b, "Programs");
+    idunn_set_tooltip(b, "Apps");
     return b;
 }
