@@ -13,7 +13,7 @@
 
 .PHONY: ports
 
-PORTS         ?= sbase
+PORTS         ?= sbase lua
 TOOLCHAIN_BIN ?= $(abspath tools/toolchain/prefix/bin)
 PORT_CROSS    := $(TOOLCHAIN_BIN)/$(ARCH)-ginnos-
 PORTS_DIR     := $(BUILD_DIR)/ports

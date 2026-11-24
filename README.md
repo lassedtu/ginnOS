@@ -260,6 +260,8 @@ Everything below is implemented and working today.
   built as a port without changes: `ls`, `cat`, `cp`, `mv`, `rm`, `grep`,
   `sed`, `find`, `tar`, `sort`, `dd`, `bc`, `date` and about 90 more, all
   in one program (`/bin/sbase-box`) with a symbolic link for each tool
+- [Lua](https://www.lua.org/) 5.4 (MIT), the interpreter as `/bin/lua`,
+  built as a port without changes
 - `clear`, `id`, `init`, `sh`, `su`, `uptime`,
   `ze` (text editor), a `metaballs` framebuffer demo, and `memtest`, which
   tests the kernel's handling of user memory (heap, stack growth, `mmap`,
@@ -610,12 +612,12 @@ Once that is done, build from the project root, see **Build and Run** below. QEM
 
 ## Build and Run
 
-The image includes ports (programs from other projects, now sbase), which
+The image includes ports (programs from other projects, now sbase and Lua), which
 are built with the ginnOS toolchain: a GCC and binutils that know ginnOS.
 Build it once for each architecture (it downloads GCC and binutils, needs
 gmp, mpfr, libmpc and isl, takes about 20 minutes, and goes into
 `tools/toolchain/prefix`). The ports
-also need `git` and `yacc` (macOS has both). `make PORTS=` builds an image
+also need `git`, `curl` and `yacc` (macOS has all three). `make PORTS=` builds an image
 without the ports, and so without the Unix tools.
 
 ```bash

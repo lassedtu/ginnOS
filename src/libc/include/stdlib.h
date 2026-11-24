@@ -49,12 +49,18 @@ void free(void *ptr);
 int atoi(const char *s);
 
 /**
- * a decimal floating-point number at the start of str: an optional sign,
- * digits with an optional point, and an optional exponent (e or E).
+ * a floating-point number at the start of str, after spaces: an optional
+ * sign, then decimal digits with an optional point and exponent (1.5e3),
+ * hexadecimal digits with "0x" and an optional "p" exponent (0x1.8p1),
+ * "inf", "infinity" or "nan". the result is rounded correctly.
  * @param end receives the first character after the number (may be NULL).
- * @return the number, or 0 if there is none (then *end is str).
+ * @return the number, or 0 if there is none (then *end is str). a number
+ *         past the largest gives HUGE_VAL, below the smallest 0; both set
+ *         errno to ERANGE.
  */
 double strtod(const char *str, char **end);
+float strtof(const char *str, char **end);
+long double strtold(const char *str, char **end);
 
 /**
  * strtod(str, NULL).

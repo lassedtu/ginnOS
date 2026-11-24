@@ -7,6 +7,8 @@
 #include "termios.h"
 #include "unistd.h"
 
+#include "float/fmt_fp.h"
+
 /**
  * @file stdio.c
  * @brief streams (FILE) and the printf and scanf engines.
@@ -927,148 +929,25 @@ static int integer_digits(char *buf, unsigned long long value, unsigned int base
     return len;
 }
 
+static void emit_float_text(void *context, const char *text, size_t length)
+{
+    emit((out_t *)context, text, length);
+}
+
 /**
- * %f, %e and %g. digits come from 32-bit pieces, as the conversions of
- * double to 64-bit integers need libgcc.
+ * %e, %f, %g and %a (and their capitals) with musl's exact conversion
+ * (float/fmt_fp.c).
  */
-static void emit_float(out_t *out, double value, char conversion, int flags, int width,
+static void emit_float(out_t *out, long double value, char conversion, int flags, int width,
                        int precision)
 {
-    char text[64];
-    int len = 0;
-    char sign[2] = {0, 0};
-
-    if (value < 0 || (value == 0 && 1 / value < 0))
-    {
-        sign[0] = '-';
-        value = -value;
-    }
-    else if (flags & FLAG_PLUS)
-        sign[0] = '+';
-    else if (flags & FLAG_SPACE)
-        sign[0] = ' ';
-
-    int upper = conversion == 'F' || conversion == 'E' || conversion == 'G';
-    if (value != value)
-    {
-        emit_number(out, upper ? "NAN" : "nan", 3, sign, flags & FLAG_LEFT, width, -1);
-        return;
-    }
-    if (value > 1.7976931348623157e308)
-    {
-        emit_number(out, upper ? "INF" : "inf", 3, sign, flags & FLAG_LEFT, width, -1);
-        return;
-    }
-
-    if (precision < 0)
-        precision = 6;
-    if (precision > 17)
-        precision = 17;
-
-    char style = (char)(conversion | 0x20); // f, e or g
-    int exponent = 0;
-    if (style != 'f')
-    {
-        double scaled = value;
-        if (scaled != 0)
-        {
-            while (scaled >= 10)
-            {
-                scaled /= 10;
-                exponent++;
-            }
-            while (scaled < 1)
-            {
-                scaled *= 10;
-                exponent--;
-            }
-        }
-        if (style == 'g')
-        {
-            int p = precision ? precision : 1;
-            if (exponent < -4 || exponent >= p)
-            {
-                style = 'e';
-                precision = p - 1;
-            }
-            else
-            {
-                style = 'f';
-                precision = p - 1 - exponent;
-            }
-        }
-        if (style == 'e')
-            value = scaled;
-    }
-
-    // round, then split into whole and fractional parts
-    double rounding = 0.5;
-    for (int i = 0; i < precision; i++)
-        rounding /= 10;
-    value += rounding;
-    if (style == 'e' && value >= 10)
-    {
-        value /= 10;
-        exponent++;
-    }
-
-    if (value >= 1e18)
-    {
-        // too big for the 32-bit pieces: print it in e style
-        emit_float(out, sign[0] == '-' ? -value : value, upper ? 'E' : 'e', flags, width,
-                   precision);
-        return;
-    }
-    unsigned int high = (unsigned int)(value / 1e9);
-    double low_part = value - (double)high * 1e9;
-    unsigned int low = (unsigned int)low_part;
-    double fraction = low_part - low;
-
-    if (high)
-    {
-        len += integer_digits(text + len, high, 10, 0);
-        char piece[12];
-        int piece_len = integer_digits(piece, low, 10, 0);
-        for (int i = piece_len; i < 9; i++)
-            text[len++] = '0';
-        memcpy(text + len, piece, (size_t)piece_len);
-        len += piece_len;
-    }
-    else
-    {
-        len += integer_digits(text + len, low, 10, 0);
-    }
-
-    if (precision > 0 || (flags & FLAG_ALT))
-        text[len++] = '.';
-    for (int i = 0; i < precision; i++)
-    {
-        fraction *= 10;
-        int digit = (int)fraction;
-        text[len++] = (char)('0' + digit);
-        fraction -= digit;
-    }
-
-    // %g drops trailing zeros
-    if ((conversion | 0x20) == 'g' && !(flags & FLAG_ALT) && memchr(text, '.', (size_t)len))
-    {
-        while (text[len - 1] == '0')
-            len--;
-        if (text[len - 1] == '.')
-            len--;
-    }
-
-    if (style == 'e')
-    {
-        text[len++] = upper ? 'E' : 'e';
-        text[len++] = exponent < 0 ? '-' : '+';
-        int e = exponent < 0 ? -exponent : exponent;
-        if (e < 10)
-            text[len++] = '0';
-        len += integer_digits(text + len, (unsigned int)e, 10, 0);
-    }
-
-    emit_number(out, text, len, sign, flags, width, -1);
+    unsigned int float_flags = ((flags & FLAG_LEFT) ? FLOAT_LEFT : 0) |
+                               ((flags & FLAG_PLUS) ? FLOAT_PLUS : 0) |
+                               ((flags & FLAG_SPACE) ? FLOAT_SPACE : 0) |
+                               ((flags & FLAG_ALT) ? FLOAT_ALT : 0) |
+                               ((flags & FLAG_ZERO) ? FLOAT_ZERO : 0);
+    struct float_out sink = {emit_float_text, out};
+    format_float(&sink, value, width, precision, float_flags, conversion);
 }
 
 /**
@@ -1139,7 +1018,8 @@ static int format(out_t *out, const char *fmt, va_list ap)
             }
         }
 
-        // length: 0 int, 1 long, 2 long long, -1 short, -2 char
+        // length: 0 int, 1 long, 2 long long, -1 short, -2 char; 3 long
+        // double (L), for the float conversions
         int length = 0;
         if (*fmt == 'h')
         {
@@ -1151,9 +1031,14 @@ static int format(out_t *out, const char *fmt, va_list ap)
             length = fmt[1] == 'l' ? 2 : 1;
             fmt += fmt[1] == 'l' ? 2 : 1;
         }
-        else if (*fmt == 'z' || *fmt == 'j' || *fmt == 't' || *fmt == 'L')
+        else if (*fmt == 'z' || *fmt == 'j' || *fmt == 't')
         {
             length = *fmt == 'j' ? 2 : 1;
+            fmt++;
+        }
+        else if (*fmt == 'L')
+        {
+            length = 3;
             fmt++;
         }
 
@@ -1168,7 +1053,7 @@ static int format(out_t *out, const char *fmt, va_list ap)
         case 'd':
         case 'i':
         {
-            long long value = length == 2 ? va_arg(ap, long long)
+            long long value = length >= 2 ? va_arg(ap, long long)
                               : length == 1 ? va_arg(ap, long)
                                             : va_arg(ap, int);
             if (length == -1)
@@ -1193,7 +1078,7 @@ static int format(out_t *out, const char *fmt, va_list ap)
             if (conversion == 'p')
                 value = (unsigned long)va_arg(ap, void *);
             else
-                value = length == 2 ? va_arg(ap, unsigned long long)
+                value = length >= 2 ? va_arg(ap, unsigned long long)
                         : length == 1 ? va_arg(ap, unsigned long)
                                       : va_arg(ap, unsigned int);
             if (length == -1)
@@ -1238,7 +1123,10 @@ static int format(out_t *out, const char *fmt, va_list ap)
         case 'E':
         case 'g':
         case 'G':
-            emit_float(out, va_arg(ap, double), conversion, flags, width, precision);
+        case 'a':
+        case 'A':
+            emit_float(out, length == 3 ? va_arg(ap, long double) : va_arg(ap, double), conversion,
+                       flags, width, precision);
             break;
         case 'n':
             *va_arg(ap, int *) = (int)out->count;

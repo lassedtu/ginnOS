@@ -7,6 +7,7 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 
 double fabs(double x)
 {
@@ -83,22 +84,69 @@ double acos(double x)
     return atan2(sqrt(1.0 - x * x), x);
 }
 
+/**
+ * y * log2(x) in the x87's 80-bit precision (fyl2x: st(0) = st(1) *
+ * log2(st(0))). log, log10 and pow round only the end result to a double,
+ * so a result that is a whole number (as log10(1000)) comes out exact.
+ */
+static long double times_log2(long double y, long double x)
+{
+    long double result;
+    __asm__("fyl2x" : "=t"(result) : "0"(x), "u"(y) : "st(1)");
+    return result;
+}
+
+/** 2^t in the x87's 80-bit precision; t is finite and not too large */
+static long double exp2_extended(long double t)
+{
+    long double whole;
+    __asm__("frndint" : "=t"(whole) : "0"(t));
+    long double fraction = t - whole; // at most 0.5 in size
+    long double result;
+    // f2xm1: 2^f - 1 for |f| <= 1; fscale: multiply by 2^whole
+    __asm__("f2xm1\n\t"
+            "fld1\n\t"
+            "faddp\n\t"
+            "fscale"
+            : "=t"(result)
+            : "0"(fraction), "u"(whole));
+    return result;
+}
+
+/**
+ * 2^t as a double. past +-1100 the result is past the largest double or
+ * below the smallest one, so it is infinity or 0.
+ */
+static double exp2_double(long double t)
+{
+    if (t != t)
+    {
+        return (double)t; // NaN
+    }
+    if (t > 1100.0L)
+    {
+        return HUGE_VAL;
+    }
+    if (t < -1100.0L)
+    {
+        return 0.0;
+    }
+    return (double)exp2_extended(t);
+}
+
 double log2(double x)
 {
-    // fyl2x: st(0) = st(1) * log2(st(0))
-    double result;
-    __asm__("fyl2x" : "=t"(result) : "0"(x), "u"(1.0) : "st(1)");
-    return result;
+    return (double)times_log2(1.0L, x);
 }
 
 double log(double x)
 {
-    return log2(x) * 0.69314718055994530942; // ln(2)
+    return (double)times_log2(0.693147180559945309417232121458176568L, x); // ln(2)
 }
 
 double log10(double x)
 {
-    return log2(x) * 0.30102999566398119521; // log10(2)
+    return (double)times_log2(0.301029995663981195213738894724493027L, x); // log10(2)
 }
 
 /**
@@ -146,30 +194,23 @@ double fmod(double x, double y)
 
 double exp(double x)
 {
-    // e^x = 2^(x * log2(e)) = 2^i * 2^f with i whole and |f| < 1
-    double t = x * 1.44269504088896340736; // log2(e)
-    double i = round(t);
-    double f = t - i;
-    double result;
-    // f2xm1: 2^f - 1 for |f| <= 1; fscale: multiply by 2^i
-    __asm__("f2xm1\n\t"
-            "fld1\n\t"
-            "faddp\n\t"
-            "fscale"
-            : "=t"(result)
-            : "0"(f), "u"(i));
-    return result;
+    // e^x = 2^(x * log2(e))
+    return exp2_double(x * 1.442695040888963407359924681001892137L);
 }
 
+/**
+ * x^y = 2^(y * log2(x)), all in 80-bit precision: with doubles between
+ * the steps, pow(2, 10) was 1023.9999999999998.
+ */
 double pow(double x, double y)
 {
-    if (y == 0.0)
+    if (y == 0.0 || x == 1.0)
     {
         return 1.0;
     }
     if (x == 0.0)
     {
-        return 0.0;
+        return y < 0.0 ? HUGE_VAL : 0.0;
     }
     if (x < 0.0)
     {
@@ -179,11 +220,12 @@ double pow(double x, double y)
         {
             return NAN;
         }
-        double r = exp(y * log(-x));
-        long long n = (long long)whole;
-        return (n & 1) ? -r : r;
+        double r = exp2_double(times_log2(y, -x));
+        // an odd whole number below 2^53 gives a negative result
+        bool odd = fabs(y) < 9007199254740992.0 && ((long long)whole & 1);
+        return odd ? -r : r;
     }
-    return exp(y * log(x));
+    return exp2_double(times_log2(y, x));
 }
 
 double ldexp(double x, int exponent)
@@ -248,4 +290,85 @@ double tanh(double x)
         return -1.0;
     double e = exp(2.0 * x);
     return (e - 1.0) / (e + 1.0);
+}
+
+/** an 80-bit x87 number: 64 bits of mantissa, then the sign and exponent */
+typedef union
+{
+    long double value;
+    struct
+    {
+        unsigned long long mantissa;
+        unsigned short sign_exponent;
+    } parts;
+} extended_t;
+
+long double fabsl(long double x)
+{
+    extended_t v = {x};
+    v.parts.sign_exponent &= 0x7FFF;
+    return v.value;
+}
+
+long double copysignl(long double x, long double y)
+{
+    extended_t v = {x};
+    extended_t s = {y};
+    v.parts.sign_exponent = (unsigned short)((v.parts.sign_exponent & 0x7FFF) |
+                                             (s.parts.sign_exponent & 0x8000));
+    return v.value;
+}
+
+double copysign(double x, double y)
+{
+    return (double)copysignl(x, y);
+}
+
+long double fmodl(long double x, long double y)
+{
+    // as fmod: repeat fprem until C2 (bit 10 of the status) is 0
+    long double result;
+    __asm__("1: fprem\n\t"
+            "fnstsw %%ax\n\t"
+            "testw $0x400, %%ax\n\t"
+            "jnz 1b"
+            : "=t"(result)
+            : "0"(x), "u"(y)
+            : "ax", "cc");
+    return result;
+}
+
+long double ldexpl(long double x, int exponent)
+{
+    // fscale: x * 2^exponent, rounded once
+    long double result;
+    __asm__("fscale" : "=t"(result) : "0"(x), "u"((long double)exponent));
+    return result;
+}
+
+long double scalbnl(long double x, int exponent)
+{
+    return ldexpl(x, exponent);
+}
+
+long double frexpl(long double x, int *exponent)
+{
+    extended_t v = {x};
+    int raw = v.parts.sign_exponent & 0x7FFF;
+    *exponent = 0;
+    if (raw == 0x7FFF || x == 0)
+    {
+        return x; // infinity, NaN and zero stay as they are
+    }
+    if (raw == 0)
+    {
+        // a subnormal number: make it normal first
+        v.value = x * 0x1p120L;
+        raw = v.parts.sign_exponent & 0x7FFF;
+        *exponent = -120;
+    }
+    // the fraction in [0.5, 1): the exponent field of 0.5 is 0x3FFE
+    *exponent += raw - 0x3FFE;
+    v.parts.sign_exponent = (unsigned short)((v.parts.sign_exponent & 0x8000) | 0x3FFE);
+    return v.value;
 }

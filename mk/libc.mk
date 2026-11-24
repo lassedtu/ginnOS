@@ -28,6 +28,11 @@ DEP_FILES += $(LIBC_C_OBJS:.o=.d)
 # the regex files are musl's as musl has them (src/libc/src/regex/README.md);
 # they compare signed with unsigned and fall through cases on purpose
 $(BUILD_DIR)/libc/regex/%.o: LIBC_CFLAGS += -Wno-sign-compare -Wno-implicit-fallthrough
+# the same for musl's number conversions (src/libc/src/float/README.md),
+# which also leave out parentheses that only show the order of operations,
+# and fill a 16-byte table with the 16 digits of a string
+$(BUILD_DIR)/libc/float/%.o: LIBC_CFLAGS += -Wno-sign-compare -Wno-parentheses \
+                                          -Wno-unterminated-string-initialization
 
 $(BUILD_DIR)/libc/%.o: src/libc/src/%.c
 	@mkdir -p $(dir $@)

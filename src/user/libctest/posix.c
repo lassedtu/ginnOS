@@ -326,9 +326,19 @@ static void test_system_calls(void)
     CHECK(clock_settime(CLOCK_REALTIME, &later) == 0);
     CHECK(clock_settime(CLOCK_MONOTONIC, &later) == -1 && errno == EINVAL);
 
-    // libctest runs on the console (tty0, 4:0)
+    // on any terminal (the console's /dev/tty0, or a /dev/pts/N in the
+    // desktop's terminal), ttyname names the same device as fd 0
     char *tty = ttyname(0);
-    CHECK(tty != NULL && strcmp(tty, "/dev/tty0") == 0);
+    struct stat by_fd, by_name;
+    if (isatty(0))
+    {
+        CHECK(tty != NULL && strncmp(tty, "/dev/", 5) == 0 && fstat(0, &by_fd) == 0 &&
+              stat(tty, &by_name) == 0 && by_fd.st_rdev == by_name.st_rdev);
+    }
+    else
+    {
+        CHECK(tty == NULL && errno == ENOTTY);
+    }
     int pipe_fds[2];
     CHECK(pipe(pipe_fds) == 0);
     CHECK(ttyname(pipe_fds[0]) == NULL && errno == ENOTTY);
