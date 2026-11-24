@@ -39,6 +39,8 @@
 #include "kernel/device/null.h"
 #include "drivers/video/display.h"
 #include "drivers/video/fb/fb.h"
+#include "drivers/net/virtio_net.h"
+#include "kernel/net/netif.h"
 #include "drivers/video/virtio_gpu.h"
 #include "common/memory.h"
 #include "common/string.h"
@@ -297,6 +299,10 @@ void kernel_main(boot_info_t *boot)
     // the size the screen wants (the console keeps its text grid)
     display_init();
     virtio_gpu_init();
+
+    // the network: the loopback interface, then the cards
+    net_init();
+    virtio_net_init();
 
     syscall_initialize();
 

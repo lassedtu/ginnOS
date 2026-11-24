@@ -360,3 +360,50 @@ bool virtq_call(virtq_t *q, const void *request, uint32_t request_size, void *re
     spin_unlock_irqrestore(&q->lock, flags);
     return done;
 }
+
+void virtio_queue_interrupt(virtq_t *q)
+{
+    if (!q->dev->pci->msix_offset)
+    {
+        return;
+    }
+    write16(q->dev->common, QUEUE_SELECT, q->index);
+    write16(q->dev->common, QUEUE_MSIX_VECTOR, 0);
+}
+
+bool virtq_give(virtq_t *q, uint16_t id, phys_addr_t phys, uint32_t length, bool device_writes)
+{
+    if (!q->ring || id >= q->size)
+    {
+        return false;
+    }
+    uint32_t flags = spin_lock_irqsave(&q->lock);
+    desc_t *desc = (desc_t *)q->ring;
+    desc[id] = (desc_t){phys, length, device_writes ? DESC_WRITE : 0, 0};
+    make_available(q, id);
+    spin_unlock_irqrestore(&q->lock, flags);
+    return true;
+}
+
+bool virtq_take(virtq_t *q, uint16_t *id, uint32_t *length)
+{
+    if (!q->ring)
+    {
+        return false;
+    }
+    uint32_t flags = spin_lock_irqsave(&q->lock);
+    volatile uint16_t *used = (volatile uint16_t *)(q->ring + USED_OFFSET);
+    bool got = used[1] != q->used_seen;
+    if (got)
+    {
+        __sync_synchronize();
+        // the used ring: flags, index, then (id, length) pairs of 32 bits
+        volatile uint32_t *element =
+            (volatile uint32_t *)(q->ring + USED_OFFSET + 4) + 2 * (q->used_seen % q->size);
+        *id = (uint16_t)element[0];
+        *length = element[1];
+        q->used_seen++;
+    }
+    spin_unlock_irqrestore(&q->lock, flags);
+    return got;
+}

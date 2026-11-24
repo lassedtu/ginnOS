@@ -13,6 +13,7 @@
 #include "kernel/process/process.h"
 #include "kernel/sync/mutex.h"
 #include "kernel/time/timer.h"
+#include "kernel/net/netif.h"
 #include "kernel/vfs/stat.h"
 
 /**
@@ -24,6 +25,7 @@
  *   /proc/pci           the PCI functions (drivers/pci)
  *   /proc/interrupts    the device interrupts and their counts
  *   /proc/audio         the sound device and its counters
+ *   /proc/net           the network interfaces and their counters
  *   /proc/<pid>/status  a process's name, state, parent and resources
  *   /proc/self          the calling process's directory
  *
@@ -56,8 +58,9 @@ typedef struct
 } procfs_node_t;
 
 // the files of the root that are not process directories
-static const char *const root_files[] = {"meminfo", "uptime", "pci", "interrupts", "audio", "self"};
-#define ROOT_FILE_COUNT 6
+static const char *const root_files[] = {"meminfo", "uptime", "pci",  "interrupts",
+                                         "audio",   "net",    "self"};
+#define ROOT_FILE_COUNT 7
 
 /*
  * the kernel's formatter writes one character at a time to a function
@@ -155,6 +158,19 @@ static bool make_text(procfs_node_t *node, const char *name, uint32_t pid)
                    audio.name, audio.codec_id, audio.detail, audio.rate, audio.open,
                    audio.running ? "yes" : "no", audio.queued, (unsigned long)audio.played,
                    audio.underruns, audio.volume & 0xFF, (audio.volume >> 8) & 0xFF);
+        }
+    }
+    else if (strcmp(name, "net") == 0)
+    {
+        // the name, the MAC address, the MTU, then received and sent:
+        // packets, bytes, dropped
+        netif_t *n;
+        for (uint32_t i = 0; (n = netif_at(i)) != NULL; i++)
+        {
+            FORMAT("%s\t%02x:%02x:%02x:%02x:%02x:%02x\t%u\t%lu %lu %u\t%lu %lu %u\n", n->name,
+                   n->mac[0], n->mac[1], n->mac[2], n->mac[3], n->mac[4], n->mac[5], n->mtu,
+                   (unsigned long)n->rx_packets, (unsigned long)n->rx_bytes, n->rx_dropped,
+                   (unsigned long)n->tx_packets, (unsigned long)n->tx_bytes, n->tx_dropped);
         }
     }
     else if (strcmp(name, "interrupts") == 0)
@@ -263,7 +279,7 @@ static kerr_t resolve(const char *path, procfs_node_t *node)
 
     if (*rest != '\0' || (strcmp(path, "meminfo") != 0 && strcmp(path, "uptime") != 0 &&
                            strcmp(path, "pci") != 0 && strcmp(path, "interrupts") != 0 &&
-                           strcmp(path, "audio") != 0))
+                           strcmp(path, "audio") != 0 && strcmp(path, "net") != 0))
     {
         return KERR_NOENT;
     }
