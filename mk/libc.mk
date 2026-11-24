@@ -63,12 +63,28 @@ LIBC_HEADERS  := $(shell find src/libc/include -type f 2>/dev/null | sort)
 
 sysroot: $(SYSROOT_STAMP)
 
-$(SYSROOT_STAMP): $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A) $(LIBC_HEADERS)
+# our libraries that ports may use (SDL's ginnOS backend uses heimdall and
+# gfx): their archives and headers go into the sysroot too
+SYSROOT_LIBS    := gfx heimdall
+SYSROOT_LIB_A   := $(foreach l,$(SYSROOT_LIBS),$(BUILD_DIR)/lib/lib$(l).a)
+SYSROOT_LIB_INC := $(foreach l,$(SYSROOT_LIBS),$(wildcard src/lib/$(l)/include/*.h))
+
+define sysroot_lib
+$(BUILD_DIR)/lib/lib$(1).a: $(LIBC_A) $(wildcard src/lib/$(1)/*.c src/lib/$(1)/*.h) $(SYSROOT_LIB_INC)
+	+@$$(MAKE) --no-print-directory -C src/lib/$(1) $$(USER_MAKE_VARS)
+endef
+$(foreach l,$(SYSROOT_LIBS),$(eval $(call sysroot_lib,$(l))))
+
+$(SYSROOT_STAMP): $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A) $(LIBC_HEADERS) \
+                  $(SYSROOT_LIB_A)
 	@rm -rf $(SYSROOT)/usr/include
 	@mkdir -p $(SYSROOT)/usr/include $(SYSROOT)/usr/lib
 	cp -R src/libc/include/. $(SYSROOT)/usr/include/
-	cp $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A) $(SYSROOT)/usr/lib/
-	@# the math functions are in libc.a: -lm finds an empty library
-	@rm -f $(SYSROOT)/usr/lib/libm.a
+	cp $(SYSROOT_LIB_INC) $(SYSROOT)/usr/include/
+	cp $(USER_CRT0) $(USER_CRTI) $(USER_CRTN) $(LIBC_A) $(SYSROOT_LIB_A) $(SYSROOT)/usr/lib/
+	@# the math and thread functions are in libc.a: -lm and -lpthread
+	@# find empty libraries
+	@rm -f $(SYSROOT)/usr/lib/libm.a $(SYSROOT)/usr/lib/libpthread.a
 	$(CROSS)ar rcs $(SYSROOT)/usr/lib/libm.a
+	$(CROSS)ar rcs $(SYSROOT)/usr/lib/libpthread.a
 	@touch $@
