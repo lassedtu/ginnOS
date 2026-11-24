@@ -8,6 +8,7 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <string.h>
@@ -119,8 +120,66 @@ static void test_ping(void)
     close(fd);
 }
 
+static void test_names(void)
+{
+    struct addrinfo hints = {0};
+    hints.ai_family = AF_UNSPEC;
+    struct addrinfo *list;
+    // a name from /etc/hosts, with both socket types
+    CHECK(getaddrinfo("localhost", "http", &hints, &list) == 0);
+    CHECK(list && list->ai_next && !list->ai_next->ai_next);
+    CHECK(list && list->ai_family == AF_INET && list->ai_socktype == SOCK_STREAM &&
+          list->ai_next->ai_socktype == SOCK_DGRAM);
+    struct sockaddr_in *sin = (struct sockaddr_in *)list->ai_addr;
+    CHECK(sin->sin_addr.s_addr == htonl(INADDR_LOOPBACK) && ntohs(sin->sin_port) == 80);
+    freeaddrinfo(list);
+
+    // an address as it is; the canonical name is the text
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_CANONNAME;
+    CHECK(getaddrinfo("10.0.2.15", "53", &hints, &list) == 0);
+    CHECK(list && !list->ai_next && strcmp(list->ai_canonname, "10.0.2.15") == 0);
+    sin = (struct sockaddr_in *)list->ai_addr;
+    CHECK(sin->sin_addr.s_addr == htonl(0x0A00020F) && ntohs(sin->sin_port) == 53);
+    freeaddrinfo(list);
+
+    // no node: any address with AI_PASSIVE, else the loopback one
+    hints.ai_flags = AI_PASSIVE;
+    CHECK(getaddrinfo(NULL, "8080", &hints, &list) == 0);
+    CHECK(((struct sockaddr_in *)list->ai_addr)->sin_addr.s_addr == INADDR_ANY);
+    freeaddrinfo(list);
+
+    hints.ai_flags = AI_NUMERICHOST;
+    CHECK(getaddrinfo("example.com", NULL, &hints, &list) == EAI_NONAME);
+    hints.ai_flags = 0;
+    CHECK(getaddrinfo("localhost", "no-such-service", &hints, &list) == EAI_SERVICE);
+    hints.ai_family = 10; // AF_INET6
+    CHECK(getaddrinfo("localhost", NULL, &hints, &list) == EAI_FAMILY);
+    CHECK(strcmp(gai_strerror(EAI_NONAME), "name or service not known") == 0);
+
+    struct sockaddr_in a = {0};
+    a.sin_family = AF_INET;
+    a.sin_port = htons(443);
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    char host[NI_MAXHOST];
+    char serv[NI_MAXSERV];
+    CHECK(getnameinfo((struct sockaddr *)&a, sizeof(a), host, sizeof(host), serv, sizeof(serv),
+                      0) == 0);
+    CHECK(strcmp(host, "localhost") == 0 && strcmp(serv, "https") == 0);
+    CHECK(getnameinfo((struct sockaddr *)&a, sizeof(a), host, sizeof(host), serv, sizeof(serv),
+                      NI_NUMERICHOST | NI_NUMERICSERV) == 0);
+    CHECK(strcmp(host, "127.0.0.1") == 0 && strcmp(serv, "443") == 0);
+
+    struct hostent *h = gethostbyname("localhost");
+    CHECK(h && h->h_addrtype == AF_INET && h->h_length == 4 &&
+          memcmp(h->h_addr, &a.sin_addr, 4) == 0 && !h->h_addr_list[1]);
+    struct servent *s = getservbyname("ssh", "tcp");
+    CHECK(s && s->s_port == htons(22));
+}
+
 void test_net(void)
 {
+    test_names();
     test_addresses();
     test_udp();
     test_ping();

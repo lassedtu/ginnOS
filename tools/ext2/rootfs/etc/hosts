@@ -1,0 +1,2 @@
+# names of hosts, before DNS: an address, then its names
+127.0.0.1	localhost

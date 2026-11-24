@@ -5,11 +5,12 @@
  * uses an ICMP datagram socket (SOCK_DGRAM, IPPROTO_ICMP): the kernel
  * sets the identifier and the checksum, so no special rights are needed.
  *
- * usage: ping [-c count] [-i seconds] [-W seconds] address
+ * usage: ping [-c count] [-i seconds] [-W seconds] host
  */
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <signal.h>
@@ -41,7 +42,7 @@ static double now_ms(void)
 
 static void usage(void)
 {
-    fprintf(stderr, "usage: ping [-c count] [-i seconds] [-W seconds] address\n");
+    fprintf(stderr, "usage: ping [-c count] [-i seconds] [-W seconds] host\n");
     exit(2);
 }
 
@@ -73,13 +74,18 @@ int main(int argc, char **argv)
         usage();
     }
 
-    struct sockaddr_in to = {0};
-    to.sin_family = AF_INET;
-    if (inet_pton(AF_INET, argv[optind], &to.sin_addr) != 1)
+    struct addrinfo hints = {0};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    struct addrinfo *found;
+    int err = getaddrinfo(argv[optind], NULL, &hints, &found);
+    if (err != 0)
     {
-        fprintf(stderr, "ping: %s: not an IPv4 address\n", argv[optind]);
+        fprintf(stderr, "ping: %s: %s\n", argv[optind], gai_strerror(err));
         return 2;
     }
+    struct sockaddr_in to = *(struct sockaddr_in *)found->ai_addr;
+    freeaddrinfo(found);
     int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
     if (fd < 0)
     {
@@ -93,7 +99,14 @@ int main(int argc, char **argv)
 
     char address[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &to.sin_addr, address, sizeof(address));
-    printf("PING %s: %d data bytes\n", address, DATA_SIZE);
+    if (strcmp(address, argv[optind]) == 0)
+    {
+        printf("PING %s: %d data bytes\n", address, DATA_SIZE);
+    }
+    else
+    {
+        printf("PING %s (%s): %d data bytes\n", argv[optind], address, DATA_SIZE);
+    }
 
     long sent = 0;
     long received = 0;
