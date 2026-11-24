@@ -1,0 +1,74 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1852,6 +1852,17 @@
+     CheckVivante()
+     CheckVulkan()
+     CheckQNXScreen()
++    if(GINNOS)
++      # windows on the ginnOS desktop (heimdall), drawn with the software
++      # renderer
++      set(SDL_VIDEO_DRIVER_GINNOS 1)
++      sdl_glob_sources(
++        "${SDL3_SOURCE_DIR}/src/video/ginnos/*.c"
++        "${SDL3_SOURCE_DIR}/src/video/ginnos/*.h"
++      )
++      sdl_link_dependency(ginnos LIBS heimdall gfx)
++      set(HAVE_SDL_VIDEO TRUE)
++    endif()
+   endif()
+ 
+   if(SDL_TRAY)
+--- a/cmake/macros.cmake
++++ b/cmake/macros.cmake
+@@ -409,7 +409,7 @@
+     message(STATUS "")
+   endif()
+ 
+-  if(UNIX AND NOT (ANDROID OR APPLE OR EMSCRIPTEN OR HAIKU OR RISCOS))
++  if(UNIX AND NOT (ANDROID OR APPLE OR EMSCRIPTEN OR HAIKU OR RISCOS OR GINNOS))
+     if(NOT (HAVE_X11 OR HAVE_WAYLAND))
+       if(NOT SDL_UNIX_CONSOLE_BUILD)
+         message(FATAL_ERROR
+--- a/cmake/sdlplatform.cmake
++++ b/cmake/sdlplatform.cmake
+@@ -61,6 +61,8 @@
+     set(sdl_cmake_platform Emscripten)
+   elseif(CMAKE_SYSTEM_NAME MATCHES "QNX.*")
+     set(sdl_cmake_platform QNX)
++  elseif(CMAKE_SYSTEM_NAME STREQUAL "ginnOS")
++    set(sdl_cmake_platform ginnOS)
+   elseif(CMAKE_SYSTEM_NAME MATCHES "BeOS.*")
+     message(FATAL_ERROR "BeOS support has been removed as of SDL 2.0.2.")
+   endif()
+--- a/include/build_config/SDL_build_config.h.cmake
++++ b/include/build_config/SDL_build_config.h.cmake
+@@ -412,6 +412,7 @@
+ #cmakedefine SDL_VIDEO_DRIVER_PS2 1
+ #cmakedefine SDL_VIDEO_DRIVER_PSP 1
+ #cmakedefine SDL_VIDEO_DRIVER_RISCOS 1
++#cmakedefine SDL_VIDEO_DRIVER_GINNOS 1
+ #cmakedefine SDL_VIDEO_DRIVER_ROCKCHIP 1
+ #cmakedefine SDL_VIDEO_DRIVER_RPI 1
+ #cmakedefine SDL_VIDEO_DRIVER_UIKIT 1
+--- a/src/video/SDL_sysvideo.h
++++ b/src/video/SDL_sysvideo.h
+@@ -534,6 +534,7 @@
+ extern VideoBootStrap PSP_bootstrap;
+ extern VideoBootStrap VITA_bootstrap;
+ extern VideoBootStrap RISCOS_bootstrap;
++extern VideoBootStrap GINNOS_bootstrap;
+ extern VideoBootStrap N3DS_bootstrap;
+ extern VideoBootStrap NGAGE_bootstrap;
+ extern VideoBootStrap RPI_bootstrap;
+--- a/src/video/SDL_video.c
++++ b/src/video/SDL_video.c
+@@ -137,6 +137,9 @@
+ #ifdef SDL_VIDEO_DRIVER_RISCOS
+     &RISCOS_bootstrap,
+ #endif
++#ifdef SDL_VIDEO_DRIVER_GINNOS
++    &GINNOS_bootstrap,
++#endif
+ #ifdef SDL_VIDEO_DRIVER_RPI
+     &RPI_bootstrap,
+ #endif
