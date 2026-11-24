@@ -39,10 +39,14 @@ struct tm
     int tm_wday;  // 0-6, Sunday = 0
     int tm_yday;  // 0-365
     int tm_isdst; // always 0
+    long tm_gmtoff;      // seconds east of UTC: always 0 (ginnOS keeps UTC)
+    const char *tm_zone; // "UTC"
 };
 
 time_t time(time_t *out);
 int clock_gettime(clockid_t id, struct timespec *out);
+/** set the realtime clock (root only; whole seconds) */
+int clock_settime(clockid_t id, const struct timespec *when);
 int nanosleep(const struct timespec *span, struct timespec *left);
 clock_t clock(void);
 double difftime(time_t end, time_t start);
@@ -64,3 +68,9 @@ char *ctime(const time_t *t);
  * @return the length written, or 0 if it does not fit.
  */
 size_t strftime(char *buf, size_t size, const char *format, const struct tm *tm);
+/**
+ * read a time from text as format says (the strftime conversions, and
+ * spaces in the format match any spaces) into the fields of tm it names.
+ * @return the first character not read, or NULL when the text does not fit.
+ */
+char *strptime(const char *restrict text, const char *restrict format, struct tm *restrict tm);

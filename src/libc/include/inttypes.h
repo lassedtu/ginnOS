@@ -35,3 +35,6 @@
 #define PRIxPTR __PRIPTR "x"
 #define PRIdMAX __PRI64 "d"
 #define PRIuMAX __PRI64 "u"
+
+intmax_t strtoimax(const char *s, char **end, int base);
+uintmax_t strtoumax(const char *s, char **end, int base);

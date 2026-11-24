@@ -1,6 +1,10 @@
 #pragma once
 
 #include "common/boot/boot_info.h"
+#include "kernel/device/device.h"
+
+// the console's device number, Linux's for tty0 (st_rdev; ttyname)
+#define CONSOLE_DEVICE_NUMBER DEVICE_NUMBER(4, 0)
 
 /**
  * initialize the console driver.

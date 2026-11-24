@@ -49,6 +49,10 @@ bool inode_is_dir(const ext2_inode_t *inode);
 bool inode_is_regular(const ext2_inode_t *inode);
 bool inode_is_directory(const ext2_inode_t *inode);
 uint8_t inode_to_file_type(const ext2_inode_t *inode);
+bool inode_is_symlink(const ext2_inode_t *inode);
+bool inode_is_fast_symlink(const ext2_inode_t *inode);
+// a fast symbolic link, a named pipe or a device: i_block holds no block numbers
+bool inode_has_no_blocks(const ext2_inode_t *inode);
 kerr_t find_in_directory(ext2_volume_t *volume, uint32_t dir_inode_number, const char *name, uint32_t name_len, uint32_t *inode_out);
 bool resolve_data_block(ext2_volume_t *volume, const ext2_inode_t *inode, uint32_t logical_block_index, uint32_t *physical_block_out);
 

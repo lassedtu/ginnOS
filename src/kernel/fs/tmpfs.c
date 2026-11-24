@@ -5,6 +5,7 @@
 #include "kernel/errno.h"
 #include "kernel/memory/heap.h"
 #include "kernel/sync/mutex.h"
+#include "kernel/time/clock.h"
 #include "kernel/vfs/stat.h"
 
 /**
@@ -18,6 +19,9 @@
  * directory, fs_pos is the index of the next entry). a node removed while
  * it is open stays alive until its last close.
  *
+ * a symbolic link is a node whose bytes are its target. there are no hard
+ * links: a node is one name.
+ *
  * locking: one mutex for the whole filesystem (there is one tmpfs).
  */
 
@@ -30,7 +34,7 @@
 typedef struct tmpfs_node
 {
     char name[TMPFS_NAME_MAX];
-    uint8_t type;               // FS_TYPE_FILE or FS_TYPE_DIR
+    uint8_t type;               // FS_TYPE_FILE, _DIR, _SYMLINK, _FIFO, _CHAR or _BLOCK
     uint32_t inode;
     struct tmpfs_node *parent;  // the root's parent is the root
     struct tmpfs_node *children; // first entry of a directory
@@ -43,6 +47,10 @@ typedef struct tmpfs_node
     uint32_t mode;              // permission bits (07777)
     uint32_t uid;
     uint32_t gid;
+    uint32_t atime;             // seconds since 1970
+    uint32_t mtime;
+    uint32_t ctime;
+    uint32_t rdev;              // a device node's number
 } tmpfs_node_t;
 
 static mutex_t tmpfs_lock = MUTEX_INIT;
@@ -62,7 +70,8 @@ static tmpfs_node_t *node_new(const char *name, uint8_t type)
         node->type = type;
         node->inode = next_inode++;
         // the creator sets its own mode and owner right after (sys_open)
-        node->mode = type == FS_TYPE_DIR ? 0755 : 0644;
+        node->mode = type == FS_TYPE_DIR ? 0755 : type == FS_TYPE_SYMLINK ? 0777 : 0644;
+        node->atime = node->mtime = node->ctime = clock_realtime_seconds();
     }
     return node;
 }
@@ -285,12 +294,38 @@ static void fill_stat(const tmpfs_node_t *node, fs_stat_t *stat_out)
     memset(stat_out, 0, sizeof(*stat_out));
     stat_out->inode = node->inode;
     stat_out->file_type = node->type;
-    stat_out->mode = (node->type == FS_TYPE_DIR ? S_IFDIR : S_IFREG) | node->mode;
+    uint32_t kind;
+    switch (node->type)
+    {
+    case FS_TYPE_DIR:
+        kind = S_IFDIR;
+        break;
+    case FS_TYPE_SYMLINK:
+        kind = S_IFLNK;
+        break;
+    case FS_TYPE_FIFO:
+        kind = S_IFIFO;
+        break;
+    case FS_TYPE_CHAR:
+        kind = S_IFCHR;
+        break;
+    case FS_TYPE_BLOCK:
+        kind = S_IFBLK;
+        break;
+    default:
+        kind = S_IFREG;
+        break;
+    }
+    stat_out->rdev = node->rdev;
+    stat_out->mode = kind | node->mode;
     stat_out->uid = (uint16_t)node->uid;
     stat_out->gid = (uint16_t)node->gid;
     stat_out->links_count = 1;
     stat_out->size = node->size;
     stat_out->blocks = (node->capacity + 511) / 512;
+    stat_out->atime = node->atime;
+    stat_out->mtime = node->mtime;
+    stat_out->ctime = node->ctime;
 }
 
 /*
@@ -533,20 +568,36 @@ static uint32_t tmpfs_write(fs_file_t *file, uint32_t count, const void *data_in
         {
             node->size = end;
         }
+        node->mtime = node->ctime = clock_realtime_seconds();
         n = count;
     }
     mutex_unlock(&tmpfs_lock);
     return n;
 }
 
-static kerr_t tmpfs_truncate(fs_file_t *file)
+static kerr_t tmpfs_truncate(fs_file_t *file, uint32_t length)
 {
     mutex_lock(&tmpfs_lock);
     tmpfs_node_t *node = file->fs_data;
-    node->size = 0;
-    file->fs_pos = 0;
+    kerr_t err = KERR_OK;
+    if (length > node->size)
+    {
+        if (reserve(node, length))
+        {
+            memset(node->data + node->size, 0, length - node->size);
+        }
+        else
+        {
+            err = KERR_NOSPC;
+        }
+    }
+    if (kerr_ok(err))
+    {
+        node->size = length;
+        node->mtime = node->ctime = clock_realtime_seconds();
+    }
     mutex_unlock(&tmpfs_lock);
-    return KERR_OK;
+    return err;
 }
 
 static kerr_t tmpfs_read_entry(fs_file_t *file, fs_dirent_t *entry_out)
@@ -635,8 +686,148 @@ static kerr_t tmpfs_setattr(fs_file_t *file, const fs_attr_t *attr)
         node->uid = attr->uid;
         node->gid = attr->gid;
     }
+    if (attr->what & FS_ATTR_ATIME)
+    {
+        node->atime = attr->atime;
+    }
+    if (attr->what & FS_ATTR_MTIME)
+    {
+        node->mtime = attr->mtime;
+    }
+    node->ctime = clock_realtime_seconds();
     mutex_unlock(&tmpfs_lock);
     return KERR_OK;
+}
+
+/**
+ * copy a link node's target, with a NUL.
+ */
+static kerr_t link_target(const tmpfs_node_t *node, char *target, uint32_t size)
+{
+    if (node->size >= size)
+    {
+        return KERR_RANGE;
+    }
+    memcpy(target, node->data, node->size);
+    target[node->size] = '\0';
+    return KERR_OK;
+}
+
+static kerr_t tmpfs_find_link(fs_mount_t *mount, const char *path, bool follow_last,
+                              char *target, uint32_t size, uint32_t *end_out)
+{
+    (void)mount;
+    *end_out = 0;
+    mutex_lock(&tmpfs_lock);
+    kerr_t err = KERR_OK;
+    tmpfs_node_t *node = &root;
+    uint32_t i = 0;
+    while (path[i] != '\0' && node->type == FS_TYPE_DIR)
+    {
+        while (path[i] == '/')
+        {
+            i++;
+        }
+        uint32_t start = i;
+        while (path[i] != '\0' && path[i] != '/')
+        {
+            i++;
+        }
+        if (i == start)
+        {
+            break;
+        }
+        // the path is canonical: no "." or ".." names
+        node = child_named(node, path + start, i - start);
+        if (!node)
+        {
+            break;
+        }
+        uint32_t after = i;
+        while (path[after] == '/')
+        {
+            after++;
+        }
+        if (node->type == FS_TYPE_SYMLINK && (follow_last || path[after] != '\0'))
+        {
+            err = link_target(node, target, size);
+            if (kerr_ok(err))
+            {
+                *end_out = i;
+            }
+            break;
+        }
+    }
+    mutex_unlock(&tmpfs_lock);
+    return err;
+}
+
+static kerr_t tmpfs_readlink(fs_mount_t *mount, const char *path, char *target, uint32_t size)
+{
+    (void)mount;
+    mutex_lock(&tmpfs_lock);
+    tmpfs_node_t *node = lookup(path);
+    kerr_t err = KERR_NOENT;
+    if (node)
+    {
+        err = node->type == FS_TYPE_SYMLINK ? link_target(node, target, size) : KERR_INVAL;
+    }
+    mutex_unlock(&tmpfs_lock);
+    return err;
+}
+
+static kerr_t tmpfs_symlink(fs_mount_t *mount, const char *path, const char *target)
+{
+    (void)mount;
+    mutex_lock(&tmpfs_lock);
+    kerr_t err = make_node(path, FS_TYPE_SYMLINK);
+    if (kerr_ok(err))
+    {
+        tmpfs_node_t *node = lookup(path);
+        uint32_t length = (uint32_t)strlen(target);
+        if (reserve(node, length))
+        {
+            memcpy(node->data, target, length);
+            node->size = length;
+        }
+        else
+        {
+            unlink_node(node);
+            err = KERR_NOSPC;
+        }
+    }
+    mutex_unlock(&tmpfs_lock);
+    return err;
+}
+
+static kerr_t tmpfs_mknod(fs_mount_t *mount, const char *path, uint32_t mode, uint32_t rdev)
+{
+    (void)mount;
+    uint8_t type;
+    switch (mode & S_IFMT)
+    {
+    case S_IFIFO:
+        type = FS_TYPE_FIFO;
+        break;
+    case S_IFCHR:
+        type = FS_TYPE_CHAR;
+        break;
+    case S_IFBLK:
+        type = FS_TYPE_BLOCK;
+        break;
+    default:
+        return KERR_INVAL;
+    }
+    mutex_lock(&tmpfs_lock);
+    kerr_t err = make_node(path, type);
+    if (kerr_ok(err))
+    {
+        tmpfs_node_t *node = lookup(path);
+        node->mode = mode & 07777u;
+        node->rdev = type == FS_TYPE_FIFO ? 0 : rdev;
+    }
+    mutex_unlock(&tmpfs_lock);
+    return err;
 }
 
 static const fs_ops_t tmpfs_ops = {
@@ -655,6 +846,10 @@ static const fs_ops_t tmpfs_ops = {
     .read_entry = tmpfs_read_entry,
     .close = tmpfs_close,
     .seek = tmpfs_seek,
+    .find_link = tmpfs_find_link,
+    .readlink = tmpfs_readlink,
+    .symlink = tmpfs_symlink,
+    .mknod = tmpfs_mknod,
 };
 
 kerr_t tmpfs_mount(fs_mount_t *mount)

@@ -57,6 +57,30 @@ void clock_init_sleep(void)
 }
 
 /**
+ * SYS_clock_settime: set the realtime clock (root only).
+ * args: clock id (CLOCK_REALTIME only), struct timespec *.
+ * the clock keeps whole seconds; the battery-backed clock (RTC) is not
+ * written, so the next boot reads its old time again.
+ * returns 0, or -EPERM, -EINVAL (another clock, a bad time), -EFAULT.
+ */
+syscall_ret_t sys_clock_settime(struct registers *regs)
+{
+    if ((uint32_t)syscall_arg(regs, 0) != CLOCK_REALTIME)
+        return -EINVAL;
+    if (process_current()->euid != 0)
+        return -EPERM;
+    struct ktimespec when;
+    if (kerr_failed(copy_from_user(&when, (const void *)syscall_arg(regs, 1), sizeof(when))))
+        return -EFAULT;
+    uint32_t uptime = (uint32_t)udiv64_32(timer_now(), TIMER_HZ, NULL);
+    if (when.tv_sec < (long)uptime || when.tv_nsec < 0 || when.tv_nsec >= (long)NSEC_PER_SEC ||
+        (unsigned long)when.tv_sec > UINT32_MAX)
+        return -EINVAL;
+    boot_seconds = (uint32_t)when.tv_sec - uptime;
+    return 0;
+}
+
+/**
  * SYS_clock_gettime: read a clock.
  * args: EBX = clock id (CLOCK_*), ECX = struct timespec * out.
  * returns 0, or -EINVAL for an unknown clock, -EFAULT.

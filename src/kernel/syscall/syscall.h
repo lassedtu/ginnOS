@@ -83,9 +83,29 @@
 #define SYS_SENDMSG 74    // send data and files
 #define SYS_RECVMSG 75    // receive data and files
 #define SYS_UNAME 76      // the name, release and machine of the system
+#define SYS_OPENAT 77     // the *at calls: a path relative to a directory fd
+#define SYS_MKDIRAT 78
+#define SYS_UNLINKAT 79
+#define SYS_RENAMEAT 80
+#define SYS_FSTATAT 81
+#define SYS_FACCESSAT 82
+#define SYS_FCHMODAT 83
+#define SYS_FCHOWNAT 84
+#define SYS_FCHOWN 85
+#define SYS_SYMLINKAT 86  // links: a symbolic link, its target, a hard link
+#define SYS_READLINKAT 87
+#define SYS_LINKAT 88
+#define SYS_UTIMENSAT 89  // set a file's times
+#define SYS_CLOCK_SETTIME 90 // set the realtime clock (root)
+#define SYS_SETHOSTNAME 91   // set the host name (root)
+#define SYS_GETPRIORITY 92   // the nice value of processes
+#define SYS_SETPRIORITY 93
+#define SYS_FLOCK 94         // an advisory lock on a whole file
+#define SYS_MKNODAT 95       // a named pipe or a device node
+#define SYS_CHROOT 96        // change the root directory (root)
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 77
+#define SYSCALL_COUNT 97
 
 /**
  * initialize the system call interface.

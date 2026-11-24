@@ -564,6 +564,10 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 	$(OBJCOPY) -O binary $(KERNEL_ELF) $@
 
 # libc build rules
+# the regex files are musl's as musl has them (src/libc/src/regex/README.md);
+# they compare signed with unsigned and fall through cases on purpose
+$(BUILD_DIR)/libc/regex/%.o: LIBC_CFLAGS += -Wno-sign-compare -Wno-implicit-fallthrough
+
 $(BUILD_DIR)/libc/%.o: src/libc/src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(LIBC_CFLAGS) -c $< -o $@
@@ -614,7 +618,7 @@ user-programs: $(USER_CRT0) $(LIBC_A) user-libs
 # library and program tests on the host, with the host compiler
 # (src/lib/host-test.mk).
 # GOLDEN=update writes the golden images again.
-HOST_TEST_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/test/Makefile \
+HOST_TEST_DIRS := $(sort $(patsubst %/Makefile,%,$(wildcard src/lib/*/test/Makefile src/libc/test/*/Makefile \
                                                              src/user/*/test/Makefile)))
 
 host-test:

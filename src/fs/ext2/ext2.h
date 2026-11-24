@@ -12,9 +12,18 @@
 
 #define EXT2_FT_REG_FILE 1u // file type value for regular files in directory entries
 #define EXT2_FT_DIR 2u      // file type value for directories in directory entries
+#define EXT2_FT_CHRDEV 3u   // file type value for character devices in directory entries
+#define EXT2_FT_BLKDEV 4u   // file type value for block devices in directory entries
+#define EXT2_FT_FIFO 5u     // file type value for named pipes in directory entries
+#define EXT2_FT_SYMLINK 7u  // file type value for symbolic links in directory entries
 
 #define EXT2_S_IFREG 0x8000u // file type value for regular files in inode mode field
 #define EXT2_S_IFDIR 0x4000u // file type value for directories in inode mode field
+#define EXT2_S_IFLNK 0xA000u // file type value for symbolic links in inode mode field
+#define EXT2_S_IFIFO 0x1000u // file type value for named pipes in inode mode field
+#define EXT2_S_IFCHR 0x2000u // file type value for character devices in inode mode field
+#define EXT2_S_IFBLK 0x6000u // file type value for block devices in inode mode field
+#define EXT2_LINK_MAX 32000u // the most names (hard links) an inode may have
 #define EXT2_S_IFMT 0xF000u  // bitmask for extracting file type from inode mode field
 
 #define EXT2_FEATURE_INCOMPAT_COMPRESSION 0x0001u // incompatible feature set flag for compression support
@@ -247,6 +256,54 @@ kerr_t ext2_rename(ext2_volume_t *volume, const char *old_path, const char *new_
 kerr_t ext2_lookup_path(ext2_volume_t *volume, const char *path, uint32_t *inode_out);
 
 /**
+ * find the first symbolic link along a path.
+ * @param follow_last also the last name of the path, when it is a link.
+ * @param target gets the link's target, with a NUL.
+ * @param end_out gets the length of the path up to and with the link's
+ *        name, or 0 when there is no link (or a name is missing).
+ * @return KERR_OK, KERR_RANGE (the target is longer than size), KERR_IO.
+ */
+kerr_t ext2_find_link(ext2_volume_t *volume, const char *path, bool follow_last, char *target,
+                      uint32_t size, uint32_t *end_out);
+
+/**
+ * read a symbolic link's target, with a NUL.
+ * @return KERR_OK, KERR_INVAL (not a link), KERR_RANGE (too long for size),
+ *         KERR_NOTFOUND.
+ */
+kerr_t ext2_readlink(ext2_volume_t *volume, const char *path, char *target, uint32_t size);
+
+/**
+ * make a symbolic link at path that points at target.
+ * @return KERR_OK, KERR_EXIST, KERR_RANGE (the target is not shorter than
+ *         a block), KERR_NOTFOUND (no parent), KERR_NOSPC.
+ */
+kerr_t ext2_symlink(ext2_volume_t *volume, const char *path, const char *target);
+
+/**
+ * give the file at old_path one more name, new_path.
+ * @return KERR_OK, KERR_ISDIR (a directory), KERR_EXIST, KERR_RANGE (too
+ *         many links), KERR_NOTFOUND, KERR_NOSPC.
+ */
+kerr_t ext2_link(ext2_volume_t *volume, const char *old_path, const char *new_path);
+
+/**
+ * make a named pipe or a device node.
+ * @param mode the type (EXT2_S_IFIFO, EXT2_S_IFCHR, EXT2_S_IFBLK) and the
+ *        permission bits.
+ * @param major the device's numbers (a device node only).
+ * @return KERR_OK, KERR_EXIST, KERR_NOTFOUND (no parent), KERR_NOSPC,
+ *         KERR_INVAL (another type).
+ */
+kerr_t ext2_mknod(ext2_volume_t *volume, const char *path, uint32_t mode, uint32_t major,
+                  uint32_t minor);
+
+/**
+ * the numbers of a device node, as ext2_mknod stored them.
+ */
+void ext2_device_numbers(const ext2_inode_t *inode, uint32_t *major, uint32_t *minor);
+
+/**
  * open a file or directory by absolute path.
  * @param volume initialized ext2 volume.
  * @param path absolute path.
@@ -275,10 +332,11 @@ uint32_t ext2_read(ext2_file_t *file, uint32_t byteCount, void *dataOut);
 uint32_t ext2_write(ext2_file_t *file, uint32_t byteCount, const void *dataIn);
 
 /**
- * truncate an open file to zero length.
- * @param file open file handle.
+ * cut or grow an open file to length bytes (growth reads as zeros). the
+ * cursor stays.
+ * @return KERR_OK, or KERR_IO.
  */
-void ext2_truncate(ext2_file_t *file);
+kerr_t ext2_truncate(ext2_file_t *file, uint32_t length);
 
 /**
  * read one directory entry from an open directory handle.
@@ -307,9 +365,11 @@ void ext2_close(ext2_file_t *file);
 kerr_t ext2_write_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t offset, uint32_t length, const void *buffer);
 
 /**
- * truncate a file to zero length.
+ * cut or grow a file to length bytes. the blocks past a shorter end are
+ * freed; a longer file gets a hole, which reads as zeros.
  * @param volume initialized ext2 volume.
  * @param inode_number file inode number.
+ * @param length the new size.
  * @return KERR_OK on success, or an error code on failure.
  */
-kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number);
+kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t length);

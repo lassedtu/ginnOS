@@ -27,50 +27,55 @@ static uint32_t vector_count(const char **vector)
     return count;
 }
 
-/**
- * copy the strings of a vector down from *sp and fill pointers[] with their
- * user addresses.
- */
-static void push_strings(uintptr_t *sp, const char **vector, uint32_t count, uintptr_t *pointers)
+/** the bytes of a vector's strings, their NULs included */
+static size_t vector_bytes(const char **vector, uint32_t count)
 {
-    for (uint32_t i = count; i-- > 0;)
+    size_t bytes = 0;
+    for (uint32_t i = 0; i < count; i++)
+    {
+        bytes += strlen(vector[i]) + 1;
+    }
+    return bytes;
+}
+
+/**
+ * copy the strings of a vector to *at, upwards, and write their user
+ * addresses as a NULL-terminated pointer array at pointers.
+ */
+static void put_vector(uintptr_t *at, const char **vector, uint32_t count, uintptr_t *pointers)
+{
+    for (uint32_t i = 0; i < count; i++)
     {
         size_t len = strlen(vector[i]) + 1; // include the NUL
-        *sp -= len;
-        memcpy((void *)*sp, vector[i], len);
-        pointers[i] = *sp;
+        memcpy((void *)*at, vector[i], len);
+        pointers[i] = *at;
+        *at += len;
     }
-}
-
-/**
- * push a NULL-terminated pointer array; return its user address.
- */
-static uintptr_t push_pointers(uintptr_t *sp, const uintptr_t *pointers, uint32_t count)
-{
-    *sp -= sizeof(uintptr_t);
-    *(uintptr_t *)*sp = 0;
-    for (uint32_t i = count; i-- > 0;)
-    {
-        *sp -= sizeof(uintptr_t);
-        *(uintptr_t *)*sp = pointers[i];
-    }
-    return *sp;
-}
-
-/**
- * push one word.
- */
-static void push_word(uintptr_t *sp, uintptr_t value)
-{
-    *sp -= sizeof(uintptr_t);
-    *(uintptr_t *)*sp = value;
+    pointers[count] = 0;
 }
 
 uintptr_t usermode_build_stack(addr_space_t as, const char **argv, const char **envp)
 {
-    // back the top pages of the stack area now; the rest are backed on
-    // demand. the page above USER_STACK_TOP stays an unmapped guard.
-    for (uintptr_t page = USER_STACK_BASE; page < USER_STACK_TOP; page += PAGE_SIZE)
+    uint32_t argc = vector_count(argv);
+    uint32_t envc = vector_count(envp);
+
+    // the layout, from the top down: the strings; the two pointer arrays;
+    // [esp] fake return address, argc, argv, envp. the pointer part starts
+    // 16-byte aligned.
+    size_t strings = vector_bytes(argv, argc) + vector_bytes(envp, envc);
+    size_t words = 4 + (argc + 1) + (envc + 1);
+    uintptr_t string_start = (USER_STACK_TOP - strings) & ~(uintptr_t)(sizeof(uintptr_t) - 1);
+    uintptr_t sp = (string_start - words * sizeof(uintptr_t)) & ~(uintptr_t)15;
+
+    // back the pages the arguments take and USER_STACK_SIZE more under
+    // them; the rest are backed on demand. the page above USER_STACK_TOP
+    // stays an unmapped guard.
+    uintptr_t lowest = (sp & ~(uintptr_t)(PAGE_SIZE - 1)) - USER_STACK_SIZE;
+    if (lowest > USER_STACK_BASE)
+    {
+        lowest = USER_STACK_BASE;
+    }
+    for (uintptr_t page = lowest; page < USER_STACK_TOP; page += PAGE_SIZE)
     {
         void *frame = pmm_alloc_page();
         if (!frame)
@@ -85,32 +90,16 @@ uintptr_t usermode_build_stack(addr_space_t as, const char **argv, const char **
         }
     }
 
-    uint32_t argc = vector_count(argv);
-    uint32_t envc = vector_count(envp);
-    if (argc > USER_ARGC_MAX)
-    {
-        argc = USER_ARGC_MAX;
-    }
-    if (envc > USER_ENVC_MAX)
-    {
-        envc = USER_ENVC_MAX;
-    }
-
-    // the strings at the top, then the two pointer arrays, then the words
-    // crt0 reads: [esp] fake return address, argc, argv, envp
-    uintptr_t argv_strings[USER_ARGC_MAX];
-    uintptr_t envp_strings[USER_ENVC_MAX];
-    uintptr_t sp = USER_STACK_TOP;
-    push_strings(&sp, envp, envc, envp_strings);
-    push_strings(&sp, argv, argc, argv_strings);
-    sp &= ~(uintptr_t)(sizeof(uintptr_t) - 1);
-
-    uintptr_t envp_user = push_pointers(&sp, envp_strings, envc);
-    uintptr_t argv_user = push_pointers(&sp, argv_strings, argc);
-    push_word(&sp, envp_user);
-    push_word(&sp, argv_user);
-    push_word(&sp, argc);
-    push_word(&sp, 0); // fake return address: _start never returns
+    uintptr_t *words_at = (uintptr_t *)sp;
+    uintptr_t *argv_user = words_at + 4;
+    uintptr_t *envp_user = argv_user + argc + 1;
+    uintptr_t at = string_start;
+    put_vector(&at, argv, argc, argv_user);
+    put_vector(&at, envp, envc, envp_user);
+    words_at[0] = 0; // fake return address: _start never returns
+    words_at[1] = argc;
+    words_at[2] = (uintptr_t)argv_user;
+    words_at[3] = (uintptr_t)envp_user;
     return sp;
 }
 

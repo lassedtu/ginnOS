@@ -4,10 +4,13 @@
 #include "kernel/vfs/poll.h"
 #include "kernel/device/device.h"
 #include "kernel/fs/devfs.h"
+#include "kernel/vfs/flock.h"
+#include "kernel/vfs/fifo.h"
 #include "kernel/memory/heap.h"
 #include "kernel/sync/spinlock.h"
 #include "kernel/assert.h"
 #include "common/memory.h"
+#include "common/string.h"
 
 // guards file_t::refcount of every description
 static spinlock_t file_lock;
@@ -24,6 +27,7 @@ static file_t *file_alloc(const file_ops_t *ops, uint32_t flags)
         file->refcount = 1;
         file->flags = flags;
         file->lookahead = NULL;
+        file->path = NULL; // only a filesystem file has one (file_open)
     }
     return file;
 }
@@ -129,13 +133,13 @@ int32_t file_unread_entry(file_t *file, const fs_dirent_t *entry)
     return 0;
 }
 
-int32_t file_truncate(file_t *file)
+int32_t file_truncate(file_t *file, uint32_t length)
 {
     if (!file_writable(file) || !file->ops->truncate)
     {
         return -EINVAL;
     }
-    return file->ops->truncate(file);
+    return file->ops->truncate(file, length);
 }
 
 uint32_t file_poll(file_t *file)
@@ -247,9 +251,9 @@ static int32_t vfs_kind_read_entry(file_t *file, fs_dirent_t *entry)
     return kerr_to_errno(vfs_read_entry(&file->vfs, entry));
 }
 
-static int32_t vfs_kind_truncate(file_t *file)
+static int32_t vfs_kind_truncate(file_t *file, uint32_t length)
 {
-    return kerr_to_errno(vfs_truncate(&file->vfs));
+    return kerr_to_errno(vfs_truncate(&file->vfs, length));
 }
 
 static int32_t vfs_kind_stat(file_t *file, struct kstat *st)
@@ -266,7 +270,9 @@ static int32_t vfs_kind_stat(file_t *file, struct kstat *st)
 
 static void vfs_kind_release(file_t *file)
 {
+    flock_release(file);
     kfree(file->lookahead);
+    kfree(file->path);
     vfs_close(&file->vfs);
     kfree(file);
 }
@@ -310,6 +316,14 @@ kerr_t file_open(const char *path, uint32_t flags, file_t **out)
         vfs_close(&file->vfs);
         kfree(file);
         return dev->ops->open(dev, flags, out);
+    }
+
+    // the path, for the *at calls that name a file in this directory
+    size_t length = strlen(path) + 1;
+    file->path = kmalloc(length);
+    if (file->path)
+    {
+        memcpy(file->path, path, length);
     }
 
     *out = file;
@@ -359,6 +373,26 @@ static const file_ops_t pipe_file_ops = {
     .poll = pipe_kind_poll,
     .release = pipe_kind_release,
 };
+
+static void fifo_kind_release(file_t *file)
+{
+    fifo_close(file);
+    kfree(file);
+}
+
+// a named pipe's end: a pipe end that leaves the named pipe on release
+static const file_ops_t fifo_file_ops = {
+    .read = pipe_kind_read,
+    .write = pipe_kind_write,
+    .stat = pipe_kind_stat,
+    .poll = pipe_kind_poll,
+    .release = fifo_kind_release,
+};
+
+file_t *file_new_fifo_end(uint32_t flags)
+{
+    return file_alloc(&fifo_file_ops, flags);
+}
 
 kerr_t file_open_pipe(file_t **read_end, file_t **write_end)
 {

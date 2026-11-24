@@ -65,6 +65,52 @@ kerr_t vfs_umount(const char *prefix);
 fs_mount_t *vfs_resolve_mount_path(const char *path, const char **rel_out);
 
 /**
+ * replace the symbolic links along a canonical absolute path by their
+ * targets (vfs_link.c).
+ * @param path the real path, changed in place.
+ * @param size the size of the path buffer.
+ * @param follow_last also the last name, when it is a link.
+ * @param root the process's root directory ("/" for the real one): an
+ *        absolute target starts there, and ".." stops there.
+ * @return KERR_OK (a missing name is left for the operation to report),
+ *         KERR_LOOP (too many links), KERR_RANGE (the path got too long).
+ */
+kerr_t vfs_follow(char *path, uint32_t size, bool follow_last, const char *root);
+
+/**
+ * a real path as a process with this root directory sees it.
+ * @return a pointer into path, or "/"; path itself when it is not under
+ *         the root.
+ */
+const char *vfs_inside_root(const char *path, const char *root);
+
+/**
+ * the real path of a path as a process with this root sees it.
+ * @return false when it does not fit in size.
+ */
+bool vfs_join_root(const char *root, const char *virtual_path, char *out, uint32_t size);
+
+/**
+ * read the target of the symbolic link at path, with a NUL.
+ * @return KERR_OK, KERR_INVAL (not a link), KERR_RANGE, KERR_NOTFOUND.
+ */
+kerr_t vfs_readlink(const char *path, char *target, uint32_t size);
+
+/** make a symbolic link at path to target. */
+kerr_t vfs_symlink(const char *path, const char *target);
+
+/**
+ * give a file one more name (both paths on one mount, else KERR_INVAL).
+ * @return KERR_OK, KERR_ISDIR, KERR_EXIST, KERR_RANGE, KERR_NOTFOUND.
+ */
+kerr_t vfs_link(const char *old_path, const char *new_path);
+
+/**
+ * make a named pipe or a device node (fs_ops_t mknod).
+ */
+kerr_t vfs_mknod(const char *path, uint32_t mode, uint32_t rdev);
+
+/**
  * open a file or directory by absolute path in the virtual file system.
  * @param path absolute path to the file or directory.
  * @param file pointer to a vfs_file_t structure that will be initialized with the opened file
@@ -173,11 +219,10 @@ uint32_t vfs_write(
     const void *buffer);
 
 /**
- * truncate an open file to zero length.
- * @param file pointer to the vfs_file_t structure.
+ * cut or grow an open file to length bytes (growth reads as zeros).
  * @return KERR_OK on success, or an error code on failure.
  */
-kerr_t vfs_truncate(vfs_file_t *file);
+kerr_t vfs_truncate(vfs_file_t *file, uint32_t length);
 
 /**
  * read a directory entry from an open directory in the virtual file system.

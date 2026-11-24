@@ -126,6 +126,7 @@ static void devfs_fill_stat(const device_t *dev, fs_stat_t *stat_out)
     }
     stat_out->file_type = FS_TYPE_FILE;
     stat_out->mode = (dev->type == DEVICE_TYPE_BLOCK ? S_IFBLK : S_IFCHR) | 0666;
+    stat_out->rdev = dev->number;
 }
 
 static kerr_t devfs_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
@@ -237,9 +238,10 @@ static uint32_t devfs_write(fs_file_t *file, uint32_t byte_count, const void *da
  * a device has no length to cut: like POSIX O_TRUNC on a device, this does
  * nothing, so "> /dev/null" works.
  */
-static kerr_t devfs_truncate(fs_file_t *file)
+static kerr_t devfs_truncate(fs_file_t *file, uint32_t length)
 {
     (void)file;
+    (void)length;
     return KERR_OK;
 }
 

@@ -172,14 +172,14 @@ uint32_t vfs_write(
         buffer);
 }
 
-kerr_t vfs_truncate(vfs_file_t *file)
+kerr_t vfs_truncate(vfs_file_t *file, uint32_t length)
 {
     if (!file || !file->mount)
     {
         return KERR_INVAL;
     }
 
-    return fs_truncate(&file->file);
+    return fs_truncate(&file->file, length);
 }
 
 kerr_t vfs_read_entry(

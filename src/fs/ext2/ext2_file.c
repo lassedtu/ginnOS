@@ -178,15 +178,17 @@ uint32_t ext2_write(ext2_file_t *file, uint32_t byteCount, const void *dataIn)
     return byteCount;
 }
 
-void ext2_truncate(ext2_file_t *file)
+kerr_t ext2_truncate(ext2_file_t *file, uint32_t length)
 {
     if (!file || !file->is_open || !file->volume)
-        return;
+        return KERR_INVAL;
 
-    (void)ext2_truncate_file(file->volume, file->inode);
-    file->size = 0;
-    file->cursor = 0;
-    file->inode_cache.i_size = 0;
+    kerr_t err = ext2_truncate_file(file->volume, file->inode, length);
+    if (kerr_failed(err))
+        return err;
+    // the cursor stays where it is, as ftruncate asks
+    file->size = length;
+    return ext2_read_inode(file->volume, file->inode, &file->inode_cache);
 }
 
 kerr_t ext2_read_entry(ext2_file_t *file, ext2_directory_entry_t *entryOut)
@@ -474,9 +476,19 @@ kerr_t ext2_remove_file(ext2_volume_t *volume, const char *path)
     }
 
     name_len = (uint32_t)strlen(name);
-    if (!lookup_child_type(volume, parent_inode_number, name, name_len, &child_inode_number, &child_type) || child_type != EXT2_FT_REG_FILE)
+    if (!lookup_child_type(volume, parent_inode_number, name, name_len, &child_inode_number, &child_type))
     {
         return KERR_NOTFOUND;
+    }
+    if (child_type == EXT2_FT_DIR)
+    {
+        return KERR_ISDIR;
+    }
+
+    ext2_inode_t child;
+    if (kerr_failed(ext2_read_inode(volume, child_inode_number, &child)))
+    {
+        return KERR_IO;
     }
 
     if (!remove_directory_entry(volume, parent_inode_number, name, name_len))
@@ -484,7 +496,15 @@ kerr_t ext2_remove_file(ext2_volume_t *volume, const char *path)
         return KERR_IO;
     }
 
-    if (!free_inode_and_blocks(volume, child_inode_number, 0))
+    // the data stays while the file has other names (hard links)
+    if (child.i_links_count > 1)
+    {
+        child.i_links_count--;
+        child.i_ctime = ext2_now();
+        return write_inode(volume, child_inode_number, &child) ? KERR_OK : KERR_IO;
+    }
+
+    if (!free_inode_and_blocks(volume, child_inode_number, &child))
     {
         return KERR_IO;
     }
@@ -898,7 +918,152 @@ kerr_t ext2_write_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t of
     return KERR_OK;
 }
 
-kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number)
+/**
+ * the volume buffer for a pointer table at a level (1: its entries are data
+ * blocks). each level of a walk needs its own: the tables above stay read.
+ */
+static uint32_t *table_buffer(ext2_volume_t *volume, uint32_t level)
+{
+    if (level == 1)
+        return (uint32_t *)volume->buf_block;
+    return (uint32_t *)(level == 2 ? volume->buf_block3 : volume->buf_block4);
+}
+
+/**
+ * free the blocks below a pointer table whose logical index is first or
+ * later.
+ * @param level 1: the entries are data blocks; 2 and 3: tables.
+ * @param base the logical index of the table's first block.
+ * @param freed counts the blocks given back (data and tables).
+ * @param emptied_out set when the table has no entries left (the caller
+ *        then frees the table itself).
+ */
+static bool trim_table(ext2_volume_t *volume, uint32_t table, uint32_t level, uint32_t base,
+                       uint32_t first, uint32_t *freed, bool *emptied_out)
+{
+    uint32_t per_block = volume->block_size / sizeof(uint32_t);
+    uint32_t span = 1; // the blocks one entry covers
+    for (uint32_t l = 1; l < level; l++)
+    {
+        span *= per_block;
+    }
+
+    uint32_t *entries = table_buffer(volume, level);
+    if (!read_block(volume, table, entries))
+        return false;
+
+    bool changed = false;
+    bool left = false;
+    for (uint32_t j = 0; j < per_block; j++)
+    {
+        if (entries[j] == 0)
+        {
+            continue;
+        }
+        uint32_t start = base + j * span;
+        if (start + span <= first)
+        {
+            left = true; // wholly before the new end
+            continue;
+        }
+        bool gone = true;
+        if (level > 1)
+        {
+            if (!trim_table(volume, entries[j], level - 1, start, first, freed, &gone))
+                return false;
+        }
+        else
+        {
+            gone = start >= first;
+        }
+        if (gone)
+        {
+            if (!free_block(volume, entries[j]))
+                return false;
+            entries[j] = 0;
+            (*freed)++;
+            changed = true;
+        }
+        else
+        {
+            left = true;
+        }
+    }
+
+    if (changed && left && !write_block(volume, table, entries))
+        return false;
+    *emptied_out = !left;
+    return true;
+}
+
+/**
+ * free the blocks of an inode from logical index first on (data and the
+ * pointer tables that become empty).
+ * @param freed counts the blocks given back.
+ */
+static bool free_blocks_from(ext2_volume_t *volume, ext2_inode_t *inode, uint32_t first,
+                             uint32_t *freed)
+{
+    uint32_t per_block = volume->block_size / sizeof(uint32_t);
+    for (uint32_t i = first; i < EXT2_NDIR_BLOCKS; i++)
+    {
+        if (inode->i_block[i] == 0)
+        {
+            continue;
+        }
+        if (!free_block(volume, inode->i_block[i]))
+            return false;
+        inode->i_block[i] = 0;
+        (*freed)++;
+    }
+
+    // the single, double and triple indirect tables, and where each starts
+    uint32_t base = EXT2_NDIR_BLOCKS;
+    uint32_t span = per_block;
+    for (uint32_t level = 1; level <= 3; level++)
+    {
+        uint32_t slot = EXT2_NDIR_BLOCKS + level - 1; // i_block is packed: no pointer
+        uint32_t table = inode->i_block[slot];
+        if (table != 0 && base + span > first)
+        {
+            bool emptied;
+            if (!trim_table(volume, table, level, base, first, freed, &emptied))
+                return false;
+            if (emptied)
+            {
+                if (!free_block(volume, table))
+                    return false;
+                inode->i_block[slot] = 0;
+                (*freed)++;
+            }
+        }
+        base += span;
+        span *= per_block;
+    }
+    return true;
+}
+
+/**
+ * zero the bytes of the last block past the new end, so that a later
+ * growth reads zeros there.
+ */
+static bool zero_tail(ext2_volume_t *volume, const ext2_inode_t *inode, uint32_t length)
+{
+    uint32_t used = length % volume->block_size;
+    uint32_t block;
+    if (used == 0)
+        return true;
+    if (!resolve_data_block(volume, inode, length / volume->block_size, &block))
+        return false;
+    if (block == 0)
+        return true; // a hole
+    if (!read_block(volume, block, volume->buf_block))
+        return false;
+    memset(volume->buf_block + used, 0, volume->block_size - used);
+    return write_block(volume, block, volume->buf_block);
+}
+
+kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number, uint32_t length)
 {
     ext2_inode_t inode;
 
@@ -908,11 +1073,27 @@ kerr_t ext2_truncate_file(ext2_volume_t *volume, uint32_t inode_number)
     if (kerr_failed(ext2_read_inode(volume, inode_number, &inode)) || !inode_is_regular(&inode))
         return KERR_IO;
 
-    // give every data block and pointer table back to the volume
-    if (!free_inode_block_chain(volume, &inode))
-        return KERR_IO;
-    inode.i_size = 0;
-    inode.i_blocks = 0;
+    if (length == 0)
+    {
+        // give every data block and pointer table back to the volume
+        if (!free_inode_block_chain(volume, &inode))
+            return KERR_IO;
+        inode.i_blocks = 0;
+    }
+    else if (length < inode.i_size)
+    {
+        uint32_t first = (length + volume->block_size - 1) / volume->block_size;
+        uint32_t freed = 0;
+        bool ok = free_blocks_from(volume, &inode, first, &freed);
+        inode.i_blocks -= freed * volume->sectors_per_block;
+        if (!ok || !zero_tail(volume, &inode, length))
+        {
+            write_inode(volume, inode_number, &inode);
+            return KERR_IO;
+        }
+    }
+    // a longer file gets a hole: the new bytes read as zeros
+    inode.i_size = length;
     inode.i_mtime = ext2_now();
     inode.i_ctime = inode.i_mtime;
 

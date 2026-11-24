@@ -47,6 +47,20 @@ uint8_t inode_to_file_type(const ext2_inode_t *inode)
         return EXT2_FT_REG_FILE;
     }
 
+    switch (inode->i_mode & EXT2_S_IFMT)
+    {
+    case EXT2_S_IFLNK:
+        return EXT2_FT_SYMLINK;
+    case EXT2_S_IFIFO:
+        return EXT2_FT_FIFO;
+    case EXT2_S_IFCHR:
+        return EXT2_FT_CHRDEV;
+    case EXT2_S_IFBLK:
+        return EXT2_FT_BLKDEV;
+    default:
+        break;
+    }
+
     return 0;
 }
 

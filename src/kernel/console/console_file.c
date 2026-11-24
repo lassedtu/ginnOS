@@ -498,6 +498,7 @@ static int32_t console_file_stat(file_t *file, struct kstat *st)
     memset(st, 0, sizeof(*st));
     st->st_mode = S_IFCHR | 0620;
     st->st_nlink = 1;
+    st->st_rdev = CONSOLE_DEVICE_NUMBER;
     st->st_blksize = 1024;
     return 0;
 }

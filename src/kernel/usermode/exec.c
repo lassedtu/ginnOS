@@ -153,6 +153,7 @@ int exec_program(const char *path, const char **argv)
     if (parent)
     {
         strcpy(child->cwd, parent->cwd);
+        strcpy(child->root, parent->root);
 
         // the child shares the parent's open files, except the ones marked
         // close-on-exec (as posix_spawn does)

@@ -1,11 +1,17 @@
 #include "unistd.h"
+#include "sys/time.h"
+#include "utime.h"
 #include <stdarg.h>
 #include <stdbool.h>
 #include "errno.h"
+#include <dirent.h>
 #include <limits.h>
+#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/reboot.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <stdio.h>
@@ -240,6 +246,11 @@ void _exit(int status)
     __builtin_unreachable();
 }
 
+void _Exit(int status)
+{
+    _exit(status);
+}
+
 pid_t getpid(void)
 {
     return (pid_t)_syscall(SYS_GETPID, 0, 0, 0, 0, 0);
@@ -250,15 +261,32 @@ void *sbrk(int increment)
     return (void *)_syscall(SYS_SBRK, increment, 0, 0, 0, 0);
 }
 
-int getcwd(char *buf, size_t size)
+char *getcwd(char *buf, size_t size)
 {
-    int ret = _syscall(SYS_GETCWD, (long)buf, (long)size, 0, 0, 0);
+    char own[PATH_MAX];
+    char *out = buf ? buf : own;
+    size_t room = buf ? size : sizeof(own);
+    int ret = _syscall(SYS_GETCWD, (long)out, (long)room, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
-        return -1;
+        return NULL;
     }
-    return ret;
+    if (buf)
+        return buf;
+    size_t length = strlen(own) + 1;
+    if (size && size < length)
+    {
+        errno = ERANGE;
+        return NULL;
+    }
+    char *copy = malloc(size ? size : length);
+    if (!copy)
+    {
+        errno = ENOMEM;
+        return NULL;
+    }
+    return memcpy(copy, own, length);
 }
 
 int chdir(const char *path)
@@ -362,14 +390,26 @@ int dup2(int old_fd, int new_fd)
     return ret;
 }
 
-int ftruncate(int fd)
+int ftruncate(int fd, off_t length)
 {
-    int ret = _syscall(SYS_FTRUNCATE, fd, 0, 0, 0, 0);
+    int ret = _syscall(SYS_FTRUNCATE, fd, (long)length, 0, 0, 0);
     if (ret < 0)
     {
         errno = -ret;
         return -1;
     }
+    return 0;
+}
+
+int truncate(const char *path, off_t length)
+{
+    int fd = open(path, O_WRONLY);
+    if (fd < 0)
+        return -1;
+    int ret = ftruncate(fd, length);
+    int saved = errno;
+    close(fd);
+    errno = saved;
     return ret;
 }
 
@@ -418,7 +458,7 @@ int stat(const char *path, struct stat *st)
 
 int lstat(const char *path, struct stat *st)
 {
-    return stat(path, st);
+    return fstatat(AT_FDCWD, path, st, AT_SYMLINK_NOFOLLOW);
 }
 
 int fstat(int fd, struct stat *st)
@@ -544,4 +584,388 @@ int reboot(int how)
 int uname(struct utsname *name)
 {
     return check(_syscall(SYS_UNAME, (long)name, 0, 0, 0, 0));
+}
+
+long sysconf(int name)
+{
+    switch (name)
+    {
+    case _SC_ARG_MAX:
+        return ARG_MAX;
+    case _SC_CHILD_MAX:
+        return 64; // the kernel's PROCESS_MAX
+    case _SC_CLK_TCK:
+        return 100; // times() counts in hundredths of a second
+    case _SC_OPEN_MAX:
+        return 64; // the kernel's FD_MAX
+    case _SC_PAGESIZE:
+        return 4096;
+    case _SC_NPROCESSORS_CONF:
+    case _SC_NPROCESSORS_ONLN:
+        return 1;
+    case _SC_LINE_MAX:
+        return LINE_MAX;
+    case _SC_HOST_NAME_MAX:
+        return HOST_NAME_MAX;
+    case _SC_LOGIN_NAME_MAX:
+        return 32;
+    default:
+        errno = EINVAL;
+        return -1;
+    }
+}
+
+int gethostname(char *name, size_t length)
+{
+    struct utsname u;
+    if (uname(&u) < 0)
+        return -1;
+    if (strlen(u.nodename) >= length)
+    {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    strcpy(name, u.nodename);
+    return 0;
+}
+
+char *getlogin(void)
+{
+    static char name[33];
+    struct passwd *pw = getpwuid(getuid());
+    if (!pw)
+        return NULL;
+    snprintf(name, sizeof(name), "%s", pw->pw_name);
+    return name;
+}
+
+int openat(int dirfd, const char *path, int flags, ...)
+{
+    va_list args;
+    va_start(args, flags);
+    mode_t mode = (flags & O_CREAT) ? va_arg(args, mode_t) : 0;
+    va_end(args);
+    return check(_syscall(SYS_OPENAT, dirfd, (long)path, flags, (long)mode, 0));
+}
+
+int mkdirat(int dirfd, const char *path, mode_t mode)
+{
+    return check(_syscall(SYS_MKDIRAT, dirfd, (long)path, (long)mode, 0, 0));
+}
+
+int unlinkat(int dirfd, const char *path, int flags)
+{
+    return check(_syscall(SYS_UNLINKAT, dirfd, (long)path, flags, 0, 0));
+}
+
+int renameat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path)
+{
+    return check(_syscall(SYS_RENAMEAT, old_dirfd, (long)old_path, new_dirfd, (long)new_path, 0));
+}
+
+int fstatat(int dirfd, const char *path, struct stat *st, int flags)
+{
+    return check(_syscall(SYS_FSTATAT, dirfd, (long)path, (long)st, flags, 0));
+}
+
+int faccessat(int dirfd, const char *path, int mode, int flags)
+{
+    return check(_syscall(SYS_FACCESSAT, dirfd, (long)path, mode, flags, 0));
+}
+
+int fchmodat(int dirfd, const char *path, mode_t mode, int flags)
+{
+    return check(_syscall(SYS_FCHMODAT, dirfd, (long)path, (long)mode, flags, 0));
+}
+
+int fchownat(int dirfd, const char *path, uid_t uid, gid_t gid, int flags)
+{
+    return check(_syscall(SYS_FCHOWNAT, dirfd, (long)path, (long)uid, (long)gid, flags));
+}
+
+int fchown(int fd, uid_t uid, gid_t gid)
+{
+    return check(_syscall(SYS_FCHOWN, fd, (long)uid, (long)gid, 0, 0));
+}
+
+int lchown(const char *path, uid_t uid, gid_t gid)
+{
+    return fchownat(AT_FDCWD, path, uid, gid, AT_SYMLINK_NOFOLLOW);
+}
+
+int symlinkat(const char *target, int dirfd, const char *path)
+{
+    return check(_syscall(SYS_SYMLINKAT, (long)target, dirfd, (long)path, 0, 0));
+}
+
+int symlink(const char *target, const char *path)
+{
+    return symlinkat(target, AT_FDCWD, path);
+}
+
+ssize_t readlinkat(int dirfd, const char *restrict path, char *restrict buffer, size_t size)
+{
+    return check(_syscall(SYS_READLINKAT, dirfd, (long)path, (long)buffer, (long)size, 0));
+}
+
+ssize_t readlink(const char *restrict path, char *restrict buffer, size_t size)
+{
+    return readlinkat(AT_FDCWD, path, buffer, size);
+}
+
+int linkat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path, int flags)
+{
+    return check(_syscall(SYS_LINKAT, old_dirfd, (long)old_path, new_dirfd, (long)new_path, flags));
+}
+
+int link(const char *old_path, const char *new_path)
+{
+    return linkat(AT_FDCWD, old_path, AT_FDCWD, new_path, 0);
+}
+
+int utimensat(int dirfd, const char *path, const struct timespec times[2], int flags)
+{
+    // a NULL path would make the kernel act on dirfd: that is futimens
+    if (!path)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return check(_syscall(SYS_UTIMENSAT, dirfd, (long)path, (long)times, flags, 0));
+}
+
+int futimens(int fd, const struct timespec times[2])
+{
+    return check(_syscall(SYS_UTIMENSAT, fd, 0, (long)times, 0, 0));
+}
+
+int utime(const char *path, const struct utimbuf *times)
+{
+    if (!times)
+        return utimensat(AT_FDCWD, path, NULL, 0);
+    struct timespec both[2] = {{times->actime, 0}, {times->modtime, 0}};
+    return utimensat(AT_FDCWD, path, both, 0);
+}
+
+int utimes(const char *path, const struct timeval times[2])
+{
+    if (!times)
+        return utimensat(AT_FDCWD, path, NULL, 0);
+    struct timespec both[2] = {{times[0].tv_sec, times[0].tv_usec * 1000},
+                               {times[1].tv_sec, times[1].tv_usec * 1000}};
+    return utimensat(AT_FDCWD, path, both, 0);
+}
+
+int clock_settime(clockid_t id, const struct timespec *when)
+{
+    return check(_syscall(SYS_CLOCK_SETTIME, id, (long)when, 0, 0, 0));
+}
+
+int sethostname(const char *name, size_t length)
+{
+    return check(_syscall(SYS_SETHOSTNAME, (long)name, (long)length, 0, 0, 0));
+}
+
+void sync(void)
+{
+    // the block cache writes through: the disk is never behind
+}
+
+int daemon(int keep_dir, int keep_files)
+{
+    pid_t pid = fork();
+    if (pid < 0)
+        return -1;
+    if (pid > 0)
+        _exit(0);
+    if (setsid() < 0)
+        return -1;
+    if (!keep_dir && chdir("/") < 0)
+        return -1;
+    if (!keep_files)
+    {
+        int fd = open("/dev/null", O_RDWR);
+        if (fd < 0)
+            return -1;
+        dup2(fd, 0);
+        dup2(fd, 1);
+        dup2(fd, 2);
+        if (fd > 2)
+            close(fd);
+    }
+    return 0;
+}
+
+/** find the character device numbered rdev in dir; its path into buffer */
+static int find_device(const char *dir, dev_t rdev, char *buffer, size_t size)
+{
+    DIR *d = opendir(dir);
+    if (!d)
+        return -1;
+    struct dirent *entry;
+    int found = -1;
+    while (found < 0 && (entry = readdir(d)))
+    {
+        char path[64];
+        struct stat st;
+        if (entry->d_name[0] == '.')
+            continue;
+        if (snprintf(path, sizeof(path), "%s/%s", dir, entry->d_name) >= (int)sizeof(path))
+            continue;
+        if (stat(path, &st) == 0 && S_ISCHR(st.st_mode) && st.st_rdev == rdev)
+        {
+            found = strlen(path) < size ? 0 : ERANGE;
+            if (found == 0)
+                strcpy(buffer, path);
+        }
+    }
+    closedir(d);
+    return found;
+}
+
+int ttyname_r(int fd, char *buffer, size_t size)
+{
+    struct stat st;
+    if (fstat(fd, &st) < 0)
+        return errno;
+    if (!S_ISCHR(st.st_mode) || st.st_rdev == 0 || !isatty(fd))
+        return ENOTTY;
+    int found = find_device("/dev/pts", st.st_rdev, buffer, size);
+    if (found < 0)
+        found = find_device("/dev", st.st_rdev, buffer, size);
+    return found < 0 ? ENOTTY : found;
+}
+
+char *ttyname(int fd)
+{
+    static char name[64];
+    int err = ttyname_r(fd, name, sizeof(name));
+    if (err)
+    {
+        errno = err;
+        return NULL;
+    }
+    return name;
+}
+
+int getpriority(int which, id_t who)
+{
+    int ret = _syscall(SYS_GETPRIORITY, which, (long)who, 0, 0, 0);
+    if (ret < 0)
+    {
+        errno = -ret;
+        return -1;
+    }
+    return 20 - ret; // the kernel gives 20 - nice, never negative
+}
+
+int setpriority(int which, id_t who, int value)
+{
+    return check(_syscall(SYS_SETPRIORITY, which, (long)who, value, 0, 0));
+}
+
+int nice(int increment)
+{
+    errno = 0;
+    int now = getpriority(PRIO_PROCESS, 0);
+    if (now == -1 && errno)
+        return -1;
+    if (setpriority(PRIO_PROCESS, 0, now + increment) < 0)
+    {
+        if (errno == EACCES)
+            errno = EPERM;
+        return -1;
+    }
+    return getpriority(PRIO_PROCESS, 0);
+}
+
+int flock(int fd, int operation)
+{
+    return check(_syscall(SYS_FLOCK, fd, operation, 0, 0, 0));
+}
+
+int mknodat(int dirfd, const char *path, mode_t mode, dev_t dev)
+{
+    return check(_syscall(SYS_MKNODAT, dirfd, (long)path, (long)mode, (long)dev, 0));
+}
+
+int mknod(const char *path, mode_t mode, dev_t dev)
+{
+    return mknodat(AT_FDCWD, path, mode, dev);
+}
+
+int mkfifoat(int dirfd, const char *path, mode_t mode)
+{
+    return mknodat(dirfd, path, S_IFIFO | (mode & 07777), 0);
+}
+
+int mkfifo(const char *path, mode_t mode)
+{
+    return mkfifoat(AT_FDCWD, path, mode);
+}
+
+int chroot(const char *path)
+{
+    return check(_syscall(SYS_CHROOT, (long)path, 0, 0, 0, 0));
+}
+
+/** a _PC_ limit; the file must exist (checked by the caller) */
+static long path_limit(int name)
+{
+    switch (name)
+    {
+    case _PC_LINK_MAX:
+        return 32000; // ext2's links to one file (the kernel's EXT2_LINK_MAX)
+    case _PC_MAX_CANON:
+    case _PC_MAX_INPUT:
+        return 255; // a terminal's line
+    case _PC_NAME_MAX:
+        return NAME_MAX;
+    case _PC_PATH_MAX:
+        return PATH_MAX;
+    case _PC_PIPE_BUF:
+        return PIPE_BUF;
+    case _PC_CHOWN_RESTRICTED:
+    case _PC_NO_TRUNC:
+        return 1; // only root gives files away; a long name is an error
+    case _PC_VDISABLE:
+        return 0; // a terminal control character of 0 is off
+    default:
+        errno = EINVAL;
+        return -1;
+    }
+}
+
+long pathconf(const char *path, int name)
+{
+    struct stat st;
+    if (stat(path, &st) < 0)
+        return -1;
+    return path_limit(name);
+}
+
+long fpathconf(int fd, int name)
+{
+    struct stat st;
+    if (fstat(fd, &st) < 0)
+        return -1;
+    return path_limit(name);
+}
+
+size_t confstr(int name, char *buffer, size_t size)
+{
+    if (name != _CS_PATH)
+    {
+        errno = EINVAL;
+        return 0;
+    }
+    const char *value = "/bin";
+    size_t length = strlen(value) + 1;
+    if (buffer && size)
+    {
+        size_t copy = length < size ? length : size;
+        memcpy(buffer, value, copy - 1);
+        buffer[copy - 1] = '\0';
+    }
+    return length;
 }

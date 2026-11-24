@@ -107,6 +107,7 @@ void console_initialize(const boot_info_t *boot)
     strncpy(console_device.name, "tty0", DEVICE_NAME_MAX - 1);
     console_device.name[DEVICE_NAME_MAX - 1] = '\0';
     console_device.type = DEVICE_TYPE_CHAR;
+    console_device.number = CONSOLE_DEVICE_NUMBER;
     console_device.ops = 0;
     console_device.driver_data = &console_tty;
     device_register(&console_device);

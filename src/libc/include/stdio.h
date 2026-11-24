@@ -26,6 +26,7 @@ extern FILE *stderr;
 
 #define EOF (-1)
 #define BUFSIZ 1024
+#define FILENAME_MAX 256 // the longest path (PATH_MAX)
 
 // setvbuf modes
 #define _IOFBF 0 // full buffering
@@ -127,6 +128,7 @@ int sscanf(const char *str, const char *fmt, ...);
  * @return 0, or -1 (errno set; EXDEV across filesystems).
  */
 int rename(const char *old_path, const char *new_path);
+int renameat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path);
 
 /**
  * remove a file or an empty directory.
@@ -149,3 +151,19 @@ int getc_unlocked(FILE *stream);
 int getchar_unlocked(void);
 int putc_unlocked(int c, FILE *stream);
 int putchar_unlocked(int c);
+
+/**
+ * read a line, with its newline, into *line (made larger with realloc
+ * as it needs; *line may be NULL and *size 0 at first).
+ * @return the bytes read, or -1 at the end of the file or for an error.
+ */
+ssize_t getline(char **line, size_t *size, FILE *stream);
+/** as getline, up to and with delimiter instead of a newline */
+ssize_t getdelim(char **line, size_t *size, int delimiter, FILE *stream);
+
+/**
+ * a stream on size bytes of memory (or on new memory, freed by fclose,
+ * when memory is NULL). reads stop at the content's end; writes stop at
+ * size and keep a null byte after the content while there is room.
+ */
+FILE *fmemopen(void *memory, size_t size, const char *mode);

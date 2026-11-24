@@ -24,6 +24,16 @@
 #define O_DIRECTORY 0x10000 // fail with ENOTDIR unless it is a directory
 #define O_CLOEXEC   0x80000 // close the descriptor on execve
 
+// the *at calls: a relative path is in the directory open as dirfd, or
+// with AT_FDCWD in the working directory
+#define AT_FDCWD            (-100)
+#define AT_SYMLINK_NOFOLLOW 0x100 // the link itself, not what it points at
+#define AT_REMOVEDIR        0x200 // unlinkat: remove a directory
+#define AT_SYMLINK_FOLLOW   0x400 // linkat: link to what a link points at
+#define AT_EACCESS          0x200 // faccessat: check with the effective ids
+
+int openat(int dirfd, const char *path, int flags, ...);
+
 // fcntl commands
 #define F_DUPFD 0          // duplicate to the lowest free fd >= arg
 #define F_GETFD 1          // get the descriptor flags

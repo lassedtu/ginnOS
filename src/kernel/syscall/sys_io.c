@@ -3,6 +3,8 @@
 #include "fd_table.h"
 
 #include "kernel/vfs/file.h"
+#include "kernel/vfs/flock.h"
+#include "kernel/vfs/fifo.h"
 #include "kernel/vfs/poll.h"
 #include "kernel/vfs/permission.h"
 #include "kernel/time/timer.h"
@@ -94,19 +96,17 @@ static int32_t open_create(const char *path, uint32_t flags)
  *   EISDIR  a directory opened for writing
  *   EINVAL  an access mode other than O_RDONLY, O_WRONLY or O_RDWR
  */
-syscall_ret_t sys_open(struct registers *regs)
+static int32_t open_at(int32_t dirfd, const char *path, uint32_t flags, uint32_t mode)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
-    uint32_t flags = (uint32_t)syscall_arg(regs, 1);
     process_t *proc = process_current();
 
     uint32_t access = flags & O_ACCMODE;
     if (access == O_ACCMODE)
         return -EINVAL;
 
-    // copy the path in from user memory, resolved against the cwd
+    // copy the path in from user memory, resolved against the cwd or dirfd
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path(path, resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), true);
     if (ret < 0)
         return ret;
 
@@ -135,7 +135,7 @@ syscall_ret_t sys_open(struct registers *regs)
         if (ret == 0)
             ret = open_create(resolved, flags);
         if (ret == 0)
-            ret = set_new_owner(resolved, (uint32_t)syscall_arg(regs, 2));
+            ret = set_new_owner(resolved, mode);
         if (ret < 0)
             return ret;
     }
@@ -145,13 +145,34 @@ syscall_ret_t sys_open(struct registers *regs)
     if (kerr_failed(err))
         return kerr_to_errno(err);
 
-    uint8_t type = vfs_file_type(&file->vfs);
+    // a device with its own stream (a terminal) has no filesystem file
+    uint8_t type = file_is_vfs(file) ? vfs_file_type(&file->vfs) : FS_TYPE_UNKNOWN;
+
+    // a named pipe opens as a pipe; a device node outside /dev has no
+    // device behind it (the devices are in devfs)
+    if (type == FS_TYPE_FIFO)
+    {
+        vfs_stat_t st;
+        fs_mount_t *mount = file->vfs.mount;
+        kerr_t found = vfs_fstat(&file->vfs, &st);
+        file_unref(file);
+        if (kerr_failed(found))
+            return kerr_to_errno(found);
+        ret = fifo_open(mount, st.inode, flags & (O_ACCMODE | O_NONBLOCK), &file);
+        if (ret < 0)
+            return ret;
+    }
+    else if (type == FS_TYPE_CHAR || type == FS_TYPE_BLOCK)
+    {
+        file_unref(file);
+        return -ENXIO;
+    }
     if ((flags & O_DIRECTORY) && type != FS_TYPE_DIR)
         ret = -ENOTDIR;
     else if (type == FS_TYPE_DIR && access != O_RDONLY)
         ret = -EISDIR;
     else if ((flags & O_TRUNC) && access != O_RDONLY && type == FS_TYPE_FILE)
-        ret = file_truncate(file);
+        ret = file_truncate(file, 0);
 
     if (ret < 0)
     {
@@ -163,6 +184,22 @@ syscall_ret_t sys_open(struct registers *regs)
     if (fd < 0)
         file_unref(file);
     return fd;
+}
+
+syscall_ret_t sys_open(struct registers *regs)
+{
+    return open_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), (uint32_t)syscall_arg(regs, 1),
+                   (uint32_t)syscall_arg(regs, 2));
+}
+
+/**
+ * SYS_openat: open relative to a directory.
+ * args: dirfd (AT_FDCWD: the working directory), path, flags, mode.
+ */
+syscall_ret_t sys_openat(struct registers *regs)
+{
+    return open_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                   (uint32_t)syscall_arg(regs, 2), (uint32_t)syscall_arg(regs, 3));
 }
 
 /**
@@ -190,18 +227,27 @@ syscall_ret_t sys_lseek(struct registers *regs)
     return file_seek(entry->file, (int32_t)syscall_arg(regs, 1), (int)syscall_arg(regs, 2));
 }
 
+// the largest file size (st_size is 32 bits)
+#define FILE_SIZE_MAX 0x7FFFFFFFl
+
 /**
- * SYS_ftruncate: truncate an open file to zero length.
- * args: EBX = fd.
- * returns 0 on success, negative errno on failure.
+ * SYS_ftruncate: cut or grow an open file to a length.
+ * args: fd, length (the new bytes read as zeros). the offset stays.
+ * returns 0, or a negative errno (EINVAL: a negative length, or a file
+ * not open for writing; EFBIG: too long).
  */
 syscall_ret_t sys_ftruncate(struct registers *regs)
 {
     fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
     if (!entry)
         return -EBADF;
+    long length = (long)syscall_arg(regs, 1);
+    if (length < 0)
+        return -EINVAL;
+    if (length > FILE_SIZE_MAX)
+        return -EFBIG;
 
-    return file_truncate(entry->file);
+    return file_truncate(entry->file, (uint32_t)length);
 }
 
 /**
@@ -488,4 +534,19 @@ syscall_ret_t sys_poll(struct registers *regs)
     if (kerr_failed(copy_to_user(user_fds, fds, count * sizeof(kpollfd_t))))
         return -EFAULT;
     return ready;
+}
+
+/**
+ * SYS_flock: an advisory lock on a whole file (kernel/vfs/flock.h).
+ * args: fd, operation (LOCK_SH or LOCK_EX, with LOCK_NB; or LOCK_UN).
+ * returns 0, or a negative errno (EWOULDBLOCK, EINTR, EBADF, EINVAL).
+ */
+syscall_ret_t sys_flock(struct registers *regs)
+{
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
+    if (!entry)
+        return -EBADF;
+    if (!file_is_vfs(entry->file))
+        return -EINVAL; // a pipe, a socket or a device stream
+    return flock_apply(entry->file, (uint32_t)syscall_arg(regs, 1));
 }

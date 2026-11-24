@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
+#include <time.h>
 
 /**
  * @file sys/stat.h
@@ -12,6 +13,7 @@
 
 #define S_IFMT   0170000
 #define S_IFIFO  0010000
+#define S_IFSOCK 0140000
 #define S_IFCHR  0020000
 #define S_IFDIR  0040000
 #define S_IFBLK  0060000
@@ -24,6 +26,7 @@
 #define S_ISBLK(m)  (((m) & S_IFMT) == S_IFBLK)
 #define S_ISREG(m)  (((m) & S_IFMT) == S_IFREG)
 #define S_ISLNK(m)  (((m) & S_IFMT) == S_IFLNK)
+#define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
 
 // permission bits
 #define S_IRWXU 0700
@@ -51,10 +54,15 @@ struct stat
     off_t st_size;
     blksize_t st_blksize;
     blkcnt_t st_blocks;
-    unsigned int st_atime; // 32 bits in the kernel ABI (time_t is wider on x86_64)
-    unsigned int st_mtime;
-    unsigned int st_ctime;
+    struct timespec st_atim; // last access
+    struct timespec st_mtim; // last change of the data
+    struct timespec st_ctim; // last change of the data or the metadata
 };
+
+// the whole seconds, by their older names
+#define st_atime st_atim.tv_sec
+#define st_mtime st_mtim.tv_sec
+#define st_ctime st_ctim.tv_sec
 
 /**
  * get a file's metadata by path.
@@ -63,8 +71,7 @@ struct stat
 int stat(const char *path, struct stat *st);
 
 /**
- * the metadata of a symbolic link itself. the file systems have no
- * symbolic links yet, so this is the same as stat.
+ * the metadata of a symbolic link itself (stat gives what it points at).
  */
 int lstat(const char *path, struct stat *st);
 
@@ -82,6 +89,9 @@ int fstat(int fd, struct stat *st);
  * create a directory with a mode (taken through the umask).
  */
 int mkdir(const char *path, mode_t mode);
+int mkdirat(int dirfd, const char *path, mode_t mode);
+int fstatat(int dirfd, const char *path, struct stat *st, int flags);
+int fchmodat(int dirfd, const char *path, mode_t mode, int flags);
 
 /**
  * change the permission bits of a file (owner or root only).
@@ -94,3 +104,32 @@ int fchmod(int fd, mode_t mode);
  * @return the old mask.
  */
 mode_t umask(mode_t mask);
+
+// utimensat and futimens: a tv_nsec for the time now, or for no change
+#define UTIME_NOW  ((1l << 30) - 1)
+#define UTIME_OMIT ((1l << 30) - 2)
+
+/**
+ * set a file's access and modification times (times[0], times[1]); with
+ * times NULL, both to the time now.
+ * @param flags AT_SYMLINK_NOFOLLOW: the link itself.
+ * @return 0, or -1 (errno set).
+ */
+int utimensat(int dirfd, const char *path, const struct timespec times[2], int flags);
+int futimens(int fd, const struct timespec times[2]);
+
+/**
+ * make a named pipe (a FIFO): processes that open it share one pipe.
+ * @return 0, or -1 (errno set).
+ */
+int mkfifo(const char *path, mode_t mode);
+int mkfifoat(int dirfd, const char *path, mode_t mode);
+
+/**
+ * make a named pipe (S_IFIFO), an empty file (S_IFREG) or, as root, a
+ * device node (S_IFCHR, S_IFBLK with makedev's number). a device node
+ * outside /dev opens with ENXIO: ginnOS's devices are in /dev.
+ * @return 0, or -1 (errno set).
+ */
+int mknod(const char *path, mode_t mode, dev_t dev);
+int mknodat(int dirfd, const char *path, mode_t mode, dev_t dev);

@@ -5,30 +5,68 @@
 #include "kernel/vfs/permission.h"
 #include "kernel/process/process.h"
 #include "kernel/vfs/dirent.h"
-#include "common/memory.h"
-#include "common/string.h"
-
 #include "kernel/vfs/vfs.h"
-#include "kernel/process/process.h"
+#include "kernel/time/clock.h"
 #include "common/memory.h"
 #include "common/string.h"
 
 int32_t resolve_user_path(const char *user_path, char *resolved, uint32_t size)
+{
+    return resolve_user_path_at(AT_FDCWD, user_path, resolved, size, true);
+}
+
+int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolved, uint32_t size,
+                             bool follow)
 {
     char path[PATH_MAX];
     int32_t len = strncpy_from_user(path, user_path, sizeof(path));
     if (len == KERR_FAULT)
         return -EFAULT;
     if (len < 0)
-        return -EINVAL; // longer than PATH_MAX
+        return -ENAMETOOLONG;
+    if (len == 0)
+        return -ENOENT;
 
     process_t *proc = process_current();
-    const char *cwd = proc ? proc->cwd : "/";
+    const char *base = proc ? proc->cwd : "/";
 
-    if (!vfs_resolve_path(cwd, path, resolved, size))
-        return -EINVAL;
+    // a relative path in a directory the caller has open
+    if (path[0] != '/' && dirfd != AT_FDCWD)
+    {
+        fd_entry_t *entry = fd_get(dirfd);
+        if (!entry)
+            return -EBADF;
+        file_t *dir = entry->file;
+        if (!dir->path)
+            return -ENOTDIR; // a pipe, a socket or a device stream
+        if (vfs_file_type(&dir->vfs) != FS_TYPE_DIR)
+            return -ENOTDIR;
+        base = dir->path;
+    }
 
-    return 0;
+    // the path is taken in the process's root directory (chroot), and
+    // turned into a real path. a working directory left outside the root
+    // still takes relative paths, as on Linux
+    const char *root = proc ? proc->root : "/";
+    const char *virtual_base = vfs_inside_root(base, root);
+    bool outside = virtual_base == base && strlen(root) > 1;
+    if (outside && path[0] != '/')
+    {
+        if (!vfs_resolve_path(base, path, resolved, size))
+            return -ENAMETOOLONG;
+    }
+    else
+    {
+        char virtual_path[PATH_MAX];
+        if (!vfs_resolve_path(virtual_base, path, virtual_path, sizeof(virtual_path)) ||
+            !vfs_join_root(root, virtual_path, resolved, size))
+            return -ENAMETOOLONG;
+    }
+
+    kerr_t err = vfs_follow(resolved, size, follow, root);
+    if (err == KERR_RANGE)
+        return -ENAMETOOLONG;
+    return kerr_to_errno(err);
 }
 
 int32_t set_new_owner(const char *path, uint32_t mode)
@@ -46,26 +84,18 @@ int32_t set_new_owner(const char *path, uint32_t mode)
     return err == KERR_PERM ? 0 : kerr_to_errno(err);
 }
 
-/**
- * SYS_stat: get file metadata.
- * args: EBX = path string pointer, ECX = struct stat pointer (kernel/vfs/stat.h).
- * returns 0 on success, negative errno on failure.
- */
-syscall_ret_t sys_stat(struct registers *regs)
+/** stat a path relative to dirfd into user memory */
+static int32_t stat_at(int32_t dirfd, const char *path, struct kstat *user_stat, bool follow)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
-    struct kstat *user_stat = (struct kstat *)syscall_arg(regs, 1);
-
-    // copy the path in from user memory, resolved against the cwd
     char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), follow);
+    if (err < 0)
+        return err;
 
     vfs_stat_t fs_stat;
-    kerr_t err = vfs_stat(resolved, &fs_stat);
-    if (kerr_failed(err))
-        return kerr_to_errno(err);
+    kerr_t found = vfs_stat(resolved, &fs_stat);
+    if (kerr_failed(found))
+        return kerr_to_errno(found);
 
     struct kstat st;
     stat_from_fs(&fs_stat, &st);
@@ -73,19 +103,38 @@ syscall_ret_t sys_stat(struct registers *regs)
 }
 
 /**
- * SYS_rename: rename a file or directory.
- * args: EBX = old path, ECX = new path (same filesystem).
- * returns 0 on success, negative errno on failure (EXDEV across mounts).
+ * SYS_stat: get file metadata.
+ * args: path, struct stat pointer (kernel/vfs/stat.h).
+ * returns 0 on success, negative errno on failure.
  */
-syscall_ret_t sys_rename(struct registers *regs)
+syscall_ret_t sys_stat(struct registers *regs)
+{
+    return stat_at(AT_FDCWD, (const char *)syscall_arg(regs, 0),
+                   (struct kstat *)syscall_arg(regs, 1), true);
+}
+
+/**
+ * SYS_fstatat: stat a path relative to a directory.
+ * args: dirfd, path, struct stat pointer, flags (AT_SYMLINK_NOFOLLOW).
+ */
+syscall_ret_t sys_fstatat(struct registers *regs)
+{
+    uint32_t flags = (uint32_t)syscall_arg(regs, 3);
+    if (flags & ~(uint32_t)AT_SYMLINK_NOFOLLOW)
+        return -EINVAL;
+    return stat_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                   (struct kstat *)syscall_arg(regs, 2), !(flags & AT_SYMLINK_NOFOLLOW));
+}
+
+static int32_t rename_at(int32_t old_dirfd, const char *old_user, int32_t new_dirfd,
+                         const char *new_user)
 {
     char old_path[PATH_MAX];
     char new_path[PATH_MAX];
 
-    int32_t err = resolve_user_path((const char *)syscall_arg(regs, 0), old_path,
-                                    sizeof(old_path));
+    int32_t err = resolve_user_path_at(old_dirfd, old_user, old_path, sizeof(old_path), false);
     if (err == 0)
-        err = resolve_user_path((const char *)syscall_arg(regs, 1), new_path, sizeof(new_path));
+        err = resolve_user_path_at(new_dirfd, new_user, new_path, sizeof(new_path), false);
     if (err < 0)
         return err;
 
@@ -102,25 +151,45 @@ syscall_ret_t sys_rename(struct registers *regs)
     return kerr_to_errno(vfs_rename(old_path, new_path));
 }
 
+/**
+ * SYS_rename: rename a file or directory.
+ * args: old path, new path (same filesystem).
+ * returns 0 on success, negative errno on failure (EXDEV across mounts).
+ */
+syscall_ret_t sys_rename(struct registers *regs)
+{
+    return rename_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), AT_FDCWD,
+                     (const char *)syscall_arg(regs, 1));
+}
+
+/**
+ * SYS_renameat: rename, each path relative to its own directory.
+ * args: old dirfd, old path, new dirfd, new path.
+ */
+syscall_ret_t sys_renameat(struct registers *regs)
+{
+    return rename_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                     (int32_t)syscall_arg(regs, 2), (const char *)syscall_arg(regs, 3));
+}
+
 // access modes (F_OK is 0: the file only has to exist)
 #define ACCESS_MODE_BITS 7 // R_OK | W_OK | X_OK
 
 /**
- * SYS_access: check that a file exists and may be accessed.
- * args: EBX = path, ECX = mode (F_OK, or R_OK | W_OK | X_OK).
- * the check uses the real user and group ids, not the effective ones (a
- * set-uid program asks what its caller may do).
- * returns 0, or a negative errno (ENOENT, EACCES).
+ * check that a file exists and may be accessed: with the real user and
+ * group ids (a set-uid program asks what its caller may do), or with the
+ * effective ones (AT_EACCESS).
  */
-syscall_ret_t sys_access(struct registers *regs)
+static int32_t access_at(int32_t dirfd, const char *path, uint32_t mode, uint32_t flags)
 {
-    uint32_t mode = (uint32_t)syscall_arg(regs, 1);
     if (mode & ~(uint32_t)ACCESS_MODE_BITS)
+        return -EINVAL;
+    if (flags & ~(uint32_t)(AT_EACCESS | AT_SYMLINK_NOFOLLOW))
         return -EINVAL;
 
     char resolved[PATH_MAX];
-    int32_t err = resolve_user_path((const char *)syscall_arg(regs, 0), resolved,
-                                    sizeof(resolved));
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved),
+                                       !(flags & AT_SYMLINK_NOFOLLOW));
     if (err < 0)
         return err;
 
@@ -131,23 +200,40 @@ syscall_ret_t sys_access(struct registers *regs)
 
     // R_OK, W_OK and X_OK are the MAY_* bits
     process_t *proc = process_current();
+    if (flags & AT_EACCESS)
+        return permission_check(&st, proc->euid, proc->egid, mode);
     return permission_check(&st, proc->uid, proc->gid, mode);
 }
 
 /**
- * SYS_mkdir: create a directory.
- * args: EBX = path string pointer, ECX = mode (taken through the umask).
- * the new directory belongs to the caller's effective user and group.
- * returns 0 on success, negative errno on failure.
+ * SYS_access: check that a file exists and may be accessed.
+ * args: path, mode (F_OK, or R_OK | W_OK | X_OK).
+ * returns 0, or a negative errno (ENOENT, EACCES).
  */
-syscall_ret_t sys_mkdir(struct registers *regs)
+syscall_ret_t sys_access(struct registers *regs)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
-    uint32_t mode = (uint32_t)syscall_arg(regs, 1);
+    return access_at(AT_FDCWD, (const char *)syscall_arg(regs, 0),
+                     (uint32_t)syscall_arg(regs, 1), 0);
+}
 
-    // copy the path in from user memory, resolved against the cwd
+/**
+ * SYS_faccessat: access, relative to a directory.
+ * args: dirfd, path, mode, flags (AT_EACCESS).
+ */
+syscall_ret_t sys_faccessat(struct registers *regs)
+{
+    return access_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                     (uint32_t)syscall_arg(regs, 2), (uint32_t)syscall_arg(regs, 3));
+}
+
+/**
+ * create a directory. the new directory belongs to the caller's effective
+ * user and group; its mode is taken through the umask.
+ */
+static int32_t mkdir_at(int32_t dirfd, const char *path, uint32_t mode)
+{
     char resolved[PATH_MAX];
-    int32_t ret = resolve_user_path(path, resolved, sizeof(resolved));
+    int32_t ret = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), false);
     if (ret < 0)
         return ret;
 
@@ -163,59 +249,341 @@ syscall_ret_t sys_mkdir(struct registers *regs)
 }
 
 /**
+ * SYS_mkdir: create a directory.
+ * args: path, mode.
+ * returns 0 on success, negative errno on failure.
+ */
+syscall_ret_t sys_mkdir(struct registers *regs)
+{
+    return mkdir_at(AT_FDCWD, (const char *)syscall_arg(regs, 0),
+                    (uint32_t)syscall_arg(regs, 1));
+}
+
+/**
+ * SYS_mkdirat: mkdir relative to a directory.
+ * args: dirfd, path, mode.
+ */
+syscall_ret_t sys_mkdirat(struct registers *regs)
+{
+    return mkdir_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                    (uint32_t)syscall_arg(regs, 2));
+}
+
+/** remove a file, or a directory (AT_REMOVEDIR) */
+static int32_t unlink_at(int32_t dirfd, const char *path, uint32_t flags)
+{
+    if (flags & ~(uint32_t)AT_REMOVEDIR)
+        return -EINVAL;
+
+    char resolved[PATH_MAX];
+    int32_t err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved), false);
+    if (err < 0)
+        return err;
+
+    err = permission_check_parent(resolved, true);
+    if (err < 0)
+        return err;
+
+    kerr_t removed = flags & AT_REMOVEDIR ? vfs_rmdir(resolved) : vfs_remove(resolved);
+    return kerr_to_errno(removed);
+}
+
+/**
  * SYS_unlink: remove a file.
- * args: EBX = path string pointer.
+ * args: path.
  * returns 0 on success, negative errno on failure.
  */
 syscall_ret_t sys_unlink(struct registers *regs)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
-
-    /* copy the path in from user memory, resolved against the cwd */
-    char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
-
-    int32_t allowed = permission_check_parent(resolved, true);
-    if (allowed < 0)
-        return allowed;
-
-    kerr_t err = vfs_remove(resolved);
-    if (kerr_failed(err))
-    {
-        return kerr_to_errno(err);
-    }
-
-    return 0;
+    return unlink_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), 0);
 }
 
 /**
  * SYS_rmdir: remove a directory.
- * args: EBX = path string pointer.
+ * args: path.
  * returns 0 on success, negative errno on failure.
  */
 syscall_ret_t sys_rmdir(struct registers *regs)
 {
-    const char *path = (const char *)syscall_arg(regs, 0);
+    return unlink_at(AT_FDCWD, (const char *)syscall_arg(regs, 0), AT_REMOVEDIR);
+}
 
-    /* copy the path in from user memory, resolved against the cwd */
+/**
+ * SYS_unlinkat: remove a file or (AT_REMOVEDIR) a directory, relative to a
+ * directory.
+ * args: dirfd, path, flags.
+ */
+syscall_ret_t sys_unlinkat(struct registers *regs)
+{
+    return unlink_at((int32_t)syscall_arg(regs, 0), (const char *)syscall_arg(regs, 1),
+                     (uint32_t)syscall_arg(regs, 2));
+}
+
+/**
+ * SYS_symlinkat: make a symbolic link.
+ * args: target (the path the link points at; it need not exist), dirfd,
+ *       path of the new link.
+ * the link belongs to the caller's effective user and group.
+ * returns 0, or a negative errno (EEXIST, ENOENT, EACCES, ENAMETOOLONG).
+ */
+syscall_ret_t sys_symlinkat(struct registers *regs)
+{
+    char target[PATH_MAX];
+    int32_t length = strncpy_from_user(target, (const char *)syscall_arg(regs, 0), sizeof(target));
+    if (length == KERR_FAULT)
+        return -EFAULT;
+    if (length < 0)
+        return -ENAMETOOLONG;
+    if (length == 0)
+        return -ENOENT;
+
     char resolved[PATH_MAX];
-    int32_t path_err = resolve_user_path(path, resolved, sizeof(resolved));
-    if (path_err < 0)
-        return path_err;
-
-    int32_t allowed = permission_check_parent(resolved, true);
-    if (allowed < 0)
-        return allowed;
-
-    kerr_t err = vfs_rmdir(resolved);
-    if (kerr_failed(err))
+    int32_t err = resolve_user_path_at((int32_t)syscall_arg(regs, 1),
+                                       (const char *)syscall_arg(regs, 2), resolved,
+                                       sizeof(resolved), false);
+    if (err == 0)
     {
-        return kerr_to_errno(err);
+        err = permission_check_parent(resolved, false);
+    }
+    if (err < 0)
+        return err;
+
+    kerr_t made = vfs_symlink(resolved, target);
+    if (made == KERR_RANGE)
+        return -ENAMETOOLONG;
+    if (kerr_failed(made))
+        return kerr_to_errno(made);
+
+    // the owner only: a link's mode is always 0777
+    process_t *proc = process_current();
+    fs_attr_t attr = {.what = FS_ATTR_OWNER, .uid = proc->euid, .gid = proc->egid};
+    kerr_t owned = vfs_setattr(resolved, &attr);
+    return owned == KERR_PERM ? 0 : kerr_to_errno(owned);
+}
+
+/**
+ * SYS_readlinkat: read the target of a symbolic link.
+ * args: dirfd, path, buffer, buffer size.
+ * returns the bytes put in the buffer (no NUL; a longer target is cut),
+ * or a negative errno (EINVAL: not a link).
+ */
+syscall_ret_t sys_readlinkat(struct registers *regs)
+{
+    char *user_buffer = (char *)syscall_arg(regs, 2);
+    uint32_t size = (uint32_t)syscall_arg(regs, 3);
+    if (size == 0)
+        return -EINVAL;
+
+    char resolved[PATH_MAX];
+    int32_t err = resolve_user_path_at((int32_t)syscall_arg(regs, 0),
+                                       (const char *)syscall_arg(regs, 1), resolved,
+                                       sizeof(resolved), false);
+    if (err < 0)
+        return err;
+
+    char target[PATH_MAX];
+    kerr_t found = vfs_readlink(resolved, target, sizeof(target));
+    if (kerr_failed(found))
+        return kerr_to_errno(found);
+
+    uint32_t length = (uint32_t)strlen(target);
+    if (length > size)
+    {
+        length = size;
+    }
+    kerr_t copied = copy_to_user(user_buffer, target, length);
+    return kerr_failed(copied) ? kerr_to_errno(copied) : (syscall_ret_t)length;
+}
+
+/**
+ * SYS_linkat: give a file one more name (a hard link).
+ * args: old dirfd, old path, new dirfd, new path, flags (AT_SYMLINK_FOLLOW:
+ *       link to what a symbolic link points at, not the link itself).
+ * returns 0, or a negative errno (EXDEV across mounts, EPERM for a
+ * directory, EEXIST, EMLINK).
+ */
+syscall_ret_t sys_linkat(struct registers *regs)
+{
+    uint32_t flags = (uint32_t)syscall_arg(regs, 4);
+    if (flags & ~(uint32_t)AT_SYMLINK_FOLLOW)
+        return -EINVAL;
+
+    char old_path[PATH_MAX];
+    char new_path[PATH_MAX];
+    int32_t err = resolve_user_path_at((int32_t)syscall_arg(regs, 0),
+                                       (const char *)syscall_arg(regs, 1), old_path,
+                                       sizeof(old_path), (flags & AT_SYMLINK_FOLLOW) != 0);
+    if (err == 0)
+    {
+        err = resolve_user_path_at((int32_t)syscall_arg(regs, 2),
+                                   (const char *)syscall_arg(regs, 3), new_path,
+                                   sizeof(new_path), false);
+    }
+    if (err < 0)
+        return err;
+
+    if (vfs_resolve_mount_path(old_path, NULL) != vfs_resolve_mount_path(new_path, NULL))
+        return -EXDEV;
+    err = permission_check_parent(new_path, false);
+    if (err < 0)
+        return err;
+
+    // KERR_PERM: a filesystem with no hard links (tmpfs)
+    kerr_t linked = vfs_link(old_path, new_path);
+    if (linked == KERR_ISDIR || linked == KERR_PERM)
+        return -EPERM;
+    if (linked == KERR_RANGE)
+        return -EMLINK;
+    return kerr_to_errno(linked);
+}
+
+/**
+ * SYS_mknodat: make a named pipe, a device node or an empty file.
+ * args: dirfd, path, mode (S_IFIFO, S_IFCHR, S_IFBLK or S_IFREG, with the
+ *       permission bits, taken through the umask), the device number.
+ * a device node needs root. it opens with ENXIO: the devices are in /dev.
+ * returns 0, or a negative errno (EEXIST, EPERM, EINVAL, EACCES).
+ */
+syscall_ret_t sys_mknodat(struct registers *regs)
+{
+    uint32_t mode = (uint32_t)syscall_arg(regs, 2);
+    uint32_t rdev = (uint32_t)syscall_arg(regs, 3);
+    uint32_t type = mode & S_IFMT;
+    if (type != 0 && type != S_IFREG && type != S_IFIFO && type != S_IFCHR && type != S_IFBLK)
+        return -EINVAL;
+    if ((type == S_IFCHR || type == S_IFBLK) && process_current()->euid != 0)
+        return -EPERM;
+
+    char resolved[PATH_MAX];
+    int32_t err = resolve_user_path_at((int32_t)syscall_arg(regs, 0),
+                                       (const char *)syscall_arg(regs, 1), resolved,
+                                       sizeof(resolved), false);
+    if (err == 0)
+    {
+        err = permission_check_parent(resolved, false);
+    }
+    if (err < 0)
+        return err;
+
+    kerr_t made;
+    if (type == 0 || type == S_IFREG)
+    {
+        made = vfs_create(resolved);
+    }
+    else
+    {
+        made = vfs_mknod(resolved, type | (mode & 07777u), rdev);
+    }
+    if (made == KERR_PERM)
+        return -EPERM; // a filesystem with no such nodes (devfs, procfs)
+    if (kerr_failed(made))
+        return kerr_to_errno(made);
+    return set_new_owner(resolved, mode);
+}
+
+// utimensat: a tv_nsec that asks for the time now, or no change
+#define UTIME_NOW  ((1l << 30) - 1)
+#define UTIME_OMIT ((1l << 30) - 2)
+
+/**
+ * the time changes utimensat asks for, as setattr attributes.
+ * @param explicit_out set when a time is given (not UTIME_NOW or OMIT).
+ * @return 0, or -EINVAL for a bad tv_nsec.
+ */
+static int32_t times_to_attr(const struct ktimespec times[2], fs_attr_t *attr, bool *explicit_out)
+{
+    uint32_t now = clock_realtime_seconds();
+    const uint32_t bits[2] = {FS_ATTR_ATIME, FS_ATTR_MTIME};
+    uint32_t *fields[2] = {&attr->atime, &attr->mtime};
+    *explicit_out = false;
+    for (int i = 0; i < 2; i++)
+    {
+        long nsec = times[i].tv_nsec;
+        if (nsec == UTIME_OMIT)
+        {
+            continue;
+        }
+        if (nsec != UTIME_NOW && (nsec < 0 || nsec > 999999999l))
+            return -EINVAL;
+        attr->what |= bits[i];
+        *fields[i] = nsec == UTIME_NOW ? now : (uint32_t)times[i].tv_sec;
+        if (nsec != UTIME_NOW)
+        {
+            *explicit_out = true;
+        }
+    }
+    return 0;
+}
+
+/**
+ * the caller may set a file's times to given values if it owns the file
+ * (or is root); to the time now also if it may write the file.
+ */
+static int32_t may_set_times(const vfs_stat_t *st, bool explicit_times)
+{
+    process_t *proc = process_current();
+    if (proc->euid == 0 || proc->euid == st->uid)
+        return 0;
+    if (explicit_times)
+        return -EPERM;
+    return permission_check(st, proc->euid, proc->egid, MAY_WRITE);
+}
+
+/**
+ * SYS_utimensat: set a file's access and modification times.
+ * args: dirfd, path (NULL: the file open as dirfd, which is futimens),
+ *       times (two timespecs, access then modification; NULL: both now),
+ *       flags (AT_SYMLINK_NOFOLLOW).
+ * a tv_nsec of UTIME_NOW takes the time now; UTIME_OMIT keeps the time.
+ * returns 0, or a negative errno (EPERM, EACCES, EINVAL, ENOENT, EBADF).
+ */
+syscall_ret_t sys_utimensat(struct registers *regs)
+{
+    int32_t dirfd = (int32_t)syscall_arg(regs, 0);
+    const char *path = (const char *)syscall_arg(regs, 1);
+    const struct ktimespec *user_times = (const struct ktimespec *)syscall_arg(regs, 2);
+    uint32_t flags = (uint32_t)syscall_arg(regs, 3);
+    if (flags & ~(uint32_t)AT_SYMLINK_NOFOLLOW)
+        return -EINVAL;
+
+    struct ktimespec times[2] = {{0, UTIME_NOW}, {0, UTIME_NOW}};
+    if (user_times && kerr_failed(copy_from_user(times, user_times, sizeof(times))))
+        return -EFAULT;
+    fs_attr_t attr = {0};
+    bool explicit_times;
+    int32_t err = times_to_attr(times, &attr, &explicit_times);
+    if (err < 0)
+        return err;
+
+    vfs_stat_t st;
+    if (!path)
+    {
+        fd_entry_t *entry = fd_get(dirfd);
+        if (!entry)
+            return -EBADF;
+        if (!file_is_vfs(entry->file))
+            return -EINVAL;
+        kerr_t found = vfs_fstat(&entry->file->vfs, &st);
+        if (kerr_failed(found))
+            return kerr_to_errno(found);
+        err = may_set_times(&st, explicit_times);
+        if (err < 0 || attr.what == 0)
+            return err;
+        return kerr_to_errno(vfs_fsetattr(&entry->file->vfs, &attr));
     }
 
-    return 0;
+    char resolved[PATH_MAX];
+    err = resolve_user_path_at(dirfd, path, resolved, sizeof(resolved),
+                               !(flags & AT_SYMLINK_NOFOLLOW));
+    if (err < 0)
+        return err;
+    kerr_t found = vfs_stat(resolved, &st);
+    if (kerr_failed(found))
+        return kerr_to_errno(found);
+    err = may_set_times(&st, explicit_times);
+    if (err < 0 || attr.what == 0)
+        return err;
+    return kerr_to_errno(vfs_setattr(resolved, &attr));
 }
 
 // the size of a record with the longest name (a name has at most
@@ -233,6 +601,14 @@ static uint8_t dirent_type(const fs_dirent_t *entry)
         return DT_DIR;
     case FS_TYPE_FILE:
         return DT_REG;
+    case FS_TYPE_SYMLINK:
+        return DT_LNK;
+    case FS_TYPE_FIFO:
+        return DT_FIFO;
+    case FS_TYPE_CHAR:
+        return DT_CHR;
+    case FS_TYPE_BLOCK:
+        return DT_BLK;
     default:
         return DT_UNKNOWN;
     }

@@ -26,7 +26,7 @@ int shell_last_exit_code = 0;
 
 int format_prompt(char *buf, int size)
 {
-    if (getcwd(cwd_buf, sizeof(cwd_buf)) < 0)
+    if (!getcwd(cwd_buf, sizeof(cwd_buf)))
         strcpy(cwd_buf, "?");
 
     int len = snprintf(buf, size, "skl:%s $ ", cwd_buf);

@@ -11,8 +11,11 @@
 #include "kernel/assert.h"
 #include "common/memory.h"
 
-// the process table fixed array of PCBs.
-static process_t proc_table[PROCESS_MAX];
+// the process table. a slot is made on the heap the first time it is
+// needed and is kept for reuse after its process ends, so a process
+// pointer stays valid and only the most processes there were at once take
+// memory. a NULL slot is unused.
+static process_t *proc_table[PROCESS_MAX];
 
 // next PID to assign (monotonically increasing).
 static uint32_t next_pid = 1;
@@ -34,22 +37,42 @@ static spinlock_t table_lock;
  */
 static process_t *claim_slot(void)
 {
+    // a new slot is made before the lock is taken; it goes back if an old
+    // slot is free. the heap gives 4-byte alignment, and fpu_state needs 16
+    // (fxsave): take 15 more bytes and round up (a slot is never freed)
+    void *raw = kcalloc(1, sizeof(process_t) + 15);
+    process_t *spare = raw ? (process_t *)(((uintptr_t)raw + 15) & ~(uintptr_t)15) : NULL;
     process_t *proc = NULL;
 
     uint32_t flags = spin_lock_irqsave(&table_lock);
-    for (int i = 0; i < PROCESS_MAX; i++)
+    for (int i = 0; i < PROCESS_MAX && !proc; i++)
     {
-        if (proc_table[i].state == PROC_STATE_UNUSED)
+        if (proc_table[i] && proc_table[i]->state == PROC_STATE_UNUSED)
         {
-            proc = &proc_table[i];
-            memset(proc, 0, sizeof(process_t));
-            proc->pid = next_pid++;
-            proc->state = PROC_STATE_NEW;
-            break;
+            proc = proc_table[i];
         }
+    }
+    for (int i = 0; i < PROCESS_MAX && !proc && spare; i++)
+    {
+        if (!proc_table[i])
+        {
+            proc_table[i] = spare;
+            proc = spare;
+            spare = NULL;
+        }
+    }
+    if (proc)
+    {
+        memset(proc, 0, sizeof(process_t));
+        proc->pid = next_pid++;
+        proc->state = PROC_STATE_NEW;
     }
     spin_unlock_irqrestore(&table_lock, flags);
 
+    if (spare)
+    {
+        kfree(raw);
+    }
     return proc;
 }
 
@@ -58,6 +81,8 @@ static process_t *claim_slot(void)
  */
 static void release_slot(process_t *proc)
 {
+    kfree(proc->fds);
+    proc->fds = NULL;
     uint32_t flags = spin_lock_irqsave(&table_lock);
     proc->pid = PID_NONE;
     proc->state = PROC_STATE_UNUSED;
@@ -89,6 +114,15 @@ process_t *process_create(void)
     proc->umask = 022; // the ids start as root's (0), from the cleared slot
     arch_fpu_clean(proc->fpu_state);
 
+    // the descriptor table, all free (on the heap: FD_MAX entries for each
+    // of PROCESS_MAX slots would make the kernel image's memory larger)
+    proc->fds = kcalloc(FD_MAX, sizeof(fd_entry_t));
+    if (!proc->fds)
+    {
+        release_slot(proc);
+        return NULL;
+    }
+
     // allocate a guarded kernel stack (zeroed)
     uintptr_t stack = kstack_alloc();
     if (!stack)
@@ -116,9 +150,11 @@ process_t *process_create(void)
         proc->fds[fd].file = file_console();
     }
 
-    // default working directory
+    // default working and root directory
     proc->cwd[0] = '/';
     proc->cwd[1] = '\0';
+    proc->root[0] = '/';
+    proc->root[1] = '\0';
 
     return proc;
 }
@@ -154,6 +190,7 @@ process_t *process_fork(const struct registers *regs)
     memcpy(child->name, parent->name, sizeof(child->name));
     signal_fork(child, parent);
     memcpy(child->cwd, parent->cwd, sizeof(child->cwd));
+    memcpy(child->root, parent->root, sizeof(child->root));
 
     // every fd is inherited: the child's descriptors share the parent's
     // open files (and so their offsets)
@@ -254,7 +291,11 @@ static bool process_init_alive(void)
 {
     for (int i = 0; i < PROCESS_MAX; i++)
     {
-        process_t *proc = &proc_table[i];
+        process_t *proc = proc_table[i];
+        if (!proc)
+        {
+            continue;
+        }
         if (proc->pid == PID_INIT && proc->state != PROC_STATE_UNUSED &&
             proc->state != PROC_STATE_ZOMBIE)
         {
@@ -272,7 +313,11 @@ void process_orphan_children(process_t *parent)
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX; i++)
     {
-        process_t *child = &proc_table[i];
+        process_t *child = proc_table[i];
+        if (!child)
+        {
+            continue;
+        }
         if (child->state == PROC_STATE_UNUSED || child->parent_pid != parent->pid)
         {
             continue;
@@ -318,7 +363,11 @@ void process_reap_orphans(void)
 
     for (int i = 0; i < PROCESS_MAX; i++)
     {
-        process_t *proc = &proc_table[i];
+        process_t *proc = proc_table[i];
+        if (!proc)
+        {
+            continue;
+        }
         if (proc->state == PROC_STATE_ZOMBIE && proc->parent_pid == PID_NONE &&
             proc != current_process)
         {
@@ -340,7 +389,11 @@ process_t *process_find_waitable_child(process_t *parent, int32_t pid, uint32_t 
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX; i++)
     {
-        process_t *child = &proc_table[i];
+        process_t *child = proc_table[i];
+        if (!child)
+        {
+            continue;
+        }
         if (child->state == PROC_STATE_UNUSED || child->parent_pid != parent->pid ||
             (pid != -1 && child->pid != (uint32_t)pid))
         {
@@ -365,7 +418,11 @@ uint32_t process_list_group(uint32_t pgid, uint32_t *pids, uint32_t max)
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX && count < max; i++)
     {
-        process_t *proc = &proc_table[i];
+        process_t *proc = proc_table[i];
+        if (!proc)
+        {
+            continue;
+        }
         if (proc->state != PROC_STATE_UNUSED && proc->state != PROC_STATE_ZOMBIE &&
             proc->pgid == pgid)
         {
@@ -382,7 +439,11 @@ bool process_group_exists(uint32_t pgid, uint32_t sid)
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX && !found; i++)
     {
-        process_t *proc = &proc_table[i];
+        process_t *proc = proc_table[i];
+        if (!proc)
+        {
+            continue;
+        }
         found = proc->state != PROC_STATE_UNUSED && proc->state != PROC_STATE_ZOMBIE &&
                 proc->pgid == pgid && proc->sid == sid;
     }
@@ -395,9 +456,9 @@ void process_for_each(void (*fn)(process_t *proc, void *ctx), void *ctx)
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX; i++)
     {
-        if (proc_table[i].state != PROC_STATE_UNUSED)
+        if (proc_table[i] && proc_table[i]->state != PROC_STATE_UNUSED)
         {
-            fn(&proc_table[i], ctx);
+            fn(proc_table[i], ctx);
         }
     }
     spin_unlock_irqrestore(&table_lock, flags);
@@ -409,9 +470,9 @@ uint32_t process_list_pids(uint32_t *pids, uint32_t max)
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX && count < max; i++)
     {
-        if (proc_table[i].state != PROC_STATE_UNUSED)
+        if (proc_table[i] && proc_table[i]->state != PROC_STATE_UNUSED)
         {
-            pids[count++] = proc_table[i].pid;
+            pids[count++] = proc_table[i]->pid;
         }
     }
     spin_unlock_irqrestore(&table_lock, flags);
@@ -424,7 +485,11 @@ bool process_info(uint32_t pid, process_info_t *info)
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX; i++)
     {
-        process_t *proc = &proc_table[i];
+        process_t *proc = proc_table[i];
+        if (!proc)
+        {
+            continue;
+        }
         if (proc->state == PROC_STATE_UNUSED || proc->pid != pid)
         {
             continue;
@@ -437,7 +502,7 @@ bool process_info(uint32_t pid, process_info_t *info)
         memcpy(info->name, proc->name, sizeof(info->name));
         info->areas = proc->vmas.count;
         info->open_fds = 0;
-        for (int fd = 0; fd < FD_MAX; fd++)
+        for (int fd = 0; proc->fds && fd < FD_MAX; fd++)
         {
             info->open_fds += proc->fds[fd].file != NULL;
         }
@@ -506,6 +571,7 @@ void process_copy_credentials(process_t *child, const process_t *parent)
     child->egid = parent->egid;
     child->sgid = parent->sgid;
     child->umask = parent->umask;
+    child->nice = parent->nice;
 }
 
 process_t *process_get(uint32_t pid)
@@ -520,9 +586,10 @@ process_t *process_get(uint32_t pid)
     uint32_t flags = spin_lock_irqsave(&table_lock);
     for (int i = 0; i < PROCESS_MAX; i++)
     {
-        if (proc_table[i].state != PROC_STATE_UNUSED && proc_table[i].pid == pid)
+        if (proc_table[i] && proc_table[i]->state != PROC_STATE_UNUSED &&
+            proc_table[i]->pid == pid)
         {
-            found = &proc_table[i];
+            found = proc_table[i];
             break;
         }
     }

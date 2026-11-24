@@ -62,6 +62,7 @@ typedef struct process
     uint32_t uid, euid, suid; // real, effective and saved user id
     uint32_t gid, egid, sgid; // real, effective and saved group id
     uint32_t umask;         // permission bits taken off new files
+    int32_t nice;           // -20 (most CPU) to 19 (least): the time slice length
     process_state_t state;  // current state
     uintptr_t brk;          // program break (for sbrk)
     vma_table_t vmas;       // what is mapped in the user half (vma.h)
@@ -100,8 +101,9 @@ typedef struct process
     // the FPU/SSE registers while another process runs (arch_fpu_save)
     uint8_t fpu_state[ARCH_FPU_STATE_SIZE] __attribute__((aligned(16)));
     char name[PROCESS_NAME_MAX]; // the program's file name (procfs)
-    char cwd[PATH_MAX];     // current working directory
-    fd_entry_t fds[FD_MAX]; // per-process file descriptor table
+    char cwd[PATH_MAX];     // current working directory (the real path)
+    char root[PATH_MAX];    // the root directory (chroot): a path starts here
+    fd_entry_t *fds; // the file descriptor table: FD_MAX entries (process_create)
 } process_t;
 
 /**

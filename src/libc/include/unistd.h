@@ -101,6 +101,10 @@ void _exit(int status) __attribute__((noreturn));
 int dup(int fd);
 
 // access() modes
+#define STDIN_FILENO  0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
+
 #define F_OK 0 // the file exists
 #define X_OK 1
 #define W_OK 2
@@ -114,6 +118,7 @@ int dup(int fd);
  * @return 0, or -1 (errno set).
  */
 int access(const char *path, int mode);
+int faccessat(int dirfd, const char *path, int mode, int flags);
 
 /**
  * read or write at an offset, without moving the file offset.
@@ -159,6 +164,19 @@ int setpgid(pid_t pid, pid_t pgid);
 pid_t getpgid(pid_t pid);
 pid_t getpgrp(void);
 pid_t setsid(void);
+
+/**
+ * add increment to the caller's nice value (see sys/resource.h).
+ * @return the new value, or -1 (errno set).
+ */
+int nice(int increment);
+
+/**
+ * make a directory the root of the caller's paths ("/" is then that
+ * directory; root only). the working directory stays: chdir("/") after.
+ * @return 0, or -1 (errno set).
+ */
+int chroot(const char *path);
 pid_t getsid(pid_t pid);
 
 /**
@@ -180,6 +198,9 @@ int setegid(gid_t gid);
  * only change its group to its own. (uid_t)-1 or (gid_t)-1 keeps one.
  */
 int chown(const char *path, uid_t uid, gid_t gid);
+int fchown(int fd, uid_t uid, gid_t gid);
+int lchown(const char *path, uid_t uid, gid_t gid);
+int fchownat(int dirfd, const char *path, uid_t uid, gid_t gid, int flags);
 
 /**
  * get the parent's process ID.
@@ -208,11 +229,12 @@ void *sbrk(int increment);
 
 /**
  * get the current working directory.
- * @param buf buffer to write the path into.
+ * @param buf buffer to write the path into; NULL: a new one from malloc
+ *        (of size bytes, or as long as needed when size is 0).
  * @param size size of the buffer.
- * @return 0 on success, -1 on failure.
+ * @return buf (or the new buffer), or NULL (errno: ERANGE, ENOMEM).
  */
-int getcwd(char *buf, size_t size);
+char *getcwd(char *buf, size_t size);
 
 /**
  * change the current working directory.
@@ -227,6 +249,21 @@ int chdir(const char *path);
  * @return 0 on success, -1 on failure.
  */
 int unlink(const char *path);
+
+/** make a symbolic link at path that points at target */
+int symlink(const char *target, const char *path);
+int symlinkat(const char *target, int dirfd, const char *path);
+/**
+ * read a symbolic link's target (no NUL; a longer target is cut).
+ * @return the bytes put in buffer, or -1 (EINVAL: path is not a link).
+ */
+ssize_t readlink(const char *restrict path, char *restrict buffer, size_t size);
+ssize_t readlinkat(int dirfd, const char *restrict path, char *restrict buffer, size_t size);
+/** give a file one more name (a hard link) */
+int link(const char *old_path, const char *new_path);
+int linkat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path, int flags);
+/** remove a file, or with AT_REMOVEDIR a directory, relative to dirfd */
+int unlinkat(int dirfd, const char *path, int flags);
 
 /**
  * remove a directory.
@@ -342,11 +379,12 @@ int pipe(int fds[2]);
 int dup2(int old_fd, int new_fd);
 
 /**
- * truncate an open file to zero length.
- * @param fd file descriptor.
- * @return 0 on success, -1 on failure.
+ * cut or grow a file to length bytes (the new bytes read as zeros). the
+ * file offset stays.
+ * @return 0, or -1 (errno set).
  */
-int ftruncate(int fd);
+int ftruncate(int fd, off_t length);
+int truncate(const char *path, off_t length);
 
 /* lseek whence constants */
 #define SEEK_SET 0
@@ -361,3 +399,77 @@ int ftruncate(int fd);
  * @return new cursor position, or -1 on error.
  */
 int lseek(int fd, int offset, int whence);
+
+// sysconf names
+#define _SC_ARG_MAX          0
+#define _SC_CHILD_MAX        1
+#define _SC_CLK_TCK          2
+#define _SC_OPEN_MAX         4
+#define _SC_PAGESIZE         30
+#define _SC_PAGE_SIZE        _SC_PAGESIZE
+#define _SC_NPROCESSORS_CONF 83
+#define _SC_NPROCESSORS_ONLN 84
+#define _SC_LINE_MAX         43
+#define _SC_HOST_NAME_MAX    180
+#define _SC_LOGIN_NAME_MAX   71
+#define _SC_PHYS_PAGES       85
+
+/** a limit of the system (a _SC_ name), or -1 with EINVAL */
+long sysconf(int name);
+
+// pathconf names (Linux's numbers)
+#define _PC_LINK_MAX         0
+#define _PC_MAX_CANON        1
+#define _PC_MAX_INPUT        2
+#define _PC_NAME_MAX         3
+#define _PC_PATH_MAX         4
+#define _PC_PIPE_BUF         5
+#define _PC_CHOWN_RESTRICTED 6
+#define _PC_NO_TRUNC         7
+#define _PC_VDISABLE         8
+
+/**
+ * a limit of the files at path (a _PC_ name). ginnOS's limits are the
+ * same on every filesystem.
+ * @return the limit, or -1 (errno: EINVAL for a name, or as stat sets it).
+ */
+long pathconf(const char *path, int name);
+long fpathconf(int fd, int name);
+
+// confstr names
+#define _CS_PATH 0 // a PATH that finds the standard tools
+
+/**
+ * a string value of the system (a _CS_ name) into buffer.
+ * @return the size the whole value needs, NUL included; 0 with EINVAL for
+ *         an unknown name.
+ */
+size_t confstr(int name, char *buffer, size_t size);
+/** the name of this computer (uname's nodename) into name */
+int gethostname(char *name, size_t length);
+/** set the host name (root only; at most 64 bytes) */
+int sethostname(const char *name, size_t length);
+
+/**
+ * the name of the terminal open as fd (as "/dev/pts/0").
+ * @return the name in a static buffer, or NULL (errno: ENOTTY, EBADF).
+ */
+char *ttyname(int fd);
+int ttyname_r(int fd, char *buffer, size_t size);
+
+/**
+ * make every write reach the disk. ginnOS writes through its cache at
+ * once, so there is nothing to wait for.
+ */
+void sync(void);
+
+/**
+ * go on in the background: a new process in a new session, with no
+ * terminal.
+ * @param keep_dir 0: change to "/".
+ * @param keep_files 0: read and write /dev/null on 0, 1 and 2.
+ * @return 0 in the new process, or -1 (errno set).
+ */
+int daemon(int keep_dir, int keep_files);
+/** the name of the user who runs the program (from the password file), or NULL */
+char *getlogin(void);

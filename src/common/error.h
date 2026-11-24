@@ -28,6 +28,7 @@ typedef enum
     KERR_NOENT    = -13, // no such entry
     KERR_FAULT    = -14, // bad address (pointer validation failed)
     KERR_NOTEMPTY = -15, // directory not empty
+    KERR_LOOP     = -16, // too many symbolic links in a path
 } kerr_t;
 
 /**

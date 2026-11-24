@@ -51,7 +51,7 @@ typedef struct
     int32_t (*mmap)(file_t *file, addr_space_t as, uintptr_t virt, size_t length, int prot,
                     uint32_t offset);
     int32_t (*read_entry)(file_t *file, fs_dirent_t *entry);
-    int32_t (*truncate)(file_t *file);
+    int32_t (*truncate)(file_t *file, uint32_t length);
     int32_t (*stat)(file_t *file, struct kstat *st);
     uint32_t (*poll)(file_t *file); // POLL* events that would not block now
     void (*release)(file_t *file); // the last reference is gone
@@ -66,6 +66,7 @@ struct file
     uint32_t refcount; // descriptors (and kernel users) referring to it
     uint32_t flags;    // O_ access mode and status flags
     fs_dirent_t *lookahead; // a directory entry read but not yet returned
+    char *path;             // a filesystem file: its absolute path (for the *at calls)
     union
     {
         vfs_file_t vfs; // a filesystem file or directory (its offset inside)
@@ -86,6 +87,14 @@ struct file
  * @return KERR_OK, KERR_NOMEM, or the VFS's error.
  */
 kerr_t file_open(const char *path, uint32_t flags, file_t **out);
+
+/**
+ * a new end of a named pipe, not yet joined to one (kernel/vfs/fifo.c
+ * joins it). its release leaves the named pipe.
+ * @param flags the open flags.
+ * @return the file, or NULL (no memory).
+ */
+file_t *file_new_fifo_end(uint32_t flags);
 
 /**
  * make the two ends of a new pipe.
@@ -153,7 +162,7 @@ int32_t file_read_entry(file_t *file, fs_dirent_t *entry);
  * @return 0, or -ENOMEM.
  */
 int32_t file_unread_entry(file_t *file, const fs_dirent_t *entry);
-int32_t file_truncate(file_t *file);
+int32_t file_truncate(file_t *file, uint32_t length);
 int32_t file_stat(file_t *file, struct kstat *st);
 
 /**

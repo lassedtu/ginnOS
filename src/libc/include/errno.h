@@ -52,6 +52,11 @@
 #define EPROTONOSUPPORT 41 /* protocol not supported */
 #define EOPNOTSUPP 42 /* operation not supported */
 #define ECANCELED 43 /* operation cancelled (by the program, not the kernel) */
+#define EILSEQ 44 /* bytes that are not a character (UTF-8), from the libc */
+#define EMLINK 45 /* too many links to a file */
+#define EFBIG  46 /* a file would be too large */
+#define ENOLCK 47 /* no locks left */
+#define ENXIO  48 /* no such device or address */
 
 #define EWOULDBLOCK EAGAIN
 

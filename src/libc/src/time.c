@@ -3,6 +3,7 @@
 #include "errno.h"
 #include "stdio.h"
 #include "string.h"
+#include "strings.h"
 #include "syscall.h"
 #include "sys/time.h"
 #include "sys/times.h"
@@ -108,6 +109,8 @@ struct tm *gmtime_r(const time_t *t, struct tm *out)
     out->tm_sec = (int)(seconds % 60);
     out->tm_wday = (int)((days % 7 + 11) % 7); // 1970-01-01 was a Thursday
     out->tm_isdst = 0;
+    out->tm_gmtoff = 0;
+    out->tm_zone = "UTC";
 
     long year = 1970;
     for (;;)
@@ -296,4 +299,190 @@ size_t strftime(char *buf, size_t size, const char *format, const struct tm *tm)
 
     buf[used] = '\0';
     return used;
+}
+
+/** read a number of at most digits digits from min to max; NULL when it is not there */
+static const char *read_number(const char *s, int digits, int min, int max, int *out)
+{
+    int value = 0;
+    int n = 0;
+    while (n < digits && *s >= '0' && *s <= '9')
+    {
+        value = value * 10 + (*s++ - '0');
+        n++;
+    }
+    if (n == 0 || value < min || value > max)
+        return NULL;
+    *out = value;
+    return s;
+}
+
+/** read a name from names (whole, or its first three letters, any case) */
+static const char *read_name(const char *s, const char *const *names, int count, int *out)
+{
+    for (int i = 0; i < count; i++)
+    {
+        size_t length = strlen(names[i]);
+        if (strncasecmp(s, names[i], length) == 0)
+        {
+            *out = i;
+            return s + length;
+        }
+    }
+    for (int i = 0; i < count; i++)
+    {
+        if (strncasecmp(s, names[i], 3) == 0)
+        {
+            *out = i;
+            return s + 3;
+        }
+    }
+    return NULL;
+}
+
+static const char *skip_spaces(const char *s)
+{
+    while (*s == ' ' || (*s >= '\t' && *s <= '\r'))
+        s++;
+    return s;
+}
+
+char *strptime(const char *restrict text, const char *restrict format, struct tm *restrict tm)
+{
+    const char *s = text;
+    int hour12 = -1; // %I: the hour on a 12-hour clock, made 24 by %p
+    int pm = -1;
+    for (const char *f = format; s && *f; f++)
+    {
+        if (*f == ' ' || (*f >= '\t' && *f <= '\r'))
+        {
+            s = skip_spaces(s);
+            continue;
+        }
+        if (*f != '%')
+        {
+            if (*s++ != *f)
+                return NULL;
+            continue;
+        }
+        f++;
+        if (*f == 'E' || *f == 'O')
+            f++; // the alternative forms are the same in the "C" locale
+        int value;
+        switch (*f)
+        {
+        case '%':
+            s = *s == '%' ? s + 1 : NULL;
+            break;
+        case 'n':
+        case 't':
+            s = skip_spaces(s);
+            break;
+        case 'a':
+        case 'A':
+            s = read_name(s, day_names, 7, &tm->tm_wday);
+            break;
+        case 'b':
+        case 'B':
+        case 'h':
+            s = read_name(s, month_names, 12, &tm->tm_mon);
+            break;
+        case 'd':
+        case 'e':
+            s = read_number(skip_spaces(s), 2, 1, 31, &tm->tm_mday);
+            break;
+        case 'H':
+        case 'k':
+            s = read_number(skip_spaces(s), 2, 0, 23, &tm->tm_hour);
+            break;
+        case 'I':
+        case 'l':
+            s = read_number(skip_spaces(s), 2, 1, 12, &hour12);
+            break;
+        case 'j':
+            if ((s = read_number(s, 3, 1, 366, &value)))
+                tm->tm_yday = value - 1;
+            break;
+        case 'm':
+            if ((s = read_number(s, 2, 1, 12, &value)))
+                tm->tm_mon = value - 1;
+            break;
+        case 'M':
+            s = read_number(s, 2, 0, 59, &tm->tm_min);
+            break;
+        case 'S':
+            s = read_number(s, 2, 0, 60, &tm->tm_sec);
+            break;
+        case 'p':
+            if (strncasecmp(s, "AM", 2) == 0 || strncasecmp(s, "PM", 2) == 0)
+            {
+                pm = (s[0] | 0x20) == 'p';
+                s += 2;
+            }
+            else
+                s = NULL;
+            break;
+        case 'y':
+            // 69 to 99 are 1969 to 1999; 00 to 68 are 2000 to 2068 (POSIX)
+            if ((s = read_number(s, 2, 0, 99, &value)))
+                tm->tm_year = value < 69 ? value + 100 : value;
+            break;
+        case 'C':
+            if ((s = read_number(s, 2, 0, 99, &value)))
+                tm->tm_year = value * 100 - 1900 + tm->tm_year % 100;
+            break;
+        case 'Y':
+            if ((s = read_number(s, 4, 0, 9999, &value)))
+                tm->tm_year = value - 1900;
+            break;
+        case 'D':
+            s = strptime(s, "%m/%d/%y", tm);
+            break;
+        case 'F':
+            s = strptime(s, "%Y-%m-%d", tm);
+            break;
+        case 'R':
+            s = strptime(s, "%H:%M", tm);
+            break;
+        case 'T':
+            s = strptime(s, "%H:%M:%S", tm);
+            break;
+        case 'c':
+            s = strptime(s, "%a %b %e %H:%M:%S %Y", tm);
+            break;
+        case 'z':
+        {
+            // +hhmm or -hhmm, or Z
+            if (*s == 'Z')
+            {
+                tm->tm_gmtoff = 0;
+                s++;
+                break;
+            }
+            int sign = *s == '-' ? -1 : *s == '+' ? 1 : 0;
+            int hhmm;
+            if (!sign || !(s = read_number(s + 1, 4, 0, 2400, &hhmm)))
+            {
+                s = NULL;
+                break;
+            }
+            tm->tm_gmtoff = sign * (hhmm / 100 * 3600 + hhmm % 100 * 60);
+            break;
+        }
+        case 'Z':
+            // ginnOS knows one zone: its name and the other common one
+            if (strncmp(s, "UTC", 3) == 0 || strncmp(s, "GMT", 3) == 0)
+                s += 3;
+            else
+                s = NULL;
+            break;
+        default:
+            return NULL;
+        }
+    }
+    if (!s)
+        return NULL;
+    if (hour12 >= 0)
+        tm->tm_hour = hour12 % 12 + (pm == 1 ? 12 : 0);
+    return (char *)s;
 }

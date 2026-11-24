@@ -9,9 +9,9 @@ typedef struct process process_t;
 
 struct registers;
 
-// most argv and envp entries a new program gets
-#define USER_ARGC_MAX 64
-#define USER_ENVC_MAX 64
+// most bytes the argv and envp of a new program take together: the strings
+// with their NULs and one pointer for each (ARG_MAX in the libc, as Linux)
+#define USER_ARG_MAX (128u * 1024u)
 
 /**
  * back the first pages of the user stack in an address space and put a new

@@ -18,6 +18,29 @@ typedef struct
     char machine[UTS_FIELD];
 } uts_t;
 
+// the host name (sethostname; the uname nodename)
+static char host_name[UTS_FIELD] = "ginnos";
+
+/**
+ * SYS_sethostname: set the host name (root only).
+ * args: the name, its length (at most 64 bytes, no NUL needed).
+ * returns 0, or -EPERM, -EINVAL (too long), -EFAULT.
+ */
+syscall_ret_t sys_sethostname(struct registers *regs)
+{
+    uint32_t length = (uint32_t)syscall_arg(regs, 1);
+    if (process_current()->euid != 0)
+        return -EPERM;
+    if (length >= UTS_FIELD)
+        return -EINVAL;
+    char name[UTS_FIELD];
+    if (kerr_failed(copy_from_user(name, (const void *)syscall_arg(regs, 0), length)))
+        return -EFAULT;
+    name[length] = '\0';
+    memcpy(host_name, name, sizeof(name));
+    return 0;
+}
+
 /**
  * SYS_uname: the name of the system, its release and version, and the
  * machine.
@@ -30,7 +53,7 @@ syscall_ret_t sys_uname(struct registers *regs)
     uts_t uts;
     memset(&uts, 0, sizeof(uts));
     strncpy(uts.sysname, "ginnOS", UTS_FIELD - 1);
-    strncpy(uts.nodename, "ginnos", UTS_FIELD - 1); // no host names yet
+    strncpy(uts.nodename, host_name, UTS_FIELD - 1);
     strncpy(uts.release, GINNOS_RELEASE, UTS_FIELD - 1);
     strncpy(uts.version, GINNOS_VERSION, UTS_FIELD - 1);
 #ifdef __x86_64__

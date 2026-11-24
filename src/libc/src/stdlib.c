@@ -1,4 +1,5 @@
 #include "stdlib.h"
+#include "inttypes.h"
 #include "unistd.h"
 #include "string.h"
 #include "stdio.h"
@@ -9,6 +10,8 @@
 #include "ctype.h"
 #include "fcntl.h"
 #include "time.h"
+#include "limits.h"
+#include "sys/stat.h"
 
 /**
  * @file stdlib.c
@@ -820,4 +823,109 @@ int mkstemp(char *template)
     }
     errno = EEXIST;
     return -1;
+}
+
+intmax_t strtoimax(const char *s, char **end, int base)
+{
+    return strtoll(s, end, base);
+}
+
+uintmax_t strtoumax(const char *s, char **end, int base)
+{
+    return strtoull(s, end, base);
+}
+
+char *realpath(const char *restrict path, char *restrict resolved)
+{
+    if (!path)
+    {
+        errno = EINVAL;
+        return NULL;
+    }
+    struct stat st;
+    if (stat(path, &st) < 0)
+        return NULL;
+    char joined[PATH_MAX * 2];
+    if (path[0] == '/')
+        snprintf(joined, sizeof(joined), "%s", path);
+    else
+    {
+        char cwd[PATH_MAX];
+        if (!getcwd(cwd, sizeof(cwd)))
+            return NULL;
+        snprintf(joined, sizeof(joined), "%s/%s", cwd, path);
+    }
+    // the parts one at a time: "." is skipped, ".." takes the last one off
+    char out[PATH_MAX];
+    size_t length = 0;
+    for (char *part = joined; *part;)
+    {
+        while (*part == '/')
+            part++;
+        char *end = part;
+        while (*end && *end != '/')
+            end++;
+        size_t n = (size_t)(end - part);
+        if (n == 0 || (n == 1 && part[0] == '.'))
+        {
+        }
+        else if (n == 2 && part[0] == '.' && part[1] == '.')
+        {
+            while (length > 0 && out[length - 1] != '/')
+                length--;
+            if (length > 0)
+                length--; // the slash
+        }
+        else
+        {
+            if (length + 1 + n >= sizeof(out))
+            {
+                errno = ENAMETOOLONG;
+                return NULL;
+            }
+            out[length++] = '/';
+            memcpy(out + length, part, n);
+            length += n;
+        }
+        part = end;
+    }
+    if (length == 0)
+        out[length++] = '/';
+    out[length] = '\0';
+    if (!resolved)
+        return strdup(out);
+    strcpy(resolved, out);
+    return resolved;
+}
+
+char *mkdtemp(char *template)
+{
+    static const char letters[] =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    static unsigned long long counter;
+    size_t length = strlen(template);
+    if (length < 6 || strcmp(template + length - 6, "XXXXXX") != 0)
+    {
+        errno = EINVAL;
+        return NULL;
+    }
+    char *x = template + length - 6;
+    for (int tries = 0; tries < 100; tries++)
+    {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        unsigned long long v = (unsigned long long)now.tv_nsec * 2654435761u ^
+                               ((unsigned long long)getpid() << 32) ^ ++counter * 40503u;
+        for (int i = 0; i < 6; i++)
+        {
+            x[i] = letters[v % (sizeof(letters) - 1)];
+            v /= sizeof(letters) - 1;
+        }
+        if (mkdir(template, 0700) == 0)
+            return template;
+        if (errno != EEXIST)
+            return NULL;
+    }
+    errno = EEXIST;
+    return NULL;
 }

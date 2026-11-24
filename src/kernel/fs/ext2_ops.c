@@ -1,6 +1,7 @@
 #include "fs.h"
 #include "ext2_ops.h"
 #include "kernel/sync/mutex.h"
+#include "kernel/device/device.h"
 
 #include "common/memory.h"
 
@@ -29,6 +30,20 @@ static uint8_t map_ext2_file_type(uint8_t ext2_type)
         return FS_TYPE_DIR;
     }
 
+    switch (ext2_type)
+    {
+    case EXT2_FT_SYMLINK:
+        return FS_TYPE_SYMLINK;
+    case EXT2_FT_FIFO:
+        return FS_TYPE_FIFO;
+    case EXT2_FT_CHRDEV:
+        return FS_TYPE_CHAR;
+    case EXT2_FT_BLKDEV:
+        return FS_TYPE_BLOCK;
+    default:
+        break;
+    }
+
     return FS_TYPE_UNKNOWN;
 }
 
@@ -45,6 +60,20 @@ static uint8_t map_inode_type(uint16_t mode)
     if ((mode & EXT2_S_IFMT) == EXT2_S_IFDIR)
     {
         return FS_TYPE_DIR;
+    }
+
+    switch (mode & EXT2_S_IFMT)
+    {
+    case EXT2_S_IFLNK:
+        return FS_TYPE_SYMLINK;
+    case EXT2_S_IFIFO:
+        return FS_TYPE_FIFO;
+    case EXT2_S_IFCHR:
+        return FS_TYPE_CHAR;
+    case EXT2_S_IFBLK:
+        return FS_TYPE_BLOCK;
+    default:
+        break;
     }
 
     return FS_TYPE_UNKNOWN;
@@ -103,6 +132,15 @@ static void fill_stat(uint32_t inode_number, const ext2_inode_t *inode, fs_stat_
     stat_out->ctime = inode->i_ctime;
     stat_out->uid = inode->i_uid;
     stat_out->gid = inode->i_gid;
+    stat_out->rdev = 0;
+    uint32_t type = inode->i_mode & EXT2_S_IFMT;
+    if (type == EXT2_S_IFCHR || type == EXT2_S_IFBLK)
+    {
+        uint32_t major;
+        uint32_t minor;
+        ext2_device_numbers(inode, &major, &minor);
+        stat_out->rdev = DEVICE_NUMBER(major, minor);
+    }
 }
 
 static kerr_t ext2_ops_stat(fs_mount_t *mount, const char *path, fs_stat_t *stat_out)
@@ -152,10 +190,9 @@ static uint32_t ext2_ops_write(fs_file_t *file, uint32_t byte_count, const void 
     return ext2_write(&file->ext2_file, byte_count, data_in);
 }
 
-static kerr_t ext2_ops_truncate(fs_file_t *file)
+static kerr_t ext2_ops_truncate(fs_file_t *file, uint32_t length)
 {
-    ext2_truncate(&file->ext2_file);
-    return KERR_OK;
+    return ext2_truncate(&file->ext2_file, length);
 }
 
 static kerr_t ext2_ops_read_entry(fs_file_t *file, fs_dirent_t *entry_out)
@@ -261,10 +298,10 @@ static uint32_t locked_write(fs_file_t *file, uint32_t byte_count, const void *d
     return n;
 }
 
-static kerr_t locked_truncate(fs_file_t *file)
+static kerr_t locked_truncate(fs_file_t *file, uint32_t length)
 {
     mutex_lock(&ext2_lock);
-    kerr_t err = ext2_ops_truncate(file);
+    kerr_t err = ext2_ops_truncate(file, length);
     mutex_unlock(&ext2_lock);
     return err;
 }
@@ -308,6 +345,14 @@ static kerr_t ext2_ops_setattr(fs_file_t *file, const fs_attr_t *attr)
         inode.i_uid = (uint16_t)attr->uid;
         inode.i_gid = (uint16_t)attr->gid;
     }
+    if (attr->what & FS_ATTR_ATIME)
+    {
+        inode.i_atime = attr->atime;
+    }
+    if (attr->what & FS_ATTR_MTIME)
+    {
+        inode.i_mtime = attr->mtime;
+    }
     inode.i_ctime = ext2_now();
 
     if (!ext2_write_inode(ext2->volume, ext2->inode, &inode))
@@ -333,6 +378,50 @@ static void locked_close(fs_file_t *file)
     mutex_unlock(&ext2_lock);
 }
 
+static kerr_t locked_find_link(fs_mount_t *mount, const char *path, bool follow_last,
+                               char *target, uint32_t size, uint32_t *end_out)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_find_link(&mount->ext2, path, follow_last, target, size, end_out);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
+static kerr_t locked_readlink(fs_mount_t *mount, const char *path, char *target, uint32_t size)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_readlink(&mount->ext2, path, target, size);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
+static kerr_t locked_symlink(fs_mount_t *mount, const char *path, const char *target)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_symlink(&mount->ext2, path, target);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
+static kerr_t locked_link(fs_mount_t *mount, const char *old_path, const char *new_path)
+{
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_link(&mount->ext2, old_path, new_path);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
+static kerr_t locked_mknod(fs_mount_t *mount, const char *path, uint32_t mode, uint32_t rdev)
+{
+    // unpack as DEVICE_NUMBER packs
+    uint32_t major = (rdev >> 8) & 0xfffu;
+    uint32_t minor = (rdev & 0xffu) | ((rdev >> 12) & 0xfff00u);
+    mutex_lock(&ext2_lock);
+    kerr_t err = ext2_mknod(&mount->ext2, path, mode, major, minor);
+    mutex_unlock(&ext2_lock);
+    return err;
+}
+
 // the ext2 operations table handed to the generic fs layer at mount time.
 static const fs_ops_t ext2_ops = {
     .open = locked_open,
@@ -349,6 +438,11 @@ static const fs_ops_t ext2_ops = {
     .fstat = locked_fstat,
     .setattr = locked_setattr,
     .close = locked_close,
+    .find_link = locked_find_link,
+    .readlink = locked_readlink,
+    .symlink = locked_symlink,
+    .link = locked_link,
+    .mknod = locked_mknod,
 };
 
 kerr_t ext2_ops_mount(fs_mount_t *mount, block_device_t *device)

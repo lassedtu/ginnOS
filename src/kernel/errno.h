@@ -53,6 +53,11 @@
 #define EPROTONOSUPPORT 41 // protocol not supported
 #define EOPNOTSUPP   42 // operation not supported
 #define ECANCELED    43 // operation cancelled (programs use it; the kernel does not)
+#define EILSEQ       44 // not a character in UTF-8 (programs use it; the kernel does not)
+#define EMLINK       45 // too many links to a file
+#define EFBIG        46 // a file would be too large
+#define ENOLCK       47 // no locks left (flock)
+#define ENXIO        48 // no such device (a device node with none behind it)
 
 #define EWOULDBLOCK EAGAIN
 
@@ -86,6 +91,7 @@ static inline int32_t kerr_to_errno(kerr_t err)
     case KERR_NOENT:    return -ENOENT;
     case KERR_FAULT:    return -EFAULT;
     case KERR_NOTEMPTY: return -ENOTEMPTY;
+    case KERR_LOOP:     return -ELOOP;
     }
     return -EINVAL;
 }
