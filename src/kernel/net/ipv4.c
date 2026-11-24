@@ -11,6 +11,7 @@
 #include "common/memory.h"
 #include "ethernet.h"
 #include "icmp.h"
+#include "udp.h"
 #include "kernel/memory/heap.h"
 
 #define VERSION_IHL  0x45 // version 4, five words of header
@@ -74,6 +75,10 @@ void ipv4_receive(netif_t *netif, const uint8_t *packet, uint32_t length)
         ipv4_stats.delivered++;
         icmp_receive(netif, h, payload, payload_length);
         break;
+    case IP_PROTO_UDP:
+        ipv4_stats.delivered++;
+        udp_receive(netif, h, payload, payload_length);
+        break;
     default:
         ipv4_stats.unknown_protocol++;
         icmp_send_unreachable(h, ICMP_PROTOCOL_UNREACHABLE);
@@ -129,6 +134,23 @@ netif_t *ipv4_route(uint32_t dst, uint32_t *next_hop)
     return NULL;
 }
 
+/**
+ * the source address of a packet to dst that goes out on netif: on the
+ * loopback interface, a packet to one of our other addresses comes from
+ * that address.
+ */
+static uint32_t source_on(const netif_t *netif, uint32_t dst)
+{
+    return netif->loopback && (dst & 0xFF) != LOOPBACK_NET ? dst : netif->address;
+}
+
+uint32_t ipv4_source_for(uint32_t dst)
+{
+    uint32_t next_hop;
+    netif_t *netif = ipv4_route(dst, &next_hop);
+    return netif ? source_on(netif, dst) : 0;
+}
+
 bool ipv4_init(void)
 {
     packet_out = kmalloc(IPV4_PACKET_MAX);
@@ -148,7 +170,7 @@ bool ipv4_send(uint32_t source, uint32_t dst, uint8_t protocol, const void *payl
     }
     if (source == 0)
     {
-        source = netif->loopback && (dst & 0xFF) != LOOPBACK_NET ? dst : netif->address;
+        source = source_on(netif, dst);
     }
 
     ipv4_header_t *h = (ipv4_header_t *)packet_out;

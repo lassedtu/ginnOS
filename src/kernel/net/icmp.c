@@ -8,6 +8,7 @@
 #include "byteorder.h"
 #include "checksum.h"
 #include "common/memory.h"
+#include "inet_socket.h"
 
 #define HEADER_SIZE 8
 
@@ -43,6 +44,8 @@ void icmp_receive(netif_t *netif, const ipv4_header_t *ip, const uint8_t *messag
     else if (type == ICMP_ECHO_REPLY)
     {
         ipv4_stats.icmp_echo_replies++;
+        uint16_t id = (uint16_t)((message[4] << 8) | message[5]);
+        inet_socket_deliver_echo(ip->source, id, message, length);
     }
 }
 

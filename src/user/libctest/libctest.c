@@ -358,6 +358,7 @@ int main(void)
     test_posix();
     test_files();
     test_threads();
+    test_net();
 
     if (failures)
         printf("libctest: %d of %d checks failed\n", failures, checks);

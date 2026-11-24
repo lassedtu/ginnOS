@@ -59,6 +59,19 @@
 #define ENXIO  48 /* no such device or address */
 #define EDEADLK 49 /* the lock would never be free (pthreads, from the libc) */
 #define EOVERFLOW 50 /* a value would be too large for its type */
+#define EADDRNOTAVAIL 51 /* address not available */
+#define EDESTADDRREQ 52 /* destination address required */
+#define EMSGSIZE 53 /* message too long */
+#define ENETUNREACH 54 /* network unreachable */
+#define EHOSTUNREACH 55 /* host unreachable */
+#define ENOPROTOOPT 56 /* protocol not available */
+#define EPROTOTYPE 57 /* wrong protocol type for socket */
+#define ECONNRESET 58 /* connection reset by peer */
+#define ECONNABORTED 59 /* connection aborted */
+#define EINPROGRESS 60 /* operation in progress */
+#define EALREADY 61 /* operation already in progress */
+#define ENETDOWN 62 /* network is down */
+#define EPROTO 63 /* protocol error */
 
 #define ENOTSUP EOPNOTSUPP
 

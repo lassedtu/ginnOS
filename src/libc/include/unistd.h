@@ -471,5 +471,18 @@ void sync(void);
  * @return 0 in the new process, or -1 (errno set).
  */
 int daemon(int keep_dir, int keep_files);
+
+/**
+ * the next option of a command line (POSIX getopt).
+ * @param options the option letters; a letter with ':' after it takes an
+ *        argument. a ':' first: no messages, and ':' for a missing argument.
+ * @return the option letter, '?' for an unknown one (in optopt), or -1
+ *         after the last option (optind is then the first operand).
+ */
+int getopt(int argc, char *const argv[], const char *options);
+extern char *optarg; // the argument of the option getopt returned
+extern int optind;   // the next argument getopt looks at (0 starts again)
+extern int opterr;   // 0: getopt writes no messages
+extern int optopt;   // the option letter of the last error
 /** the name of the user who runs the program (from the password file), or NULL */
 char *getlogin(void);

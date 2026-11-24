@@ -11,6 +11,7 @@
 #include "ipv4.h"
 #include "kernel/memory/heap.h"
 #include "kernel/sync/spinlock.h"
+#include "kernel/sync/wait_queue.h"
 
 // packets on the loopback interface that wait to be received
 #define LOOPBACK_QUEUE 16
@@ -36,6 +37,11 @@ uint32_t net_lock(void)
 void net_unlock(uint32_t flags)
 {
     spin_unlock_irqrestore(&lock, flags);
+}
+
+void net_wait(wait_queue_t *wq)
+{
+    wait_queue_block_locked_interruptible(wq, &lock);
 }
 
 /**

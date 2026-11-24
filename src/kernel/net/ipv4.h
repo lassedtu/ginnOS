@@ -47,6 +47,7 @@ typedef struct
     uint32_t fragments;  // dropped: fragments are not put together
     uint32_t not_for_us;
     uint32_t unknown_protocol;
+    uint32_t no_port; // UDP: no socket for the port
     uint32_t sent;
     uint32_t no_route;
     uint32_t icmp_echo_answered;
@@ -74,6 +75,12 @@ void ipv4_receive(netif_t *netif, const uint8_t *packet, uint32_t length);
  */
 bool ipv4_send(uint32_t source, uint32_t dst, uint8_t protocol, const void *payload,
                uint32_t length);
+
+/**
+ * the source address a packet to dst gets (net_lock held), 0 if there is
+ * no route.
+ */
+uint32_t ipv4_source_for(uint32_t dst);
 
 /**
  * the interface a packet to dst goes out on, and the host it goes to

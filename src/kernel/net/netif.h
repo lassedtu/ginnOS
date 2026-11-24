@@ -16,6 +16,7 @@
  */
 
 #include "common/stdint.h"
+#include "kernel/sync/wait_queue.h"
 
 #define NETIF_MAX      4
 #define NETIF_NAME_MAX 8
@@ -64,6 +65,13 @@ void net_init(void);
  */
 uint32_t net_lock(void);
 void net_unlock(uint32_t flags);
+
+/**
+ * sleep on a wait queue with net_lock held (interruptibly): the lock is
+ * let go while the process sleeps and held again on return. the caller
+ * checks its condition and signal_pending in a loop.
+ */
+void net_wait(wait_queue_t *wq);
 
 /**
  * add an interface. the name is made from prefix and a number (eth0).
