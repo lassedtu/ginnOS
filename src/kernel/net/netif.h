@@ -5,8 +5,8 @@
  * @brief network interfaces: the devices that send and receive frames.
  *
  * a driver registers an interface with a send function, and gives each
- * frame it receives to netif_receive. the stack is not ready yet (N0), so
- * a received frame is only counted.
+ * frame it receives to netif_receive, which gives it to Ethernet (or, on
+ * the loopback interface, which has no Ethernet header, to IPv4).
  *
  * locking: all network state is under one spinlock (net_lock, irqsave).
  * frames are received in the device's interrupt handler, and the stack
@@ -26,7 +26,8 @@ struct netif;
 
 /**
  * send one frame (for Ethernet: from the destination address to the end
- * of the payload, no checksum). called with net_lock held.
+ * of the payload, no checksum; for loopback: an IPv4 packet). called with
+ * net_lock held.
  * @return false if the device has no room (the frame is dropped).
  */
 typedef bool (*netif_send_fn)(struct netif *netif, const void *frame, uint32_t length);

@@ -7,11 +7,26 @@
 
 #include "common/memory.h"
 #include "common/string.h"
+#include "ethernet.h"
+#include "ipv4.h"
+#include "kernel/memory/heap.h"
 #include "kernel/sync/spinlock.h"
+
+// packets on the loopback interface that wait to be received
+#define LOOPBACK_QUEUE 16
 
 static spinlock_t lock; // zero: unlocked
 static netif_t interfaces[NETIF_MAX];
 static uint32_t interface_count;
+
+static struct
+{
+    uint8_t *data;
+    uint32_t length;
+} loopback_queue[LOOPBACK_QUEUE];
+static uint32_t loopback_head;
+static uint32_t loopback_count;
+static bool loopback_draining;
 
 uint32_t net_lock(void)
 {
@@ -24,16 +39,48 @@ void net_unlock(uint32_t flags)
 }
 
 /**
- * the loopback interface gives each frame back as received.
+ * the loopback interface gives each packet back as received. a packet is
+ * copied into a queue first: the stack can send again while it handles a
+ * packet (an answer), and that send must not overwrite the packet. the
+ * outermost send empties the queue.
  */
 static bool loopback_send(netif_t *netif, const void *frame, uint32_t length)
 {
-    netif_receive(netif, frame, length);
+    if (loopback_count == LOOPBACK_QUEUE)
+    {
+        return false;
+    }
+    uint8_t *copy = kmalloc(length ? length : 1);
+    if (!copy)
+    {
+        return false;
+    }
+    memcpy(copy, frame, length);
+    uint32_t tail = (loopback_head + loopback_count) % LOOPBACK_QUEUE;
+    loopback_queue[tail].data = copy;
+    loopback_queue[tail].length = length;
+    loopback_count++;
+    if (loopback_draining)
+    {
+        return true;
+    }
+    loopback_draining = true;
+    while (loopback_count > 0)
+    {
+        uint8_t *data = loopback_queue[loopback_head].data;
+        uint32_t size = loopback_queue[loopback_head].length;
+        loopback_head = (loopback_head + 1) % LOOPBACK_QUEUE;
+        loopback_count--;
+        netif_receive(netif, data, size);
+        kfree(data);
+    }
+    loopback_draining = false;
     return true;
 }
 
 void net_init(void)
 {
+    ipv4_init();
     netif_t *lo = netif_register("lo", NULL, 65535, loopback_send, NULL);
     if (lo)
     {
@@ -81,9 +128,16 @@ netif_t *netif_register(const char *prefix, const uint8_t mac[ETH_ADDR_LEN], uin
 
 void netif_receive(netif_t *netif, const void *frame, uint32_t length)
 {
-    (void)frame;
     netif->rx_packets++;
     netif->rx_bytes += length;
+    if (netif->loopback)
+    {
+        ipv4_receive(netif, frame, length); // no Ethernet header on lo
+    }
+    else
+    {
+        eth_receive(netif, frame, length);
+    }
 }
 
 bool netif_send(netif_t *netif, const void *frame, uint32_t length)
