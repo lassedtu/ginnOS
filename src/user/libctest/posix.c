@@ -9,6 +9,8 @@
 #define SYSLOG_NAMES
 #include "libctest.h"
 #include <syslog.h>
+#include <dlfcn.h>
+#include <langinfo.h>
 
 #include <fnmatch.h>
 #include <inttypes.h>
@@ -390,8 +392,26 @@ static void test_priorities(void)
     CHECK(waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
+/** nl_langinfo, and dlopen without a dynamic loader */
+static void test_langinfo_dlfcn(void)
+{
+    CHECK(strcmp(nl_langinfo(CODESET), "UTF-8") == 0);
+    CHECK(strcmp(nl_langinfo(D_FMT), "%m/%d/%y") == 0);
+    CHECK(strcmp(nl_langinfo(RADIXCHAR), ".") == 0);
+    CHECK(strcmp(nl_langinfo(-1), "") == 0 && strcmp(nl_langinfo(1000), "") == 0);
+
+    CHECK(dlerror() == NULL);
+    CHECK(dlopen("libfoo.so", RTLD_NOW) == NULL);
+    const char *why = dlerror();
+    CHECK(why != NULL && why[0] != '\0');
+    CHECK(dlerror() == NULL); // the reason is given once
+    CHECK(dlsym(RTLD_DEFAULT, "main") == NULL && dlerror() != NULL);
+    CHECK(dlclose(NULL) == 0);
+}
+
 void test_posix(void)
 {
+    test_langinfo_dlfcn();
     test_getline();
     test_paths();
     test_numbers();

@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
+#include <sched.h>
 #include <semaphore.h>
 #include <stdint.h>
 #include <string.h>
@@ -129,4 +130,16 @@ void test_threads(void)
     CHECK(sem_init(&sem, 1, 0) == -1 && errno == ENOSYS);
 
     CHECK(strcmp(strerror(EDEADLK), "resource deadlock would occur") == 0);
+
+    // scheduling: one policy, SCHED_OTHER at priority 0
+    int policy = -1;
+    struct sched_param param = {.sched_priority = 5};
+    CHECK(pthread_getschedparam(pthread_self(), &policy, &param) == 0);
+    CHECK(policy == SCHED_OTHER && param.sched_priority == 0);
+    CHECK(pthread_setschedparam(pthread_self(), SCHED_OTHER, &param) == 0);
+    CHECK(pthread_setschedparam(pthread_self(), SCHED_FIFO, &param) == EPERM);
+    CHECK(sched_get_priority_min(SCHED_OTHER) == 0 && sched_get_priority_max(SCHED_OTHER) == 0);
+    CHECK(sched_get_priority_min(SCHED_RR) == 1 && sched_get_priority_max(SCHED_RR) == 99);
+    errno = 0;
+    CHECK(sched_get_priority_max(42) == -1 && errno == EINVAL);
 }

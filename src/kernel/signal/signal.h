@@ -28,6 +28,8 @@
 #define SIGTTIN   21
 #define SIGTTOU   22
 #define SIGURG    23 // urgent data on a socket (ignored by default)
+#define SIGVTALRM 26 // a virtual timer ran out (no such timers yet)
+#define SIGPROF   27 // a profiling timer ran out (no such timers yet)
 #define SIGWINCH  28 // the terminal's window size changed (ignored by default)
 
 // signals are numbered 1 to NSIG - 1

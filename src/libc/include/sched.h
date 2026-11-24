@@ -7,6 +7,8 @@
  */
 
 #define SCHED_OTHER 0
+#define SCHED_FIFO  1 // real-time policies: refused (EPERM)
+#define SCHED_RR    2
 
 struct sched_param
 {
@@ -18,3 +20,11 @@ struct sched_param
  * @return 0.
  */
 int sched_yield(void);
+
+/**
+ * the range of priorities of a policy: 0 to 0 for SCHED_OTHER, 1 to 99
+ * for the real-time policies (as on Linux).
+ * @return the priority, or -1 with errno EINVAL for another policy.
+ */
+int sched_get_priority_min(int policy);
+int sched_get_priority_max(int policy);

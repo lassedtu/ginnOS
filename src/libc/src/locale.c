@@ -1,3 +1,4 @@
+#include "langinfo.h"
 #include "locale.h"
 
 #include "limits.h"
@@ -49,4 +50,26 @@ struct lconv *localeconv(void)
         .int_n_sign_posn = CHAR_MAX,
     };
     return &c;
+}
+
+char *nl_langinfo(nl_item item)
+{
+    static const char *const items[] = {
+        [CODESET] = "UTF-8",
+        [D_T_FMT] = "%a %b %e %H:%M:%S %Y",
+        [D_FMT] = "%m/%d/%y",
+        [T_FMT] = "%H:%M:%S",
+        [T_FMT_AMPM] = "%I:%M:%S %p",
+        [AM_STR] = "AM",
+        [PM_STR] = "PM",
+        [RADIXCHAR] = ".",
+        [THOUSEP] = "",
+        [YESEXPR] = "^[yY]",
+        [NOEXPR] = "^[nN]",
+    };
+    if (item < 0 || item > NOEXPR)
+    {
+        return (char *)"";
+    }
+    return (char *)items[item];
 }

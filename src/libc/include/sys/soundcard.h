@@ -14,6 +14,7 @@
 // sample formats
 #define AFMT_U8     0x00000008
 #define AFMT_S16_LE 0x00000010
+#define AFMT_S16_BE 0x00000020 // not played: SETFMT gives AFMT_S16_LE back
 
 // /dev/dsp
 #define SNDCTL_DSP_RESET     0x00005000u // stop and drop the queued sound
@@ -23,8 +24,10 @@
 #define SNDCTL_DSP_GETBLKSIZE 0xC0045004u // int: the fragment size
 #define SNDCTL_DSP_SETFMT    0xC0045005u // int: AFMT_ (the format in use back)
 #define SNDCTL_DSP_CHANNELS  0xC0045006u // int: 1 or 2
+#define SNDCTL_DSP_SETFRAGMENT 0xC004500Au // int: the fragments wanted (the device keeps its own)
 #define SNDCTL_DSP_GETFMTS   0x8004500Bu // int: the formats the device takes
 #define SNDCTL_DSP_GETOSPACE 0x8010500Cu // audio_buf_info: free space
+#define SNDCTL_DSP_GETISPACE 0x8010500Du // audio_buf_info: recording (none: EINVAL)
 #define SNDCTL_DSP_GETODELAY 0x80045017u // int: bytes queued, not played yet
 
 /**
