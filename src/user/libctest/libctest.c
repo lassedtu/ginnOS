@@ -272,6 +272,17 @@ static void test_control(void)
     assert(checks > 0);
 }
 
+/** timespec_get (C11) gives the clock_gettime time */
+static void test_timespec_get(void)
+{
+    struct timespec now;
+    struct timespec clock;
+    CHECK(timespec_get(&now, TIME_UTC) == TIME_UTC);
+    CHECK(clock_gettime(CLOCK_REALTIME, &clock) == 0);
+    CHECK(clock.tv_sec - now.tv_sec <= 1 && now.tv_nsec >= 0 && now.tv_nsec < 1000000000);
+    CHECK(timespec_get(&now, 42) == 0);
+}
+
 static void test_math(void)
 {
     // volatile: the compiler may not work these out at build time
@@ -283,6 +294,15 @@ static void test_math(void)
     CHECK(exp(1000.0 + two) == HUGE_VAL && exp(-1000.0 - two) == 0.0);
     CHECK(log(e) == 1.0 && log(two - 1.0) == 0.0);
     CHECK(log10(ten * ten * ten) == 3.0 && log2(1024.0 + two - two) == 10.0);
+
+    // the float functions
+    volatile float two_f = 2.0f, half_f = 0.5f;
+    CHECK(sqrtf(two_f) == 1.41421356f && sqrtf(two_f * two_f) == 2.0f);
+    CHECK(sinf(half_f - half_f) == 0.0f && cosf(half_f - half_f) == 1.0f);
+    CHECK(fabsf(-two_f) == 2.0f && floorf(-half_f) == -1.0f && roundf(half_f) == 1.0f);
+    CHECK(powf(two_f, 10.0f) == 1024.0f && fmodf(5.0f, two_f) == 1.0f);
+    CHECK(fminf(two_f, half_f) == 0.5f && copysignf(two_f, -1.0f) == -2.0f);
+    CHECK(ldexpf(half_f, 3) == 4.0f && atan2f(two_f - two_f, 1.0f) == 0.0f);
 
     // printf gives the exact digits, rounded correctly
     FORMATS("0.1000000000000000055511151231257827", "%.34f", 0.1);
@@ -331,6 +351,7 @@ int main(void)
     test_streams();
     test_memory();
     test_control();
+    test_timespec_get();
     test_math();
     test_wide();
     test_regex();

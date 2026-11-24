@@ -45,6 +45,14 @@ struct tm
 
 time_t time(time_t *out);
 int clock_gettime(clockid_t id, struct timespec *out);
+
+#define TIME_UTC 1 // the base of timespec_get: CLOCK_REALTIME
+
+/**
+ * the time now (C11).
+ * @return base (TIME_UTC), or 0 for another base.
+ */
+int timespec_get(struct timespec *out, int base);
 /** set the realtime clock (root only; whole seconds) */
 int clock_settime(clockid_t id, const struct timespec *when);
 int nanosleep(const struct timespec *span, struct timespec *left);

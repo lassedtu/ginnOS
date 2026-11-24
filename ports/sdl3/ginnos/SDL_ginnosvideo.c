@@ -2,10 +2,13 @@
  * @file SDL_ginnosvideo.c
  * @brief SDL's video driver for ginnOS.
  *
- * each SDL window is a heimdall window. SDL draws into the window's
- * buffer itself (the software renderer, or the window surface): the
- * framebuffer that SDL gets is the heimdall buffer, so an update is only
- * a commit. the events of the connection become SDL's keyboard, mouse
+ * each SDL window is a heimdall window. SDL draws (the software renderer,
+ * or the window surface) into a framebuffer of its own, and an update
+ * copies the changed parts into the window's buffer and commits them.
+ * the server can show the window's buffer at any time (when something
+ * near it changes), so SDL must not draw into it directly: the user
+ * would see frames that are not finished. the events of the connection
+ * become SDL's keyboard, mouse
  * and window events. the key codes are Linux's (sys/input.h), so SDL's
  * table for Linux gives the scancodes.
  *
@@ -218,6 +221,7 @@ static void GINNOS_DestroyWindow(SDL_VideoDevice *_this, SDL_Window *window)
     SDL_WindowData *data = window->internal;
     if (data)
     {
+        SDL_free(data->pixels);
         heim_window_free(data->heim);
         SDL_free(data);
         window->internal = NULL;
@@ -238,9 +242,9 @@ static void GINNOS_SetWindowSize(SDL_VideoDevice *_this, SDL_Window *window)
 }
 
 /**
- * the framebuffer is the window's own buffer: its pixels are 0xAARRGGBB
- * words, and a window without HEIM_WINDOW_ALPHA shows them opaque, so
- * SDL can draw XRGB8888 into it.
+ * a framebuffer of the window's size, and a window buffer of the same
+ * size. the pixels are XRGB8888: the window's buffer has 0xAARRGGBB
+ * words, so the copy only has to make the alpha opaque.
  */
 static bool GINNOS_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
                                            SDL_PixelFormat *format, void **pixels, int *pitch)
@@ -255,36 +259,71 @@ static bool GINNOS_CreateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *w
     {
         return SDL_OutOfMemory();
     }
-    buffer = heim_window_buffer(data->heim);
+    uint32_t *own = SDL_calloc((size_t)w * (size_t)h, sizeof(uint32_t));
+    if (!own)
+    {
+        return false;
+    }
+    SDL_free(data->pixels);
+    data->pixels = own;
+    data->width = w;
+    data->height = h;
     *format = SDL_PIXELFORMAT_XRGB8888;
-    *pixels = buffer->pixels;
-    *pitch = buffer->stride * 4;
+    *pixels = own;
+    *pitch = w * (int)sizeof(uint32_t);
     return true;
+}
+
+/** copy a part of the framebuffer into the window's buffer */
+static void copy_rect(const SDL_WindowData *data, gfx_buffer_t *buffer, SDL_Rect r)
+{
+    SDL_Rect bounds = {0, 0, SDL_min(data->width, buffer->width),
+                       SDL_min(data->height, buffer->height)};
+    if (!SDL_GetRectIntersection(&r, &bounds, &r))
+    {
+        return;
+    }
+    for (int y = r.y; y < r.y + r.h; y++)
+    {
+        const uint32_t *from = data->pixels + (size_t)y * (size_t)data->width + r.x;
+        uint32_t *to = buffer->pixels + (size_t)y * (size_t)buffer->stride + r.x;
+        for (int x = 0; x < r.w; x++)
+        {
+            to[x] = from[x] | 0xFF000000u;
+        }
+    }
 }
 
 static bool GINNOS_UpdateWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window,
                                            const SDL_Rect *rects, int numrects)
 {
     (void)_this;
-    if (numrects <= 0)
+    SDL_WindowData *data = window->internal;
+    if (numrects <= 0 || !data->pixels)
     {
         return true;
     }
+    gfx_buffer_t *buffer = heim_window_buffer(data->heim);
     // one commit for the rectangle around them all
     SDL_Rect all = rects[0];
+    copy_rect(data, buffer, rects[0]);
     for (int i = 1; i < numrects; i++)
     {
+        copy_rect(data, buffer, rects[i]);
         SDL_GetRectUnion(&all, &rects[i], &all);
     }
-    heim_window_commit(window->internal->heim, gfx_rect(all.x, all.y, all.w, all.h));
+    heim_window_commit(data->heim, gfx_rect(all.x, all.y, all.w, all.h));
     return true;
 }
 
 static void GINNOS_DestroyWindowFramebuffer(SDL_VideoDevice *_this, SDL_Window *window)
 {
-    // the buffer belongs to the window
     (void)_this;
-    (void)window;
+    SDL_WindowData *data = window->internal;
+    SDL_free(data->pixels);
+    data->pixels = NULL;
+    data->width = 0;
+    data->height = 0;
 }
 
 static bool GINNOS_SetClipboardText(SDL_VideoDevice *_this, const char *text)

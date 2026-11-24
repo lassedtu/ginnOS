@@ -23,6 +23,9 @@ struct SDL_WindowData
 {
     heim_window_t *heim;
     SDL_Window *window;
+    uint32_t *pixels; // the framebuffer SDL draws into (XRGB8888)
+    int width;        // its size in pixels
+    int height;
 };
 
 #endif

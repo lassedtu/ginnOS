@@ -16,7 +16,8 @@
 #   <source cache>  the release archive is kept here between builds
 #   <work>          the folder to build in (made empty first)
 #   <root>          the files for the image go here (made empty first)
-#   <sysroot>       the library and the headers go into its usr/
+#   <sysroot>       the library, the headers and the files that let CMake
+#                   (find_package) and pkg-config find SDL go into its usr/
 
 set -eu
 
@@ -70,7 +71,7 @@ cp -R "$here/ginnos" "$work/src/src/video/ginnos"
 cd "$work/build"
 cmake "$work/src" -G "Unix Makefiles" \
     -DCMAKE_TOOLCHAIN_FILE="$toolchain" -DGINNOS_CROSS="$cross" \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$work/install" \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
     -DSDL_SHARED=OFF -DSDL_STATIC=ON \
     -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF -DSDL_INSTALL_DOCS=OFF \
     -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_KMSDRM=OFF -DSDL_OFFSCREEN=OFF \
@@ -89,12 +90,16 @@ grep -q "define SDL_VIDEO_DRIVER_GINNOS 1" include-config-release/build_config/S
     exit 1
 }
 "$make"
-"$make" install > /dev/null
+"$make" install DESTDIR="$work/stage" > /dev/null
 
-mkdir -p "$sysroot/usr/include" "$sysroot/usr/lib" "$sysroot/usr/share/doc/sdl3"
-rm -rf "$sysroot/usr/include/SDL3"
-cp -R "$work/install/include/SDL3" "$sysroot/usr/include/SDL3"
-cp "$work/install/lib/libSDL3.a" "$sysroot/usr/lib/libSDL3.a"
+stage="$work/stage/usr"
+mkdir -p "$sysroot/usr/include" "$sysroot/usr/lib/cmake" "$sysroot/usr/lib/pkgconfig" \
+    "$sysroot/usr/share/doc/sdl3"
+rm -rf "$sysroot/usr/include/SDL3" "$sysroot/usr/lib/cmake/SDL3"
+cp -R "$stage/include/SDL3" "$sysroot/usr/include/SDL3"
+cp -R "$stage/lib/cmake/SDL3" "$sysroot/usr/lib/cmake/SDL3"
+cp "$stage/lib/libSDL3.a" "$sysroot/usr/lib/libSDL3.a"
+cp "$stage/lib/pkgconfig/sdl3.pc" "$sysroot/usr/lib/pkgconfig/sdl3.pc"
 cp "$work/src/LICENSE.txt" "$sysroot/usr/share/doc/sdl3/LICENSE.txt"
 
 # the demo, /bin/sdldemo, to try the port in the image (with SDL's licence)
