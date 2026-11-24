@@ -15,10 +15,9 @@
 #include "env.h"
 #include "jobs.h"
 
-#define INPUT_MAX 256
 #define CWD_MAX 256
 
-static char input_buf[INPUT_MAX];
+static char input_buf[LINE_MAX];
 static char cwd_buf[CWD_MAX];
 
 // global shell state used by expand.c and execute.c
