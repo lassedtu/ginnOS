@@ -653,6 +653,20 @@ static int32_t inet_write(file_t *file, const void *buf, uint32_t count)
     return inet_socket_send(file, &iov, 1, NULL);
 }
 
+static int32_t inet_ioctl(file_t *file, uint32_t request, void *arg)
+{
+    inet_socket_t *s = file->device_data;
+    if (request == FIONREAD)
+    {
+        // the length of the next datagram
+        uint32_t lock = net_lock();
+        int32_t length = s->head ? (int32_t)s->head->length : 0;
+        net_unlock(lock);
+        return kerr_to_errno(copy_to_user(arg, &length, sizeof(length)));
+    }
+    return netif_ioctl(request, arg);
+}
+
 static uint32_t inet_poll(file_t *file)
 {
     inet_socket_t *s = file->device_data;
@@ -704,5 +718,6 @@ static const file_ops_t inet_file_ops = {
     .write = inet_write,
     .stat = inet_stat,
     .poll = inet_poll,
+    .ioctl = inet_ioctl,
     .release = inet_release,
 };

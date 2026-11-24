@@ -38,6 +38,8 @@ struct file;
 #define SO_RCVBUF    8
 #define SO_KEEPALIVE 9
 
+#define FIONREAD 0x541B // ioctl: the bytes of the next datagram
+
 #define MSG_PEEK  0x0002
 #define MSG_TRUNC 0x0020
 

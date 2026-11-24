@@ -101,3 +101,53 @@ netif_t *netif_at(uint32_t index);
  * the interface with this name, or NULL.
  */
 netif_t *netif_find(const char *name);
+
+// ioctls on any IPv4 socket: read and set an interface (struct ifreq).
+// the S calls need root. the numbers are Linux's, but for the gateway,
+// which Linux sets through a routing table; ginnOS keeps one gateway per
+// interface and uses two private numbers for it.
+#define SIOCGIFFLAGS   0x8913
+#define SIOCSIFFLAGS   0x8914
+#define SIOCGIFADDR    0x8915
+#define SIOCSIFADDR    0x8916
+#define SIOCGIFBRDADDR 0x8919
+#define SIOCGIFNETMASK 0x891B
+#define SIOCSIFNETMASK 0x891C
+#define SIOCGIFMTU     0x8921
+#define SIOCGIFHWADDR  0x8927
+#define SIOCGIFGATEWAY 0x89F0 // SIOCDEVPRIVATE: ifr_addr is the gateway
+#define SIOCSIFGATEWAY 0x89F1
+
+// ifr_flags
+#define IFF_UP        0x0001
+#define IFF_BROADCAST 0x0002
+#define IFF_LOOPBACK  0x0008
+#define IFF_RUNNING   0x0040
+
+#define IFNAMSIZ 16
+
+// struct ifreq: the name, then a union of 16 bytes on i686, 24 on x86_64
+// (the size of Linux's struct ifmap there)
+typedef struct
+{
+    char name[IFNAMSIZ];
+    union
+    {
+        struct
+        {
+            uint16_t family;
+            uint8_t data[14];
+        } addr; // a sockaddr: an address, or the MAC with family 1 (ARPHRD_ETHER)
+        int16_t flags;
+        int32_t value; // the MTU
+        unsigned long pad[3];
+    };
+} kifreq_t;
+
+/**
+ * an interface ioctl (from a socket).
+ * @param arg a struct ifreq in user memory.
+ * @return 0, or -ENODEV (no interface with the name), -EPERM, -EINVAL,
+ *         -EFAULT, or -ENOTTY for another request.
+ */
+int32_t netif_ioctl(uint32_t request, void *arg);

@@ -10,6 +10,9 @@
  * screen that ends with a status other than 0 cannot run. init says so
  * and runs the shell instead, so the computer is never left with nothing.
  *
+ * for each network card (the interfaces in /proc/net but lo), init starts
+ * "dhcp -b <interface>", which gets an address and keeps it.
+ *
  * the kernel gives orphaned processes to init, so init waits for any
  * child, not only the shell. the shell runs in a session of its own with
  * the console as its controlling terminal.
@@ -29,6 +32,7 @@
 
 #define SHELL "/bin/sh"
 #define LOGIN "/bin/heimdalld"
+#define DHCP  "/bin/dhcp"
 
 // a shell that ends this soon after it started waits before the next start
 #define QUICK_EXIT_SECONDS 2
@@ -62,6 +66,32 @@ static pid_t start_login(void)
     _exit(127);
 }
 
+/** start the DHCP client for each network interface but the loopback one */
+static void start_network(void)
+{
+    FILE *f = fopen("/proc/net", "r");
+    if (!f)
+        return;
+    char line[256];
+    while (fgets(line, sizeof(line), f))
+    {
+        size_t length = strcspn(line, "\t ");
+        if (length == 0 || length >= 16 || strncmp(line, "lo", length) == 0)
+            continue;
+        char name[16];
+        memcpy(name, line, length);
+        name[length] = '\0';
+        if (fork() == 0)
+        {
+            char *argv[] = {"dhcp", "-b", name, NULL};
+            char *envp[] = {"PATH=/bin", NULL};
+            execve(DHCP, argv, envp);
+            _exit(127);
+        }
+    }
+    fclose(f);
+}
+
 /** true when the login screen is chosen and there is a display for it */
 static bool want_login(void)
 {
@@ -79,6 +109,7 @@ int main(void)
         return 1;
     }
 
+    start_network();
     bool login = want_login();
     pid_t front = login ? start_login() : start_shell(); // the login screen or the shell
     time_t started = time(NULL);
