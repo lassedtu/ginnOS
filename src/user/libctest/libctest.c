@@ -189,6 +189,23 @@ static void test_streams(void)
     CHECK(fread(bytes, 1, 4, in) == 4 && memcmp(bytes, "line", 4) == 0);
     fclose(in);
 
+    // a large read and an unbuffered read get the whole file, in order
+    static char whole[2048];
+    static char again[2048];
+    in = fopen(path, "r");
+    size_t size = fread(whole, 1, sizeof(whole), in);
+    CHECK(size > 600 && size < sizeof(whole) && feof(in));
+    rewind(in);
+    CHECK(fgetc(in) == 'l' && ungetc('l', in) == 'l');
+    CHECK(fread(again, 1, sizeof(again), in) == size && memcmp(whole, again, size) == 0);
+    fclose(in);
+    in = fopen(path, "r");
+    setvbuf(in, NULL, _IONBF, 0);
+    memset(again, 0, sizeof(again));
+    CHECK(fread(again, 1, 3, in) == 3 && fread(again + 3, 1, sizeof(again) - 3, in) == size - 3);
+    CHECK(memcmp(whole, again, size) == 0 && feof(in) && !ferror(in));
+    fclose(in);
+
     FILE *append = fopen(path, "a+");
     fprintf(append, "more\n");
     fclose(append);

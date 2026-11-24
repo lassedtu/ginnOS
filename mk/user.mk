@@ -25,8 +25,10 @@ user-libs: $(LIBC_A)
 		$(MAKE) --no-print-directory -C $$d $(USER_MAKE_VARS) || exit 1; \
 	done
 
-# delegate to per-program Makefiles
-user-programs: $(USER_CRT0) $(LIBC_A) user-libs
+# delegate to per-program Makefiles. a program can use a library port
+# (fetch uses mbedtls): those ports come first.
+USER_PORT_LIBS := $(filter %/mbedtls.done,$(PORT_STAMPS))
+user-programs: $(USER_CRT0) $(LIBC_A) user-libs $(USER_PORT_LIBS)
 	@for d in $(USER_PROG_DIRS); do \
 		$(MAKE) --no-print-directory -C $$d $(USER_MAKE_VARS) || exit 1; \
 	done

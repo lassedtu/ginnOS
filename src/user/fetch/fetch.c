@@ -1,16 +1,17 @@
 /**
  * @file fetch.c
- * @brief fetch: get a file over HTTP/1.1 and write it out.
+ * @brief fetch: get a file over HTTP/1.1 or HTTPS and write it out.
  *
- * usage: fetch [-i] [-I] [-o file] url
+ * usage: fetch [-i] [-I] [-k] [-o file] url
  *   -i       also write the response headers
  *   -I       send HEAD: only the headers
+ *   -k       do not check the server's certificate (https)
  *   -o file  write the body to file, not to standard output
  *
- * the url is http://host[:port]/path (http:// may be left out). bodies
+ * the url is http[s]://host[:port]/path (http:// may be left out). bodies
  * with Content-Length, chunked bodies and bodies to the end of the
- * connection are read. redirects to http urls are followed, up to
- * MAX_REDIRECTS. https is not supported.
+ * connection are read. redirects are followed, up to MAX_REDIRECTS.
+ * https needs the mbedtls port (FETCH_TLS, see tls.c).
  */
 
 #include <errno.h>
@@ -24,20 +25,34 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#ifdef FETCH_TLS
+#include "tls.h"
+#endif
+
 #define MAX_REDIRECTS 5
 #define LINE_MAX_SIZE 4096
 #define URL_MAX       2048
 
 typedef struct
 {
+    bool https;
     char host[256];
     char port[8];
     char path[URL_MAX];
 } url_t;
 
+// a socket, with TLS on it for https
 typedef struct
 {
     int fd;
+#ifdef FETCH_TLS
+    tls_t *tls;
+#endif
+} connection_t;
+
+typedef struct
+{
+    connection_t *connection;
     char data[16384];
     size_t at;
     size_t length;
@@ -54,33 +69,38 @@ typedef struct
 
 static bool show_headers;
 static bool head_only;
+static bool insecure;
 static int out_fd = STDOUT_FILENO;
 static long long body_bytes;
 
 static void usage(void)
 {
-    fprintf(stderr, "usage: fetch [-i] [-I] [-o file] url\n");
+    fprintf(stderr, "usage: fetch [-i] [-I] [-k] [-o file] url\n");
     exit(2);
 }
 
 /**
  * split a url into its host, port and path.
- * @return false (with a message) if it is not an http url.
+ * @return false (with a message) if it is not an http or https url.
  */
 static bool parse_url(const char *text, url_t *url)
 {
-    if (strncmp(text, "https://", 8) == 0)
+    url->https = strncmp(text, "https://", 8) == 0;
+    if (url->https)
     {
-        fprintf(stderr, "fetch: https is not supported yet\n");
+#ifndef FETCH_TLS
+        fprintf(stderr, "fetch: this fetch was built without https\n");
         return false;
+#endif
+        text += 8;
     }
-    if (strncmp(text, "http://", 7) == 0)
+    else if (strncmp(text, "http://", 7) == 0)
     {
         text += 7;
     }
     else if (strstr(text, "://"))
     {
-        fprintf(stderr, "fetch: only http urls are supported\n");
+        fprintf(stderr, "fetch: only http and https urls are supported\n");
         return false;
     }
     size_t host_length = strcspn(text, ":/?#");
@@ -92,7 +112,7 @@ static bool parse_url(const char *text, url_t *url)
     memcpy(url->host, text, host_length);
     url->host[host_length] = '\0';
     text += host_length;
-    strcpy(url->port, "80");
+    strcpy(url->port, url->https ? "443" : "80");
     if (*text == ':')
     {
         text++;
@@ -175,6 +195,99 @@ static bool write_all(int fd, const char *data, size_t length)
 }
 
 /**
+ * make the connection to the url's host: the socket, and the TLS
+ * handshake for https.
+ * @return false (with a message).
+ */
+static bool open_url(const url_t *url, connection_t *connection)
+{
+    connection->fd = open_connection(url);
+    if (connection->fd < 0)
+    {
+        return false;
+    }
+#ifdef FETCH_TLS
+    connection->tls = NULL;
+    if (url->https)
+    {
+        char error[256];
+        connection->tls = tls_open(connection->fd, url->host, !insecure, error, sizeof(error));
+        if (!connection->tls)
+        {
+            fprintf(stderr, "fetch: %s: %s\n", url->host, error);
+            close(connection->fd);
+            return false;
+        }
+    }
+#endif
+    return true;
+}
+
+static void close_connection(connection_t *connection)
+{
+#ifdef FETCH_TLS
+    if (connection->tls)
+    {
+        tls_close(connection->tls);
+    }
+#endif
+    close(connection->fd);
+}
+
+/**
+ * send all of the data.
+ */
+static bool connection_write(connection_t *connection, const char *data, size_t length)
+{
+#ifdef FETCH_TLS
+    if (connection->tls)
+    {
+        if (!tls_write(connection->tls, data, length))
+        {
+            fprintf(stderr, "fetch: cannot send the request: %s\n", tls_error(connection->tls));
+            return false;
+        }
+        return true;
+    }
+#endif
+    if (!write_all(connection->fd, data, length))
+    {
+        fprintf(stderr, "fetch: cannot send the request: %s\n", strerror(errno));
+        return false;
+    }
+    return true;
+}
+
+/**
+ * read some data.
+ * @return the bytes read, 0 at the end, or -1 (with a message).
+ */
+static ssize_t connection_read(connection_t *connection, char *buffer, size_t length)
+{
+#ifdef FETCH_TLS
+    if (connection->tls)
+    {
+        ssize_t n = tls_read(connection->tls, buffer, length);
+        if (n < 0)
+        {
+            fprintf(stderr, "fetch: %s\n", tls_error(connection->tls));
+        }
+        return n;
+    }
+#endif
+    ssize_t n;
+    do
+    {
+        n = read(connection->fd, buffer, length);
+    } while (n < 0 && errno == EINTR);
+    if (n < 0)
+    {
+        fprintf(stderr, "fetch: cannot read the answer: %s\n", strerror(errno));
+    }
+    return n;
+}
+
+/**
  * fill the reader's buffer when it is empty.
  * @return false at the end of the stream or on an error.
  */
@@ -184,11 +297,7 @@ static bool fill(reader_t *r)
     {
         return true;
     }
-    ssize_t n;
-    do
-    {
-        n = read(r->fd, r->data, sizeof(r->data));
-    } while (n < 0 && errno == EINTR);
+    ssize_t n = connection_read(r->connection, r->data, sizeof(r->data));
     if (n <= 0)
     {
         return false;
@@ -391,7 +500,7 @@ int main(int argc, char **argv)
 {
     const char *output = NULL;
     int opt;
-    while ((opt = getopt(argc, argv, "iIo:")) != -1)
+    while ((opt = getopt(argc, argv, "iIko:")) != -1)
     {
         switch (opt)
         {
@@ -401,6 +510,9 @@ int main(int argc, char **argv)
         case 'I':
             head_only = true;
             show_headers = true;
+            break;
+        case 'k':
+            insecure = true;
             break;
         case 'o':
             output = optarg;
@@ -421,12 +533,12 @@ int main(int argc, char **argv)
 
     for (int redirects = 0;; redirects++)
     {
-        int fd = open_connection(&url);
-        if (fd < 0)
+        connection_t connection;
+        if (!open_url(&url, &connection))
         {
             return 1;
         }
-        bool default_port = strcmp(url.port, "80") == 0;
+        bool default_port = strcmp(url.port, url.https ? "443" : "80") == 0;
         char request[URL_MAX + 512];
         int length = snprintf(request, sizeof(request),
                               "%s %s HTTP/1.1\r\n"
@@ -437,14 +549,13 @@ int main(int argc, char **argv)
                               "\r\n",
                               head_only ? "HEAD" : "GET", url.path, url.host,
                               default_port ? "" : ":", default_port ? "" : url.port);
-        if (!write_all(fd, request, (size_t)length))
+        if (!connection_write(&connection, request, (size_t)length))
         {
-            fprintf(stderr, "fetch: cannot send the request: %s\n", strerror(errno));
             return 1;
         }
 
         static reader_t reader;
-        reader.fd = fd;
+        reader.connection = &connection;
         reader.at = 0;
         reader.length = 0;
         response_t response;
@@ -457,7 +568,7 @@ int main(int argc, char **argv)
                         response.status == 308;
         if (redirect && response.location[0] != '\0')
         {
-            close(fd);
+            close_connection(&connection);
             if (redirects == MAX_REDIRECTS)
             {
                 fprintf(stderr, "fetch: too many redirects\n");
@@ -486,7 +597,7 @@ int main(int argc, char **argv)
             complete = response.chunked ? copy_chunked(&reader)
                                         : copy_body(&reader, response.content_length);
         }
-        close(fd);
+        close_connection(&connection);
         if (output && !head_only)
         {
             close(out_fd);

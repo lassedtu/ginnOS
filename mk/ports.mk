@@ -10,13 +10,15 @@
 # a library (SDL) installs its headers and archive into the sysroot
 # (usr/include, usr/lib), where the ports after it find them.
 #
-# PORTS lists the ports to build (mbedtls is a library: TLS for fetch). PORTS= builds none (the image then has no
-# ls, cat and the other Unix tools, which sbase gives). sdl3 needs cmake on
-# the build host.
+# PORTS lists the ports to build. mbedtls is a library (TLS for fetch, which
+# is then built after it); ca-certificates is the list of authorities TLS
+# trusts. PORTS= builds none (the image then has no ls, cat and the other
+# Unix tools, which sbase gives, and fetch has no https). sdl3 needs cmake
+# on the build host.
 
 .PHONY: ports
 
-PORTS         ?= sbase lua sdl3 mbedtls
+PORTS         ?= sbase lua sdl3 mbedtls ca-certificates
 TOOLCHAIN_BIN ?= $(abspath tools/toolchain/prefix/bin)
 PORT_CROSS    := $(TOOLCHAIN_BIN)/$(ARCH)-ginnos-
 PORTS_DIR     := $(BUILD_DIR)/ports

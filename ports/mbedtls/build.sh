@@ -6,9 +6,10 @@
 #
 # the configuration is mbedTLS's default with the changes in
 # ginnos_config.h, which the end of mbedtls_config.h includes: the library
-# and the installed headers have the same configuration. randomness comes from /dev/urandom (mbedTLS's own
-# Unix code). _POSIX_VERSION is given for mbedTLS only: it uses it to
-# find clock_gettime, gmtime_r and socklen_t, which our libc has.
+# and the installed headers have the same configuration. randomness comes
+# from /dev/urandom (mbedTLS's own Unix code). _POSIX_VERSION is given for
+# mbedTLS only: it uses it to find clock_gettime, gmtime_r and socklen_t,
+# which our libc has.
 #
 # the pinned release is fetched once, and its SHA-256 is checked. the
 # release has the generated source files, so no Python is needed.
