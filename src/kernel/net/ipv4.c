@@ -11,6 +11,7 @@
 #include "common/memory.h"
 #include "ethernet.h"
 #include "icmp.h"
+#include "tcp.h"
 #include "udp.h"
 #include "kernel/memory/heap.h"
 
@@ -79,6 +80,10 @@ void ipv4_receive(netif_t *netif, const uint8_t *packet, uint32_t length)
         ipv4_stats.delivered++;
         udp_receive(netif, h, payload, payload_length);
         break;
+    case IP_PROTO_TCP:
+        ipv4_stats.delivered++;
+        tcp_receive(netif, h, payload, payload_length);
+        break;
     default:
         ipv4_stats.unknown_protocol++;
         icmp_send_unreachable(h, ICMP_PROTOCOL_UNREACHABLE);
@@ -142,6 +147,18 @@ netif_t *ipv4_route(uint32_t dst, uint32_t *next_hop)
 static uint32_t source_on(const netif_t *netif, uint32_t dst)
 {
     return netif->loopback && (dst & 0xFF) != LOOPBACK_NET ? dst : netif->address;
+}
+
+uint32_t ipv4_pseudo_sum(uint32_t source, uint32_t dst, uint8_t protocol, uint32_t length)
+{
+    uint8_t pseudo[12];
+    memcpy(pseudo, &source, 4);
+    memcpy(pseudo + 4, &dst, 4);
+    pseudo[8] = 0;
+    pseudo[9] = protocol;
+    pseudo[10] = (uint8_t)(length >> 8);
+    pseudo[11] = (uint8_t)length;
+    return checksum_add(0, pseudo, sizeof(pseudo));
 }
 
 uint32_t ipv4_source_for(uint32_t dst)

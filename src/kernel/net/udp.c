@@ -11,21 +11,6 @@
 #include "icmp.h"
 #include "inet_socket.h"
 
-/**
- * the sum of the pseudo-header: the addresses, the protocol, the length.
- */
-static uint32_t pseudo_sum(uint32_t source, uint32_t dst, uint32_t length)
-{
-    uint8_t pseudo[12];
-    memcpy(pseudo, &source, 4);
-    memcpy(pseudo + 4, &dst, 4);
-    pseudo[8] = 0;
-    pseudo[9] = IP_PROTO_UDP;
-    pseudo[10] = (uint8_t)(length >> 8);
-    pseudo[11] = (uint8_t)length;
-    return checksum_add(0, pseudo, sizeof(pseudo));
-}
-
 void udp_receive(netif_t *netif, const ipv4_header_t *ip, const uint8_t *d, uint32_t length)
 {
     (void)netif;
@@ -41,9 +26,8 @@ void udp_receive(netif_t *netif, const ipv4_header_t *ip, const uint8_t *d, uint
         return;
     }
     // a checksum of 0 means the sender did not make one
-    if ((d[6] | d[7]) != 0 &&
-        checksum_finish(checksum_add(pseudo_sum(ip->source, ip->destination, udp_length), d,
-                                     udp_length)) != 0)
+    uint32_t pseudo = ipv4_pseudo_sum(ip->source, ip->destination, IP_PROTO_UDP, udp_length);
+    if ((d[6] | d[7]) != 0 && checksum_finish(checksum_add(pseudo, d, udp_length)) != 0)
     {
         ipv4_stats.bad_header++;
         return;
@@ -73,7 +57,8 @@ bool udp_send(uint32_t source, uint16_t source_port, uint32_t dst, uint16_t dst_
     d[5] = (uint8_t)length;
     d[6] = 0;
     d[7] = 0;
-    uint16_t sum = checksum_finish(checksum_add(pseudo_sum(source, dst, length), d, length));
+    uint32_t pseudo = ipv4_pseudo_sum(source, dst, IP_PROTO_UDP, length);
+    uint16_t sum = checksum_finish(checksum_add(pseudo, d, length));
     if (sum == 0)
     {
         sum = 0xFFFF; // 0 would mean "no checksum"

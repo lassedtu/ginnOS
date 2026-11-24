@@ -149,9 +149,8 @@ static int32_t check_type(uint32_t domain, uint32_t type, uint32_t protocol, uin
     }
     else if (domain == AF_INET)
     {
-        // TCP (SOCK_STREAM) comes later; the datagram protocols are checked
-        // by inet_socket_create
-        if (base != SOCK_DGRAM)
+        // the protocols are checked by inet_socket_create
+        if (base != SOCK_STREAM && base != SOCK_DGRAM)
         {
             return -EPROTONOSUPPORT;
         }
@@ -167,9 +166,9 @@ static int32_t check_type(uint32_t domain, uint32_t type, uint32_t protocol, uin
 
 /**
  * SYS_socket: make an unconnected socket.
- * args: domain (AF_UNIX or AF_INET), type (SOCK_STREAM for AF_UNIX,
- *       SOCK_DGRAM for AF_INET; with SOCK_NONBLOCK and SOCK_CLOEXEC),
- *       protocol (0; for AF_INET also IPPROTO_UDP or IPPROTO_ICMP).
+ * args: domain (AF_UNIX or AF_INET), type (SOCK_STREAM; for AF_INET also
+ *       SOCK_DGRAM; with SOCK_NONBLOCK and SOCK_CLOEXEC), protocol (0; for
+ *       AF_INET also IPPROTO_TCP, IPPROTO_UDP or IPPROTO_ICMP).
  * returns the new fd, or -EAFNOSUPPORT, -EPROTONOSUPPORT, -ENOMEM, -EMFILE.
  */
 syscall_ret_t sys_socket(struct registers *regs)
@@ -287,22 +286,24 @@ syscall_ret_t sys_bind(struct registers *regs)
 
 /**
  * SYS_listen: let a bound socket take connections.
- * args: fd, backlog (0 or more than 16 means 16).
- * returns 0, or -EBADF, -ENOTSOCK, -EINVAL.
+ * args: fd, backlog (AF_UNIX: 0 or more than 16 means 16; AF_INET: at most
+ *       TCP_BACKLOG_MAX).
+ * returns 0, or -EBADF, -ENOTSOCK, -EINVAL, -EOPNOTSUPP (a datagram socket).
  */
 syscall_ret_t sys_listen(struct registers *regs)
 {
     int32_t err;
-    if (inet_of_fd((int)syscall_arg(regs, 0)))
+    int32_t backlog = (int32_t)syscall_arg(regs, 1);
+    inet_socket_t *inet = inet_of_fd((int)syscall_arg(regs, 0));
+    if (inet)
     {
-        return -EOPNOTSUPP; // a datagram socket
+        return inet_socket_listen(inet, backlog < 0 ? 0 : (uint32_t)backlog);
     }
     unix_socket_t *s = socket_of_fd((int)syscall_arg(regs, 0), &err);
     if (!s)
     {
         return err;
     }
-    int32_t backlog = (int32_t)syscall_arg(regs, 1);
     return unix_socket_listen(s, backlog < 0 ? 0 : (uint32_t)backlog);
 }
 
@@ -315,12 +316,12 @@ syscall_ret_t sys_listen(struct registers *regs)
 syscall_ret_t sys_connect(struct registers *regs)
 {
     int32_t err;
-    inet_socket_t *inet = inet_of_fd((int)syscall_arg(regs, 0));
-    if (inet)
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
+    if (entry && inet_socket_of(entry->file))
     {
         ksockaddr_in_t addr;
         err = inet_addr_from_user(syscall_arg(regs, 1), (uint32_t)syscall_arg(regs, 2), &addr);
-        return err != 0 ? err : inet_socket_connect(inet, &addr);
+        return err != 0 ? err : inet_socket_connect(entry->file, &addr);
     }
     unix_socket_t *s = socket_of_fd((int)syscall_arg(regs, 0), &err);
     if (!s)
@@ -338,10 +339,10 @@ syscall_ret_t sys_connect(struct registers *regs)
 
 /**
  * SYS_accept: take the next connection of a listening socket (accept4).
- * args: fd, struct sockaddr_un * (or NULL), socklen_t *addrlen (or NULL),
+ * args: fd, struct sockaddr * (or NULL), socklen_t *addrlen (or NULL),
  *       flags (SOCK_NONBLOCK, SOCK_CLOEXEC).
- * the peer has no name, so only sun_family is filled in and *addrlen
- * becomes 2.
+ * AF_INET: the peer's sockaddr_in. AF_UNIX: the peer has no name, so only
+ * sun_family is filled in and *addrlen becomes 2.
  * returns the new fd, or -EAGAIN, -EINVAL, -EBADF, -ENOTSOCK, -EFAULT,
  * -EMFILE, -ENOMEM.
  */
@@ -363,7 +364,8 @@ syscall_ret_t sys_accept(struct registers *regs)
         {
             return -EFAULT;
         }
-        if (!user_access_ok((void *)user_addr, addrlen < 2 ? addrlen : 2, true) ||
+        uint32_t most = sizeof(ksockaddr_in_t);
+        if (!user_access_ok((void *)user_addr, addrlen < most ? addrlen : most, true) ||
             !user_access_ok(user_addrlen, sizeof(addrlen), true))
         {
             return -EFAULT;
@@ -376,7 +378,18 @@ syscall_ret_t sys_accept(struct registers *regs)
         return -EBADF;
     }
     file_t *file;
-    int32_t err = unix_socket_accept(entry->file, (flags & SOCK_NONBLOCK) ? O_NONBLOCK : 0, &file);
+    int32_t err;
+    ksockaddr_in_t peer;
+    bool inet = inet_socket_of(entry->file) != NULL;
+    if (inet)
+    {
+        err = inet_socket_accept(entry->file, (flags & SOCK_NONBLOCK) ? O_NONBLOCK : 0, &file,
+                                 &peer);
+    }
+    else
+    {
+        err = unix_socket_accept(entry->file, (flags & SOCK_NONBLOCK) ? O_NONBLOCK : 0, &file);
+    }
     if (err != 0)
     {
         return err;
@@ -388,7 +401,13 @@ syscall_ret_t sys_accept(struct registers *regs)
         return new_fd;
     }
 
-    if (user_addr && user_addrlen)
+    if (user_addr && user_addrlen && inet)
+    {
+        uint32_t length = sizeof(peer);
+        copy_to_user((void *)user_addr, &peer, addrlen < length ? addrlen : length);
+        copy_to_user(user_addrlen, &length, sizeof(length));
+    }
+    else if (user_addr && user_addrlen)
     {
         uint16_t family = AF_UNIX;
         uint32_t length = sizeof(family);
@@ -476,8 +495,13 @@ syscall_ret_t sys_sendmsg(struct registers *regs)
                 return err;
             }
         }
-        return inet_socket_send(entry->file, iov, (uint32_t)iov_count,
-                                msg.name && msg.namelen > 0 ? &to : NULL);
+        int32_t sent = inet_socket_send(entry->file, iov, (uint32_t)iov_count,
+                                        msg.name && msg.namelen > 0 ? &to : NULL, flags);
+        if (sent == -EPIPE && !(flags & MSG_NOSIGNAL))
+        {
+            signal_send(process_current(), SIGPIPE);
+        }
+        return sent;
     }
 
     // the files to pass, from the control messages

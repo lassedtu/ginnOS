@@ -77,6 +77,12 @@ bool ipv4_send(uint32_t source, uint32_t dst, uint8_t protocol, const void *payl
                uint32_t length);
 
 /**
+ * the sum of the pseudo-header of UDP and TCP (the addresses, the
+ * protocol, the length), to start their checksum with.
+ */
+uint32_t ipv4_pseudo_sum(uint32_t source, uint32_t dst, uint8_t protocol, uint32_t length);
+
+/**
  * the source address a packet to dst gets (net_lock held), 0 if there is
  * no route.
  */

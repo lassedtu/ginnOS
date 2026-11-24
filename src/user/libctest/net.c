@@ -8,11 +8,15 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 static void test_addresses(void)
@@ -97,7 +101,7 @@ static void test_udp(void)
     close(sender);
 
     CHECK(shutdown(server, SHUT_RD) == 0 && recv(server, buffer, sizeof(buffer), 0) == 0);
-    CHECK(socket(AF_INET, SOCK_STREAM, 0) == -1 && errno == EPROTONOSUPPORT);
+    CHECK(socket(AF_INET, SOCK_STREAM, IPPROTO_UDP) == -1 && errno == EPROTONOSUPPORT);
     close(server);
     close(client);
 }
@@ -177,10 +181,145 @@ static void test_names(void)
     CHECK(s && s->s_port == htons(22));
 }
 
+/**
+ * a listener on 127.0.0.1 and a port the kernel picks.
+ */
+static int tcp_listener(struct sockaddr_in *addr)
+{
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    memset(addr, 0, sizeof(*addr));
+    addr->sin_family = AF_INET;
+    addr->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t length = sizeof(*addr);
+    if (fd < 0 || bind(fd, (struct sockaddr *)addr, sizeof(*addr)) != 0 || listen(fd, 4) != 0 ||
+        getsockname(fd, (struct sockaddr *)addr, &length) != 0)
+    {
+        return -1;
+    }
+    return fd;
+}
+
+static void test_tcp(void)
+{
+    struct sockaddr_in addr;
+    int listener = tcp_listener(&addr);
+    CHECK(listener >= 0 && ntohs(addr.sin_port) >= 49152);
+    fcntl(listener, F_SETFL, O_NONBLOCK);
+    CHECK(accept(listener, NULL, NULL) == -1 && errno == EAGAIN);
+    fcntl(listener, F_SETFL, 0);
+
+    int client = socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(connect(client, (struct sockaddr *)&addr, sizeof(addr)) == 0);
+    CHECK(connect(client, (struct sockaddr *)&addr, sizeof(addr)) == -1 && errno == EISCONN);
+    struct pollfd p = {listener, POLLIN, 0};
+    CHECK(poll(&p, 1, 1000) == 1 && (p.revents & POLLIN));
+    struct sockaddr_in peer;
+    socklen_t length = sizeof(peer);
+    int server = accept(listener, (struct sockaddr *)&peer, &length);
+    CHECK(server >= 0 && length == sizeof(peer) && peer.sin_family == AF_INET);
+    struct sockaddr_in name;
+    length = sizeof(name);
+    CHECK(getsockname(client, (struct sockaddr *)&name, &length) == 0 &&
+          name.sin_port == peer.sin_port && name.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+    CHECK(getpeername(server, (struct sockaddr *)&name, &length) == 0 &&
+          name.sin_port == peer.sin_port);
+    CHECK(getpeername(client, (struct sockaddr *)&name, &length) == 0 &&
+          name.sin_port == addr.sin_port);
+
+    int value = 0;
+    socklen_t value_length = sizeof(value);
+    CHECK(getsockopt(client, SOL_SOCKET, SO_TYPE, &value, &value_length) == 0 &&
+          value == SOCK_STREAM);
+    CHECK(setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &(int){1}, sizeof(int)) == 0);
+
+    // data both ways; the stream keeps no message borders
+    char buffer[64];
+    CHECK(write(client, "hello ", 6) == 6 && send(client, "world", 5, 0) == 5);
+    p = (struct pollfd){server, POLLIN, 0};
+    CHECK(poll(&p, 1, 1000) == 1 && (p.revents & POLLIN));
+    int available = 0;
+    CHECK(ioctl(server, FIONREAD, &available) == 0 && available == 11);
+    CHECK(recv(server, buffer, 3, MSG_PEEK) == 3 && memcmp(buffer, "hel", 3) == 0);
+    CHECK(read(server, buffer, sizeof(buffer)) == 11 && memcmp(buffer, "hello world", 11) == 0);
+    CHECK(recv(server, buffer, sizeof(buffer), MSG_DONTWAIT) == -1 && errno == EAGAIN);
+    CHECK(send(server, "ok", 2, 0) == 2 && read(client, buffer, sizeof(buffer)) == 2);
+
+    // the end of the stream: a read gives 0, and writing to a closed peer fails
+    CHECK(shutdown(client, SHUT_WR) == 0 && read(server, buffer, sizeof(buffer)) == 0);
+    CHECK(send(client, "x", 1, MSG_NOSIGNAL) == -1 && errno == EPIPE);
+    CHECK(write(server, "late", 4) == 4 && read(client, buffer, sizeof(buffer)) == 4);
+    close(server);
+    CHECK(read(client, buffer, sizeof(buffer)) == 0);
+    close(client);
+
+    // a megabyte through a child: more than the windows and the buffers hold
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        int c = socket(AF_INET, SOCK_STREAM, 0);
+        if (connect(c, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+        {
+            _exit(1);
+        }
+        static unsigned char data[16384];
+        for (int block = 0; block < 64; block++)
+        {
+            for (size_t i = 0; i < sizeof(data); i++)
+            {
+                data[i] = (unsigned char)(block * 31 + i);
+            }
+            for (size_t at = 0; at < sizeof(data);)
+            {
+                ssize_t n = write(c, data + at, sizeof(data) - at);
+                if (n <= 0)
+                {
+                    _exit(2);
+                }
+                at += (size_t)n;
+            }
+        }
+        close(c);
+        _exit(0);
+    }
+    server = accept(listener, NULL, NULL);
+    size_t total = 0;
+    int intact = 1;
+    for (;;)
+    {
+        static unsigned char data[5000];
+        ssize_t n = read(server, data, sizeof(data));
+        if (n <= 0)
+        {
+            break;
+        }
+        for (ssize_t i = 0; i < n; i++)
+        {
+            size_t at = total + (size_t)i;
+            intact &= data[i] == (unsigned char)((at / 16384) * 31 + at % 16384);
+        }
+        total += (size_t)n;
+    }
+    int status = -1;
+    waitpid(pid, &status, 0);
+    CHECK(total == 64 * 16384 && intact && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    close(server);
+    close(listener);
+
+    // a port no one listens on, blocking and not
+    int refused = socket(AF_INET, SOCK_STREAM, 0);
+    CHECK(connect(refused, (struct sockaddr *)&addr, sizeof(addr)) == -1 && errno == ECONNREFUSED);
+    close(refused);
+    refused = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    int r = connect(refused, (struct sockaddr *)&addr, sizeof(addr));
+    CHECK(r == -1 && (errno == ECONNREFUSED || errno == EINPROGRESS));
+    close(refused);
+}
+
 void test_net(void)
 {
     test_names();
     test_addresses();
     test_udp();
+    test_tcp();
     test_ping();
 }

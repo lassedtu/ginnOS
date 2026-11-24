@@ -1,11 +1,12 @@
 /**
  * @file test_net.c
- * @brief the network stack: interfaces, the checksum, IPv4, ICMP, ARP.
+ * @brief the network stack: interfaces, the checksum, IPv4, ICMP, ARP, TCP.
  */
 
 #include "ktest.h"
 
 #include "common/memory.h"
+#include "kernel/errno.h"
 #include "kernel/memory/heap.h"
 #include "kernel/net/arp.h"
 #include "kernel/net/byteorder.h"
@@ -14,6 +15,7 @@
 #include "kernel/net/icmp.h"
 #include "kernel/net/ipv4.h"
 #include "kernel/net/netif.h"
+#include "kernel/net/tcp.h"
 
 KTEST(net_loopback_is_there)
 {
@@ -243,4 +245,115 @@ KTEST(net_arp_request_for_us_is_answered)
     KEXPECT(memcmp(last_frame, asker_mac, ETH_ADDR_LEN) == 0);
     KEXPECT_EQ(last_frame[ETH_HEADER_SIZE + 7], 2);
     KEXPECT(memcmp(last_frame + ETH_HEADER_SIZE + 8, n->mac, ETH_ADDR_LEN) == 0);
+}
+
+/**
+ * run the TCP timer far in the future: the connections the test let go
+ * close and are freed, so no later test sees the heap change.
+ */
+static void tcp_reap(void)
+{
+    tcp_timer(UINT64_MAX);
+}
+
+KTEST(net_tcp_handshake_data_and_close_over_loopback)
+{
+    heap_stats_t before = heap_get_stats();
+    uint32_t lo = NET_IPV4(127, 0, 0, 1);
+    uint32_t flags = net_lock();
+    tcp_conn_t *listener = tcp_listen(0, 5000, 4);
+    tcp_conn_t *client = tcp_connect(lo, 40000, lo, 5000);
+    KEXPECT(listener != NULL && client != NULL);
+    // over lo the whole handshake happens inside tcp_connect
+    KEXPECT_EQ(client->state, TCP_ESTABLISHED);
+    tcp_conn_t *server = tcp_accept(listener);
+    KEXPECT(server != NULL);
+    KEXPECT_EQ(server->state, TCP_ESTABLISHED);
+    KEXPECT(tcp_accept(listener) == NULL);
+
+    uint8_t buffer[32];
+    KEXPECT_EQ(tcp_write(client, (const uint8_t *)"hello", 5), 5u);
+    KEXPECT_EQ(tcp_read(server, buffer, sizeof(buffer), true), 5u); // a peek leaves it
+    KEXPECT_EQ(tcp_read(server, buffer, sizeof(buffer), false), 5u);
+    KEXPECT(memcmp(buffer, "hello", 5) == 0);
+    KEXPECT_EQ(tcp_write(server, (const uint8_t *)"world", 5), 5u);
+    KEXPECT_EQ(tcp_read(client, buffer, sizeof(buffer), false), 5u);
+    KEXPECT(memcmp(buffer, "world", 5) == 0);
+    KEXPECT_EQ(client->send_count, 0u); // all acked
+
+    // the client closes first; the server sees the end, then closes
+    tcp_release(client);
+    KEXPECT_EQ(client->state, TCP_FIN_WAIT_2);
+    KEXPECT_EQ(server->state, TCP_CLOSE_WAIT);
+    KEXPECT(server->fin_received);
+    tcp_release(server);
+    KEXPECT_EQ(server->state, TCP_CLOSED);
+    KEXPECT_EQ(client->state, TCP_TIME_WAIT);
+    tcp_release(listener);
+    net_unlock(flags);
+    tcp_reap();
+    KEXPECT_EQ(heap_get_stats().current_usage, before.current_usage);
+}
+
+KTEST(net_tcp_bulk_data_fills_the_window_and_wraps)
+{
+    uint32_t lo = NET_IPV4(127, 0, 0, 1);
+    uint32_t total = 300 * 1024;
+    uint8_t *chunk = kmalloc(8192);
+    KEXPECT(chunk != NULL);
+    uint32_t flags = net_lock();
+    tcp_conn_t *listener = tcp_listen(lo, 5001, 1);
+    tcp_conn_t *client = tcp_connect(lo, 40001, lo, 5001);
+    tcp_conn_t *server = tcp_accept(listener);
+    KEXPECT(server != NULL);
+
+    uint32_t sent = 0;
+    uint32_t received = 0;
+    bool intact = true;
+    for (int rounds = 0; rounds < 10000 && received < total; rounds++)
+    {
+        // write until the buffers and the window are full
+        while (sent < total)
+        {
+            uint32_t length = total - sent < 8192 ? total - sent : 8192;
+            for (uint32_t i = 0; i < length; i++)
+            {
+                chunk[i] = (uint8_t)((sent + i) * 7);
+            }
+            uint32_t n = tcp_write(client, chunk, length);
+            sent += n;
+            if (n < length)
+            {
+                break;
+            }
+        }
+        uint32_t n = tcp_read(server, chunk, 5000, false);
+        for (uint32_t i = 0; i < n; i++)
+        {
+            intact = intact && chunk[i] == (uint8_t)((received + i) * 7);
+        }
+        received += n;
+    }
+    KEXPECT_EQ(sent, total);
+    KEXPECT_EQ(received, total);
+    KEXPECT(intact);
+    tcp_release(client);
+    tcp_release(server);
+    tcp_release(listener);
+    net_unlock(flags);
+    kfree(chunk);
+    tcp_reap();
+}
+
+KTEST(net_tcp_connect_to_a_closed_port_is_refused)
+{
+    uint32_t lo = NET_IPV4(127, 0, 0, 1);
+    uint32_t flags = net_lock();
+    tcp_conn_t *client = tcp_connect(lo, 40002, lo, 5999);
+    KEXPECT(client != NULL);
+    KEXPECT_EQ(client->state, TCP_CLOSED);
+    KEXPECT_EQ(client->error, -ECONNREFUSED);
+    tcp_release(client);
+    net_unlock(flags);
+    tcp_reap();
 }

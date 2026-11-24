@@ -1,13 +1,14 @@
 /**
  * @file inet_socket.c
- * @brief IPv4 datagram sockets: UDP and ICMP echo (see inet_socket.h).
+ * @brief IPv4 sockets: UDP and ICMP echo here, and the calls of TCP
+ *        sockets go to tcp_socket.c (see inet_socket.h).
  *
  * all sockets are on one list, under net_lock, so a received datagram
  * finds its socket there. data from user memory is copied into the
  * kernel before the lock is taken, and to user memory after it is let go.
  */
 
-#include "inet_socket.h"
+#include "inet_internal.h"
 
 #include "byteorder.h"
 #include "checksum.h"
@@ -29,34 +30,6 @@
 #define ICMP_HEADER_SIZE 8
 #define DATAGRAM_MAX     65507 // the most UDP data in one IPv4 packet
 
-typedef struct datagram
-{
-    struct datagram *next;
-    uint32_t from;
-    uint16_t from_port;
-    uint32_t length;
-    uint8_t data[];
-} datagram_t;
-
-struct inet_socket
-{
-    inet_socket_t *next; // on the list of all sockets
-    uint8_t protocol;    // IPPROTO_UDP or IPPROTO_ICMP
-    uint32_t local;      // network byte order, 0: any
-    uint16_t port;       // host byte order, 0: not bound
-    uint32_t remote;
-    uint16_t remote_port;
-    bool connected;
-    bool reuse_address;
-    bool broadcast;
-    bool shut_read;
-    bool shut_write;
-    datagram_t *head;
-    datagram_t *tail;
-    uint32_t queued; // bytes in the queue
-    wait_queue_t waiters;
-};
-
 static inet_socket_t *sockets;
 static uint16_t next_port = INET_PORT_FIRST;
 static const file_ops_t inet_file_ops;
@@ -68,18 +41,35 @@ inet_socket_t *inet_socket_of(file_t *file)
 
 int32_t inet_socket_create(uint32_t type, uint32_t protocol, uint32_t flags, file_t **out)
 {
-    if (type != SOCK_DGRAM)
+    if (type == SOCK_STREAM)
+    {
+        if (protocol != IPPROTO_IP && protocol != IPPROTO_TCP)
+        {
+            return -EPROTONOSUPPORT;
+        }
+        protocol = IPPROTO_TCP;
+    }
+    else if (type == SOCK_DGRAM)
+    {
+        if (protocol == IPPROTO_IP)
+        {
+            protocol = IPPROTO_UDP;
+        }
+        if (protocol != IPPROTO_UDP && protocol != IPPROTO_ICMP)
+        {
+            return -EPROTONOSUPPORT;
+        }
+    }
+    else
     {
         return -EPROTONOSUPPORT;
     }
-    if (protocol == IPPROTO_IP)
-    {
-        protocol = IPPROTO_UDP;
-    }
-    if (protocol != IPPROTO_UDP && protocol != IPPROTO_ICMP)
-    {
-        return -EPROTONOSUPPORT;
-    }
+    inet_socket_t *s;
+    return inet_socket_alloc((uint8_t)protocol, flags, out, &s);
+}
+
+int32_t inet_socket_alloc(uint8_t protocol, uint32_t flags, file_t **out, inet_socket_t **socket)
+{
     inet_socket_t *s = kcalloc(1, sizeof(*s));
     if (!s)
     {
@@ -91,7 +81,7 @@ int32_t inet_socket_create(uint32_t type, uint32_t protocol, uint32_t flags, fil
         kfree(s);
         return -ENOMEM;
     }
-    s->protocol = (uint8_t)protocol;
+    s->protocol = protocol;
     wait_queue_init(&s->waiters);
     file->device_data = s;
 
@@ -100,6 +90,7 @@ int32_t inet_socket_create(uint32_t type, uint32_t protocol, uint32_t flags, fil
     sockets = s;
     net_unlock(lock);
     *out = file;
+    *socket = s;
     return 0;
 }
 
@@ -145,11 +136,7 @@ static bool port_in_use(const inet_socket_t *self, uint8_t protocol, uint32_t lo
     return false;
 }
 
-/**
- * give a socket a free port (net_lock held).
- * @return false if all ports are taken.
- */
-static bool bind_any_port(inet_socket_t *s)
+bool inet_bind_any_port(inet_socket_t *s)
 {
     for (uint32_t tries = 0; tries < 65536 - INET_PORT_FIRST; tries++)
     {
@@ -192,7 +179,7 @@ int32_t inet_socket_bind(inet_socket_t *s, const ksockaddr_in_t *addr)
         {
             s->port = port;
         }
-        else if (!bind_any_port(s))
+        else if (!inet_bind_any_port(s))
         {
             s->local = 0;
             result = -EADDRINUSE;
@@ -202,8 +189,13 @@ int32_t inet_socket_bind(inet_socket_t *s, const ksockaddr_in_t *addr)
     return result;
 }
 
-int32_t inet_socket_connect(inet_socket_t *s, const ksockaddr_in_t *addr)
+int32_t inet_socket_connect(file_t *file, const ksockaddr_in_t *addr)
 {
+    inet_socket_t *s = inet_socket_of(file);
+    if (s->protocol == IPPROTO_TCP)
+    {
+        return tcp_socket_connect(file, s, addr);
+    }
     int32_t result = 0;
     uint32_t lock = net_lock();
     if (addr->sin_family == 0)
@@ -218,12 +210,13 @@ int32_t inet_socket_connect(inet_socket_t *s, const ksockaddr_in_t *addr)
     {
         result = -ENETUNREACH;
     }
-    else if (s->port == 0 && !bind_any_port(s))
+    else if (s->port == 0 && !inet_bind_any_port(s))
     {
         result = -EADDRINUSE;
     }
     else
     {
+        // (a datagram socket only sets the peer)
         s->remote = addr->sin_addr;
         s->remote_port = net_ntohs(addr->sin_port);
         s->connected = true;
@@ -271,12 +264,17 @@ static int32_t gather(uint8_t *buffer, const kiovec_t *iov, uint32_t iov_count)
 }
 
 int32_t inet_socket_send(file_t *file, const kiovec_t *iov, uint32_t iov_count,
-                         const ksockaddr_in_t *to)
+                         const ksockaddr_in_t *to, uint32_t flags)
 {
     inet_socket_t *s = inet_socket_of(file);
     if (!s)
     {
         return -ENOTSOCK;
+    }
+    if (s->protocol == IPPROTO_TCP)
+    {
+        // a stream is connected: the address is not used
+        return tcp_socket_send(file, s, iov, iov_count, (flags & MSG_DONTWAIT) != 0);
     }
     if (to && to->sin_family != AF_INET)
     {
@@ -336,7 +334,7 @@ int32_t inet_socket_send(file_t *file, const kiovec_t *iov, uint32_t iov_count,
     {
         result = -EMSGSIZE; // fragments are not sent
     }
-    else if (s->port == 0 && !bind_any_port(s))
+    else if (s->port == 0 && !inet_bind_any_port(s))
     {
         result = -EADDRINUSE;
     }
@@ -379,6 +377,22 @@ int32_t inet_socket_receive(file_t *file, const kiovec_t *iov, uint32_t iov_coun
     if (!s)
     {
         return -ENOTSOCK;
+    }
+    if (s->protocol == IPPROTO_TCP)
+    {
+        int32_t n = tcp_socket_receive(file, s, iov, iov_count, flags, dontwait);
+        if (from)
+        {
+            memset(from, 0, sizeof(*from));
+            from->sin_family = AF_INET;
+            from->sin_port = net_htons(s->remote_port);
+            from->sin_addr = s->remote;
+        }
+        if (full)
+        {
+            *full = n > 0 ? (uint32_t)n : 0;
+        }
+        return n;
     }
     bool peek = (flags & MSG_PEEK) != 0;
     uint32_t lock = net_lock();
@@ -455,9 +469,15 @@ int32_t inet_socket_name(inet_socket_t *s, bool peer, ksockaddr_in_t *out)
     memset(out, 0, sizeof(*out));
     out->sin_family = AF_INET;
     uint32_t lock = net_lock();
-    if (peer)
+    if (s->conn && s->conn->state != TCP_LISTEN)
     {
-        if (!s->connected)
+        // a TCP connection: its own addresses
+        out->sin_addr = peer ? s->conn->remote : s->conn->local;
+        out->sin_port = net_htons(peer ? s->conn->remote_port : s->conn->local_port);
+    }
+    else if (peer)
+    {
+        if (!s->connected || s->protocol == IPPROTO_TCP)
         {
             result = -ENOTCONN;
         }
@@ -476,6 +496,12 @@ int32_t inet_socket_name(inet_socket_t *s, bool peer, ksockaddr_in_t *out)
 
 int32_t inet_socket_set_option(inet_socket_t *s, int32_t level, int32_t name, int32_t value)
 {
+    if (level == IPPROTO_TCP && s->protocol == IPPROTO_TCP)
+    {
+        // TCP_NODELAY: small writes are always sent at once; TCP_KEEPIDLE and
+        // the others are accepted and not used
+        return name >= TCP_NODELAY && name <= TCP_KEEPCNT ? 0 : -ENOPROTOOPT;
+    }
     if (level != SOL_SOCKET)
     {
         return -ENOPROTOOPT;
@@ -499,6 +525,15 @@ int32_t inet_socket_set_option(inet_socket_t *s, int32_t level, int32_t name, in
 
 int32_t inet_socket_get_option(inet_socket_t *s, int32_t level, int32_t name, int32_t *value)
 {
+    if (level == IPPROTO_TCP && s->protocol == IPPROTO_TCP)
+    {
+        if (name == TCP_NODELAY)
+        {
+            *value = 1;
+            return 0;
+        }
+        return -ENOPROTOOPT;
+    }
     if (level != SOL_SOCKET)
     {
         return -ENOPROTOOPT;
@@ -512,15 +547,26 @@ int32_t inet_socket_get_option(inet_socket_t *s, int32_t level, int32_t name, in
         *value = s->broadcast;
         return 0;
     case SO_TYPE:
-        *value = SOCK_DGRAM;
+        *value = s->protocol == IPPROTO_TCP ? SOCK_STREAM : SOCK_DGRAM;
         return 0;
     case SO_ERROR:
+    {
+        uint32_t lock = net_lock();
+        *value = 0;
+        if (s->conn)
+        {
+            *value = -s->conn->error;
+            s->conn->error = 0;
+        }
+        net_unlock(lock);
+        return 0;
+    }
     case SO_KEEPALIVE:
         *value = 0;
         return 0;
     case SO_SNDBUF:
     case SO_RCVBUF:
-        *value = INET_RECEIVE_MAX;
+        *value = s->protocol == IPPROTO_TCP ? TCP_BUFFER_SIZE : INET_RECEIVE_MAX;
         return 0;
     default:
         return -ENOPROTOOPT;
@@ -534,6 +580,12 @@ int32_t inet_socket_shutdown(inet_socket_t *s, int32_t how)
         return -EINVAL;
     }
     uint32_t lock = net_lock();
+    if (s->protocol == IPPROTO_TCP)
+    {
+        int32_t result = tcp_socket_shutdown(s, how);
+        net_unlock(lock);
+        return result;
+    }
     if (how != SHUT_WR)
     {
         s->shut_read = true;
@@ -650,7 +702,7 @@ static int32_t inet_read(file_t *file, void *buf, uint32_t count)
 static int32_t inet_write(file_t *file, const void *buf, uint32_t count)
 {
     kiovec_t iov = {(uintptr_t)buf, count};
-    return inet_socket_send(file, &iov, 1, NULL);
+    return inet_socket_send(file, &iov, 1, NULL, 0);
 }
 
 static int32_t inet_ioctl(file_t *file, uint32_t request, void *arg)
@@ -658,9 +710,13 @@ static int32_t inet_ioctl(file_t *file, uint32_t request, void *arg)
     inet_socket_t *s = file->device_data;
     if (request == FIONREAD)
     {
-        // the length of the next datagram
+        // the length of the next datagram, or the bytes a stream has
         uint32_t lock = net_lock();
         int32_t length = s->head ? (int32_t)s->head->length : 0;
+        if (s->conn && s->conn->state != TCP_LISTEN)
+        {
+            length = (int32_t)s->conn->receive_count;
+        }
         net_unlock(lock);
         return kerr_to_errno(copy_to_user(arg, &length, sizeof(length)));
     }
@@ -671,6 +727,12 @@ static uint32_t inet_poll(file_t *file)
 {
     inet_socket_t *s = file->device_data;
     uint32_t lock = net_lock();
+    if (s->protocol == IPPROTO_TCP)
+    {
+        uint32_t events = tcp_socket_poll(s);
+        net_unlock(lock);
+        return events;
+    }
     uint32_t events = s->shut_write ? 0 : POLLOUT;
     if (s->head || s->shut_read)
     {
@@ -702,6 +764,10 @@ static void inet_release(file_t *file)
             break;
         }
     }
+    if (s->conn)
+    {
+        tcp_release(s->conn); // the connection closes, and is freed later
+    }
     net_unlock(lock);
     while (s->head)
     {
@@ -721,3 +787,13 @@ static const file_ops_t inet_file_ops = {
     .ioctl = inet_ioctl,
     .release = inet_release,
 };
+
+int32_t inet_socket_listen(inet_socket_t *s, uint32_t backlog)
+{
+    return s->protocol == IPPROTO_TCP ? tcp_socket_listen(s, backlog) : -EOPNOTSUPP;
+}
+
+int32_t inet_socket_accept(file_t *file, uint32_t flags, file_t **out, ksockaddr_in_t *peer)
+{
+    return tcp_socket_accept(file, flags, out, peer);
+}

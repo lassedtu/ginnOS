@@ -2,9 +2,10 @@
 
 /**
  * @file inet_socket.h
- * @brief IPv4 sockets: UDP (SOCK_DGRAM) and ICMP echo (SOCK_DGRAM with
- *        IPPROTO_ICMP, for ping, as Linux's ping sockets).
+ * @brief IPv4 sockets: TCP (SOCK_STREAM), UDP (SOCK_DGRAM) and ICMP echo
+ *        (SOCK_DGRAM with IPPROTO_ICMP, for ping, as Linux's ping sockets).
  *
+ * a TCP socket has a tcp_conn_t (tcp.h): its connection, or its listener.
  * a datagram socket keeps the datagrams it receives in a queue, up to
  * INET_RECEIVE_MAX bytes; more are dropped. an ICMP socket sends an echo
  * request that the program writes (type, code, then the data), with the
@@ -38,7 +39,11 @@ struct file;
 #define SO_RCVBUF    8
 #define SO_KEEPALIVE 9
 
-#define FIONREAD 0x541B // ioctl: the bytes of the next datagram
+// setsockopt and getsockopt at IPPROTO_TCP
+#define TCP_NODELAY 1
+#define TCP_KEEPCNT 6
+
+#define FIONREAD 0x541B // ioctl: the bytes of the next datagram, or a stream's bytes
 
 #define MSG_PEEK  0x0002
 #define MSG_TRUNC 0x0020
@@ -62,8 +67,9 @@ typedef struct inet_socket inet_socket_t;
 
 /**
  * make a new socket and its open file.
- * @param type SOCK_DGRAM.
- * @param protocol 0 or IPPROTO_UDP for UDP, IPPROTO_ICMP for ping.
+ * @param type SOCK_STREAM or SOCK_DGRAM.
+ * @param protocol 0, or IPPROTO_TCP for a stream; IPPROTO_UDP or
+ *        IPPROTO_ICMP (ping) for datagrams.
  * @param flags O_NONBLOCK or 0.
  * @return 0, or -EPROTONOSUPPORT, -ENOMEM.
  */
@@ -82,26 +88,51 @@ inet_socket_t *inet_socket_of(struct file *file);
 int32_t inet_socket_bind(inet_socket_t *s, const ksockaddr_in_t *addr);
 
 /**
- * set the address datagrams go to and the only one they come from.
- * AF_UNSPEC (family 0) takes the connection away.
- * @return 0, or -EAFNOSUPPORT, -ENETUNREACH.
+ * a datagram socket: set the address datagrams go to and the only one
+ * they come from; AF_UNSPEC (family 0) takes the connection away.
+ * a stream: connect (blocks for the handshake unless the file is
+ * non-blocking).
+ * @return 0, or -EAFNOSUPPORT, -ENETUNREACH; for a stream also
+ *         -ECONNREFUSED, -ETIMEDOUT, -EINPROGRESS, -EALREADY, -EISCONN,
+ *         -EINTR.
  */
-int32_t inet_socket_connect(inet_socket_t *s, const ksockaddr_in_t *addr);
+int32_t inet_socket_connect(struct file *file, const ksockaddr_in_t *addr);
 
 /**
- * send one datagram from user memory.
- * @param to where it goes, or NULL for the connected address.
+ * a stream socket takes connections.
+ * @return 0, or -EOPNOTSUPP (a datagram socket), -EINVAL (connected).
+ */
+int32_t inet_socket_listen(inet_socket_t *s, uint32_t backlog);
+
+/**
+ * take the next connection of a listening stream socket (blocks unless
+ * the file is non-blocking).
+ * @param flags O_NONBLOCK or 0, for the new file.
+ * @param peer receives the address of the other end.
+ * @return 0, or -EAGAIN, -EINVAL (not listening), -EOPNOTSUPP, -ENOMEM,
+ *         -ERESTARTSYS.
+ */
+int32_t inet_socket_accept(struct file *file, uint32_t flags, struct file **out,
+                           ksockaddr_in_t *peer);
+
+/**
+ * send one datagram from user memory, or data on a stream (as much as
+ * fits; it blocks for room unless the file is non-blocking).
+ * @param to where it goes, or NULL for the connected address (a stream
+ *        does not use it).
+ * @param flags MSG_DONTWAIT.
  * @return the bytes sent, or -EDESTADDRREQ, -EMSGSIZE, -ENETUNREACH,
  *         -EACCES (broadcast without SO_BROADCAST), -ENOBUFS, -ENOMEM,
  *         -EPIPE (shut down for writing), -EFAULT.
  */
 int32_t inet_socket_send(struct file *file, const kiovec_t *iov, uint32_t iov_count,
-                         const ksockaddr_in_t *to);
+                         const ksockaddr_in_t *to, uint32_t flags);
 
 /**
  * receive one datagram into user memory (blocks unless the file is
  * non-blocking or dontwait). a datagram longer than the buffers is cut;
- * the rest of it is gone.
+ * the rest of it is gone. a stream gives the bytes it has (0 at the end
+ * of the stream; -ECONNRESET once after a reset).
  * @param from receives the sender (may be NULL).
  * @param flags MSG_PEEK: leave it in the queue.
  * @param full receives the datagram's whole length (may be NULL).

@@ -64,7 +64,7 @@ void timed_queue_wake_all(timed_queue_t *queue);
  */
 void timer_tick(uint64_t now);
 
-#define TIMER_POLL_HOOKS 4
+#define TIMER_POLL_HOOKS 6
 
 /** a function the timer interrupt calls on every tick (now: the tick count). */
 typedef void (*timer_poll_fn)(uint64_t now);

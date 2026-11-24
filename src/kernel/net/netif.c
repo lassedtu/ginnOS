@@ -9,6 +9,7 @@
 #include "common/string.h"
 #include "ethernet.h"
 #include "ipv4.h"
+#include "tcp.h"
 #include "kernel/errno.h"
 #include "kernel/memory/heap.h"
 #include "kernel/process/process.h"
@@ -90,6 +91,7 @@ static bool loopback_send(netif_t *netif, const void *frame, uint32_t length)
 void net_init(void)
 {
     ipv4_init();
+    tcp_init();
     netif_t *lo = netif_register("lo", NULL, 65535, loopback_send, NULL);
     if (lo)
     {
@@ -261,7 +263,8 @@ int32_t netif_ioctl(uint32_t request, void *arg)
             r.value = (int32_t)n->mtu;
             break;
         case SIOCGIFFLAGS:
-            r.flags = (int16_t)(IFF_UP | IFF_RUNNING | (n->loopback ? IFF_LOOPBACK : IFF_BROADCAST));
+            uint32_t kind = n->loopback ? IFF_LOOPBACK : IFF_BROADCAST;
+            r.flags = (int16_t)(IFF_UP | IFF_RUNNING | kind);
             break;
         case SIOCGIFHWADDR:
             memset(&r.addr, 0, sizeof(r.addr));

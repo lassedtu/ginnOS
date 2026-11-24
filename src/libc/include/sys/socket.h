@@ -6,10 +6,10 @@
 /**
  * @file sys/socket.h
  * @brief sockets: Unix domain stream sockets, with file descriptor
- *        passing, and IPv4 datagram sockets (UDP, and ICMP for ping).
+ *        passing, and IPv4 sockets (TCP; UDP, and ICMP for ping).
  *
- * AF_UNIX with SOCK_STREAM, and AF_INET with SOCK_DGRAM (<netinet/in.h>
- * has the addresses). the values and layouts are the same as Linux's,
+ * AF_UNIX with SOCK_STREAM, and AF_INET with SOCK_STREAM or SOCK_DGRAM
+ * (<netinet/in.h> has the addresses). the values and layouts are the same as Linux's,
  * and must match src/kernel/ipc/unix_socket.h and
  * src/kernel/net/inet_socket.h.
  *
