@@ -13,6 +13,7 @@
 #include <netdb.h>
 #include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <time.h>
@@ -280,9 +281,8 @@ int __dns_lookup(const char *name, uint32_t *addresses, int max, char *canonical
     }
 
     uint8_t query[MESSAGE_MAX];
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    uint16_t id = (uint16_t)(t.tv_nsec ^ (t.tv_nsec >> 16) ^ getpid());
+    // a random id: an answer someone made up must guess it (and the port)
+    uint16_t id = (uint16_t)arc4random();
     memset(query, 0, HEADER_SIZE);
     query[0] = (uint8_t)(id >> 8);
     query[1] = (uint8_t)id;

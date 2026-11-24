@@ -229,6 +229,7 @@ syscall_ret_t sys_getpeername(struct registers *regs);
 syscall_ret_t sys_setsockopt(struct registers *regs);
 syscall_ret_t sys_getsockopt(struct registers *regs);
 syscall_ret_t sys_shutdown(struct registers *regs);
+syscall_ret_t sys_getrandom(struct registers *regs);
 syscall_ret_t sys_recvmsg(struct registers *regs);
 
 /* sys_fb.c */

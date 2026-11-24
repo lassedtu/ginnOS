@@ -1,6 +1,7 @@
 #include "syscall_internal.h"
 #include "syscall.h"
 
+#include "kernel/random/random.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/process/process.h"
 #include "common/string.h"
@@ -165,4 +166,17 @@ syscall_ret_t sys_reboot(struct registers *regs)
     }
     KLOG_INFO("kernel: reboot");
     acpi_reboot();
+}
+
+/**
+ * SYS_getrandom: random bytes.
+ * args: buf, length, flags (GRND_NONBLOCK, GRND_RANDOM, GRND_INSECURE).
+ * waits until the generator is seeded, unless GRND_NONBLOCK or
+ * GRND_INSECURE.
+ * returns the bytes given, or -EAGAIN, -EINVAL, -EFAULT, -EINTR.
+ */
+syscall_ret_t sys_getrandom(struct registers *regs)
+{
+    return random_getrandom((void *)syscall_arg(regs, 0), (uint32_t)syscall_arg(regs, 1),
+                            (uint32_t)syscall_arg(regs, 2));
 }

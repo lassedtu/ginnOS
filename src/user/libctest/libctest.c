@@ -359,6 +359,7 @@ int main(void)
     test_files();
     test_threads();
     test_net();
+    test_random();
 
     if (failures)
         printf("libctest: %d of %d checks failed\n", failures, checks);

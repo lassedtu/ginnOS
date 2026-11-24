@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/types.h>
 
 /**
@@ -134,6 +135,15 @@ ldiv_t ldiv(long numerator, long denominator);
 
 int rand(void);
 void srand(unsigned int seed);
+
+/**
+ * random numbers good for keys, from the kernel's generator
+ * (sys/random.h). they cannot fail.
+ */
+uint32_t arc4random(void);
+void arc4random_buf(void *buf, size_t length);
+/** a random number below bound, each one equally likely */
+uint32_t arc4random_uniform(uint32_t bound);
 
 /**
  * sort count elements of size bytes (heap sort: not stable).

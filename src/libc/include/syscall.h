@@ -114,6 +114,7 @@
 #define SYS_SETSOCKOPT 105   // socket options
 #define SYS_GETSOCKOPT 106
 #define SYS_SHUTDOWN 107     // stop reading or writing on a socket
+#define SYS_GETRANDOM 108    // random bytes
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

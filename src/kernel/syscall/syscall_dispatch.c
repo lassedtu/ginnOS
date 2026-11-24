@@ -120,6 +120,7 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_SETSOCKOPT] = sys_setsockopt,
     [SYS_GETSOCKOPT] = sys_getsockopt,
     [SYS_SHUTDOWN] = sys_shutdown,
+    [SYS_GETRANDOM] = sys_getrandom,
 };
 
 /**

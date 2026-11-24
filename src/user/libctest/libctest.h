@@ -44,3 +44,5 @@ void test_files(void);
 void test_threads(void);
 // net.c
 void test_net(void);
+// random.c
+void test_random(void);

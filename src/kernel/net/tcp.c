@@ -13,6 +13,7 @@
 #include "common/memory.h"
 #include "kernel/errno.h"
 #include "kernel/memory/heap.h"
+#include "kernel/random/random.h"
 #include "kernel/time/timer.h"
 #include "kernel/vfs/poll.h"
 #include "netif.h"
@@ -34,7 +35,6 @@
 #define ORPHAN_FIN_WAIT_2_MS 60000
 
 static tcp_conn_t *connections;
-static uint32_t iss_counter;
 
 // the segment being sent (net_lock held)
 static uint8_t segment_out[HEADER_SIZE + 4 + ETH_MTU];
@@ -79,13 +79,12 @@ static void put32(uint8_t *p, uint32_t v)
 }
 
 /**
- * an initial sequence number: from the clock and a counter, so a new
- * connection does not take the numbers of an old one.
+ * an initial sequence number: random, so no one off the path can guess
+ * it to put data into a connection (RFC 6528 asks for at least that).
  */
 static uint32_t new_iss(void)
 {
-    iss_counter += 0x9E3779B9u;
-    return (uint32_t)timer_now() * 250000u + iss_counter;
+    return random_u32();
 }
 
 static uint32_t receive_room(const tcp_conn_t *c)

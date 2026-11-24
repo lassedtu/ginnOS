@@ -307,3 +307,74 @@ void arch_reload_segments(void)
         : "i"(GDT_KERNEL_DATA)
         : "eax");
 }
+
+uint64_t arch_cycle_count(void)
+{
+    uint32_t low;
+    uint32_t high;
+    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
+    return (uint64_t)high << 32 | low;
+}
+
+/**
+ * which random instructions the CPU has: 0 not checked yet, then bit 0
+ * set after the check, bit 1 RDRAND, bit 2 RDSEED.
+ */
+static uint32_t random_features;
+
+static uint32_t check_random_features(void)
+{
+    uint32_t eax = 1;
+    uint32_t ebx;
+    uint32_t ecx = 0;
+    uint32_t edx;
+    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
+    uint32_t features = 1;
+    if (ecx & (1u << 30))
+    {
+        features |= 2;
+    }
+    eax = 0;
+    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    if (eax >= 7)
+    {
+        eax = 7;
+        ecx = 0;
+        __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
+        if (ebx & (1u << 18))
+        {
+            features |= 4;
+        }
+    }
+    return features;
+}
+
+bool arch_hw_random(uintptr_t *out)
+{
+    if (random_features == 0)
+    {
+        random_features = check_random_features();
+    }
+    // the instructions can fail for a short time: try again some times
+    for (int tries = 0; tries < 10; tries++)
+    {
+        uint8_t ok = 0;
+        if (random_features & 4)
+        {
+            __asm__ volatile("rdseed %0; setc %1" : "=r"(*out), "=qm"(ok));
+        }
+        else if (random_features & 2)
+        {
+            __asm__ volatile("rdrand %0; setc %1" : "=r"(*out), "=qm"(ok));
+        }
+        else
+        {
+            return false;
+        }
+        if (ok)
+        {
+            return true;
+        }
+    }
+    return false;
+}

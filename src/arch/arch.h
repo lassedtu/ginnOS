@@ -60,6 +60,18 @@ void arch_halt(void);
 void arch_halt_forever(void) __attribute__((noreturn));
 
 /**
+ * a fast counter that goes up with each CPU cycle (the TSC on x86). it is
+ * not a clock: the random pool uses its low bits.
+ */
+uint64_t arch_cycle_count(void);
+
+/**
+ * a random word from the CPU's own generator (RDSEED, else RDRAND).
+ * @return false if the CPU has none, or it gave no value after some tries.
+ */
+bool arch_hw_random(uintptr_t *out);
+
+/**
  * read the current stack pointer.
  */
 uintptr_t arch_get_stack_pointer(void);
