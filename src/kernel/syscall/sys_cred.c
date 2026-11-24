@@ -73,12 +73,25 @@ static int32_t set_effective(const uint32_t *real, uint32_t *effective, const ui
 }
 
 /**
+ * the ids are the process's: after a change, every thread has them.
+ * @return result.
+ */
+static int32_t synced(process_t *proc, int32_t result)
+{
+    if (result == 0)
+    {
+        process_sync_threads(proc);
+    }
+    return result;
+}
+
+/**
  * SYS_setuid: args: EBX = uid. returns 0 or -EPERM.
  */
 syscall_ret_t sys_setuid(struct registers *regs)
 {
     process_t *proc = process_current();
-    return set_ids(&proc->uid, &proc->euid, &proc->suid, (uint32_t)syscall_arg(regs, 0));
+    return synced(proc, set_ids(&proc->uid, &proc->euid, &proc->suid, (uint32_t)syscall_arg(regs, 0)));
 }
 
 /**
@@ -88,19 +101,19 @@ syscall_ret_t sys_setuid(struct registers *regs)
 syscall_ret_t sys_setgid(struct registers *regs)
 {
     process_t *proc = process_current();
-    return set_ids(&proc->gid, &proc->egid, &proc->sgid, (uint32_t)syscall_arg(regs, 0));
+    return synced(proc, set_ids(&proc->gid, &proc->egid, &proc->sgid, (uint32_t)syscall_arg(regs, 0)));
 }
 
 syscall_ret_t sys_seteuid(struct registers *regs)
 {
     process_t *proc = process_current();
-    return set_effective(&proc->uid, &proc->euid, &proc->suid, (uint32_t)syscall_arg(regs, 0));
+    return synced(proc, set_effective(&proc->uid, &proc->euid, &proc->suid, (uint32_t)syscall_arg(regs, 0)));
 }
 
 syscall_ret_t sys_setegid(struct registers *regs)
 {
     process_t *proc = process_current();
-    return set_effective(&proc->gid, &proc->egid, &proc->sgid, (uint32_t)syscall_arg(regs, 0));
+    return synced(proc, set_effective(&proc->gid, &proc->egid, &proc->sgid, (uint32_t)syscall_arg(regs, 0)));
 }
 
 /**
@@ -280,7 +293,7 @@ syscall_ret_t sys_fchown(struct registers *regs)
 syscall_ret_t sys_umask(struct registers *regs)
 {
     process_t *proc = process_current();
-    uint32_t old = proc->umask;
-    proc->umask = (uint32_t)syscall_arg(regs, 0) & 0777u;
+    uint32_t old = proc->fs->umask;
+    proc->fs->umask = (uint32_t)syscall_arg(regs, 0) & 0777u;
     return (syscall_ret_t)old;
 }

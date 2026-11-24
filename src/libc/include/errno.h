@@ -5,7 +5,7 @@
  * ABI: src/kernel/errno.h has the same ones.
  *
  * syscalls return negative errno values on failure. the libc wrappers
- * extract the error, store it in the global errno variable, and return -1
+ * extract the error, store it in errno (one for each thread), and return -1
  * (or NULL, etc.) to the caller.
  */
 
@@ -57,11 +57,23 @@
 #define EFBIG  46 /* a file would be too large */
 #define ENOLCK 47 /* no locks left */
 #define ENXIO  48 /* no such device or address */
+#define EDEADLK 49 /* the lock would never be free (pthreads, from the libc) */
+#define EOVERFLOW 50 /* a value would be too large for its type */
+
+#define ENOTSUP EOPNOTSUPP
 
 #define EWOULDBLOCK EAGAIN
 
-/* global errno variable, set by libc wrappers on syscall failure */
-extern int errno;
+/**
+ * the calling thread's errno. each thread has its own (thread-local
+ * storage), as the functions of one thread must not see the errors of
+ * another.
+ * @return the address of the errno of the calling thread.
+ */
+int *__errno_location(void);
+
+/* the error of the last failed call in this thread, set by the libc */
+#define errno (*__errno_location())
 
 /**
  * print a message followed by the string for the current errno.

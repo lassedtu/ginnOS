@@ -21,12 +21,12 @@ static void process_entry_trampoline(void)
     }
 
     // switch to this process's address space
-    arch_switch_address_space(proc->page_directory);
+    arch_switch_address_space(proc->space->page_directory);
 
     uintptr_t entry = proc->entry;
     const char **argv = (const char **)proc->argv;
 
-    jump_to_usermode(entry, proc->page_directory, argv, NULL);
+    jump_to_usermode(entry, proc->space->page_directory, argv, NULL);
 }
 
 /**

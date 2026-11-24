@@ -19,7 +19,8 @@
  * own mapping too.
  *
  * pointers from malloc are 16-byte aligned (the x86_64 ABI's max_align_t).
- * there is one thread, so there is no lock.
+ * once the process has threads (pthread_create), one lock guards the
+ * heap.
  */
 
 #ifdef MALLOC_TEST
@@ -33,6 +34,7 @@
 #include "string.h"
 #include "sys/mman.h"
 #include "unistd.h"
+#include "thread.h"
 #endif
 
 #define ALIGNMENT     16
@@ -351,7 +353,7 @@ static void *from_top(size_t need)
     return user_of(c);
 }
 
-void *malloc(size_t bytes)
+static void *heap_malloc(size_t bytes)
 {
     size_t need = chunk_size_for(bytes);
     if (!need)
@@ -384,7 +386,7 @@ void *malloc(size_t bytes)
     return p;
 }
 
-void free(void *p)
+static void heap_free(void *p)
 {
     if (!p)
     {
@@ -424,6 +426,50 @@ void free(void *p)
     make_free(c, size);
 }
 
+static void *heap_realloc(void *p, size_t bytes);
+
+#ifdef MALLOC_TEST
+#define lock_heap()
+#define unlock_heap()
+#else
+static libc_lock_t heap_lock;
+
+static void lock_heap(void)
+{
+    if (__libc_threaded)
+        __libc_lock(&heap_lock);
+}
+
+static void unlock_heap(void)
+{
+    if (__libc_threaded)
+        __libc_unlock(&heap_lock);
+}
+#endif
+
+void *malloc(size_t bytes)
+{
+    lock_heap();
+    void *p = heap_malloc(bytes);
+    unlock_heap();
+    return p;
+}
+
+void free(void *p)
+{
+    lock_heap();
+    heap_free(p);
+    unlock_heap();
+}
+
+void *realloc(void *p, size_t bytes)
+{
+    lock_heap();
+    void *moved = heap_realloc(p, bytes);
+    unlock_heap();
+    return moved;
+}
+
 void *calloc(size_t count, size_t size)
 {
     if (size && count > SIZE_MAX / size)
@@ -439,15 +485,15 @@ void *calloc(size_t count, size_t size)
     return p;
 }
 
-void *realloc(void *p, size_t bytes)
+static void *heap_realloc(void *p, size_t bytes)
 {
     if (!p)
     {
-        return malloc(bytes);
+        return heap_malloc(bytes);
     }
     if (bytes == 0)
     {
-        free(p);
+        heap_free(p);
         return NULL;
     }
     size_t need = chunk_size_for(bytes);
@@ -469,7 +515,7 @@ void *realloc(void *p, size_t bytes)
                 c->size = need | (c->size & (PREV_IN_USE | IN_USE));
                 chunk_t *rest = at(c, need);
                 rest->size = (size - need) | PREV_IN_USE | IN_USE;
-                free(user_of(rest));
+                heap_free(user_of(rest));
             }
             return p;
         }
@@ -500,14 +546,14 @@ void *realloc(void *p, size_t bytes)
         return p; // a mapping that is large enough, and not much too large
     }
 
-    void *moved = malloc(bytes);
+    void *moved = heap_malloc(bytes);
     if (!moved)
     {
         return NULL;
     }
     size_t old_bytes = size - HEADER;
     memcpy(moved, p, old_bytes < bytes ? old_bytes : bytes);
-    free(p);
+    heap_free(p);
     return moved;
 }
 

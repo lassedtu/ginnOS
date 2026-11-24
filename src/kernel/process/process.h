@@ -3,6 +3,7 @@
 #include "common/stdint.h"
 #include "kernel/memory/page.h"
 #include "kernel/memory/vma.h"
+#include "kernel/memory/user_space.h"
 #include "arch/arch.h"
 #include "kernel/syscall/fd_table.h"
 #include "kernel/sync/wait_queue.h"
@@ -50,27 +51,51 @@ typedef enum
 #define PROCESS_NAME_MAX 32
 
 /**
+ * where paths start, and the mode bits new files lose. the threads of a
+ * process use one together; it is freed when the last lets it go.
+ */
+typedef struct fs_context
+{
+    uint32_t users;      // the processes (threads) that use it
+    uint32_t umask;      // permission bits taken off new files
+    char cwd[PATH_MAX];  // current working directory (the real path)
+    char root[PATH_MAX]; // the root directory (chroot): a path starts here
+} fs_context_t;
+
+/**
  * process control block.
  */
 typedef struct process
 {
-    uint32_t pid;           // process identifier
-    uint32_t parent_pid;    // parent PID; PID_NONE for PID 1 (and for orphans
-                            // when there is no init, which the kernel reaps)
+    uint32_t pid;           // process identifier (the thread id)
+    uint32_t tgid;          // the thread group: the pid of its first thread
+                            // (the leader). getpid gives it.
+    struct process *leader; // the leader (itself for it); its slot stays
+                            // until every thread of the group has ended
+    uint32_t threads;       // in the leader: the threads not ended yet
+    bool group_exiting;     // in the leader: every thread is to end
+    bool group_stopped;     // in the leader: the process is stopped
+    struct process *exec_thread; // in the leader: the thread in execve,
+                                 // which ends the others; or NULL
+    int32_t group_status;   // in the leader: the wait status they end with
+    uintptr_t tls;          // the thread pointer (arch_set_tls), or 0
+    uintptr_t clear_tid;    // a user address set to 0 when the thread ends
+                            // (CLONE_CHILD_CLEARTID), or 0
+    uint32_t parent_pid;    // the parent group's tgid; PID_NONE for PID 1 (and
+                            // for orphans when there is no init, and for a
+                            // thread that ended: the kernel reaps them)
     uint32_t pgid;          // process group (job control)
     uint32_t sid;           // session
     uint32_t uid, euid, suid; // real, effective and saved user id
     uint32_t gid, egid, sgid; // real, effective and saved group id
-    uint32_t umask;         // permission bits taken off new files
     int32_t nice;           // -20 (most CPU) to 19 (least): the time slice length
     process_state_t state;  // current state
-    uintptr_t brk;          // program break (for sbrk)
-    vma_table_t vmas;       // what is mapped in the user half (vma.h)
+    user_space_t *space;    // the user memory (shared by threads), or NULL
+                            // once released
     int32_t exit_status;    // wait status (wait_status.h), valid in ZOMBIE state
     uintptr_t kernel_stack; // lowest address of the kernel stack (kstack.h)
     uintptr_t kernel_esp;   // saved kernel ESP (for context switch)
     uintptr_t entry;        // ELF entry point (used by trampoline on first schedule)
-    addr_space_t page_directory; // this process's address space (page directory)
     wait_queue_t child_exit; // where this process waits for a child to exit
     char **argv;            // kernel-heap copy of argv (freed at exit)
 
@@ -86,11 +111,20 @@ typedef struct process
     wait_queue_t *waiting_on; // the queue it sleeps on (BLOCKED), or NULL
     bool interruptible;       // a signal may end the sleep
 
-    signal_state_t signals;   // pending, blocked, and the handlers
+    // the futex it sleeps on (futex.c): its address space and user address
+    struct user_space *futex_space;
+    uintptr_t futex_addr;
+    bool futex_woken; // a FUTEX_WAKE ended the sleep
+
+    signal_state_t signals;   // pending and blocked
+    signal_handlers_t *handlers; // what each signal does (shared by threads);
+                                 // kept until the slot is freed
     uint32_t syscall_nr;      // the syscall in progress (for a restart)
-    uint64_t alarm_deadline;  // tick of the SIGALRM alarm, 0 for none
-    uint8_t stop_signal;      // the signal that stopped it (STOPPED)
-    wait_report_t wait_report; // a stop or continue for waitpid
+    uint64_t alarm_deadline;  // in the leader: tick of the SIGALRM alarm, 0
+                              // for none
+    uint8_t stop_signal;      // the signal that stopped it (STOPPED); in
+                              // the leader, the one that stopped the process
+    wait_report_t wait_report; // in the leader: a stop or continue for waitpid
     uint32_t utime;           // timer ticks spent in user code
     uint32_t stime;           // timer ticks spent in the kernel for it
     uint32_t cutime;          // utime of reaped children (and theirs)
@@ -101,10 +135,25 @@ typedef struct process
     // the FPU/SSE registers while another process runs (arch_fpu_save)
     uint8_t fpu_state[ARCH_FPU_STATE_SIZE] __attribute__((aligned(16)));
     char name[PROCESS_NAME_MAX]; // the program's file name (procfs)
-    char cwd[PATH_MAX];     // current working directory (the real path)
-    char root[PATH_MAX];    // the root directory (chroot): a path starts here
-    fd_entry_t *fds; // the file descriptor table: FD_MAX entries (process_create)
+    fs_context_t *fs;       // cwd, root and umask (shared by threads), or
+                            // NULL once released
+    fd_table_t *files;      // the descriptors (shared by threads), or NULL
+                            // once released
+    file_t *held_files[FD_MAX]; // files fd_get keeps open for the syscall in
+    uint32_t held_count;        // progress, while the table is shared
 } process_t;
+
+/**
+ * add a user to an fs context (a new thread that shares it).
+ * @return fs.
+ */
+fs_context_t *fs_context_get(fs_context_t *fs);
+
+/**
+ * remove a user from an fs context; the last user frees it.
+ * @param fs the context, or NULL (nothing is done).
+ */
+void fs_context_put(fs_context_t *fs);
 
 /**
  * initialize the process subsystem.
@@ -133,6 +182,51 @@ struct registers;
  *         memory for the page tables ran out.
  */
 process_t *process_fork(const struct registers *regs);
+
+/**
+ * make a thread of the current process: a new task in its group that
+ * shares its memory, descriptors, fs context and handlers. it resumes from
+ * the same syscall, which returns 0 there, with stack as its user stack
+ * pointer. the caller makes it runnable.
+ * @param regs the caller's saved user registers (its syscall frame).
+ * @param stack the thread's user stack pointer.
+ * @return the thread, or NULL if the table or the memory ran out.
+ */
+process_t *process_clone_thread(const struct registers *regs, uintptr_t stack);
+
+/**
+ * send a signal to the threads of a group (signal_send to each).
+ * @param tgid the group.
+ * @param except a thread that is left out, or NULL.
+ * @param sig the signal.
+ */
+void process_signal_threads(uint32_t tgid, process_t *except, int sig);
+
+/**
+ * make a thread the leader of its group in place of the old leader, which
+ * has ended (a zombie) and is the only other member: the thread takes the
+ * leader's pid and its place for the parent, and the old slot is reaped
+ * by the kernel (execve from a thread that is not the leader).
+ * @param proc the thread (the current one).
+ */
+void process_take_leader(process_t *proc);
+
+/**
+ * give every other thread of a process's group its user and group ids,
+ * its process group and its session (they belong to the process).
+ * @param proc the thread whose values the others take.
+ */
+void process_sync_threads(process_t *proc);
+
+/**
+ * choose the thread of a group that takes a signal sent to the process:
+ * the leader if it does not block mask, else a thread that does not,
+ * else any of them (the leader first).
+ * @param tgid the group.
+ * @param mask the signal's bit.
+ * @return the thread, or NULL if the group has none left.
+ */
+process_t *process_pick_thread(uint32_t tgid, uint32_t mask);
 
 /**
  * get the currently running process.
@@ -164,7 +258,8 @@ void process_destroy(process_t *proc);
 void process_release_resources(process_t *proc);
 
 /**
- * detach the children of an exiting process: zombie children are destroyed
+ * detach the children of an exiting group (call when its last thread
+ * ends; parent is that thread): zombie children are destroyed
  * now (nobody wants their status), running ones get init (PID 1) as their
  * parent, which reaps them. without init they lose their parent
  * (PID_NONE) and the kernel reaps them when they exit.

@@ -252,8 +252,9 @@ static void schedule(void)
     // switch to the new process's address space. the idle process and an
     // exiting process that already released its own have none: use the
     // kernel's, never a space some other process may free meanwhile.
-    arch_switch_address_space(next->page_directory ? next->page_directory
-                                                   : arch_kernel_address_space());
+    arch_switch_address_space(next->space ? next->space->page_directory
+                                          : arch_kernel_address_space());
+    arch_set_tls(next->tls);
 
     // reset time slice
     ticks_remaining = slice_for(next);

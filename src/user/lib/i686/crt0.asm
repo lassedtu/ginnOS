@@ -8,25 +8,29 @@
 ;   [esp+8]  = argv (pointer to a NULL-terminated char* array)
 ;   [esp+12] = envp (pointer to a NULL-terminated char* array)
 ;
-; sets environ, calls main(argc, argv, envp), then exit() with the return
-; value (exit runs the atexit handlers).
+; sets environ, gives the thread its thread-local storage (__init_tls),
+; calls main(argc, argv, envp), then exit() with the return value (exit
+; runs the atexit handlers).
 
 BITS 32
 
 extern main
 extern environ
 extern exit
+extern __init_tls
 global _start
 
 _start:
-    mov eax, [esp + 4]     ; argc
-    mov ebx, [esp + 8]     ; argv
-    mov ecx, [esp + 12]    ; envp
-    mov [environ], ecx     ; the libc environment starts as the one passed in
+    mov esi, [esp + 4]     ; argc
+    mov edi, [esp + 8]     ; argv
+    mov ebx, [esp + 12]    ; envp
+    mov [environ], ebx     ; the libc environment starts as the one passed in
 
-    push ecx               ; envp (third argument)
-    push ebx               ; argv (second argument)
-    push eax               ; argc (first argument)
+    call __init_tls        ; keeps esi, edi and ebx (the ABI's saved registers)
+
+    push ebx               ; envp (third argument)
+    push edi               ; argv (second argument)
+    push esi               ; argc (first argument)
     call main              ; int main(int argc, char **argv, char **envp)
     add esp, 12            ; clean up arguments
 

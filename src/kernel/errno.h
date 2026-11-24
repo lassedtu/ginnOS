@@ -58,6 +58,8 @@
 #define EFBIG        46 // a file would be too large
 #define ENOLCK       47 // no locks left (flock)
 #define ENXIO        48 // no such device (a device node with none behind it)
+#define EDEADLK      49 // a lock that would never be free (the libc's own)
+#define EOVERFLOW    50 // a value too large for its type
 
 #define EWOULDBLOCK EAGAIN
 

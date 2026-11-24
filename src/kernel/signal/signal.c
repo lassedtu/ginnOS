@@ -7,6 +7,7 @@
 #include "common/stdio.h"
 #include "kernel/errno.h"
 #include "kernel/klog/klog.h"
+#include "kernel/memory/heap.h"
 #include "kernel/process/process.h"
 #include "kernel/process/wait_status.h"
 #include "kernel/scheduler/scheduler.h"
@@ -82,30 +83,46 @@ static bool valid_signal(int sig)
  */
 static bool ignores(const process_t *proc, int sig)
 {
-    uintptr_t handler = proc->signals.actions[sig].handler;
+    uintptr_t handler = proc->handlers->actions[sig].handler;
     return handler == SIG_IGN || (handler == SIG_DFL && (IGNORE_SIGNALS & SIG_BIT(sig)));
 }
 
 /**
  * tell a parent that its child stopped or continued: SIGCHLD (unless the
  * parent asked for none) and a wake in waitpid.
+ * @param leader the child's leader, which holds the report.
  */
-static void notify_parent(process_t *child)
+static void notify_parent(process_t *leader)
 {
-    process_t *parent = process_get(child->parent_pid);
+    process_t *parent = process_get(leader->parent_pid);
     if (!parent)
     {
         return;
     }
-    if (!(parent->signals.actions[SIGCHLD].flags & SA_NOCLDSTOP))
+    if (!(parent->handlers->actions[SIGCHLD].flags & SA_NOCLDSTOP))
     {
-        signal_send(parent, SIGCHLD);
+        signal_send_process(parent, SIGCHLD);
     }
     wait_queue_wake_all(&parent->child_exit);
 }
 
 /**
- * make a stopped process run again. interrupts masked.
+ * the process of a thread continues: report it once (on the leader), if
+ * it was stopped. interrupts masked.
+ */
+static void report_continued(process_t *leader)
+{
+    if (leader->group_stopped)
+    {
+        leader->group_stopped = false;
+        leader->stop_signal = 0;
+        leader->wait_report = WAIT_REPORT_CONTINUED;
+        notify_parent(leader);
+    }
+}
+
+/**
+ * make a stopped thread run again. interrupts masked.
  */
 static void continue_process(process_t *proc, bool report)
 {
@@ -113,8 +130,7 @@ static void continue_process(process_t *proc, bool report)
     scheduler_ready(proc);
     if (report)
     {
-        proc->wait_report = WAIT_REPORT_CONTINUED;
-        notify_parent(proc);
+        report_continued(proc->leader);
     }
 }
 
@@ -128,7 +144,8 @@ void signal_send(process_t *proc, int sig)
     uint32_t flags = arch_irq_save();
     signal_state_t *state = &proc->signals;
 
-    if (proc->state == PROC_STATE_UNUSED || proc->state == PROC_STATE_ZOMBIE)
+    // a new process has no handlers until process_create has made them
+    if (proc->state == PROC_STATE_UNUSED || proc->state == PROC_STATE_ZOMBIE || !proc->handlers)
     {
         arch_irq_restore(flags);
         return;
@@ -153,7 +170,7 @@ void signal_send(process_t *proc, int sig)
     }
 
     // init takes only the signals it handles; others would end the system
-    bool dropped = proc->pid == PID_INIT && state->actions[sig].handler == SIG_DFL;
+    bool dropped = proc->pid == PID_INIT && proc->handlers->actions[sig].handler == SIG_DFL;
 
     // an ignored signal is dropped, unless it is blocked (the action may
     // change before it is unblocked)
@@ -180,10 +197,10 @@ void signal_force(process_t *proc, int sig)
     signal_state_t *state = &proc->signals;
 
     // a fault that cannot be handled ends the process
-    if ((state->blocked & SIG_BIT(sig)) || state->actions[sig].handler == SIG_IGN)
+    if ((state->blocked & SIG_BIT(sig)) || proc->handlers->actions[sig].handler == SIG_IGN)
     {
         state->blocked &= ~SIG_BIT(sig);
-        state->actions[sig].handler = SIG_DFL;
+        proc->handlers->actions[sig].handler = SIG_DFL;
     }
     state->pending |= SIG_BIT(sig);
 
@@ -229,9 +246,22 @@ static void stop_current(process_t *proc, int sig)
     uint32_t flags = arch_irq_save();
     proc->state = PROC_STATE_STOPPED;
     proc->stop_signal = (uint8_t)sig;
-    proc->wait_report = WAIT_REPORT_STOPPED;
     scheduler_remove(proc);
-    notify_parent(proc);
+
+    // the first thread to stop reports it for the process and stops the
+    // others; they stop without a report
+    process_t *leader = proc->leader;
+    if (!leader->group_stopped)
+    {
+        leader->group_stopped = true;
+        leader->stop_signal = (uint8_t)sig;
+        leader->wait_report = WAIT_REPORT_STOPPED;
+        notify_parent(leader);
+        if (leader->threads > 1)
+        {
+            process_signal_threads(proc->tgid, proc, SIGSTOP);
+        }
+    }
     scheduler_yield(); // returns once something continues it
     arch_irq_restore(flags);
 }
@@ -244,20 +274,20 @@ static void report_fatal(const process_t *proc, int sig)
     switch (sig)
     {
     case SIGSEGV:
-        printf("pid %u: segmentation fault (%s 0x%lx)\r\n", proc->pid,
+        printf("pid %u: segmentation fault (%s 0x%lx)\r\n", proc->tgid,
                proc->fault_write ? "write to" : "read of", (unsigned long)proc->fault_addr);
         break;
     case SIGFPE:
-        printf("pid %u: arithmetic exception\r\n", proc->pid);
+        printf("pid %u: arithmetic exception\r\n", proc->tgid);
         break;
     case SIGILL:
-        printf("pid %u: illegal instruction\r\n", proc->pid);
+        printf("pid %u: illegal instruction\r\n", proc->tgid);
         break;
     case SIGBUS:
-        printf("pid %u: bus error\r\n", proc->pid);
+        printf("pid %u: bus error\r\n", proc->tgid);
         break;
     case SIGTRAP:
-        printf("pid %u: trace trap\r\n", proc->pid);
+        printf("pid %u: trace trap\r\n", proc->tgid);
         break;
     default:
         break; // signals sent by others end a process quietly
@@ -280,7 +310,7 @@ static void restart_syscall(process_t *proc, struct registers *regs)
  */
 static bool enter_handler(process_t *proc, struct registers *regs, int sig)
 {
-    ksigaction_t *action = &proc->signals.actions[sig];
+    ksigaction_t *action = &proc->handlers->actions[sig];
 
     // the FPU registers go through the process's own aligned save area:
     // FXSAVE needs 16-byte alignment, which the kernel stack does not have
@@ -342,12 +372,21 @@ void signal_deliver(struct registers *regs)
         return;
     }
 
+    // another thread ended the process (exit_group or a fatal signal), or
+    // runs a new program (execve)
+    process_t *leader = proc->leader;
+    if (leader->group_exiting || (leader->exec_thread && leader->exec_thread != proc))
+    {
+        arch_enable_interrupts();
+        usermode_end_thread();
+    }
+
     bool interrupted = regs->interrupt == SYSCALL_VECTOR && REG_RESULT(regs) == (uintptr_t)-ERESTARTSYS;
 
     int sig;
     while ((sig = take_signal(proc)) != 0)
     {
-        ksigaction_t *action = &proc->signals.actions[sig];
+        ksigaction_t *action = &proc->handlers->actions[sig];
 
         if (action->handler == SIG_IGN)
         {
@@ -419,16 +458,50 @@ void signal_deliver(struct registers *regs)
 void signal_fork(process_t *child, const process_t *parent)
 {
     child->signals = parent->signals;
+    memcpy(child->handlers->actions, parent->handlers->actions, sizeof(child->handlers->actions));
     child->signals.pending = 0;
     child->signals.restore_blocked = false;
     child->alarm_deadline = 0;
+}
+
+signal_handlers_t *signal_handlers_create(void)
+{
+    signal_handlers_t *handlers = kcalloc(1, sizeof(signal_handlers_t));
+    if (handlers)
+    {
+        handlers->users = 1; // SIG_DFL is 0
+    }
+    return handlers;
+}
+
+signal_handlers_t *signal_handlers_get(signal_handlers_t *handlers)
+{
+    uint32_t flags = arch_irq_save();
+    handlers->users++;
+    arch_irq_restore(flags);
+    return handlers;
+}
+
+void signal_handlers_put(signal_handlers_t *handlers)
+{
+    if (!handlers)
+    {
+        return;
+    }
+    uint32_t flags = arch_irq_save();
+    bool last = --handlers->users == 0;
+    arch_irq_restore(flags);
+    if (last)
+    {
+        kfree(handlers);
+    }
 }
 
 void signal_exec(process_t *proc)
 {
     for (int sig = 1; sig < NSIG; sig++)
     {
-        ksigaction_t *action = &proc->signals.actions[sig];
+        ksigaction_t *action = &proc->handlers->actions[sig];
         if (action->handler != SIG_IGN)
         {
             action->handler = SIG_DFL;
@@ -451,6 +524,7 @@ typedef struct
 
 static void collect_alarm(process_t *proc, void *ctx)
 {
+    // the alarm is the process's: only a leader has one
     due_alarms_t *due = ctx;
     if (proc->alarm_deadline != 0 && proc->alarm_deadline <= due->now)
     {
@@ -469,7 +543,7 @@ void signal_alarm_tick(uint64_t now)
 
     for (uint32_t i = 0; i < due.count; i++)
     {
-        signal_send(process_get(due.pids[i]), SIGALRM);
+        signal_send_process(process_get(due.pids[i]), SIGALRM);
     }
 }
 
@@ -479,9 +553,32 @@ int signal_send_group(uint32_t pgid, int sig)
     uint32_t count = process_list_group(pgid, pids, PROCESS_MAX);
     for (uint32_t i = 0; i < count; i++)
     {
-        signal_send(process_get(pids[i]), sig);
+        signal_send_process(process_get(pids[i]), sig);
     }
     return (int)count;
+}
+
+void signal_send_process(process_t *proc, int sig)
+{
+    if (!proc || !valid_signal(sig))
+    {
+        return;
+    }
+    process_t *leader = proc->leader;
+
+    // SIGCONT continues every thread, and is reported once
+    if (sig == SIGCONT)
+    {
+        uint32_t flags = arch_irq_save();
+        report_continued(leader);
+        arch_irq_restore(flags);
+        process_signal_threads(leader->tgid, NULL, SIGCONT);
+        return;
+    }
+
+    // one thread takes it: the leader if it does not block it, else one
+    // that does not, else any (it stays pending there)
+    signal_send(process_pick_thread(leader->tgid, SIG_BIT(sig)), sig);
 }
 
 /*
@@ -505,10 +602,11 @@ syscall_ret_t sys_kill(struct registers *regs)
 
     if (pid > 0)
     {
+        // a process: the pid of a thread that is not the leader is not one
         process_t *target = process_get((uint32_t)pid);
-        if (!target || target->state == PROC_STATE_ZOMBIE)
+        if (!target || target->pid != target->tgid || target->threads == 0)
             return -ESRCH;
-        signal_send(target, sig);
+        signal_send_process(target, sig);
         return 0;
     }
 
@@ -529,7 +627,7 @@ syscall_ret_t sys_kill(struct registers *regs)
         {
             if (pids[i] != PID_INIT)
             {
-                signal_send(process_get(pids[i]), sig);
+                signal_send_process(process_get(pids[i]), sig);
                 sent = true;
             }
         }
@@ -537,6 +635,32 @@ syscall_ret_t sys_kill(struct registers *regs)
     }
 
     return -EINVAL;
+}
+
+/**
+ * SYS_tgkill: send a signal to one thread.
+ * args: the thread group (pid), the thread's id, the signal (0 only checks
+ *       that the thread exists).
+ * SIGCONT continues the whole process, as for kill.
+ * returns 0, or -ESRCH, -EINVAL.
+ */
+syscall_ret_t sys_tgkill(struct registers *regs)
+{
+    uint32_t tgid = (uint32_t)syscall_arg(regs, 0);
+    uint32_t tid = (uint32_t)syscall_arg(regs, 1);
+    int sig = (int)syscall_arg(regs, 2);
+
+    if (sig != 0 && !valid_signal(sig))
+        return -EINVAL;
+    process_t *target = process_get(tid);
+    if (!target || target->tgid != tgid || target->state == PROC_STATE_ZOMBIE ||
+        target->state == PROC_STATE_NEW)
+        return -ESRCH;
+    if (sig == SIGCONT)
+        signal_send_process(target, sig);
+    else if (sig != 0)
+        signal_send(target, sig);
+    return 0;
 }
 
 /**
@@ -555,7 +679,7 @@ syscall_ret_t sys_sigaction(struct registers *regs)
     if (!valid_signal(sig) || (user_new && (SIG_UNBLOCKABLE & SIG_BIT(sig))))
         return -EINVAL;
 
-    ksigaction_t old = proc->signals.actions[sig];
+    ksigaction_t old = proc->handlers->actions[sig];
     ksigaction_t new_action;
     if (user_new && kerr_failed(copy_from_user(&new_action, user_new, sizeof(new_action))))
         return -EFAULT;
@@ -566,7 +690,7 @@ syscall_ret_t sys_sigaction(struct registers *regs)
     {
         new_action.mask &= ~SIG_UNBLOCKABLE;
         uint32_t flags = arch_irq_save();
-        proc->signals.actions[sig] = new_action;
+        proc->handlers->actions[sig] = new_action;
         // a pending signal that is now ignored is dropped
         if (ignores(proc, sig))
             proc->signals.pending &= ~SIG_BIT(sig);
@@ -728,9 +852,10 @@ syscall_ret_t sys_alarm(struct registers *regs)
     process_t *proc = process_current();
     uint64_t now = timer_now();
 
+    process_t *leader = proc->leader; // the alarm is the process's
     uint32_t flags = arch_irq_save();
-    uint64_t old = proc->alarm_deadline;
-    proc->alarm_deadline = seconds ? now + (uint64_t)seconds * TIMER_HZ : 0;
+    uint64_t old = leader->alarm_deadline;
+    leader->alarm_deadline = seconds ? now + (uint64_t)seconds * TIMER_HZ : 0;
     arch_irq_restore(flags);
 
     if (old == 0 || old <= now)

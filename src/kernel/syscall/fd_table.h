@@ -31,6 +31,35 @@ typedef struct
 } fd_entry_t;
 
 /**
+ * the descriptors of a process. the threads of a process use one table
+ * together; it is freed when the last of them lets it go.
+ */
+typedef struct fd_table
+{
+    uint32_t users;        // the processes (threads) that use it
+    fd_entry_t fd[FD_MAX]; // indexed by descriptor number
+} fd_table_t;
+
+/**
+ * make a table with every descriptor free and one user.
+ * @return the table, or NULL if there is no memory.
+ */
+fd_table_t *fd_table_create(void);
+
+/**
+ * add a user to a table (a new thread that shares it).
+ * @return table.
+ */
+fd_table_t *fd_table_get(fd_table_t *table);
+
+/**
+ * remove a user from a table. the last user closes every descriptor (this
+ * may sleep) and frees it.
+ * @param table the table, or NULL (nothing is done).
+ */
+void fd_table_put(fd_table_t *table);
+
+/**
  * put a description in the lowest free descriptor of a process, at or
  * above min_fd. the descriptor takes over the caller's reference.
  * @param proc the process.
@@ -43,11 +72,21 @@ typedef struct
 int fd_install(struct process *proc, file_t *file, uint32_t fd_flags, int min_fd);
 
 /**
- * get the entry for a descriptor of the current process.
+ * get the entry for a descriptor of the current process. when the table
+ * is shared with other threads, the file is kept open until the syscall
+ * ends (fd_release_held), even if another thread closes fd meanwhile;
+ * use entry->file before any sleep, as the entry itself can change.
  * @param fd the file descriptor number.
  * @return the entry, or NULL if fd is out of range or not open.
  */
 fd_entry_t *fd_get(int fd);
+
+/**
+ * let go of the files fd_get kept open during a syscall (the syscall
+ * handler calls this at its end). may sleep: a last close can.
+ * @param proc the process.
+ */
+void fd_release_held(struct process *proc);
 
 /**
  * close a descriptor of the current process.

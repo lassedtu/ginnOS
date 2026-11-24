@@ -1,3 +1,4 @@
+#include "arch/arch.h"
 #include "vma.h"
 
 #include "page.h"
@@ -51,8 +52,8 @@ void vma_table_init(vma_table_t *table)
     table->count = 0;
 }
 
-kerr_t vma_insert(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t prot,
-                  vma_kind_t kind)
+static kerr_t insert_areas(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t prot,
+                          vma_kind_t kind)
 {
     if (!valid_range(start, end))
     {
@@ -74,6 +75,15 @@ kerr_t vma_insert(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t p
     table->areas[index].prot = prot;
     table->areas[index].kind = kind;
     return KERR_OK;
+}
+
+kerr_t vma_insert(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t prot,
+                  vma_kind_t kind)
+{
+    uint32_t flags = arch_irq_save();
+    kerr_t err = insert_areas(table, start, end, prot, kind);
+    arch_irq_restore(flags);
+    return err;
 }
 
 vma_t *vma_find(vma_table_t *table, uintptr_t addr)
@@ -135,7 +145,7 @@ uintptr_t vma_find_free(const vma_table_t *table, size_t length, uintptr_t low, 
     return 0;
 }
 
-kerr_t vma_remove(vma_table_t *table, uintptr_t start, uintptr_t end)
+static kerr_t remove_areas(vma_table_t *table, uintptr_t start, uintptr_t end)
 {
     if (!valid_range(start, end))
     {
@@ -183,6 +193,14 @@ kerr_t vma_remove(vma_table_t *table, uintptr_t start, uintptr_t end)
     return KERR_OK;
 }
 
+kerr_t vma_remove(vma_table_t *table, uintptr_t start, uintptr_t end)
+{
+    uint32_t flags = arch_irq_save();
+    kerr_t err = remove_areas(table, start, end);
+    arch_irq_restore(flags);
+    return err;
+}
+
 /**
  * split the area containing addr in two at addr, if addr falls strictly
  * inside one. the caller has checked there is a free slot.
@@ -199,7 +217,7 @@ static void split_at(vma_table_t *table, uintptr_t addr)
     }
 }
 
-kerr_t vma_protect(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t prot)
+static kerr_t protect_areas(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t prot)
 {
     if (!valid_range(start, end))
     {
@@ -239,4 +257,12 @@ kerr_t vma_protect(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t 
         i++;
     }
     return KERR_OK;
+}
+
+kerr_t vma_protect(vma_table_t *table, uintptr_t start, uintptr_t end, uint32_t prot)
+{
+    uint32_t flags = arch_irq_save();
+    kerr_t err = protect_areas(table, start, end, prot);
+    arch_irq_restore(flags);
+    return err;
 }

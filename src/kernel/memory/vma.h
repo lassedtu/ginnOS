@@ -9,16 +9,18 @@
  * table is what the page-fault handler consults and what mmap/munmap work
  * on.
  *
- * locking: only the owning process changes its table (in its own syscalls),
- * or exec before the process first runs, and there is one thread per
- * address space, so the table needs no lock.
+ * locking: the threads of a process share the table. the memory syscalls
+ * take the user space's lock (user_space.h), so one changes it at a time;
+ * each change runs with interrupts masked, so a page fault in another
+ * thread (mm_fault_in, also masked) never sees half of one.
  */
 
 #include "common/stdint.h"
 #include "common/error.h"
 
-// most areas one process can have
-#define VMA_MAX 32
+// most areas one process can have (a thread's stack takes two: the
+// stack and its guard page)
+#define VMA_MAX 256
 
 /**
  * what backs an area.

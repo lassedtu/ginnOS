@@ -44,6 +44,9 @@
 /** double-fault task TSS selector (GDT index 6, RPL 0). */
 #define GDT_DOUBLE_FAULT_TSS 0x30
 
+// user thread-local storage, loaded in GS (entry 7, RPL 3)
+#define GDT_USER_TLS 0x3B
+
 #endif
 
 /**
@@ -59,6 +62,14 @@ void gdt_initialize(void);
  * @param esp0 the kernel stack pointer to store.
  */
 void tss_set_kernel_stack(uintptr_t esp0);
+
+#ifndef __x86_64__
+/**
+ * set the base of the user TLS segment and load GS with it.
+ * @param base the thread pointer.
+ */
+void gdt_set_tls(uint32_t base);
+#endif
 
 #ifdef __x86_64__
 

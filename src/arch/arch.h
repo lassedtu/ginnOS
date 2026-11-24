@@ -231,6 +231,14 @@ phys_addr_t arch_translate_in(addr_space_t as, uintptr_t virt);
 void arch_switch_address_space(addr_space_t as);
 
 /**
+ * set the thread pointer user code reaches its thread-local storage
+ * through: the FS base on x86_64 (%fs:0), the base of the TLS segment in
+ * GS on i686 (%gs:0). the scheduler sets it for each thread it runs.
+ * @param base the address, or 0.
+ */
+void arch_set_tls(uintptr_t base);
+
+/**
  * drop to usermode (ring 3) and begin executing at entry with the given stack.
  * this function never returns.
  * @param entry userspace entry point address.

@@ -28,7 +28,7 @@ int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolve
         return -ENOENT;
 
     process_t *proc = process_current();
-    const char *base = proc ? proc->cwd : "/";
+    const char *base = proc && proc->fs ? proc->fs->cwd : "/";
 
     // a relative path in a directory the caller has open
     if (path[0] != '/' && dirfd != AT_FDCWD)
@@ -47,7 +47,7 @@ int32_t resolve_user_path_at(int32_t dirfd, const char *user_path, char *resolve
     // the path is taken in the process's root directory (chroot), and
     // turned into a real path. a working directory left outside the root
     // still takes relative paths, as on Linux
-    const char *root = proc ? proc->root : "/";
+    const char *root = proc && proc->fs ? proc->fs->root : "/";
     const char *virtual_base = vfs_inside_root(base, root);
     bool outside = virtual_base == base && strlen(root) > 1;
     if (outside && path[0] != '/')
@@ -74,7 +74,7 @@ int32_t set_new_owner(const char *path, uint32_t mode)
     process_t *proc = process_current();
     fs_attr_t attr = {
         .what = FS_ATTR_MODE | FS_ATTR_OWNER,
-        .mode = mode & ~proc->umask & 07777u,
+        .mode = mode & ~proc->fs->umask & 07777u,
         .uid = proc->euid,
         .gid = proc->egid,
     };

@@ -273,10 +273,10 @@ syscall_ret_t sys_dup2(struct registers *regs)
     // take the reference first: closing new_fd may drop the last other one
     file_t *file = old_entry->file;
     file_ref(file);
-    if (proc->fds[new_fd].file)
-        fd_close_entry(&proc->fds[new_fd]);
-    proc->fds[new_fd].file = file;
-    proc->fds[new_fd].flags = 0;
+    if (proc->files->fd[new_fd].file)
+        fd_close_entry(&proc->files->fd[new_fd]);
+    proc->files->fd[new_fd].file = file;
+    proc->files->fd[new_fd].flags = 0;
 
     return new_fd;
 }
@@ -306,7 +306,7 @@ syscall_ret_t sys_pipe(struct registers *regs)
     if (fds[1] < 0)
     {
         if (fds[0] >= 0)
-            proc->fds[fds[0]].file = NULL;
+            proc->files->fd[fds[0]].file = NULL;
         file_unref(read_end);
         file_unref(write_end);
         return -EMFILE;

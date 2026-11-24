@@ -1,7 +1,12 @@
 #include "errno.h"
 #include "stdio.h"
 
-int errno = 0;
+static __thread int thread_errno;
+
+int *__errno_location(void)
+{
+    return &thread_errno;
+}
 
 const char *strerror(int errnum)
 {
@@ -56,6 +61,8 @@ const char *strerror(int errnum)
     case EPROTONOSUPPORT: return "protocol not supported";
     case EOPNOTSUPP: return "operation not supported";
     case ECANCELED: return "cancelled";
+    case EDEADLK: return "resource deadlock would occur";
+    case EOVERFLOW: return "value too large";
     }
     return "unknown error";
 }

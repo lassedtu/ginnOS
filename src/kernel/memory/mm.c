@@ -34,31 +34,30 @@ static uint32_t mmu_flags_for(uint32_t prot)
     return flags;
 }
 
-kerr_t mm_unmap(process_t *proc, uintptr_t start, uintptr_t end)
+/**
+ * mm_unmap, with interrupts masked by the caller.
+ */
+static kerr_t unmap(process_t *proc, uintptr_t start, uintptr_t end)
 {
-    if (!valid_user_range(start, end))
-    {
-        return KERR_INVAL;
-    }
 
     // a hole punched in the middle of an area needs a free slot: check
     // before touching any page, so failure leaves everything mapped
-    vma_t *inside = vma_find(&proc->vmas, start);
+    vma_t *inside = vma_find(&proc->space->vmas, start);
     if (inside && inside->start < start && inside->end > end &&
-        proc->vmas.count == VMA_MAX)
+        proc->space->vmas.count == VMA_MAX)
     {
         return KERR_NOSPC;
     }
 
-    for (uint32_t i = 0; i < proc->vmas.count; i++)
+    for (uint32_t i = 0; i < proc->space->vmas.count; i++)
     {
-        vma_t *area = &proc->vmas.areas[i];
+        vma_t *area = &proc->space->vmas.areas[i];
         uintptr_t from = area->start > start ? area->start : start;
         uintptr_t to = area->end < end ? area->end : end;
 
         for (uintptr_t page = from; page < to; page += PAGE_SIZE)
         {
-            phys_addr_t frame = arch_unmap_page(proc->page_directory, page);
+            phys_addr_t frame = arch_unmap_page(proc->space->page_directory, page);
             // device memory (e.g. a mapped framebuffer) is not the PMM's
             if (frame != 0 && pmm_owns(frame))
             {
@@ -67,7 +66,22 @@ kerr_t mm_unmap(process_t *proc, uintptr_t start, uintptr_t end)
         }
     }
 
-    return vma_remove(&proc->vmas, start, end);
+    return vma_remove(&proc->space->vmas, start, end);
+}
+
+kerr_t mm_unmap(process_t *proc, uintptr_t start, uintptr_t end)
+{
+    if (!valid_user_range(start, end))
+    {
+        return KERR_INVAL;
+    }
+
+    // a fault in another thread must not back a page between the unmap of
+    // the pages and the removal of the area (mm_fault_in)
+    uint32_t flags = arch_irq_save();
+    kerr_t err = unmap(proc, start, end);
+    arch_irq_restore(flags);
+    return err;
 }
 
 kerr_t mm_protect(process_t *proc, uintptr_t start, uintptr_t end, uint32_t prot)
@@ -77,7 +91,7 @@ kerr_t mm_protect(process_t *proc, uintptr_t start, uintptr_t end, uint32_t prot
         return KERR_INVAL;
     }
 
-    kerr_t err = vma_protect(&proc->vmas, start, end, prot);
+    kerr_t err = vma_protect(&proc->space->vmas, start, end, prot);
     if (kerr_failed(err))
     {
         return err;
@@ -89,9 +103,9 @@ kerr_t mm_protect(process_t *proc, uintptr_t start, uintptr_t end, uint32_t prot
     for (uintptr_t page = start; page < end; page += PAGE_SIZE)
     {
         uint32_t page_flags = flags;
-        phys_addr_t frame = arch_translate_in(proc->page_directory, page);
+        phys_addr_t frame = arch_translate_in(proc->space->page_directory, page);
 
-        vma_t *area = vma_find(&proc->vmas, page);
+        vma_t *area = vma_find(&proc->space->vmas, page);
         if (area && area->kind == VMA_SHARED)
         {
             // shared memory keeps its mark; its frames are meant to have
@@ -105,7 +119,7 @@ kerr_t mm_protect(process_t *proc, uintptr_t start, uintptr_t end, uint32_t prot
             // write copies it (mm_fault_in)
             page_flags &= ~MMU_FLAG_WRITE;
         }
-        arch_protect_page(proc->page_directory, page, page_flags);
+        arch_protect_page(proc->space->page_directory, page, page_flags);
     }
     return KERR_OK;
 }

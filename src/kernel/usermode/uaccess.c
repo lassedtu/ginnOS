@@ -21,7 +21,7 @@ bool user_access_ok(const void *ptr, size_t len, bool write)
     }
 
     process_t *proc = process_current();
-    if (!proc || !proc->page_directory)
+    if (!proc || !proc->space)
     {
         return false;
     }
@@ -33,9 +33,9 @@ bool user_access_ok(const void *ptr, size_t len, bool write)
     for (uintptr_t page = PAGE_ALIGN_DOWN(start);; page += PAGE_SIZE)
     {
         uintptr_t first = page < start ? start : page;
-        if (!arch_user_access_ok(proc->page_directory, first, 1, write) &&
+        if (!arch_user_access_ok(proc->space->page_directory, first, 1, write) &&
             (!mm_fault_in(proc, first, write) ||
-             !arch_user_access_ok(proc->page_directory, first, 1, write)))
+             !arch_user_access_ok(proc->space->page_directory, first, 1, write)))
         {
             return false;
         }

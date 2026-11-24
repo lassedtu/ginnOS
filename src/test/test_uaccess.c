@@ -31,12 +31,12 @@ static process_t *enter_test_process(void)
     memset(ro, 'r', PAGE_SIZE);
     memcpy(ro, "readonly", 9);
 
-    arch_map_page(proc->page_directory, UA_BASE, virt_to_phys(rw), MMU_USER_RW);
-    arch_map_page(proc->page_directory, UA_BASE + PAGE_SIZE, virt_to_phys(ro),
+    arch_map_page(proc->space->page_directory, UA_BASE, virt_to_phys(rw), MMU_USER_RW);
+    arch_map_page(proc->space->page_directory, UA_BASE + PAGE_SIZE, virt_to_phys(ro),
                   MMU_FLAG_PRESENT | MMU_FLAG_USER);
 
     process_set_current(proc);
-    arch_switch_address_space(proc->page_directory);
+    arch_switch_address_space(proc->space->page_directory);
     return proc;
 }
 

@@ -26,7 +26,7 @@ syscall_ret_t sys_getcwd(struct registers *regs)
     }
 
     // as the process sees it, inside its root directory
-    const char *cwd = vfs_inside_root(proc->cwd, proc->root);
+    const char *cwd = vfs_inside_root(proc->fs->cwd, proc->fs->root);
     size_t len = strlen(cwd);
     if (len + 1 > size)
     {
@@ -61,8 +61,8 @@ syscall_ret_t sys_chroot(struct registers *regs)
     if (st.file_type != FS_TYPE_DIR)
         return -ENOTDIR;
 
-    strncpy(proc->root, resolved, PATH_MAX - 1);
-    proc->root[PATH_MAX - 1] = '\0';
+    strncpy(proc->fs->root, resolved, PATH_MAX - 1);
+    proc->fs->root[PATH_MAX - 1] = '\0';
     return 0;
 }
 
@@ -107,8 +107,8 @@ syscall_ret_t sys_chdir(struct registers *regs)
         return allowed;
     }
 
-    strncpy(proc->cwd, resolved, PATH_MAX - 1);
-    proc->cwd[PATH_MAX - 1] = '\0';
+    strncpy(proc->fs->cwd, resolved, PATH_MAX - 1);
+    proc->fs->cwd[PATH_MAX - 1] = '\0';
     return 0;
 }
 

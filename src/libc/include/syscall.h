@@ -103,6 +103,12 @@
 #define SYS_FLOCK 94         // an advisory lock on a whole file
 #define SYS_MKNODAT 95       // a named pipe or a device node
 #define SYS_CHROOT 96        // change the root directory (root)
+#define SYS_CLONE 97         // make a thread (the Linux flags for one)
+#define SYS_EXIT_GROUP 98    // end every thread of the process
+#define SYS_GETTID 99        // the calling thread's id
+#define SYS_TGKILL 100       // send a signal to one thread
+#define SYS_SET_TLS 101      // set the thread pointer (thread-local storage)
+#define SYS_FUTEX 102        // wait on or wake a word in user memory
 
 /**
  * the raw syscall (src/libc/arch/<arch>/syscall.asm). the arguments and

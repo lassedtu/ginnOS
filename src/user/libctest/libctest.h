@@ -40,3 +40,5 @@ void test_regex(void);
 void test_posix(void);
 // files.c
 void test_files(void);
+// threads.c
+void test_threads(void);

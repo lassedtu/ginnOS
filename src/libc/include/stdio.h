@@ -141,9 +141,9 @@ int remove(const char *path);
  */
 void perror(const char *s);
 
-// locks of a stream for threads. a ginnOS process has one thread, so
-// they do nothing and the _unlocked calls are the plain ones; they are
-// here for programs written for threads.
+// the lock of a stream. once the process has threads, each stdio call
+// on a stream takes it; a thread may take it again (it counts). the
+// _unlocked calls are the plain ones.
 void flockfile(FILE *stream);
 int ftrylockfile(FILE *stream); // 0: locked
 void funlockfile(FILE *stream);

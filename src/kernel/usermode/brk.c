@@ -9,7 +9,7 @@ uintptr_t usermode_get_brk(void)
     {
         return 0;
     }
-    return proc->brk;
+    return proc->space->brk;
 }
 
 void usermode_set_brk(uintptr_t brk)
@@ -17,6 +17,6 @@ void usermode_set_brk(uintptr_t brk)
     process_t *proc = process_current();
     if (proc)
     {
-        proc->brk = brk;
+        proc->space->brk = brk;
     }
 }

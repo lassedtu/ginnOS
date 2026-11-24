@@ -129,6 +129,12 @@ syscall_ret_t sys_linkat(struct registers *regs);
 syscall_ret_t sys_utimensat(struct registers *regs);
 syscall_ret_t sys_mknodat(struct registers *regs);
 syscall_ret_t sys_chroot(struct registers *regs);
+syscall_ret_t sys_clone(struct registers *regs);
+syscall_ret_t sys_exit_group(struct registers *regs);
+syscall_ret_t sys_gettid(struct registers *regs);
+syscall_ret_t sys_tgkill(struct registers *regs);
+syscall_ret_t sys_set_tls(struct registers *regs);
+syscall_ret_t sys_futex(struct registers *regs);
 syscall_ret_t sys_getdents(struct registers *regs);
 syscall_ret_t sys_poll(struct registers *regs);
 

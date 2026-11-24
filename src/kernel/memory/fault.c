@@ -36,7 +36,7 @@ static bool break_cow(process_t *proc, const vma_t *area, uintptr_t page, phys_a
     if (pmm_page_refcount(old) == 1)
     {
         // the last user: nothing to copy
-        return arch_protect_page(proc->page_directory, page, page_flags(area));
+        return arch_protect_page(proc->space->page_directory, page, page_flags(area));
     }
 
     void *copy = pmm_alloc_page();
@@ -46,7 +46,7 @@ static bool break_cow(process_t *proc, const vma_t *area, uintptr_t page, phys_a
     }
     memcpy(copy, old, PAGE_SIZE);
 
-    if (arch_map_page(proc->page_directory, page, virt_to_phys(copy), page_flags(area)) != 0)
+    if (arch_map_page(proc->space->page_directory, page, virt_to_phys(copy), page_flags(area)) != 0)
     {
         pmm_free_page(copy);
         return false;
@@ -57,14 +57,13 @@ static bool break_cow(process_t *proc, const vma_t *area, uintptr_t page, phys_a
     return true;
 }
 
-bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
+/**
+ * mm_fault_in, with interrupts masked by the caller.
+ */
+static bool fault_in(process_t *proc, uintptr_t addr, bool write)
 {
-    if (!proc || !proc->page_directory)
-    {
-        return false;
-    }
 
-    vma_t *area = vma_find(&proc->vmas, addr);
+    vma_t *area = vma_find(&proc->space->vmas, addr);
     if (!area)
     {
         return false;
@@ -83,16 +82,17 @@ bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
     }
 
     uintptr_t page = PAGE_ALIGN_DOWN(addr);
-    phys_addr_t frame = arch_translate_in(proc->page_directory, page);
+    phys_addr_t frame = arch_translate_in(proc->space->page_directory, page);
     if (frame != 0)
     {
         // already backed. in a writable area the only page user code
         // cannot write is a copy-on-write page shared after fork
-        if (write && !arch_user_access_ok(proc->page_directory, page, 1, true))
+        if (write && !arch_user_access_ok(proc->space->page_directory, page, 1, true))
         {
             return break_cow(proc, area, page, PAGE_ALIGN_DOWN(frame));
         }
-        return false;
+        // another thread of the process backed it first: try again
+        return arch_user_access_ok(proc->space->page_directory, page, 1, write);
     }
 
     void *new_frame = pmm_alloc_page();
@@ -102,12 +102,28 @@ bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
     }
     memset(new_frame, 0, PAGE_SIZE);
 
-    if (arch_map_page(proc->page_directory, page, virt_to_phys(new_frame), page_flags(area)) != 0)
+    if (arch_map_page(proc->space->page_directory, page, virt_to_phys(new_frame), page_flags(area)) != 0)
     {
         pmm_free_page(new_frame);
         return false;
     }
     return true;
+}
+
+bool mm_fault_in(process_t *proc, uintptr_t addr, bool write)
+{
+    if (!proc || !proc->space)
+    {
+        return false;
+    }
+
+    // the threads of a process share the pages: one fault is handled at a
+    // time, and never while another thread changes the areas (they change
+    // them with interrupts masked too)
+    uint32_t flags = arch_irq_save();
+    bool fixed = fault_in(proc, addr, write);
+    arch_irq_restore(flags);
+    return fixed;
 }
 
 void mm_handle_user_fault(uintptr_t addr, bool write, bool present, uintptr_t pc)

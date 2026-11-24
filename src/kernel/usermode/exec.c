@@ -2,6 +2,7 @@
 
 #include "arch/arch.h"
 #include "arch/x86/cpu/gdt.h"
+#include "kernel/sync/futex.h"
 #include "kernel/memory/pmm.h"
 #include "kernel/memory/heap.h"
 #include "kernel/memory/memory_layout.h"
@@ -9,6 +10,8 @@
 #include "kernel/elf/elf_loader.h"
 #include "kernel/process/process.h"
 #include "kernel/process/wait_status.h"
+#include "kernel/usermode/uaccess.h"
+#include "kernel/signal/signal.h"
 #include "kernel/vfs/permission.h"
 #include "kernel/vfs/stat.h"
 #include "kernel/vfs/vfs.h"
@@ -117,7 +120,7 @@ int exec_program(const char *path, const char **argv)
     }
 
     // load ELF into the child's page directory, recording its segments
-    if (!elf_load(path, child->page_directory, &child->vmas, &elf))
+    if (!elf_load(path, child->space->page_directory, &child->space->vmas, &elf))
     {
         process_destroy(child);
         return -1;
@@ -125,15 +128,15 @@ int exec_program(const char *path, const char **argv)
 
     // the user stack area: its top pages are mapped when the process first
     // runs, the rest on demand as the stack grows down
-    if (kerr_failed(vma_insert(&child->vmas, USER_STACK_LIMIT, USER_STACK_TOP,
+    if (kerr_failed(vma_insert(&child->space->vmas, USER_STACK_LIMIT, USER_STACK_TOP,
                                PROT_READ | PROT_WRITE, VMA_STACK)))
     {
         process_destroy(child);
         return -1;
     }
 
-    child->brk = elf.brk;
-    child->parent_pid = parent ? parent->pid : PID_NONE;
+    child->space->brk = elf.brk;
+    child->parent_pid = parent ? parent->tgid : PID_NONE;
     process_set_name(child, path);
 
     // the child joins the caller's group and session; the first process
@@ -152,17 +155,17 @@ int exec_program(const char *path, const char **argv)
     // inherit parent's working directory and file descriptor table
     if (parent)
     {
-        strcpy(child->cwd, parent->cwd);
-        strcpy(child->root, parent->root);
+        strcpy(child->fs->cwd, parent->fs->cwd);
+        strcpy(child->fs->root, parent->fs->root);
 
         // the child shares the parent's open files, except the ones marked
         // close-on-exec (as posix_spawn does)
         for (int i = 0; i < FD_MAX; i++)
         {
-            fd_close_entry(&child->fds[i]);
-            if (!(parent->fds[i].flags & FD_CLOEXEC))
+            fd_close_entry(&child->files->fd[i]);
+            if (!(parent->files->fd[i].flags & FD_CLOEXEC))
             {
-                fd_copy_entry(&child->fds[i], &parent->fds[i]);
+                fd_copy_entry(&child->files->fd[i], &parent->files->fd[i]);
             }
         }
     }
@@ -174,6 +177,43 @@ int exec_program(const char *path, const char **argv)
 
     // return child PID to parent (for waitpid)
     return (int)child->pid;
+}
+
+/**
+ * end every thread of the current process but the caller (execve). they
+ * get SIGKILL and end on their way back to user mode, without ending the
+ * process; the caller waits for them. a caller that is not the leader
+ * then takes the leader's place and pid. if another thread is already
+ * ending the process, the caller ends too.
+ */
+static void end_other_threads(process_t *proc)
+{
+    process_t *leader = proc->leader;
+    uint32_t flags = arch_irq_save();
+    bool others_first = leader->group_exiting || (leader->exec_thread && leader->exec_thread != proc);
+    if (!others_first)
+    {
+        leader->exec_thread = proc;
+    }
+    arch_irq_restore(flags);
+    if (others_first)
+    {
+        usermode_end_thread();
+    }
+
+    if (leader->threads > 1)
+    {
+        process_signal_threads(proc->tgid, proc, SIGKILL);
+        while (leader->threads > 1)
+        {
+            scheduler_yield();
+        }
+    }
+    leader->exec_thread = NULL;
+    if (proc != leader)
+    {
+        process_take_leader(proc);
+    }
 }
 
 kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
@@ -190,37 +230,33 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
 
     // load the new program into a new address space. the old one stays
     // untouched until the load has worked, so a failed execve returns.
-    vma_table_t *vmas = kmalloc(sizeof(vma_table_t));
-    if (!vmas)
+    user_space_t *space = user_space_create();
+    if (!space)
     {
         return KERR_NOMEM;
     }
-    vma_table_init(vmas);
-
-    addr_space_t as = arch_create_address_space();
-    if (as == ADDR_SPACE_NONE)
-    {
-        kfree(vmas);
-        return KERR_NOMEM;
-    }
+    addr_space_t as = space->page_directory;
 
     elf_load_result_t elf;
-    if (!elf_load(path, as, vmas, &elf) ||
-        kerr_failed(vma_insert(vmas, USER_STACK_LIMIT, USER_STACK_TOP, PROT_READ | PROT_WRITE,
-                               VMA_STACK)))
+    if (!elf_load(path, as, &space->vmas, &elf) ||
+        kerr_failed(vma_insert(&space->vmas, USER_STACK_LIMIT, USER_STACK_TOP,
+                               PROT_READ | PROT_WRITE, VMA_STACK)))
     {
-        arch_destroy_address_space(as);
-        kfree(vmas);
+        user_space_put(space);
         return KERR_NOENT;
     }
+    space->brk = elf.brk;
+
+    // the new program starts with one thread: the caller
+    end_other_threads(proc);
+    proc->clear_tid = 0;
+    proc->tls = 0; // the new program sets up its own
 
     // no way back from here: swap in the new image. masked, so the process
     // is never scheduled with a half-changed address space.
     uint32_t flags = arch_irq_save();
-    addr_space_t old = proc->page_directory;
-    proc->page_directory = as;
-    proc->vmas = *vmas;
-    proc->brk = elf.brk;
+    user_space_t *old = proc->space;
+    proc->space = space;
     process_set_name(proc, path);
     signal_exec(proc);
     apply_set_ids(proc, &program);
@@ -229,17 +265,17 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
     arch_fpu_clean(proc->fpu_state);
     arch_fpu_restore(proc->fpu_state);
     arch_switch_address_space(as);
+    arch_set_tls(0);
     arch_irq_restore(flags);
 
-    arch_destroy_address_space(old);
-    kfree(vmas);
+    user_space_put(old);
 
     // descriptors marked close-on-exec do not survive into the new program
     for (int i = 0; i < FD_MAX; i++)
     {
-        if (proc->fds[i].flags & FD_CLOEXEC)
+        if (proc->files->fd[i].flags & FD_CLOEXEC)
         {
-            fd_close_entry(&proc->fds[i]);
+            fd_close_entry(&proc->files->fd[i]);
         }
     }
 
@@ -256,15 +292,29 @@ kerr_t exec_replace(struct registers *regs, const char *path, const char **argv,
 }
 
 /**
- * end the current process with a wait status (wait_status.h). never returns.
+ * end the current thread with a wait status (wait_status.h). never
+ * returns. the last thread of a group ends the group: its children go to
+ * init, and the parent gets SIGCHLD and the status. a thread that is not
+ * the leader is reaped by the kernel; the leader stays a zombie until the
+ * group has ended and the parent reaps it.
  */
-static void process_exit(int32_t status) __attribute__((noreturn));
+static void thread_exit(int32_t status) __attribute__((noreturn));
 
-static void process_exit(int32_t status)
+static void thread_exit(int32_t status)
 {
     process_t *proc = process_current();
+    process_t *leader = proc->leader;
 
-    if (proc->pid == PID_INIT)
+    // while the group ends, each thread ends with the group's status
+    uint32_t flags = arch_irq_save();
+    if (leader->group_exiting)
+    {
+        status = leader->group_status;
+    }
+    bool last = --leader->threads == 0;
+    arch_irq_restore(flags);
+
+    if (last && proc->tgid == PID_INIT)
     {
         // PID 1 (init, for now /bin/sh) has no parent to reap it. with no
         // init left the system cannot do anything more: halt.
@@ -274,15 +324,30 @@ static void process_exit(int32_t status)
         arch_halt_forever();
     }
 
+    // CLONE_CHILD_CLEARTID: the thread's id word becomes 0, and a thread
+    // that waits on it as a futex wakes (pthread_join). a bad address is
+    // the program's own fault: nothing is written then.
+    if (proc->clear_tid)
+    {
+        uint32_t zero = 0;
+        if (!kerr_failed(copy_to_user((void *)proc->clear_tid, &zero, sizeof(zero))))
+        {
+            futex_wake(proc->space, proc->clear_tid, 1);
+        }
+    }
+
     // release everything but the kernel stack and slot now, while this
-    // process can still sleep (closing a file may wait for the fs mutex).
+    // thread can still sleep (closing a file may wait for the fs mutex).
     // closing the fds here also gives pipe readers EOF as soon as the
     // writer exits, not when the parent gets round to reaping it.
     process_release_resources(proc);
 
-    // children outlive us: zombie ones are destroyed now, running ones are
-    // reaped by the kernel when they exit
-    process_orphan_children(proc);
+    // the group's children outlive it: zombie ones are destroyed now,
+    // running ones are reaped by init or the kernel when they exit
+    if (last)
+    {
+        process_orphan_children(proc);
+    }
 
     // masked from here on: becoming a zombie, waking the parent and
     // switching away must not be split by a timer tick. this context never
@@ -293,32 +358,81 @@ static void process_exit(int32_t status)
     proc->exit_status = status;
     scheduler_remove(proc);
 
-    // parent_pid is PID_NONE if our parent exited first
-    process_t *parent = process_get(proc->parent_pid);
-    if (parent)
+    if (proc != leader)
     {
-        // a parent in waitpid sleeps on its child_exit queue
-        signal_send(parent, SIGCHLD);
-        wait_queue_wake_all(&parent->child_exit);
-    }
-    else
-    {
-        // nobody will waitpid for us: the scheduler reaps us once we're gone
+        // a thread is nobody's child: the scheduler reaps it once it's gone
+        proc->parent_pid = PID_NONE;
         process_note_orphan_zombie();
+    }
+
+    if (last)
+    {
+        leader->exit_status = status;
+        // parent_pid is PID_NONE if the parent exited first
+        process_t *parent = process_get(leader->parent_pid);
+        if (parent)
+        {
+            // a parent in waitpid sleeps on its leader's child_exit queue
+            signal_send_process(parent, SIGCHLD);
+            wait_queue_wake_all(&parent->child_exit);
+        }
+        else
+        {
+            // nobody will waitpid for the group: the kernel reaps its leader
+            process_note_orphan_zombie();
+        }
     }
 
     scheduler_yield();
 
     // unreachable
-    kernel_panic("process_exit: a zombie woke up... run.");
+    kernel_panic("thread_exit: a zombie woke up... run.");
+}
+
+/**
+ * end every thread of the current group with a wait status, the caller
+ * included. the first status set holds. the other threads get SIGKILL,
+ * which wakes them from a sleep or a stop; they end with the group's
+ * status when they next return to user mode (signal_deliver).
+ */
+static void group_exit(int32_t status) __attribute__((noreturn));
+
+static void group_exit(int32_t status)
+{
+    process_t *proc = process_current();
+    process_t *leader = proc->leader;
+
+    uint32_t flags = arch_irq_save();
+    if (!leader->group_exiting)
+    {
+        leader->group_exiting = true;
+        leader->group_status = status;
+    }
+    arch_irq_restore(flags);
+
+    if (leader->threads > 1)
+    {
+        process_signal_threads(proc->tgid, proc, SIGKILL);
+    }
+    thread_exit(status);
 }
 
 void usermode_exit(int exit_code)
 {
-    process_exit(WAIT_STATUS_EXITED(exit_code));
+    thread_exit(WAIT_STATUS_EXITED(exit_code));
+}
+
+void usermode_exit_group(int exit_code)
+{
+    group_exit(WAIT_STATUS_EXITED(exit_code));
 }
 
 void usermode_kill(int signal)
 {
-    process_exit(WAIT_STATUS_SIGNALED(signal));
+    group_exit(WAIT_STATUS_SIGNALED(signal));
+}
+
+void usermode_end_thread(void)
+{
+    thread_exit(process_current()->leader->group_status);
 }

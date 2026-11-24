@@ -1,3 +1,4 @@
+#include "thread.h"
 #include "stdio.h"
 
 #include "errno.h"
@@ -41,6 +42,10 @@ struct stdio_file
     size_t memory_len;  // the bytes of content (reads stop here)
     size_t memory_pos;
     int owns_memory;    // allocated by fmemopen: freed by fclose
+    // flockfile: held by one thread, which may take it again
+    libc_lock_t lock;
+    volatile int lock_owner; // the thread id, or 0
+    int lock_depth;
 };
 
 static char stdin_buffer[BUFSIZ];
@@ -57,6 +62,32 @@ FILE *stdout = &stdout_file;
 FILE *stderr = &stderr_file;
 
 static FILE *open_streams;
+static libc_lock_t streams_lock; // open_streams and the first use
+
+/** the stream lock, once the process has threads (pthread_create) */
+static void lock_stream(FILE *stream)
+{
+    if (__libc_threaded && stream)
+        flockfile(stream);
+}
+
+static void unlock_stream(FILE *stream)
+{
+    if (__libc_threaded && stream)
+        funlockfile(stream);
+}
+
+static void lock_streams(void)
+{
+    if (__libc_threaded)
+        __libc_lock(&streams_lock);
+}
+
+static void unlock_streams(void)
+{
+    if (__libc_threaded)
+        __libc_unlock(&streams_lock);
+}
 
 /**
  * the reads, writes, seeks and closes of a stream, from its file or from
@@ -130,7 +161,12 @@ static void ready_std_streams(void)
 {
     if (std_streams_ready)
         return;
-    std_streams_ready = 1;
+    lock_streams();
+    if (std_streams_ready)
+    {
+        unlock_streams();
+        return;
+    }
 
     stdin_file.next = &stdout_file;
     stdout_file.next = &stderr_file;
@@ -142,6 +178,8 @@ static void ready_std_streams(void)
     else
         stdout_file.mode = _IOFBF;
     stderr_file.flags |= STREAM_TTY;
+    std_streams_ready = 1;
+    unlock_streams();
 }
 
 /**
@@ -177,15 +215,21 @@ static void drop_read_buffer(FILE *stream)
     stream->unget = EOF;
 }
 
-int fflush(FILE *stream)
+static int fflush_body(FILE *stream)
 {
     ready_std_streams();
     if (!stream)
     {
         int result = 0;
+        lock_streams();
         for (FILE *s = open_streams; s; s = s->next)
+        {
+            lock_stream(s);
             if (s->write_len && flush_stream(s) == EOF)
                 result = EOF;
+            unlock_stream(s);
+        }
+        unlock_streams();
         return result;
     }
     if (stream->write_len)
@@ -193,6 +237,14 @@ int fflush(FILE *stream)
     if (stream->read_len)
         drop_read_buffer(stream);
     return 0;
+}
+
+int fflush(FILE *stream)
+{
+    lock_stream(stream);
+    int result = fflush_body(stream);
+    unlock_stream(stream);
+    return result;
 }
 
 /**
@@ -287,7 +339,7 @@ static int fill(FILE *stream)
     return 1;
 }
 
-int fgetc(FILE *stream)
+static int fgetc_body(FILE *stream)
 {
     ready_std_streams();
     if (stream->unget != EOF)
@@ -306,6 +358,14 @@ int fgetc(FILE *stream)
     return (unsigned char)stream->buffer[stream->read_pos++];
 }
 
+int fgetc(FILE *stream)
+{
+    lock_stream(stream);
+    int result = fgetc_body(stream);
+    unlock_stream(stream);
+    return result;
+}
+
 int getc(FILE *stream)
 {
     return fgetc(stream);
@@ -316,7 +376,7 @@ int getchar(void)
     return fgetc(stdin);
 }
 
-int ungetc(int c, FILE *stream)
+static int ungetc_body(int c, FILE *stream)
 {
     if (c == EOF || stream->unget != EOF)
         return EOF;
@@ -325,7 +385,15 @@ int ungetc(int c, FILE *stream)
     return (unsigned char)c;
 }
 
-char *fgets(char *buf, int size, FILE *stream)
+int ungetc(int c, FILE *stream)
+{
+    lock_stream(stream);
+    int result = ungetc_body(c, stream);
+    unlock_stream(stream);
+    return result;
+}
+
+static char *fgets_body(char *buf, int size, FILE *stream)
 {
     int i = 0;
     while (i < size - 1)
@@ -343,7 +411,15 @@ char *fgets(char *buf, int size, FILE *stream)
     return buf;
 }
 
-size_t fread(void *ptr, size_t size, size_t count, FILE *stream)
+char *fgets(char *buf, int size, FILE *stream)
+{
+    lock_stream(stream);
+    char *result = fgets_body(buf, size, stream);
+    unlock_stream(stream);
+    return result;
+}
+
+static size_t fread_body(void *ptr, size_t size, size_t count, FILE *stream)
 {
     unsigned char *out = ptr;
     size_t total = size * count;
@@ -358,7 +434,15 @@ size_t fread(void *ptr, size_t size, size_t count, FILE *stream)
     return size ? done / size : 0;
 }
 
-size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream)
+size_t fread(void *ptr, size_t size, size_t count, FILE *stream)
+{
+    lock_stream(stream);
+    size_t result = fread_body(ptr, size, count, stream);
+    unlock_stream(stream);
+    return result;
+}
+
+static size_t fwrite_body(const void *ptr, size_t size, size_t count, FILE *stream)
 {
     ready_std_streams();
     size_t done = put_bytes(stream, ptr, size * count);
@@ -366,13 +450,29 @@ size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream)
     return size ? done / size : 0;
 }
 
-int fputc(int c, FILE *stream)
+size_t fwrite(const void *ptr, size_t size, size_t count, FILE *stream)
+{
+    lock_stream(stream);
+    size_t result = fwrite_body(ptr, size, count, stream);
+    unlock_stream(stream);
+    return result;
+}
+
+static int fputc_body(int c, FILE *stream)
 {
     char byte = (char)c;
     ready_std_streams();
     size_t done = put_bytes(stream, &byte, 1);
     end_call(stream);
     return done == 1 ? (unsigned char)c : EOF;
+}
+
+int fputc(int c, FILE *stream)
+{
+    lock_stream(stream);
+    int result = fputc_body(c, stream);
+    unlock_stream(stream);
+    return result;
 }
 
 int putc(int c, FILE *stream)
@@ -385,10 +485,18 @@ int putchar(int c)
     return fputc(c, stdout);
 }
 
-int fputs(const char *s, FILE *stream)
+static int fputs_body(const char *s, FILE *stream)
 {
     size_t len = strlen(s);
     return fwrite(s, 1, len, stream) == len ? 0 : EOF;
+}
+
+int fputs(const char *s, FILE *stream)
+{
+    lock_stream(stream);
+    int result = fputs_body(s, stream);
+    unlock_stream(stream);
+    return result;
 }
 
 int puts(const char *s)
@@ -455,8 +563,10 @@ FILE *fdopen(int fd, const char *mode)
         stream->mode = _IOLBF;
         stream->flags |= STREAM_TTY;
     }
+    lock_streams();
     stream->next = open_streams;
     open_streams = stream;
+    unlock_streams();
     return stream;
 }
 
@@ -502,8 +612,10 @@ FILE *fmemopen(void *memory, size_t size, const char *mode)
         stream->memory_len = end ? (size_t)(end - stream->memory) : size;
         stream->memory_pos = stream->memory_len;
     }
+    lock_streams();
     stream->next = open_streams;
     open_streams = stream;
+    unlock_streams();
     return stream;
 }
 
@@ -531,6 +643,7 @@ int fclose(FILE *stream)
 {
     int result = fflush(stream);
 
+    lock_streams();
     for (FILE **link = &open_streams; *link; link = &(*link)->next)
     {
         if (*link == stream)
@@ -539,6 +652,7 @@ int fclose(FILE *stream)
             break;
         }
     }
+    unlock_streams();
 
     if (raw_close(stream) < 0)
         result = EOF;
@@ -684,7 +798,7 @@ int pclose(FILE *stream)
     return status;
 }
 
-int setvbuf(FILE *stream, char *buf, int mode, size_t size)
+static int setvbuf_body(FILE *stream, char *buf, int mode, size_t size)
 {
     if (mode != _IOFBF && mode != _IOLBF && mode != _IONBF)
         return -1;
@@ -701,6 +815,14 @@ int setvbuf(FILE *stream, char *buf, int mode, size_t size)
     return 0;
 }
 
+int setvbuf(FILE *stream, char *buf, int mode, size_t size)
+{
+    lock_stream(stream);
+    int result = setvbuf_body(stream, buf, mode, size);
+    unlock_stream(stream);
+    return result;
+}
+
 void setbuf(FILE *stream, char *buf)
 {
     setvbuf(stream, buf, buf ? _IOFBF : _IONBF, BUFSIZ);
@@ -711,7 +833,7 @@ int fileno(FILE *stream)
     return stream->fd;
 }
 
-int fseek(FILE *stream, long offset, int whence)
+static int fseek_body(FILE *stream, long offset, int whence)
 {
     fflush(stream);
     stream->unget = EOF;
@@ -721,7 +843,15 @@ int fseek(FILE *stream, long offset, int whence)
     return 0;
 }
 
-long ftell(FILE *stream)
+int fseek(FILE *stream, long offset, int whence)
+{
+    lock_stream(stream);
+    int result = fseek_body(stream, offset, whence);
+    unlock_stream(stream);
+    return result;
+}
+
+static long ftell_body(FILE *stream)
 {
     long position = raw_seek(stream, 0, SEEK_CUR);
     if (position < 0)
@@ -731,6 +861,14 @@ long ftell(FILE *stream)
     if (stream->unget != EOF)
         position--;
     return position;
+}
+
+long ftell(FILE *stream)
+{
+    lock_stream(stream);
+    long result = ftell_body(stream);
+    unlock_stream(stream);
+    return result;
 }
 
 int fseeko(FILE *stream, off_t offset, int whence)
@@ -766,18 +904,37 @@ void clearerr(FILE *stream)
 
 void flockfile(FILE *stream)
 {
-    (void)stream;
+    int me = thread_self()->tid;
+    if (stream->lock_owner != me)
+    {
+        __libc_lock(&stream->lock);
+        stream->lock_owner = me;
+    }
+    stream->lock_depth++;
 }
 
 int ftrylockfile(FILE *stream)
 {
-    (void)stream;
+    int me = thread_self()->tid;
+    if (stream->lock_owner != me)
+    {
+        int free_state = 0;
+        if (!__atomic_compare_exchange_n(&stream->lock.state, &free_state, 1, 0,
+                                         __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+            return -1;
+        stream->lock_owner = me;
+    }
+    stream->lock_depth++;
     return 0;
 }
 
 void funlockfile(FILE *stream)
 {
-    (void)stream;
+    if (--stream->lock_depth == 0)
+    {
+        stream->lock_owner = 0;
+        __libc_unlock(&stream->lock);
+    }
 }
 
 int getc_unlocked(FILE *stream)
@@ -1149,7 +1306,7 @@ static void init_out(out_t *out)
     out->fd = -1;
 }
 
-int vfprintf(FILE *stream, const char *fmt, va_list ap)
+static int vfprintf_body(FILE *stream, const char *fmt, va_list ap)
 {
     ready_std_streams();
     out_t out;
@@ -1158,6 +1315,14 @@ int vfprintf(FILE *stream, const char *fmt, va_list ap)
     int count = format(&out, fmt, ap);
     end_call(stream);
     return ferror(stream) ? -1 : count;
+}
+
+int vfprintf(FILE *stream, const char *fmt, va_list ap)
+{
+    lock_stream(stream);
+    int result = vfprintf_body(stream, fmt, ap);
+    unlock_stream(stream);
+    return result;
 }
 
 int vprintf(const char *fmt, va_list ap)
@@ -1426,7 +1591,7 @@ int sscanf(const char *str, const char *fmt, ...)
     return stored;
 }
 
-ssize_t getdelim(char **line, size_t *size, int delimiter, FILE *stream)
+static ssize_t getdelim_body(char **line, size_t *size, int delimiter, FILE *stream)
 {
     if (!line || !size || !stream)
     {
@@ -1460,6 +1625,14 @@ ssize_t getdelim(char **line, size_t *size, int delimiter, FILE *stream)
         return -1;
     (*line)[length] = '\0';
     return (ssize_t)length;
+}
+
+ssize_t getdelim(char **line, size_t *size, int delimiter, FILE *stream)
+{
+    lock_stream(stream);
+    ssize_t result = getdelim_body(line, size, delimiter, stream);
+    unlock_stream(stream);
+    return result;
 }
 
 ssize_t getline(char **line, size_t *size, FILE *stream)

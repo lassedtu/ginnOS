@@ -111,10 +111,7 @@ syscall_ret_t sys_clock_gettime(struct registers *regs)
     return kerr_to_errno(copy_to_user((void *)syscall_arg(regs, 1), &now, sizeof(now)));
 }
 
-/**
- * the timer ticks that cover at least a time span.
- */
-static uint64_t timespec_to_ticks(const struct ktimespec *span)
+uint64_t clock_timespec_to_ticks(const struct ktimespec *span)
 {
     const uint32_t ns_per_tick = NSEC_PER_SEC / TIMER_HZ;
     uint64_t ticks = (uint64_t)(uint32_t)span->tv_sec * TIMER_HZ;
@@ -140,7 +137,7 @@ syscall_ret_t sys_nanosleep(struct registers *regs)
         return -EINVAL;
 
     process_t *proc = process_current();
-    uint64_t deadline = timer_now() + timespec_to_ticks(&span);
+    uint64_t deadline = timer_now() + clock_timespec_to_ticks(&span);
 
     uint32_t flags = arch_irq_save();
     while (timer_now() < deadline)
@@ -185,8 +182,8 @@ syscall_ret_t sys_times(struct registers *regs)
 
     if (user_times)
     {
-        ktms_t times = {(long)proc->utime, (long)proc->stime, (long)proc->cutime,
-                        (long)proc->cstime};
+        ktms_t times = {(long)proc->utime, (long)proc->stime, (long)proc->leader->cutime,
+                        (long)proc->leader->cstime};
         if (kerr_failed(copy_to_user(user_times, &times, sizeof(times))))
             return -EFAULT;
     }

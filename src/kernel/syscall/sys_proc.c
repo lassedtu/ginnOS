@@ -4,6 +4,7 @@
 
 #include "kernel/vfs/vfs.h"
 #include "kernel/usermode/usermode.h"
+#include "kernel/usermode/uaccess.h"
 #include "kernel/process/process.h"
 #include "kernel/process/wait_status.h"
 #include "kernel/scheduler/scheduler.h"
@@ -270,7 +271,115 @@ syscall_ret_t sys_fork(struct registers *regs)
 }
 
 /**
- * SYS_getpid: return the current process ID.
+ * SYS_exit_group: end every thread of the current process.
+ * arg: the exit code. never returns.
+ */
+syscall_ret_t sys_exit_group(struct registers *regs)
+{
+    usermode_exit_group((int32_t)syscall_arg(regs, 0));
+}
+
+// clone flags (the Linux values)
+#define CLONE_VM             0x00000100
+#define CLONE_FS             0x00000200
+#define CLONE_FILES          0x00000400
+#define CLONE_SIGHAND        0x00000800
+#define CLONE_THREAD         0x00010000
+#define CLONE_SYSVSEM        0x00040000
+#define CLONE_SETTLS         0x00080000
+#define CLONE_PARENT_SETTID  0x00100000
+#define CLONE_CHILD_CLEARTID 0x00200000
+#define CLONE_CHILD_SETTID   0x01000000
+
+/**
+ * SYS_clone: make a thread of the current process.
+ * args: flags, the new thread's user stack pointer, parent_tid,
+ *       child_tid, tls.
+ * only a thread can be made: flags must have CLONE_VM, FS, FILES, SIGHAND
+ * and THREAD (fork makes a process). SETTLS gives the thread tls as its
+ * thread pointer (else it has the caller's). PARENT_SETTID and CHILD_SETTID write
+ * the new thread's id to parent_tid and child_tid; CHILD_CLEARTID makes
+ * the kernel write 0 there when the thread ends. SYSVSEM is accepted and
+ * has no effect.
+ * returns the new thread's id in the caller and 0 in the thread; -EINVAL
+ * for other flags or no stack, -EFAULT for a bad tid address, -EAGAIN if
+ * the process table or the memory ran out.
+ */
+syscall_ret_t sys_clone(struct registers *regs)
+{
+    uint32_t flags = (uint32_t)syscall_arg(regs, 0);
+    uintptr_t stack = syscall_arg(regs, 1);
+    uint32_t *parent_tid = (uint32_t *)syscall_arg(regs, 2);
+    uint32_t *child_tid = (uint32_t *)syscall_arg(regs, 3);
+
+    const uint32_t thread = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD;
+    const uint32_t extra = CLONE_SYSVSEM | CLONE_SETTLS | CLONE_PARENT_SETTID |
+                           CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID;
+    if ((flags & thread) != thread || (flags & ~(thread | extra)) || !stack)
+    {
+        return -EINVAL;
+    }
+
+    // the addresses are checked before the thread exists (0 for now)
+    uint32_t tid = 0;
+    if (((flags & CLONE_PARENT_SETTID) &&
+         kerr_failed(copy_to_user(parent_tid, &tid, sizeof(tid)))) ||
+        ((flags & CLONE_CHILD_SETTID) && kerr_failed(copy_to_user(child_tid, &tid, sizeof(tid)))))
+    {
+        return -EFAULT;
+    }
+
+    process_t *child = process_clone_thread(regs, stack);
+    if (!child)
+    {
+        return -EAGAIN;
+    }
+    tid = child->pid;
+    // the memory is shared, so both writes are seen by both threads
+    if (flags & CLONE_PARENT_SETTID)
+    {
+        (void)copy_to_user(parent_tid, &tid, sizeof(tid));
+    }
+    if (flags & CLONE_CHILD_SETTID)
+    {
+        (void)copy_to_user(child_tid, &tid, sizeof(tid));
+    }
+    if (flags & CLONE_CHILD_CLEARTID)
+    {
+        child->clear_tid = (uintptr_t)child_tid;
+    }
+    if (flags & CLONE_SETTLS)
+    {
+        child->tls = syscall_arg(regs, 4);
+    }
+    scheduler_ready(child);
+    return (syscall_ret_t)tid;
+}
+
+/**
+ * SYS_set_tls: set the calling thread's thread pointer, which user code
+ * reaches its thread-local storage through (%fs:0 on x86_64, %gs:0 on
+ * i686). arg: the address. returns 0.
+ */
+syscall_ret_t sys_set_tls(struct registers *regs)
+{
+    process_t *proc = process_current();
+    proc->tls = syscall_arg(regs, 0);
+    arch_set_tls(proc->tls);
+    return 0;
+}
+
+/**
+ * SYS_gettid: the calling thread's id (the pid for a single thread).
+ */
+syscall_ret_t sys_gettid(struct registers *regs)
+{
+    (void)regs;
+    return (syscall_ret_t)process_current()->pid;
+}
+
+/**
+ * SYS_getpid: return the current process ID (the thread group's id).
  */
 syscall_ret_t sys_getpid(struct registers *regs)
 {
@@ -280,7 +389,7 @@ syscall_ret_t sys_getpid(struct registers *regs)
     {
         return -1;
     }
-    return (int32_t)proc->pid;
+    return (int32_t)proc->tgid;
 }
 
 /**
@@ -334,7 +443,8 @@ syscall_ret_t sys_waitpid(struct registers *regs)
             arch_irq_restore(flags);
             return -ERESTARTSYS;
         }
-        wait_queue_block_interruptible(&parent->child_exit);
+        // the children's exits wake the group's leader's queue
+        wait_queue_block_interruptible(&parent->leader->child_exit);
     }
 
     // a stop or a continue is reported once; an exit reaps the child
@@ -344,8 +454,8 @@ syscall_ret_t sys_waitpid(struct registers *regs)
     {
         status = child->exit_status;
         // the child's CPU time, and its children's, counts as the parent's
-        parent->cutime += child->utime + child->cutime;
-        parent->cstime += child->stime + child->cstime;
+        parent->leader->cutime += child->utime + child->cutime;
+        parent->leader->cstime += child->stime + child->cstime;
         arch_irq_restore(flags);
         process_destroy(child);
     }
@@ -393,7 +503,7 @@ syscall_ret_t sys_sched_yield(struct registers *regs)
  * for positive increments, grows the heap area; the new pages are backed
  * with zeroed frames on first touch.
  */
-syscall_ret_t sys_sbrk(struct registers *regs)
+static syscall_ret_t sbrk_locked(struct registers *regs)
 {
     intptr_t increment = (intptr_t)syscall_arg(regs, 0);
     uintptr_t old_brk = usermode_get_brk();
@@ -434,17 +544,17 @@ syscall_ret_t sys_sbrk(struct registers *regs)
     {
         /* the heap area grows to cover the new pages; it may not run into
          * another area (the stack, an mmap) */
-        if (!vma_range_free(&proc->vmas, page, end))
+        if (!vma_range_free(&proc->space->vmas, page, end))
         {
             return -1;
         }
 
-        vma_t *heap = vma_find_kind(&proc->vmas, VMA_HEAP);
+        vma_t *heap = vma_find_kind(&proc->space->vmas, VMA_HEAP);
         if (heap && heap->end == page)
         {
             heap->end = end;
         }
-        else if (kerr_failed(vma_insert(&proc->vmas, page, end, PROT_READ | PROT_WRITE,
+        else if (kerr_failed(vma_insert(&proc->space->vmas, page, end, PROT_READ | PROT_WRITE,
                                         VMA_HEAP)))
         {
             return -1;
@@ -454,6 +564,16 @@ syscall_ret_t sys_sbrk(struct registers *regs)
     /* the new pages are backed on first touch (demand paging) */
     usermode_set_brk(new_brk);
     return (syscall_ret_t)old_brk;
+}
+
+syscall_ret_t sys_sbrk(struct registers *regs)
+{
+    // one memory syscall at a time among the threads of the process
+    user_space_t *space = process_current()->space;
+    mutex_lock(&space->lock);
+    syscall_ret_t result = sbrk_locked(regs);
+    mutex_unlock(&space->lock);
+    return result;
 }
 
 /**
@@ -472,7 +592,7 @@ syscall_ret_t sys_sbrk(struct registers *regs)
  * free range of the region is used.
  * returns the mapped address, or MAP_FAILED (-1) on error.
  */
-syscall_ret_t sys_mmap(struct registers *regs)
+static syscall_ret_t mmap_locked(struct registers *regs)
 {
     uintptr_t hint = syscall_arg(regs, 0);
     size_t length = syscall_arg(regs, 1);
@@ -523,13 +643,13 @@ syscall_ret_t sys_mmap(struct registers *regs)
     }
     else if (hint != 0 && PAGE_IS_ALIGNED(hint) && hint >= USER_MMAP_BASE &&
              len_pages <= USER_MMAP_END - hint &&
-             vma_range_free(&proc->vmas, hint, hint + len_pages))
+             vma_range_free(&proc->space->vmas, hint, hint + len_pages))
     {
         virt = hint;
     }
     else
     {
-        virt = vma_find_free(&proc->vmas, len_pages, USER_MMAP_BASE, USER_MMAP_END);
+        virt = vma_find_free(&proc->space->vmas, len_pages, USER_MMAP_BASE, USER_MMAP_END);
         if (virt == 0)
         {
             return (syscall_ret_t)MAP_FAILED; /* region exhausted */
@@ -542,7 +662,7 @@ syscall_ret_t sys_mmap(struct registers *regs)
     {
         kind = shm_is_file(entry->file) ? VMA_SHARED : VMA_DEVICE;
     }
-    if (kerr_failed(vma_insert(&proc->vmas, virt, virt + len_pages, area_prot, kind)))
+    if (kerr_failed(vma_insert(&proc->space->vmas, virt, virt + len_pages, area_prot, kind)))
     {
         return (syscall_ret_t)MAP_FAILED; /* too many areas */
     }
@@ -552,7 +672,7 @@ syscall_ret_t sys_mmap(struct registers *regs)
     // own memory up front.
     if (!(flags & MAP_ANONYMOUS))
     {
-        int32_t err = file_mmap(entry->file, proc->page_directory, virt, len_pages, prot, offset);
+        int32_t err = file_mmap(entry->file, proc->space->page_directory, virt, len_pages, prot, offset);
         if (err != 0)
         {
             // the pages mapped before the error go too
@@ -562,6 +682,16 @@ syscall_ret_t sys_mmap(struct registers *regs)
     }
 
     return (syscall_ret_t)virt;
+}
+
+syscall_ret_t sys_mmap(struct registers *regs)
+{
+    // one memory syscall at a time among the threads of the process
+    user_space_t *space = process_current()->space;
+    mutex_lock(&space->lock);
+    syscall_ret_t result = mmap_locked(regs);
+    mutex_unlock(&space->lock);
+    return result;
 }
 
 /**
@@ -597,7 +727,7 @@ syscall_ret_t sys_shm_create(struct registers *regs)
  * every page of [addr, addr + length) that is mapped is removed; parts that
  * are not mapped are skipped. returns 0, or a negative errno.
  */
-syscall_ret_t sys_munmap(struct registers *regs)
+static syscall_ret_t munmap_locked(struct registers *regs)
 {
     uintptr_t addr = syscall_arg(regs, 0);
     size_t length = syscall_arg(regs, 1);
@@ -612,13 +742,23 @@ syscall_ret_t sys_munmap(struct registers *regs)
     return kerr_to_errno(mm_unmap(proc, addr, addr + len_pages));
 }
 
+syscall_ret_t sys_munmap(struct registers *regs)
+{
+    // one memory syscall at a time among the threads of the process
+    user_space_t *space = process_current()->space;
+    mutex_lock(&space->lock);
+    syscall_ret_t result = munmap_locked(regs);
+    mutex_unlock(&space->lock);
+    return result;
+}
+
 /**
  * SYS_mprotect: change the protection of mapped memory.
  * args: EBX = addr (page-aligned), ECX = length, EDX = prot.
  * returns 0, -ENOMEM if part of the range is not mapped, or another
  * negative errno.
  */
-syscall_ret_t sys_mprotect(struct registers *regs)
+static syscall_ret_t mprotect_locked(struct registers *regs)
 {
     uintptr_t addr = syscall_arg(regs, 0);
     size_t length = syscall_arg(regs, 1);
@@ -639,14 +779,26 @@ syscall_ret_t sys_mprotect(struct registers *regs)
     return kerr_to_errno(err);
 }
 
+syscall_ret_t sys_mprotect(struct registers *regs)
+{
+    // one memory syscall at a time among the threads of the process
+    user_space_t *space = process_current()->space;
+    mutex_lock(&space->lock);
+    syscall_ret_t result = mprotect_locked(regs);
+    mutex_unlock(&space->lock);
+    return result;
+}
+
 /**
- * the process a pid names for setpgid and friends: 0 is the caller.
+ * the process a pid names for setpgid and friends: 0 is the caller. the
+ * id of a thread that is not a leader names no process.
  */
 static process_t *target_process(int32_t pid)
 {
     if (pid < 0)
         return NULL;
-    return pid == 0 ? process_current() : process_get((uint32_t)pid);
+    process_t *proc = pid == 0 ? process_current() : process_get((uint32_t)pid);
+    return proc && (pid == 0 || proc->pid == proc->tgid) ? proc : NULL;
 }
 
 /**
@@ -666,17 +818,18 @@ syscall_ret_t sys_setpgid(struct registers *regs)
         return -EINVAL;
 
     process_t *target = target_process(pid);
-    if (!target || (target != caller && target->parent_pid != caller->pid) ||
-        target->state == PROC_STATE_ZOMBIE)
+    if (!target || (target->tgid != caller->tgid && target->parent_pid != caller->tgid) ||
+        target->leader->threads == 0)
         return -ESRCH;
-    if (target->sid != caller->sid || target->sid == target->pid)
+    if (target->sid != caller->sid || target->sid == target->tgid)
         return -EPERM; // another session, or a session leader
 
-    uint32_t group = pgid == 0 ? target->pid : (uint32_t)pgid;
-    if (group != target->pid && !process_group_exists(group, caller->sid))
+    uint32_t group = pgid == 0 ? target->tgid : (uint32_t)pgid;
+    if (group != target->tgid && !process_group_exists(group, caller->sid))
         return -EPERM;
 
     target->pgid = group;
+    process_sync_threads(target);
     return 0;
 }
 
@@ -699,11 +852,12 @@ syscall_ret_t sys_setsid(struct registers *regs)
     (void)regs;
     process_t *caller = process_current();
 
-    if (caller->pgid == caller->pid || process_group_exists(caller->pid, caller->sid))
+    if (caller->pgid == caller->tgid || process_group_exists(caller->tgid, caller->sid))
         return -EPERM;
 
-    caller->sid = caller->pid;
-    caller->pgid = caller->pid;
+    caller->sid = caller->tgid;
+    caller->pgid = caller->tgid;
+    process_sync_threads(caller);
     return (syscall_ret_t)caller->sid;
 }
 
@@ -742,7 +896,7 @@ static bool priority_names(const process_t *proc, const priority_walk_t *w)
     switch (w->which)
     {
     case PRIO_PROCESS:
-        return proc->pid == w->who;
+        return proc->tgid == w->who; // every thread of the process
     case PRIO_PGRP:
         return proc->pgid == w->who;
     default:
@@ -793,7 +947,7 @@ static int32_t priority_walk(struct registers *regs, priority_walk_t *w)
         return -EINVAL;
     if (w->who == 0)
     {
-        w->who = w->which == PRIO_PROCESS ? caller->pid
+        w->who = w->which == PRIO_PROCESS ? caller->tgid
                  : w->which == PRIO_PGRP  ? caller->pgid
                                           : caller->uid;
     }
