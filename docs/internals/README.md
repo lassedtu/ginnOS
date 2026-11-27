@@ -12,6 +12,10 @@ them.
   table, `fork`, `clone`, `execve`, the time slices, and the locks.
 - [Signals](signals.md): how a signal goes to a process, the defaults,
   and who sends them.
+- [The file systems](filesystems.md): the VFS, open files, ext2 and the
+  block cache, devfs, tmpfs and procfs.
+- [The network stack](network.md): the layers, the routes, the sockets
+  and Unix sockets.
 - [Build ginnOS](../develop/building.md): the build, the tests and the
   debugger.
 - The code style: [`STYLE.md`](https://github.com/lassedtu/ginnOS/blob/main/STYLE.md).
