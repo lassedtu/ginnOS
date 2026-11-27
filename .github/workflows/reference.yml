@@ -1,0 +1,38 @@
+# docs/reference is made from the comments in the source (make docs).
+# this check fails when a change to a header, a system call or the tool
+# does not have the pages that go with it.
+name: reference
+
+on:
+  pull_request:
+    paths:
+      - "src/**/*.h"
+      - "src/kernel/**/*.c"
+      - "tools/docs/**"
+      - "docs/reference/**"
+  push:
+    branches: [main]
+    paths:
+      - "src/**/*.h"
+      - "src/kernel/**/*.c"
+      - "tools/docs/**"
+      - "docs/reference/**"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Make the pages again and compare
+        run: |
+          python3 -I tools/docs/make_reference.py --out "$RUNNER_TEMP/reference"
+          if ! diff -r -q docs/reference "$RUNNER_TEMP/reference"; then
+            echo "docs/reference is out of date: run make docs and commit the result"
+            exit 1
+          fi
