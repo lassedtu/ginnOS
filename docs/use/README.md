@@ -11,3 +11,7 @@ the desktop, the apps, the terminal and the settings.
   Settings, with their keys.
 - [The shell](shell.md): edit and run commands, pipes, jobs, and what
   the shell cannot do yet.
+- [The network](networking.md): DHCP, `ping`, `host`, `fetch` and
+  `curl`, names, and an address set by hand.
+- [The settings files](settings-files.md): where the settings are, the
+  `conf` command, and each key with its values.
