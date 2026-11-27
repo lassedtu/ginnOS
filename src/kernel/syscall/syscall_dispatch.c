@@ -115,6 +115,11 @@ static syscall_fn_t syscall_table[SYSCALL_COUNT] = {
     [SYS_SOCKETPAIR] = sys_socketpair,
     [SYS_SENDMSG] = sys_sendmsg,
     [SYS_RECVMSG] = sys_recvmsg,
+    [SYS_GETSOCKNAME] = sys_getsockname,
+    [SYS_GETPEERNAME] = sys_getpeername,
+    [SYS_SETSOCKOPT] = sys_setsockopt,
+    [SYS_GETSOCKOPT] = sys_getsockopt,
+    [SYS_SHUTDOWN] = sys_shutdown,
 };
 
 /**

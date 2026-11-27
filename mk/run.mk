@@ -20,8 +20,17 @@ else
 QEMU_AUDIO_FLAGS :=
 endif
 
+# the network card for make run and run-uefi: virtio-net on QEMU's user
+# network (the guest is 10.0.2.15, the gateway 10.0.2.2). NET=0: none.
+NET ?= 1
+ifeq ($(NET),1)
+QEMU_NET_FLAGS := -netdev user,id=net0 -device virtio-net-pci,netdev=net0
+else
+QEMU_NET_FLAGS :=
+endif
+
 run: check-tools $(DISK_IMAGE)
-	$(QEMU) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
+	$(QEMU) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) $(QEMU_NET_FLAGS) -drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 
 # boot the disk image with UEFI firmware (limine only: stage1 is BIOS-only).
 # the i686 kernel also runs on an x86_64 CPU, so this uses the x86_64
@@ -29,7 +38,7 @@ run: check-tools $(DISK_IMAGE)
 run-uefi: check-tools $(DISK_IMAGE)
 	@test "$(BOOTLOADER)" = limine || { echo "make run-uefi needs BOOTLOADER=limine"; exit 1; }
 	@test -n "$(OVMF_CODE)" || { echo "no OVMF firmware found: set OVMF_CODE=<path to OVMF_CODE.fd>"; exit 1; }
-	$(QEMU_UEFI) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) \
+	$(QEMU_UEFI) $(QEMU_FLAGS) $(QEMU_AUDIO_FLAGS) $(QEMU_NET_FLAGS) \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=ide,index=0,format=raw,file=$(DISK_IMAGE)
 

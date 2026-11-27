@@ -224,6 +224,11 @@ syscall_ret_t sys_accept(struct registers *regs);
 syscall_ret_t sys_connect(struct registers *regs);
 syscall_ret_t sys_socketpair(struct registers *regs);
 syscall_ret_t sys_sendmsg(struct registers *regs);
+syscall_ret_t sys_getsockname(struct registers *regs);
+syscall_ret_t sys_getpeername(struct registers *regs);
+syscall_ret_t sys_setsockopt(struct registers *regs);
+syscall_ret_t sys_getsockopt(struct registers *regs);
+syscall_ret_t sys_shutdown(struct registers *regs);
 syscall_ret_t sys_recvmsg(struct registers *regs);
 
 /* sys_fb.c */

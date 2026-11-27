@@ -63,6 +63,19 @@ const char *strerror(int errnum)
     case ECANCELED: return "cancelled";
     case EDEADLK: return "resource deadlock would occur";
     case EOVERFLOW: return "value too large";
+    case EADDRNOTAVAIL: return "address not available";
+    case EDESTADDRREQ: return "destination address required";
+    case EMSGSIZE: return "message too long";
+    case ENETUNREACH: return "network unreachable";
+    case EHOSTUNREACH: return "host unreachable";
+    case ENOPROTOOPT: return "protocol not available";
+    case EPROTOTYPE: return "wrong protocol type for socket";
+    case ECONNRESET: return "connection reset by peer";
+    case ECONNABORTED: return "connection aborted";
+    case EINPROGRESS: return "operation in progress";
+    case EALREADY: return "operation already in progress";
+    case ENETDOWN: return "network is down";
+    case EPROTO: return "protocol error";
     }
     return "unknown error";
 }

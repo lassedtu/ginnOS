@@ -42,3 +42,5 @@ void test_posix(void);
 void test_files(void);
 // threads.c
 void test_threads(void);
+// net.c
+void test_net(void);

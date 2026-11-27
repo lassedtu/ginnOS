@@ -409,8 +409,29 @@ static void test_langinfo_dlfcn(void)
     CHECK(dlclose(NULL) == 0);
 }
 
+static void test_getopt(void)
+{
+    char *argv[] = {"prog", "-ab", "-c3", "-c", "4", "-x", "file", "-d", NULL};
+    int argc = 8;
+    optind = 0; // start again
+    opterr = 0;
+    CHECK(getopt(argc, argv, "abc:d") == 'a');
+    CHECK(getopt(argc, argv, "abc:d") == 'b');
+    CHECK(getopt(argc, argv, "abc:d") == 'c' && strcmp(optarg, "3") == 0);
+    CHECK(getopt(argc, argv, "abc:d") == 'c' && strcmp(optarg, "4") == 0);
+    CHECK(getopt(argc, argv, "abc:d") == '?' && optopt == 'x');
+    CHECK(getopt(argc, argv, "abc:d") == -1 && optind == 6); // stops at "file"
+
+    char *missing[] = {"prog", "-c", NULL};
+    optind = 0;
+    CHECK(getopt(2, missing, ":c:") == ':' && optopt == 'c');
+    optind = 0;
+    opterr = 1;
+}
+
 void test_posix(void)
 {
+    test_getopt();
     test_langinfo_dlfcn();
     test_getline();
     test_paths();

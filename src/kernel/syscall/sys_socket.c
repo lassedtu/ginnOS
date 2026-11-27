@@ -1,9 +1,11 @@
 /**
- * the socket syscalls: Unix domain stream sockets (kernel/ipc/unix_socket.h).
+ * the socket syscalls: Unix domain stream sockets (kernel/ipc/unix_socket.h)
+ * and IPv4 sockets (kernel/net/inet_socket.h).
  *
- * the user structs (sockaddr_un, msghdr, iovec, cmsghdr) have the Linux
- * layouts. this file copies them in, checks the user ranges, and turns
- * fds into open files and back; the socket code does the rest.
+ * the user structs (sockaddr_un, sockaddr_in, msghdr, iovec, cmsghdr) have
+ * the Linux layouts. this file copies them in, checks the user ranges, and
+ * turns fds into open files and back; the socket code does the rest. each
+ * call sees which kind of socket the fd is and calls that kind's code.
  *
  * a known limit: a socket passed over itself (or in a ring of sockets
  * that are only open in each other's queues) is never freed. Linux has a
@@ -16,6 +18,7 @@
 #include "common/memory.h"
 #include "fd_table.h"
 #include "kernel/ipc/unix_socket.h"
+#include "kernel/net/inet_socket.h"
 #include "kernel/process/process.h"
 #include "kernel/signal/signal.h"
 
@@ -44,6 +47,58 @@ static unix_socket_t *socket_of_fd(int fd, int32_t *err)
         *err = -ENOTSOCK;
     }
     return s;
+}
+
+/**
+ * the IPv4 socket of an fd, or NULL (an fd that is not one, or no fd).
+ */
+static inet_socket_t *inet_of_fd(int fd)
+{
+    fd_entry_t *entry = fd_get(fd);
+    return entry ? inet_socket_of(entry->file) : NULL;
+}
+
+/**
+ * copy a sockaddr_in in. a family of 0 (AF_UNSPEC) needs only the family.
+ * @return 0, or -EFAULT, -EINVAL.
+ */
+static int32_t inet_addr_from_user(uintptr_t user_addr, uint32_t addrlen, ksockaddr_in_t *addr)
+{
+    memset(addr, 0, sizeof(*addr));
+    if (addrlen < sizeof(addr->sin_family))
+    {
+        return -EINVAL;
+    }
+    uint32_t length = addrlen < sizeof(*addr) ? addrlen : sizeof(*addr);
+    if (kerr_failed(copy_from_user(addr, (const void *)user_addr, length)))
+    {
+        return -EFAULT;
+    }
+    if (addr->sin_family != 0 && addrlen < sizeof(*addr))
+    {
+        return -EINVAL;
+    }
+    return 0;
+}
+
+/**
+ * copy an address out: as much as fits in *user_len, which then gets the
+ * whole size (as Linux does).
+ */
+static int32_t addr_to_user(uintptr_t user_addr, uint32_t *user_len, const void *addr,
+                            uint32_t size)
+{
+    uint32_t room;
+    if (kerr_failed(copy_from_user(&room, user_len, sizeof(room))))
+    {
+        return -EFAULT;
+    }
+    if (room > 0 &&
+        kerr_failed(copy_to_user((void *)user_addr, addr, room < size ? room : size)))
+    {
+        return -EFAULT;
+    }
+    return kerr_to_errno(copy_to_user(user_len, &size, sizeof(size)));
 }
 
 /**
@@ -84,13 +139,25 @@ static int32_t path_from_user(uintptr_t user_addr, uint32_t addrlen, char path[U
 static int32_t check_type(uint32_t domain, uint32_t type, uint32_t protocol, uint32_t *file_flags,
                           uint32_t *fd_flags)
 {
-    if (domain != AF_UNIX)
+    uint32_t base = type & ~(uint32_t)(SOCK_NONBLOCK | SOCK_CLOEXEC);
+    if (domain == AF_UNIX)
+    {
+        if (base != SOCK_STREAM || protocol != 0)
+        {
+            return -EPROTONOSUPPORT;
+        }
+    }
+    else if (domain == AF_INET)
+    {
+        // the protocols are checked by inet_socket_create
+        if (base != SOCK_STREAM && base != SOCK_DGRAM)
+        {
+            return -EPROTONOSUPPORT;
+        }
+    }
+    else
     {
         return -EAFNOSUPPORT;
-    }
-    if ((type & ~(uint32_t)(SOCK_NONBLOCK | SOCK_CLOEXEC)) != SOCK_STREAM || protocol != 0)
-    {
-        return -EPROTONOSUPPORT;
     }
     *file_flags = (type & SOCK_NONBLOCK) ? O_NONBLOCK : 0;
     *fd_flags = (type & SOCK_CLOEXEC) ? FD_CLOEXEC : 0;
@@ -99,23 +166,35 @@ static int32_t check_type(uint32_t domain, uint32_t type, uint32_t protocol, uin
 
 /**
  * SYS_socket: make an unconnected socket.
- * args: domain (AF_UNIX), type (SOCK_STREAM, with SOCK_NONBLOCK and
- *       SOCK_CLOEXEC), protocol (0).
+ * args: domain (AF_UNIX or AF_INET), type (SOCK_STREAM; for AF_INET also
+ *       SOCK_DGRAM; with SOCK_NONBLOCK and SOCK_CLOEXEC), protocol (0; for
+ *       AF_INET also IPPROTO_TCP, IPPROTO_UDP or IPPROTO_ICMP).
  * returns the new fd, or -EAFNOSUPPORT, -EPROTONOSUPPORT, -ENOMEM, -EMFILE.
  */
 syscall_ret_t sys_socket(struct registers *regs)
 {
+    uint32_t domain = (uint32_t)syscall_arg(regs, 0);
+    uint32_t type = (uint32_t)syscall_arg(regs, 1);
+    uint32_t protocol = (uint32_t)syscall_arg(regs, 2);
     uint32_t file_flags;
     uint32_t fd_flags;
-    int32_t err = check_type((uint32_t)syscall_arg(regs, 0), (uint32_t)syscall_arg(regs, 1),
-                             (uint32_t)syscall_arg(regs, 2), &file_flags, &fd_flags);
+    int32_t err = check_type(domain, type, protocol, &file_flags, &fd_flags);
     if (err != 0)
     {
         return err;
     }
 
     file_t *file;
-    if (kerr_failed(unix_socket_create(file_flags, &file)))
+    if (domain == AF_INET)
+    {
+        err = inet_socket_create(type & ~(uint32_t)(SOCK_NONBLOCK | SOCK_CLOEXEC), protocol,
+                                 file_flags, &file);
+        if (err != 0)
+        {
+            return err;
+        }
+    }
+    else if (kerr_failed(unix_socket_create(file_flags, &file)))
     {
         return -ENOMEM;
     }
@@ -135,6 +214,10 @@ syscall_ret_t sys_socket(struct registers *regs)
 syscall_ret_t sys_socketpair(struct registers *regs)
 {
     int *user_fds = (int *)syscall_arg(regs, 3);
+    if (syscall_arg(regs, 0) != AF_UNIX)
+    {
+        return -EOPNOTSUPP;
+    }
     uint32_t file_flags;
     uint32_t fd_flags;
     int32_t err = check_type((uint32_t)syscall_arg(regs, 0), (uint32_t)syscall_arg(regs, 1),
@@ -180,6 +263,13 @@ syscall_ret_t sys_socketpair(struct registers *regs)
 syscall_ret_t sys_bind(struct registers *regs)
 {
     int32_t err;
+    inet_socket_t *inet = inet_of_fd((int)syscall_arg(regs, 0));
+    if (inet)
+    {
+        ksockaddr_in_t addr;
+        err = inet_addr_from_user(syscall_arg(regs, 1), (uint32_t)syscall_arg(regs, 2), &addr);
+        return err != 0 ? err : inet_socket_bind(inet, &addr);
+    }
     unix_socket_t *s = socket_of_fd((int)syscall_arg(regs, 0), &err);
     if (!s)
     {
@@ -196,18 +286,24 @@ syscall_ret_t sys_bind(struct registers *regs)
 
 /**
  * SYS_listen: let a bound socket take connections.
- * args: fd, backlog (0 or more than 16 means 16).
- * returns 0, or -EBADF, -ENOTSOCK, -EINVAL.
+ * args: fd, backlog (AF_UNIX: 0 or more than 16 means 16; AF_INET: at most
+ *       TCP_BACKLOG_MAX).
+ * returns 0, or -EBADF, -ENOTSOCK, -EINVAL, -EOPNOTSUPP (a datagram socket).
  */
 syscall_ret_t sys_listen(struct registers *regs)
 {
     int32_t err;
+    int32_t backlog = (int32_t)syscall_arg(regs, 1);
+    inet_socket_t *inet = inet_of_fd((int)syscall_arg(regs, 0));
+    if (inet)
+    {
+        return inet_socket_listen(inet, backlog < 0 ? 0 : (uint32_t)backlog);
+    }
     unix_socket_t *s = socket_of_fd((int)syscall_arg(regs, 0), &err);
     if (!s)
     {
         return err;
     }
-    int32_t backlog = (int32_t)syscall_arg(regs, 1);
     return unix_socket_listen(s, backlog < 0 ? 0 : (uint32_t)backlog);
 }
 
@@ -220,6 +316,13 @@ syscall_ret_t sys_listen(struct registers *regs)
 syscall_ret_t sys_connect(struct registers *regs)
 {
     int32_t err;
+    fd_entry_t *entry = fd_get((int)syscall_arg(regs, 0));
+    if (entry && inet_socket_of(entry->file))
+    {
+        ksockaddr_in_t addr;
+        err = inet_addr_from_user(syscall_arg(regs, 1), (uint32_t)syscall_arg(regs, 2), &addr);
+        return err != 0 ? err : inet_socket_connect(entry->file, &addr);
+    }
     unix_socket_t *s = socket_of_fd((int)syscall_arg(regs, 0), &err);
     if (!s)
     {
@@ -236,10 +339,10 @@ syscall_ret_t sys_connect(struct registers *regs)
 
 /**
  * SYS_accept: take the next connection of a listening socket (accept4).
- * args: fd, struct sockaddr_un * (or NULL), socklen_t *addrlen (or NULL),
+ * args: fd, struct sockaddr * (or NULL), socklen_t *addrlen (or NULL),
  *       flags (SOCK_NONBLOCK, SOCK_CLOEXEC).
- * the peer has no name, so only sun_family is filled in and *addrlen
- * becomes 2.
+ * AF_INET: the peer's sockaddr_in. AF_UNIX: the peer has no name, so only
+ * sun_family is filled in and *addrlen becomes 2.
  * returns the new fd, or -EAGAIN, -EINVAL, -EBADF, -ENOTSOCK, -EFAULT,
  * -EMFILE, -ENOMEM.
  */
@@ -261,7 +364,8 @@ syscall_ret_t sys_accept(struct registers *regs)
         {
             return -EFAULT;
         }
-        if (!user_access_ok((void *)user_addr, addrlen < 2 ? addrlen : 2, true) ||
+        uint32_t most = sizeof(ksockaddr_in_t);
+        if (!user_access_ok((void *)user_addr, addrlen < most ? addrlen : most, true) ||
             !user_access_ok(user_addrlen, sizeof(addrlen), true))
         {
             return -EFAULT;
@@ -274,7 +378,18 @@ syscall_ret_t sys_accept(struct registers *regs)
         return -EBADF;
     }
     file_t *file;
-    int32_t err = unix_socket_accept(entry->file, (flags & SOCK_NONBLOCK) ? O_NONBLOCK : 0, &file);
+    int32_t err;
+    ksockaddr_in_t peer;
+    bool inet = inet_socket_of(entry->file) != NULL;
+    if (inet)
+    {
+        err = inet_socket_accept(entry->file, (flags & SOCK_NONBLOCK) ? O_NONBLOCK : 0, &file,
+                                 &peer);
+    }
+    else
+    {
+        err = unix_socket_accept(entry->file, (flags & SOCK_NONBLOCK) ? O_NONBLOCK : 0, &file);
+    }
     if (err != 0)
     {
         return err;
@@ -286,7 +401,13 @@ syscall_ret_t sys_accept(struct registers *regs)
         return new_fd;
     }
 
-    if (user_addr && user_addrlen)
+    if (user_addr && user_addrlen && inet)
+    {
+        uint32_t length = sizeof(peer);
+        copy_to_user((void *)user_addr, &peer, addrlen < length ? addrlen : length);
+        copy_to_user(user_addrlen, &length, sizeof(length));
+    }
+    else if (user_addr && user_addrlen)
     {
         uint16_t family = AF_UNIX;
         uint32_t length = sizeof(family);
@@ -362,6 +483,26 @@ syscall_ret_t sys_sendmsg(struct registers *regs)
     {
         return -EBADF;
     }
+    if (inet_socket_of(entry->file))
+    {
+        // msg_name is where the datagram goes; control data is ignored
+        ksockaddr_in_t to;
+        if (msg.name && msg.namelen > 0)
+        {
+            int32_t err = inet_addr_from_user(msg.name, msg.namelen, &to);
+            if (err != 0)
+            {
+                return err;
+            }
+        }
+        int32_t sent = inet_socket_send(entry->file, iov, (uint32_t)iov_count,
+                                        msg.name && msg.namelen > 0 ? &to : NULL, flags);
+        if (sent == -EPIPE && !(flags & MSG_NOSIGNAL))
+        {
+            signal_send(process_current(), SIGPIPE);
+        }
+        return sent;
+    }
 
     // the files to pass, from the control messages
     file_t *files[SOCKET_MAX_FDS];
@@ -432,6 +573,37 @@ syscall_ret_t sys_sendmsg(struct registers *regs)
 }
 
 /**
+ * recvmsg on an IPv4 socket: one datagram, and its sender in msg_name.
+ */
+static int32_t inet_recvmsg(file_t *file, uintptr_t user_msg, kmsghdr_t *msg,
+                            const kiovec_t *iov, uint32_t iov_count, uint32_t flags)
+{
+    if (msg->name && msg->namelen > 0 && !user_access_ok((void *)msg->name, msg->namelen, true))
+    {
+        return -EFAULT;
+    }
+    ksockaddr_in_t from;
+    uint32_t full = 0;
+    int32_t received = inet_socket_receive(file, iov, iov_count, &from, flags,
+                                           (flags & MSG_DONTWAIT) != 0, &full);
+    if (received < 0)
+    {
+        return received;
+    }
+    if (msg->name && msg->namelen > 0)
+    {
+        uint32_t length = msg->namelen < sizeof(from) ? msg->namelen : sizeof(from);
+        copy_to_user((void *)msg->name, &from, length);
+    }
+    msg->namelen = sizeof(from);
+    msg->controllen = 0;
+    msg->flags = (uint32_t)received < full ? MSG_TRUNC : 0;
+    copy_to_user((void *)user_msg, msg, sizeof(*msg));
+    // MSG_TRUNC in the flags of the call: the datagram's whole length
+    return (flags & MSG_TRUNC) ? (int32_t)full : received;
+}
+
+/**
  * SYS_recvmsg: receive data, and the files passed with it.
  * args: fd, struct msghdr *, flags (MSG_DONTWAIT, MSG_CMSG_CLOEXEC).
  * the files come as one SCM_RIGHTS control message. files that do not fit
@@ -463,6 +635,10 @@ syscall_ret_t sys_recvmsg(struct registers *regs)
     if (!entry)
     {
         return -EBADF;
+    }
+    if (inet_socket_of(entry->file))
+    {
+        return inet_recvmsg(entry->file, user_msg, &msg, iov, (uint32_t)iov_count, flags);
     }
 
     file_t *files[SOCKET_MAX_FDS];
@@ -518,4 +694,136 @@ syscall_ret_t sys_recvmsg(struct registers *regs)
     msg.namelen = 0;
     copy_to_user((void *)user_msg, &msg, sizeof(msg));
     return received;
+}
+
+/**
+ * getsockname and getpeername.
+ */
+static syscall_ret_t socket_name(struct registers *regs, bool peer)
+{
+    int fd = (int)syscall_arg(regs, 0);
+    uintptr_t user_addr = syscall_arg(regs, 1);
+    uint32_t *user_len = (uint32_t *)syscall_arg(regs, 2);
+    inet_socket_t *inet = inet_of_fd(fd);
+    if (inet)
+    {
+        ksockaddr_in_t addr;
+        int32_t err = inet_socket_name(inet, peer, &addr);
+        return err != 0 ? err : addr_to_user(user_addr, user_len, &addr, sizeof(addr));
+    }
+    int32_t err;
+    if (!socket_of_fd(fd, &err))
+    {
+        return err;
+    }
+    // a Unix socket's name is not kept with it: only the family
+    uint16_t family = AF_UNIX;
+    return addr_to_user(user_addr, user_len, &family, sizeof(family));
+}
+
+/**
+ * SYS_getsockname: the local address of a socket.
+ * args: fd, struct sockaddr *, socklen_t *addrlen.
+ * returns 0, or -EBADF, -ENOTSOCK, -EFAULT.
+ */
+syscall_ret_t sys_getsockname(struct registers *regs)
+{
+    return socket_name(regs, false);
+}
+
+/**
+ * SYS_getpeername: the address a socket is connected to.
+ * args: fd, struct sockaddr *, socklen_t *addrlen.
+ * returns 0, or -ENOTCONN, -EBADF, -ENOTSOCK, -EFAULT.
+ */
+syscall_ret_t sys_getpeername(struct registers *regs)
+{
+    return socket_name(regs, true);
+}
+
+/**
+ * SYS_setsockopt: set a socket option (an int value).
+ * args: fd, level, name, const void *value, socklen_t length.
+ * a Unix socket takes the SOL_SOCKET options and keeps none of them.
+ * returns 0, or -ENOPROTOOPT, -EINVAL, -EBADF, -ENOTSOCK, -EFAULT.
+ */
+syscall_ret_t sys_setsockopt(struct registers *regs)
+{
+    int fd = (int)syscall_arg(regs, 0);
+    int32_t level = (int32_t)syscall_arg(regs, 1);
+    int32_t name = (int32_t)syscall_arg(regs, 2);
+    const void *user_value = (const void *)syscall_arg(regs, 3);
+    uint32_t length = (uint32_t)syscall_arg(regs, 4);
+    int32_t value = 0;
+    if (length < sizeof(value))
+    {
+        return -EINVAL;
+    }
+    if (kerr_failed(copy_from_user(&value, user_value, sizeof(value))))
+    {
+        return -EFAULT;
+    }
+    inet_socket_t *inet = inet_of_fd(fd);
+    if (inet)
+    {
+        return inet_socket_set_option(inet, level, name, value);
+    }
+    int32_t err;
+    if (!socket_of_fd(fd, &err))
+    {
+        return err;
+    }
+    return level == SOL_SOCKET ? 0 : -ENOPROTOOPT;
+}
+
+/**
+ * SYS_getsockopt: read a socket option (an int value).
+ * args: fd, level, name, void *value, socklen_t *length.
+ * returns 0, or -ENOPROTOOPT, -EINVAL, -EBADF, -ENOTSOCK, -EFAULT.
+ */
+syscall_ret_t sys_getsockopt(struct registers *regs)
+{
+    int fd = (int)syscall_arg(regs, 0);
+    int32_t level = (int32_t)syscall_arg(regs, 1);
+    int32_t name = (int32_t)syscall_arg(regs, 2);
+    uintptr_t user_value = syscall_arg(regs, 3);
+    uint32_t *user_len = (uint32_t *)syscall_arg(regs, 4);
+    int32_t value = 0;
+    int32_t err;
+    inet_socket_t *inet = inet_of_fd(fd);
+    if (inet)
+    {
+        err = inet_socket_get_option(inet, level, name, &value);
+    }
+    else if (!socket_of_fd(fd, &err))
+    {
+        return err;
+    }
+    else if (level != SOL_SOCKET)
+    {
+        err = -ENOPROTOOPT;
+    }
+    else
+    {
+        err = 0;
+        value = name == SO_TYPE ? SOCK_STREAM : 0;
+    }
+    return err != 0 ? err : addr_to_user(user_value, user_len, &value, sizeof(value));
+}
+
+/**
+ * SYS_shutdown: stop the reading or the writing on a socket.
+ * args: fd, how (SHUT_RD, SHUT_WR, SHUT_RDWR).
+ * returns 0, or -EINVAL, -EOPNOTSUPP (a Unix socket), -EBADF, -ENOTSOCK.
+ */
+syscall_ret_t sys_shutdown(struct registers *regs)
+{
+    int fd = (int)syscall_arg(regs, 0);
+    inet_socket_t *inet = inet_of_fd(fd);
+    if (inet)
+    {
+        return inet_socket_shutdown(inet, (int32_t)syscall_arg(regs, 1));
+    }
+    int32_t err;
+    return socket_of_fd(fd, &err) ? -EOPNOTSUPP : err;
 }

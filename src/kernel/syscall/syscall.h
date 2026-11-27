@@ -109,9 +109,14 @@
 #define SYS_TGKILL 100       // send a signal to one thread
 #define SYS_SET_TLS 101      // set the thread pointer (thread-local storage)
 #define SYS_FUTEX 102        // wait on or wake a word in user memory
+#define SYS_GETSOCKNAME 103  // the address of a socket, and of its peer
+#define SYS_GETPEERNAME 104
+#define SYS_SETSOCKOPT 105   // socket options
+#define SYS_GETSOCKOPT 106
+#define SYS_SHUTDOWN 107     // stop reading or writing on a socket
 
 // total number of syscalls defined
-#define SYSCALL_COUNT 103
+#define SYSCALL_COUNT 108
 
 /**
  * initialize the system call interface.

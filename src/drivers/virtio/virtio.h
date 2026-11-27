@@ -8,13 +8,19 @@
  * the common configuration, the notify area, the interrupt status and the
  * device configuration. queues are split virtqueues in one page each.
  *
- * requests are synchronous: virtq_call puts one request and one response
- * buffer on a queue, tells the device and waits (polling) for the answer.
- * that is enough for devices that are asked one thing at a time, such as
- * the control queue of virtio-gpu.
+ * a queue is used in one of two ways:
+ * - requests: virtq_call puts one request and one response buffer on a
+ *   queue, tells the device and waits (polling) for the answer, and
+ *   virtq_post sends without waiting. enough for devices that are asked
+ *   one thing at a time, such as the control queue of virtio-gpu.
+ * - buffers: virtq_give gives the device a buffer of the driver's own,
+ *   and virtq_take takes back the buffers the device is done with (from
+ *   an interrupt). for a stream of packets, such as virtio-net.
+ * a queue is used in one of the two ways only.
  */
 
 #include "common/stdint.h"
+#include "kernel/memory/phys.h"
 #include "drivers/pci/pci.h"
 #include "kernel/sync/spinlock.h"
 
@@ -100,3 +106,27 @@ bool virtq_call(virtq_t *q, const void *request, uint32_t request_size, void *re
  * @return false if the device did not make room in time.
  */
 bool virtq_post(virtq_t *q, const void *request, uint32_t request_size);
+
+/**
+ * send the interrupts of a queue to MSI-X vector 0 (before virtio_ready).
+ * without MSI-X the device raises its one interrupt (INTx or MSI), and
+ * bit 0 of the ISR status says a queue has used buffers.
+ */
+void virtio_queue_interrupt(virtq_t *q);
+
+/**
+ * give the device a buffer, in descriptor id (each id is one buffer).
+ * @param id 0 to q->size - 1; the buffer comes back from virtq_take with
+ *        this id.
+ * @param device_writes true for a buffer the device fills (receive),
+ *        false for one it reads (send).
+ * @return false if id is out of range.
+ */
+bool virtq_give(virtq_t *q, uint16_t id, phys_addr_t phys, uint32_t length, bool device_writes);
+
+/**
+ * take back a buffer the device is done with.
+ * @param length the bytes the device wrote into it (0 for a buffer it read).
+ * @return false when there is none.
+ */
+bool virtq_take(virtq_t *q, uint16_t *id, uint32_t *length);
