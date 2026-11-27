@@ -2,4 +2,4 @@
 
 
 
-Docs: <!-- the pages in docs/ this PR changes, or "none needed". If a header comment changed, run make docs. -->
+Docs: <!-- the pages in docs/ this PR changes, or "none needed". -->

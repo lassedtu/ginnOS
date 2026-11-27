@@ -28,20 +28,16 @@ subject, write it one time and link to it from the other part.
 
 ## The reference
 
-`docs/reference/` is not written by hand.
-[`tools/docs/make_reference.py`](https://github.com/lassedtu/ginnOS/blob/main/tools/docs/make_reference.py)
-makes it from the source:
+The [reference](https://lassedtu.github.io/ginnOS-docs/reference/) is not in `docs/`. Doxygen makes it from the doc
+comments (`/** ... */`) in `src/libc/include/`, `src/lib/`, `src/kernel/`,
+`src/arch/`, `src/drivers/`, `src/fs/` and `src/common/`, each time the
+site is built. The settings are in
+[`tools/docs/Doxyfile`](https://github.com/lassedtu/ginnOS/blob/main/tools/docs/Doxyfile).
 
-- a page for each libc header, and for each library in `src/lib/`, from
-  the doc comments (`/** ... */`) of the headers;
-- the system calls, from `syscall.h`, the dispatch table and the comment
-  above each `sys_` function;
-- the ioctls, from the `#define` lines of the libc headers.
-
-To change a reference page, change the comment in the source, then run
-`make docs` and commit the pages with the change. `make docs-check`, and
-the `reference` check on each pull request, fail when the pages are not
-what the source makes.
+To change the reference, change the comment in the source. To see the
+result on your computer, run `make docs` and open
+`build/docs/html/index.html`. Doxygen writes its warnings to
+`build/docs/warnings.txt`.
 
 ## The page template
 
