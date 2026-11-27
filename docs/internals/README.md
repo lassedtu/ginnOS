@@ -18,6 +18,8 @@ them.
   and Unix sockets.
 - [The desktop stack](desktop.md): the display, heimdalld, its
   protocol, idunn, asgard and Bifrost.
+- [The drivers](drivers.md): the list of drivers, interrupts, ACPI,
+  and what a real PC needs.
 - [Testing](testing.md): kernel tests, host tests and test programs, and
   how to write each.
 - [Build ginnOS](../develop/building.md): the build, the tests and the
