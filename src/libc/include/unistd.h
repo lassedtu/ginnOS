@@ -484,5 +484,11 @@ extern char *optarg; // the argument of the option getopt returned
 extern int optind;   // the next argument getopt looks at (0 starts again)
 extern int opterr;   // 0: getopt writes no messages
 extern int optopt;   // the option letter of the last error
+/**
+ * fill buf with length random bytes (at most 256) from the kernel.
+ * @return 0, or -1 (errno EIO when length is more than 256).
+ */
+int getentropy(void *buf, size_t length);
+
 /** the name of the user who runs the program (from the password file), or NULL */
 char *getlogin(void);

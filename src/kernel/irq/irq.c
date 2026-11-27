@@ -2,6 +2,7 @@
 
 #include "common/stdio.h"
 #include "kernel/klog/klog.h"
+#include "kernel/random/random.h"
 
 /**
  * @file irq.c
@@ -68,6 +69,7 @@ static void irq_dispatch(uint32_t irq, trap_frame_t *frame)
     {
         return;
     }
+    random_add_interrupt(irq);
 
     for (int i = 0; i < IRQ_MAX_SHARED; i++)
     {

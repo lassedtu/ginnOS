@@ -298,9 +298,10 @@ static size_t put_bytes(FILE *stream, const char *data, size_t len)
 }
 
 /**
- * fill the read buffer. returns false at end of file or on an error.
+ * prepare a stream for a read from its file.
+ * @return 0 if the stream is not open for reading.
  */
-static int fill(FILE *stream)
+static int ready_to_read(FILE *stream)
 {
     if (!(stream->flags & STREAM_READ))
     {
@@ -310,9 +311,23 @@ static int fill(FILE *stream)
     }
     // reading from a terminal shows what was written first (a prompt)
     if (stream == stdin)
+    {
         fflush(stdout);
+    }
     if (stream->write_len)
+    {
         flush_stream(stream);
+    }
+    return 1;
+}
+
+/**
+ * fill the read buffer. returns false at end of file or on an error.
+ */
+static int fill(FILE *stream)
+{
+    if (!ready_to_read(stream))
+        return 0;
 
     char *target = stream->buffer;
     size_t room = stream->size;
@@ -419,17 +434,54 @@ char *fgets(char *buf, int size, FILE *stream)
     return result;
 }
 
+/**
+ * the bytes come from the unget byte and the buffer first. then a read
+ * that is as large as the buffer, or any read of an unbuffered stream,
+ * goes directly into ptr: an unbuffered stream must not get one system
+ * call per byte.
+ */
 static size_t fread_body(void *ptr, size_t size, size_t count, FILE *stream)
 {
+    ready_std_streams();
     unsigned char *out = ptr;
     size_t total = size * count;
     size_t done = 0;
+    if (done < total && stream->unget != EOF)
+    {
+        out[done++] = (unsigned char)stream->unget;
+        stream->unget = EOF;
+    }
     while (done < total)
     {
-        int c = fgetc(stream);
-        if (c == EOF)
+        size_t buffered = stream->read_len - stream->read_pos;
+        if (buffered > 0)
+        {
+            size_t n = total - done < buffered ? total - done : buffered;
+            memcpy(out + done, stream->buffer + stream->read_pos, n);
+            stream->read_pos += n;
+            done += n;
+            continue;
+        }
+        int direct = !stream->buffer || stream->mode == _IONBF || total - done >= stream->size;
+        if (!direct)
+        {
+            if (!fill(stream))
+            {
+                break;
+            }
+            continue;
+        }
+        if (!ready_to_read(stream))
+        {
             break;
-        out[done++] = (unsigned char)c;
+        }
+        ssize_t n = raw_read(stream, out + done, total - done);
+        if (n <= 0)
+        {
+            stream->flags |= n == 0 ? STREAM_EOF : STREAM_ERROR;
+            break;
+        }
+        done += (size_t)n;
     }
     return size ? done / size : 0;
 }

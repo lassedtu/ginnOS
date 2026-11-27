@@ -8,6 +8,8 @@
 #   EXTRA_CFLAGS - additional compiler flags
 #   LIBS         - user libraries to link, by name (src/lib/<name>, e.g. gfx);
 #                  a library that uses another comes before it
+#   EXTRA_LIBS   - other archives to link, as paths (a port's library in
+#                  the sysroot); they come before libc
 
 ROOT     := ../../..
 # the top Makefile passes these for the architecture it builds
@@ -49,8 +51,8 @@ $(OBJDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(TARGET): $(OBJS) $(CRT0) $(LIB_ARCHIVES) $(LIBC)
+$(TARGET): $(OBJS) $(CRT0) $(LIB_ARCHIVES) $(EXTRA_LIBS) $(LIBC)
 	@mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIB_ARCHIVES) $(LIBC) $(LIBGCC)
+	$(LD) $(LDFLAGS) -o $@ $(CRT0) $(OBJS) $(LIB_ARCHIVES) $(EXTRA_LIBS) $(LIBC) $(LIBGCC)
 
 -include $(DEP_FILES)

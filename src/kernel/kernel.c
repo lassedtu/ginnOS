@@ -41,6 +41,7 @@
 #include "drivers/video/fb/fb.h"
 #include "drivers/net/virtio_net.h"
 #include "kernel/net/netif.h"
+#include "kernel/random/random.h"
 #include "drivers/video/virtio_gpu.h"
 #include "common/memory.h"
 #include "common/string.h"
@@ -318,6 +319,7 @@ void kernel_main(boot_info_t *boot)
     // the wall-clock time from the CMOS clock; ext2 stamps inodes with it
     clock_init();
     ext2_clock = clock_realtime_seconds;
+    random_init(); // after the clock: the time goes into the pool
 
     // enable hardware interrupts (STI).
     // hal_initialize() has fully installed all exception handlers (vectors 0–31),
