@@ -2,7 +2,7 @@
 
 /**
  * @file math.h
- * @brief floating-point functions (double only).
+ * @brief floating-point functions (double, and float with an f).
  *
  * the functions use the x87 FPU instructions, which exist on i686 and on
  * x86_64. the results are as exact as those instructions give; errno is
@@ -81,3 +81,35 @@ double copysign(double x, double y);
 double sinh(double x);
 double cosh(double x);
 double tanh(double x);
+
+// the float functions: each is its double function, rounded to float
+// once. sqrtf is so exact; the others are within one unit in the last
+// place of the exact result.
+float fabsf(float x);
+float floorf(float x);
+float ceilf(float x);
+float roundf(float x);
+float truncf(float x);
+float sqrtf(float x);
+float sinf(float x);
+float cosf(float x);
+float tanf(float x);
+float atanf(float x);
+float asinf(float x);
+float acosf(float x);
+float expf(float x);
+float logf(float x);
+float log2f(float x);
+float log10f(float x);
+float sinhf(float x);
+float coshf(float x);
+float tanhf(float x);
+float fminf(float a, float b);
+float fmaxf(float a, float b);
+float fmodf(float a, float b);
+float atan2f(float a, float b);
+float powf(float a, float b);
+float copysignf(float a, float b);
+float ldexpf(float x, int exp);
+float scalbnf(float x, int n);
+float frexpf(float x, int *exp);

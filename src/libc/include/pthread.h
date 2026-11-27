@@ -118,6 +118,9 @@ pthread_t pthread_self(void);
 int pthread_equal(pthread_t a, pthread_t b);
 int pthread_kill(pthread_t thread, int sig);
 int pthread_sigmask(int how, const sigset_t *set, sigset_t *old);
+// every thread is SCHED_OTHER, priority 0; another policy is EPERM
+int pthread_getschedparam(pthread_t thread, int *policy, struct sched_param *param);
+int pthread_setschedparam(pthread_t thread, int policy, const struct sched_param *param);
 
 int pthread_attr_init(pthread_attr_t *attr);
 int pthread_attr_destroy(pthread_attr_t *attr);

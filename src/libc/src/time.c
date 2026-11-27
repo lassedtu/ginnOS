@@ -62,6 +62,15 @@ clock_t clock(void)
     return used.tv_sec * CLOCKS_PER_SEC + used.tv_nsec / 1000;
 }
 
+int timespec_get(struct timespec *out, int base)
+{
+    if (base != TIME_UTC || clock_gettime(CLOCK_REALTIME, out) != 0)
+    {
+        return 0;
+    }
+    return base;
+}
+
 double difftime(time_t end, time_t start)
 {
     return (double)(end - start);

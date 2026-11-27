@@ -230,6 +230,52 @@ int pthread_kill(pthread_t thread, int sig)
     return ret < 0 ? (int)-ret : 0;
 }
 
+int pthread_getschedparam(pthread_t thread, int *policy, struct sched_param *param)
+{
+    (void)thread;
+    *policy = SCHED_OTHER;
+    param->sched_priority = 0;
+    return 0;
+}
+
+int pthread_setschedparam(pthread_t thread, int policy, const struct sched_param *param)
+{
+    (void)thread;
+    if (policy == SCHED_FIFO || policy == SCHED_RR)
+    {
+        return EPERM; // no real-time scheduling
+    }
+    return policy == SCHED_OTHER && param->sched_priority == 0 ? 0 : EINVAL;
+}
+
+int sched_get_priority_min(int policy)
+{
+    if (policy == SCHED_OTHER)
+    {
+        return 0;
+    }
+    if (policy == SCHED_FIFO || policy == SCHED_RR)
+    {
+        return 1;
+    }
+    errno = EINVAL;
+    return -1;
+}
+
+int sched_get_priority_max(int policy)
+{
+    if (policy == SCHED_OTHER)
+    {
+        return 0;
+    }
+    if (policy == SCHED_FIFO || policy == SCHED_RR)
+    {
+        return 99;
+    }
+    errno = EINVAL;
+    return -1;
+}
+
 int pthread_sigmask(int how, const sigset_t *set, sigset_t *old)
 {
     return sigprocmask(how, set, old) < 0 ? errno : 0;

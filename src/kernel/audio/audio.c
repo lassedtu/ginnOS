@@ -447,6 +447,10 @@ static int32_t dsp_ioctl(file_t *file, uint32_t request, void *arg)
         }
         return put_int(arg, (int32_t)s->format);
 
+    case SNDCTL_DSP_SETFRAGMENT:
+        // a request only: the device keeps the period it plays in, which
+        // SNDCTL_DSP_GETOSPACE and SNDCTL_DSP_GETBLKSIZE give
+        return 0;
     case SNDCTL_DSP_GETFMTS:
         return put_int(arg, AFMT_U8 | AFMT_S16_LE);
 
