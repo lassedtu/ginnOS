@@ -16,6 +16,10 @@ them.
   block cache, devfs, tmpfs and procfs.
 - [The network stack](network.md): the layers, the routes, the sockets
   and Unix sockets.
+- [The desktop stack](desktop.md): the display, heimdalld, its
+  protocol, idunn, asgard and Bifrost.
+- [Testing](testing.md): kernel tests, host tests and test programs, and
+  how to write each.
 - [Build ginnOS](../develop/building.md): the build, the tests and the
   debugger.
 - The code style: [`STYLE.md`](https://github.com/lassedtu/ginnOS/blob/main/STYLE.md).
