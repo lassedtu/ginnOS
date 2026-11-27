@@ -13,3 +13,5 @@ from other systems.
   does not have yet.
 - [The libraries](libraries.md): gfx, heimdall, bragi, idunn and the
   others, and how to write a program for the desktop.
+- [Port a program](porting.md): the ports, how `make` builds them, and
+  how to add one.
