@@ -13,21 +13,23 @@ The name ginnOS is taken from Ginnungagap, the primordial void in Norse mytholog
 
 ## Documentation
 
-The manual is in [`docs/`](docs/README.md), next to the code:
+Read the manual at **<https://lassedtu.github.io/ginnOS-docs/>**. Its
+pages are in [`docs/`](docs/README.md), next to the code, and the site
+builds again when they change on `main`.
 
-- [Get started](docs/use/getting-started.md): start ginnOS in QEMU
-  or on a real PC, and log in.
-- [Set up the build tools](docs/develop/setup.md) on macOS, Linux,
-  Windows (WSL2) and Nix.
-- [Build ginnOS](docs/develop/building.md): the build options, the
-  tests and the debugger.
-- [The ginnOS toolchain](docs/develop/toolchain.md): compile programs
-  for ginnOS.
+- [Get started](https://lassedtu.github.io/ginnOS-docs/use/getting-started/):
+  start ginnOS in QEMU or on a real PC, and log in.
+- [Set up the build tools](https://lassedtu.github.io/ginnOS-docs/develop/setup/)
+  on macOS, Linux, Windows (WSL2) and Nix.
+- [Build ginnOS](https://lassedtu.github.io/ginnOS-docs/develop/building/):
+  the build options, the tests and the debugger.
+- [The ginnOS toolchain](https://lassedtu.github.io/ginnOS-docs/develop/toolchain/):
+  compile programs for ginnOS.
 
 ## Quick start
 
 With the build tools installed (see
-[Set up the build tools](docs/develop/setup.md)):
+[Set up the build tools](https://lassedtu.github.io/ginnOS-docs/develop/setup/)):
 
 ```bash
 git clone https://github.com/lassedtu/ginnOS
