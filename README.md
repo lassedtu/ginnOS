@@ -4,8 +4,6 @@ ginnOS (Ginn short for Ginnungagap, and OS short for Operating System) is a unix
 
 ![The ginnOS desktop: Mimir with gfetch, and DOOM in a window](docs/images/desktop.png)
 
-![Example of Metaballs simulation using the Bifrost framebuffer](https://github.com/lassedtu/ginnOS/blob/main/metaballs.gif)
-
 I started this project because i wanted to understand how an operating system is really coded instead of just theory. I plan to keep building and improving it as i learn more.
 
 The name ginnOS is taken from Ginnungagap, the primordial void in Norse mythology from which the world was created.
