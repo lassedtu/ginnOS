@@ -1,0 +1,25 @@
+# tell the site repository (lassedtu/ginnOS-docs) to build the docs
+# site again when the pages in docs/ change on main.
+#
+# the secret DOCS_DISPATCH_TOKEN is a fine-grained token with the
+# permission "Contents: read and write" on lassedtu/ginnOS-docs only.
+
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**']
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send docs-changed to the site repository
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+        run: |
+          gh api repos/lassedtu/ginnOS-docs/dispatches \
+            -f event_type=docs-changed \
+            -f "client_payload[sha]=${GITHUB_SHA}"
