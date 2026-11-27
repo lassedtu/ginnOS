@@ -40,8 +40,9 @@ when the launcher opens.
 - Press Down to go into the grid of apps, and Up from its top row to go
   back to the search field.
 - Press Escape to close the launcher.
-- Click a category (All, Accessories, Development, Games, Graphics,
-  Sound, System, Other) to show only its apps.
+- Click a category to show only its apps. The launcher shows All and
+  each category that has apps: Accessories, Development, Games,
+  Graphics, Sound, System or Other.
 
 The apps that you used last are first in the grid.
 
