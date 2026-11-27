@@ -3,7 +3,8 @@
 ginnOS has its own libraries for programs on the desktop. They are in
 [`src/lib/`](https://github.com/lassedtu/ginnOS/tree/main/src/lib).
 Each library has its header in `src/lib/<name>/include/`, with a doc
-comment for each function.
+comment for each function. The [reference](../reference/README.md) has a
+page for each library, made from these comments.
 
 | Library | What it does | Header |
 | --- | --- | --- |

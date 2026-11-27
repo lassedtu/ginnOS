@@ -26,6 +26,23 @@ history of how the thing was made.
 Put a page in the part of its reader. If two readers need the same
 subject, write it one time and link to it from the other part.
 
+## The reference
+
+`docs/reference/` is not written by hand.
+[`tools/docs/make_reference.py`](https://github.com/lassedtu/ginnOS/blob/main/tools/docs/make_reference.py)
+makes it from the source:
+
+- a page for each libc header, and for each library in `src/lib/`, from
+  the doc comments (`/** ... */`) of the headers;
+- the system calls, from `syscall.h`, the dispatch table and the comment
+  above each `sys_` function;
+- the ioctls, from the `#define` lines of the libc headers.
+
+To change a reference page, change the comment in the source, then run
+`make docs` and commit the pages with the change. `make docs-check`, and
+the `reference` check on each pull request, fail when the pages are not
+what the source makes.
+
 ## The page template
 
 ```markdown

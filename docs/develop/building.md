@@ -151,6 +151,8 @@ problem without a debugger.
 | `make format` | formats the code with clang-format and `.clang-format` |
 | `make compile_commands` | writes `compile_commands.json` for an editor |
 | `make sysroot` | makes the sysroot for the toolchain (see [the toolchain](toolchain.md)) |
+| `make docs` | makes the reference pages in `docs/reference/` from the comments in the source |
+| `make docs-check` | fails if `docs/reference/` is not what the source makes |
 
 ## The console font
 

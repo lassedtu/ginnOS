@@ -8,6 +8,8 @@ floating-point numbers to and from text are from musl.
 The code: [`src/libc/`](https://github.com/lassedtu/ginnOS/tree/main/src/libc).
 The headers, with a doc comment for each function, are in
 [`src/libc/include/`](https://github.com/lassedtu/ginnOS/tree/main/src/libc/include).
+The [libc reference](../reference/libc/README.md) has a page for each
+header.
 
 ## How to use it
 
