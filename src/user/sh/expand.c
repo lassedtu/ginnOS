@@ -2,7 +2,10 @@
  * @file expand.c
  * @brief Variable expansion for shell tokens.
  *
- * This file implements functions to expand environment variables and special shell variables (like $? and $$) in shell tokens. It processes tokens containing variable references and replaces them with their corresponding values.
+ * the words of a command get their variables replaced: $NAME and ${NAME}
+ * (the environment), $? (the last exit status) and $$ (the shell's pid).
+ * it runs after the quotes are removed, so $ in single quotes is
+ * replaced too (a known gap).
  */
 
 #include "expand.h"
@@ -15,8 +18,9 @@
 // external state from shell main
 extern int shell_last_exit_code;
 
-// buffer for expanded tokens
-static char expand_buf[TOKEN_MAX][TOKEN_LEN];
+// the expanded tokens, one after the other
+#define EXPAND_MAX 16384
+static char expand_buf[EXPAND_MAX];
 
 /**
  * check if a character is valid in a variable name.
@@ -145,13 +149,15 @@ static int expand_token(const char *in, char *out, int out_size)
 
 void expand_variables(token_list_t *tokens)
 {
+    int used = 0;
     for (int i = 0; i < tokens->count; i++)
     {
-        // only expand if the token contains a $
-        if (strchr(tokens->tokens[i], '$'))
+        // only expand if the token contains a $ (and while there is room)
+        if (strchr(tokens->tokens[i], '$') && used < EXPAND_MAX - 1)
         {
-            expand_token(tokens->tokens[i], expand_buf[i], TOKEN_LEN);
-            tokens->tokens[i] = expand_buf[i];
+            char *out = expand_buf + used;
+            used += expand_token(tokens->tokens[i], out, EXPAND_MAX - used) + 1;
+            tokens->tokens[i] = out;
         }
     }
 }

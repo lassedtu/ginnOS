@@ -5,7 +5,7 @@
 
 #pragma once
 
-#define LINE_MAX 256
+#define LINE_MAX 4096
 
 // room for the full prompt: "skl:" + a cwd of up to 255 chars + " $ " + NUL.
 #define PROMPT_MAX 264

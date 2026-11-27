@@ -2,17 +2,22 @@
 
 /**
  * @file sys/time.h
- * @brief struct timeval and gettimeofday.
+ * @brief struct timeval and gettimeofday. it also gives select() and
+ *        fd_set (sys/select.h), as on other Unix systems.
  */
+
+#include <sys/types.h>
 
 #ifndef GINNOS_TIMEVAL
 #define GINNOS_TIMEVAL
 struct timeval
 {
     long tv_sec;
-    long tv_usec;
+    suseconds_t tv_usec;
 };
 #endif
+
+#include <sys/select.h>
 
 /**
  * the wall-clock time in seconds and microseconds since 1970.

@@ -3,10 +3,11 @@
 #include "history.h"
 #include "line.h"
 
+#include <stdlib.h>
 #include <string.h>
 
-// ring buffer of history entries
-static char history_buf[HISTORY_MAX][LINE_MAX];
+// ring buffer of history entries (each one allocated)
+static char *history_buf[HISTORY_MAX];
 static int history_size;  // number of valid entries (up to HISTORY_MAX)
 static int history_start; // index of the oldest entry in the ring
 static int history_end;   // index of the next write slot
@@ -39,9 +40,14 @@ void history_add(const char *line)
             return;
     }
 
-    // copy into the ring buffer
-    strncpy(history_buf[history_end], line, LINE_MAX - 1);
-    history_buf[history_end][LINE_MAX - 1] = '\0';
+    // copy into the ring buffer, in place of the oldest entry when it is full
+    char *copy = strdup(line);
+    if (!copy)
+    {
+        return;
+    }
+    free(history_buf[history_end]);
+    history_buf[history_end] = copy;
 
     history_end = (history_end + 1) % HISTORY_MAX;
 

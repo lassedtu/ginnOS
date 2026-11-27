@@ -23,6 +23,10 @@
  *
  * when the input is not a terminal (a script on a pipe), lines are read
  * as they are, without editing.
+ *
+ * a line can be longer than the terminal is wide: it then fills more than
+ * one row. each change draws the prompt and the whole line again from the
+ * prompt's first row (cursor_row tells how far up that is).
  */
 
 #include "line.h"
@@ -32,24 +36,13 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
 // forward declarations
 static void emit(const char *s, int len);
 static void emit_char(char c);
-
-/**
- * emit the ANSI "erase to end of line" sequence.
- */
-static void emit_erase_eol(void)
-{
-    char seq[3];
-    seq[0] = 27;
-    seq[1] = '[';
-    seq[2] = 'K';
-    emit(seq, 3);
-}
 
 /**
  * emit the ANSI "clear screen + cursor home" sequence.
@@ -112,71 +105,84 @@ static void emit_char(char c)
     emit(&c, 1);
 }
 
-/**
- * move the terminal cursor to a specific position on the current line.
- * uses carriage return + forward movement for reliability.
- */
-static void move_cursor_to(int prompt_len, int pos)
-{
-    // carriage return to column 0
-    char cr = '\r';
-    emit(&cr, 1);
+// the row of the terminal cursor, counted from the first row of the prompt
+static int cursor_row;
 
-    // move forward prompt_len + pos columns using CSI C (cursor forward)
-    int total = prompt_len + pos;
-    if (total > 0)
-    {
-        char seq[16];
-        int i = 0;
-        seq[i++] = 27;
-        seq[i++] = '[';
-        if (total >= 100)
-        {
-            seq[i++] = (char)('0' + total / 100);
-            seq[i++] = (char)('0' + (total / 10) % 10);
-            seq[i++] = (char)('0' + total % 10);
-        }
-        else if (total >= 10)
-        {
-            seq[i++] = (char)('0' + total / 10);
-            seq[i++] = (char)('0' + total % 10);
-        }
-        else
-        {
-            seq[i++] = (char)('0' + total);
-        }
-        seq[i++] = 'C';
-        emit(seq, i);
-    }
+/**
+ * queue "ESC [ n final", a CSI sequence with one number.
+ */
+static void emit_csi(int n, char final)
+{
+    char seq[16];
+    int length = snprintf(seq, sizeof(seq), "\033[%d%c", n, final);
+    emit(seq, length);
 }
 
 /**
- * refresh the line display: redraws the full line content and
- * positions the cursor correctly.
+ * the width of the terminal in columns (80 if it does not tell).
+ */
+static int terminal_width(void)
+{
+    struct winsize size;
+    if (ioctl(1, TIOCGWINSZ, &size) == 0 && size.ws_col > 0)
+    {
+        return size.ws_col;
+    }
+    return 80;
+}
+
+/**
+ * draw the prompt and the line again, and put the cursor at line_pos.
  */
 static void refresh_line(int prompt_len)
 {
-    // go to start of line content
-    char cr = '\r';
-    emit(&cr, 1);
+    int cols = terminal_width();
 
-    // re-emit the prompt (we need it to be there for the cursor to be right).
-    // formatted into our buffer rather than printed, so it goes out in the
-    // same single write as the rest of the line.
+    // to the start of the prompt's first row, and erase from there down
+    if (cursor_row > 0)
+    {
+        emit_csi(cursor_row, 'A');
+    }
+    emit_char('\r');
+    emit_csi(0, 'J');
+
+    // the prompt is formatted into our buffer, so it goes out in the same
+    // single write as the rest of the line
     char prompt[PROMPT_MAX];
     int plen = format_prompt(prompt, sizeof(prompt));
     if (plen > 0)
+    {
         emit(prompt, plen);
+    }
+    emit(line_buf, line_len);
 
-    // print the full line buffer
-    if (line_len > 0)
-        emit(line_buf, line_len);
+    // text that ends at the right edge: a terminal that wraps late keeps the
+    // cursor in the last column, one that wraps at once is on the next row.
+    // a space and CR put both at the start of the next row.
+    int end = prompt_len + line_len;
+    if (end > 0 && end % cols == 0)
+    {
+        emit(" \r", 2);
+        emit_csi(0, 'K');
+    }
 
-    // erase any leftover characters
-    emit_erase_eol();
-
-    // move cursor to the correct position
-    move_cursor_to(prompt_len, line_pos);
+    // from the end of the line to the cursor position
+    int end_row = end / cols;
+    int target = prompt_len + line_pos;
+    int target_row = target / cols;
+    if (end_row > target_row)
+    {
+        emit_csi(end_row - target_row, 'A');
+    }
+    if (target != end)
+    {
+        emit_char('\r');
+        if (target % cols > 0)
+        {
+            emit_csi(target % cols, 'C');
+        }
+    }
+    cursor_row = target_row;
 }
 
 /**
@@ -363,6 +369,7 @@ static int read_line_raw(char *buf, int size)
     line_len = 0;
     line_pos = 0;
     line_buf[0] = '\0';
+    cursor_row = 0;
     int prompt_len = current_prompt_len;
 
     while (1)
@@ -379,6 +386,9 @@ static int read_line_raw(char *buf, int size)
         case '\r':
         case '\n':
         {
+            // the output starts below the whole line
+            line_pos = line_len;
+            refresh_line(prompt_len);
             emit_char('\r');
             emit_char('\n');
             flush_output();
@@ -391,6 +401,8 @@ static int read_line_raw(char *buf, int size)
 
         case CTRL('c'):
             // drop the line; the shell prints a new prompt
+            line_pos = line_len;
+            refresh_line(prompt_len);
             emit("^C\r\n", 4);
             flush_output();
             history_reset_nav();
@@ -409,19 +421,19 @@ static int read_line_raw(char *buf, int size)
         case CTRL('a'):
         case KEY_HOME:
             line_pos = 0;
-            move_cursor_to(prompt_len, line_pos);
+            refresh_line(prompt_len);
             break;
 
         case CTRL('e'):
         case KEY_END:
             line_pos = line_len;
-            move_cursor_to(prompt_len, line_pos);
+            refresh_line(prompt_len);
             break;
 
         case CTRL('k'):
             line_len = line_pos;
             line_buf[line_len] = '\0';
-            emit_erase_eol();
+            refresh_line(prompt_len);
             break;
 
         case CTRL('u'):
@@ -459,6 +471,7 @@ static int read_line_raw(char *buf, int size)
         case CTRL('l'):
             // clear the screen; refresh_line draws the prompt and the line
             emit_clear_home();
+            cursor_row = 0;
             redraw_full(prompt_len);
             break;
 
@@ -475,7 +488,7 @@ static int read_line_raw(char *buf, int size)
             if (line_pos > 0)
             {
                 line_pos--;
-                move_cursor_to(prompt_len, line_pos);
+                refresh_line(prompt_len);
             }
             break;
 
@@ -483,7 +496,7 @@ static int read_line_raw(char *buf, int size)
             if (line_pos < line_len)
             {
                 line_pos++;
-                move_cursor_to(prompt_len, line_pos);
+                refresh_line(prompt_len);
             }
             break;
 

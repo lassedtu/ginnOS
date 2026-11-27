@@ -10,15 +10,15 @@
 # a library (SDL) installs its headers and archive into the sysroot
 # (usr/include, usr/lib), where the ports after it find them.
 #
-# PORTS lists the ports to build. mbedtls is a library (TLS for fetch, which
-# is then built after it); ca-certificates is the list of authorities TLS
-# trusts. PORTS= builds none (the image then has no ls, cat and the other
-# Unix tools, which sbase gives, and fetch has no https). sdl3 needs cmake
-# on the build host.
+# PORTS lists the ports to build. mbedtls is a library (TLS for fetch and
+# curl, which are built after it); ca-certificates is the list of
+# authorities TLS trusts. PORTS= builds none (the image then has no ls, cat
+# and the other Unix tools, which sbase gives, no curl, and fetch has no
+# https). sdl3 and curl need cmake on the build host.
 
 .PHONY: ports
 
-PORTS         ?= sbase lua sdl3 mbedtls ca-certificates
+PORTS         ?= sbase lua sdl3 mbedtls ca-certificates curl
 TOOLCHAIN_BIN ?= $(abspath tools/toolchain/prefix/bin)
 PORT_CROSS    := $(TOOLCHAIN_BIN)/$(ARCH)-ginnos-
 PORTS_DIR     := $(BUILD_DIR)/ports
@@ -30,6 +30,11 @@ ports: $(PORT_STAMPS)
 
 # the other files of a port (patches, sources of its own)
 $(foreach p,$(PORTS),$(eval $(PORTS_DIR)/$(p).done: $(shell find ports/$(p) -type f)))
+
+# a port that uses the library of another port is built after it
+PORT_NEEDS_curl := mbedtls
+$(foreach p,$(PORTS),$(eval $(PORTS_DIR)/$(p).done: \
+    $(foreach n,$(PORT_NEEDS_$(p)),$(PORTS_DIR)/$(n).done)))
 
 # a port builds again when one of its files or the sysroot changes. its output
 # goes to build/<arch>/ports/<name>.log; on an error make shows the end.
