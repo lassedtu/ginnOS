@@ -9,11 +9,11 @@ The code is at <https://github.com/lassedtu/ginnOS>.
 
 ## The parts of this manual
 
-| Part | For | Start here |
+| Part | For | Pages |
 | --- | --- | --- |
-| [Use ginnOS](use/README.md) | people who use ginnOS | [Get started](use/getting-started.md) |
-| [Write programs](develop/README.md) | people who write or port programs for ginnOS | [Set up the build tools](develop/setup.md) |
-| [How ginnOS works](internals/README.md) | people who work on ginnOS itself | [The source tree](internals/README.md#the-source-tree) |
+| [Use ginnOS](use/README.md) | people who use ginnOS | [Get started](use/getting-started.md), [The desktop](use/desktop.md), [The apps](use/apps.md), [The shell](use/shell.md), [The network](use/networking.md), [The settings files](use/settings-files.md) |
+| [Write programs](develop/README.md) | people who write or port programs for ginnOS | [Set up the build tools](develop/setup.md), [Build ginnOS](develop/building.md), [The ginnOS toolchain](develop/toolchain.md), [libc](develop/libc.md), [The libraries](develop/libraries.md), [Port a program](develop/porting.md) |
+| [How ginnOS works](internals/README.md) | people who work on ginnOS itself | [The architecture](internals/architecture.md), [The boot](internals/boot.md), [Memory](internals/memory.md), [Processes](internals/processes.md), [Signals](internals/signals.md), [The file systems](internals/filesystems.md), [The network stack](internals/network.md), [The drivers](internals/drivers.md), [Random numbers](internals/random.md), [The desktop stack](internals/desktop.md), [Testing](internals/testing.md) |
 
 ## Quick start
 
