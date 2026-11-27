@@ -6,6 +6,8 @@ them.
 
 - [The architecture](architecture.md): from the power button to the
   desktop, and how the parts talk.
+- [The boot](boot.md): the disk image, Limine, the two kernels and
+  `boot_info_t`.
 - [Memory](memory.md): the address space, frames, the kernel heap,
   page faults, copy on write and shared memory.
 - [Processes, threads and the scheduler](processes.md): the process
@@ -16,6 +18,8 @@ them.
   block cache, devfs, tmpfs and procfs.
 - [The network stack](network.md): the layers, the routes, the sockets
   and Unix sockets.
+- [Random numbers](random.md): the pool, the generator, and
+  `getrandom`.
 - [The desktop stack](desktop.md): the display, heimdalld, its
   protocol, idunn, asgard and Bifrost.
 - [The drivers](drivers.md): the list of drivers, interrupts, ACPI,
