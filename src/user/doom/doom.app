@@ -4,4 +4,4 @@ name = DOOM
 comment = Doom, in a window of the desktop
 exec = doom
 icon = doom
-category = Game
+category = Games

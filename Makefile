@@ -27,6 +27,7 @@ include mk/image.mk
 include mk/test.mk
 include mk/run.mk
 include mk/dev.mk
+include mk/docs.mk
 
 .PHONY: all clean distclean FORCE
 
