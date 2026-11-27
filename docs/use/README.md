@@ -5,3 +5,9 @@ the desktop, the apps, the terminal and the settings.
 
 - [Get started](getting-started.md): start ginnOS in QEMU or on a
   real PC, and log in.
+- [The desktop](desktop.md): the panel, the launcher, windows, light and
+  dark mode, log out.
+- [The apps](apps.md): Mimir, Yggdrasil, Saga, Freyja, Huginn and
+  Settings, with their keys.
+- [The shell](shell.md): edit and run commands, pipes, jobs, and what
+  the shell cannot do yet.

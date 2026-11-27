@@ -4,6 +4,8 @@ This part is for people who work on ginnOS itself: the boot, the kernel,
 the drivers, the libraries and the desktop, and how to build and test
 them.
 
+- [The architecture](architecture.md): from the power button to the
+  desktop, and how the parts talk.
 - [Build ginnOS](../develop/building.md): the build, the tests and the
   debugger.
 - The code style: [`STYLE.md`](https://github.com/lassedtu/ginnOS/blob/main/STYLE.md).
