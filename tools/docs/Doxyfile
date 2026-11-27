@@ -1,0 +1,67 @@
+# Doxygen settings for the ginnOS reference (make docs). Only the settings
+# that differ from the defaults are here. Run Doxygen from the top folder
+# of the repository: the paths are relative to it.
+#
+# The site repository runs Doxygen with these settings, then adds its own
+# stylesheet and output folder (see its .github/workflows/pages.yml).
+
+PROJECT_NAME           = ginnOS
+PROJECT_BRIEF          = "The reference: libc, the libraries and the kernel"
+OUTPUT_DIRECTORY       = build/docs
+CREATE_SUBDIRS         = NO
+
+# The comments are /** ... */ blocks. The first sentence is the brief one.
+JAVADOC_AUTOBRIEF      = YES
+OPTIMIZE_OUTPUT_FOR_C  = YES
+MARKDOWN_SUPPORT       = YES
+TAB_SIZE               = 4
+
+# Show every declaration, also one without a comment, so that the reference
+# lists the whole interface. Functions inside one file (static) stay out.
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_CLASSES  = NO
+HIDE_UNDOC_RELATIONS   = YES
+SORT_MEMBER_DOCS       = NO
+
+INPUT                  = tools/docs/mainpage.md \
+                         src/libc/include \
+                         src/lib \
+                         src/kernel \
+                         src/arch \
+                         src/drivers \
+                         src/fs \
+                         src/common
+FILE_PATTERNS          = *.h *.c
+RECURSIVE              = YES
+# The tests, the host test helpers, the copied musl sources and stb are not
+# interfaces of ginnOS.
+EXCLUDE_PATTERNS       = */test/* */hosttest/* */regex/* */float/* */stb/*
+USE_MDFILE_AS_MAINPAGE = tools/docs/mainpage.md
+STRIP_FROM_PATH        = .
+STRIP_FROM_INC_PATH    = src/libc/include
+FULL_PATH_NAMES        = YES
+
+# The kernel includes its headers by their path from src/.
+ENABLE_PREPROCESSING   = YES
+SEARCH_INCLUDES        = YES
+INCLUDE_PATH           = src src/libc/include
+
+SOURCE_BROWSER         = NO
+STRIP_CODE_COMMENTS    = NO
+REFERENCED_BY_RELATION = NO
+REFERENCES_RELATION    = NO
+VERBATIM_HEADERS       = YES
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = LIGHT
+SEARCHENGINE           = YES
+HAVE_DOT               = NO
+
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_LOGFILE           = build/docs/warnings.txt
