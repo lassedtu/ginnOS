@@ -9,3 +9,7 @@ from other systems.
   and the debugger.
 - [The ginnOS toolchain](toolchain.md): the compiler for ginnOS, the
   sysroot, and how to compile a program.
+- [libc](libc.md): what the C library has, how it works, and what it
+  does not have yet.
+- [The libraries](libraries.md): gfx, heimdall, bragi, idunn and the
+  others, and how to write a program for the desktop.
