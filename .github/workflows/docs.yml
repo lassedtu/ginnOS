@@ -1,5 +1,6 @@
 # tell the site repository (lassedtu/ginnOS-docs) to build the docs
-# site again when the pages in docs/ change on main.
+# site again when the pages in docs/ or the source of the reference
+# (the comments in src/, see tools/docs/Doxyfile) change on main.
 #
 # the secret DOCS_DISPATCH_TOKEN is a fine-grained token with the
 # permission "Contents: read and write" on lassedtu/ginnOS-docs only.
@@ -9,7 +10,7 @@ name: docs
 on:
   push:
     branches: [main]
-    paths: ['docs/**']
+    paths: ['docs/**', 'src/**', 'tools/docs/**']
   workflow_dispatch:
 
 jobs:
