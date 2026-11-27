@@ -14,7 +14,7 @@ terminal.
 | Settings | `settings` | System | the settings |
 | Gallery | `idunn-gallery` | Development | all the idunn widgets, in light and dark |
 | Window demo | `heimdemo 2` | Development | a test of the keyboard, the pointer and the clipboard |
-| DOOM | `doom` | Other | Doom in a window (only in an image built with `make DOOM=1`) |
+| DOOM | `doom` | Games | Doom in a window (only in an image built with `make DOOM=1`) |
 
 The launcher reads the apps from the `.app` files in
 `/usr/share/applications`. The format is in

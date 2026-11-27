@@ -3,6 +3,8 @@
 The ginnOS desktop has a panel at the bottom of the screen and windows
 above it. You open apps from the launcher in the panel.
 
+![The desktop with Mimir and DOOM open. The panel is at the bottom.](../images/desktop.png)
+
 The code: [`src/user/heimdalld/`](https://github.com/lassedtu/ginnOS/tree/main/src/user/heimdalld)
 (the window server), [`src/user/asgard/`](https://github.com/lassedtu/ginnOS/tree/main/src/user/asgard)
 (the panel and the launcher), [`src/user/bifrost/`](https://github.com/lassedtu/ginnOS/tree/main/src/user/bifrost)
